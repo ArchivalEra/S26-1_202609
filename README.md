@@ -1,22 +1,47 @@
-# 数学研习与规范化解题知识库 (Mathematics Research & Practice Knowledge Base)
+# 工程数学课程知识库
 
-本仓库基于 **Open Knowledge Format (OKF v0.2)** 规范，专用于记录数学课堂授课内容、个人推导方法论、易错点诊断及规范化解题书写。
+本仓库服务于 **2026 年 9 月 17 日开课的工程数学课程**，用于梳理课堂知识、计算方法、易错点与规范化解题过程。笔记沿用 **Open Knowledge Format（OKF v0.2）** 元数据结构，以中文记录，不要求中英双语成对。
 
 ## 目录结构
 
-- `knowledge/`：核心数学概念与课时归档 (OKF v0.2 规范)
-  - `linear-algebra/`：线性代数（行列式、矩阵、初等变换、向量空间）
-  - `algebra/`：抽象代数与范畴论
-  - `analysis/`：实分析与泛函分析
-  - `topology/`：拓扑学与微分流形
-- `.githooks/`：Git 自动化规范与门禁钩子
+- `knowledge/`：整理后的课时与概念笔记，入口为[知识总索引](./knowledge/index.md)。
+  - `linear-algebra/`：当前已整理的线性代数与行列式内容。
+  - `algebra/`、`analysis/`、`topology/`：沿用的预留领域，不代表本课程已经授课或必然涉及。
+- `Original/`：原始转写、讲义、图片等资料；保留原文件，整理笔记通过相对链接追溯来源。
+- `.githooks/`：提交检查、README 自动同步与推送检查。
 
-## 知识库规范要求
+## 整理原则
 
-1. **日期标注机制**：每个知识概念文件必须在文件名中包含日期（例如 `YYYY-MM-DD-<slug>.md`），记录课时学习与推导轨迹。
-2. **注重方法与写法规范**：不强制外部引用，重在沉淀个人计算方法、手算避坑诊断与规范化书写标准。
-3. **双语对齐与严格白名单**：通过 `pre-commit` 门禁保证 `*.md` 与 `*.en.md` 严格成对，`.gitignore` 遵循严格根目录绝对路径白名单。
+1. 概念与课时文件使用 `YYYY-MM-DD-<slug>.md` 命名，保留 OKF 元数据。
+2. 原始资料不等于知识笔记：筛选有用内容、合并重复讲述，优先沉淀概念、方法和易错点，不为凑篇幅逐字搬运。
+3. 转写中的公式、数值和口误需核对；缺失的板书、题目条件不猜补。整理者补充的标准数学表达与原文陈述要明确区分。
+4. 新增笔记时同步维护领域索引与 `knowledge/index.md`；README 的自动区块由 hook 维护。
+5. `.gitignore` 使用精确的根目录路径白名单。新增笔记、原始资料或脚本，都需添加对应 `!/完整相对路径`，然后 `git add`。
+6. 原始资料可能包含课堂发言及个人信息；提交或推送前检查是否适合公开。
+
+## 提交时自动同步 README
+
+新克隆仓库后执行一次 `git config core.hooksPath .githooks`，并确保安装 Python 3。当前本地仓库已启用该配置。
+
+每次正常 `git commit`，`pre-commit` 先检查现有命名与白名单规则，再从**暂存区**生成下方笔记目录、原始资料目录、数量及仓库内容摘要，自动暂存 README。正文说明不由脚本改写。README 若有未暂存修改，提交会停止，需先自行暂存或保存这些修改，避免意外夹带内容。
+
+内容摘要不包含 README 自身；任何其他已暂存文件内容或路径变化都会使摘要更新。没有内容变化时不会制造时间戳变动或无意义修改。仅修改 README 正文时，提交本身已经包含 README 更新。`--no-verify` 可绕过本地 hook，因此它不等同于服务端强制规则。
+
+可运行 `python3 .githooks/update-readme.py --worktree` 预览当前工作区目录（仅处理已跟踪或白名单允许的文件），该命令只更新工作区 README，不自动暂存。推送时仍要求知识总索引同步。
+
+<!-- AUTO-CATALOG:START -->
 
 ## 课时与概念归档
 
-- **2026-09-17**：[`knowledge/linear-algebra/2026-09-17-determinants-order-2-3.md`](./knowledge/linear-algebra/2026-09-17-determinants-order-2-3.md) —— 二阶与三阶行列式计算、沙路法则与手算书写规范
+- **2026-09-17**：[二阶与三阶行列式计算、沙路法则与手算书写规范 (2026-09-17)](./knowledge/linear-algebra/2026-09-17-determinants-order-2-3.md)
+- **2026-09-17**：[工程数学开课转写整理：行列式入门、展开与基本性质（2026-09-17）](./knowledge/linear-algebra/2026-09-17-determinants-transcript-notes.md)
+
+## 原始资料
+
+- [20260917_13301545-原文.doc](./Original/20260917_13301545-%E5%8E%9F%E6%96%87.doc)
+
+已归档 **2** 篇笔记、**1** 份原始资料。
+
+<!-- 仓库内容摘要（不含 README）：59e282036be737abebff258156e0a81d6c93b2e7908dd2eeb704df3be207d20a -->
+
+<!-- AUTO-CATALOG:END -->

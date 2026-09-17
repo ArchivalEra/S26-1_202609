@@ -16,6 +16,9 @@
 !/.gitignore
 !/.githooks/pre-commit
 !/.githooks/pre-push
+!/.githooks/update-readme.py
+!/.githooks/test-update-readme.py
+!/Original/20260917_13301545-原文.doc
 !/README.md
 
 # 4. 知识库主索引
@@ -24,6 +27,7 @@
 # 5. 线性代数领域 (Linear Algebra)
 !/knowledge/linear-algebra/index.md
 !/knowledge/linear-algebra/2026-09-17-determinants-order-2-3.md
+!/knowledge/linear-algebra/2026-09-17-determinants-transcript-notes.md
 
 # 6. 抽象代数领域 (Algebra)
 !/knowledge/algebra/index.md

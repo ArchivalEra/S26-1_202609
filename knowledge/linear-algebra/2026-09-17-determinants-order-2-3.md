@@ -7,7 +7,7 @@ spec_version: "0.2"
 last_updated: "2026-09-17"
 date: "2026-09-17"
 stewards:
-  - team: Math Research & Personal Practice
+  - team: 工程数学课程学习记录
 tags:
   - linear-algebra
   - determinant
@@ -20,11 +20,11 @@ tags:
 
 ## 1. 核心定义与展开公式
 
-### 1.1 二阶行列式 (Second-Order Determinant)
+### 1.1 二阶行列式
 设 $A = \begin{pmatrix} a_{11} & a_{12} \\ a_{21} & a_{22} \end{pmatrix}$，其二阶行列式定义为主对角线乘积减去副对角线乘积：
 $$\begin{vmatrix} a_{11} & a_{12} \\ a_{21} & a_{22} \end{vmatrix} = a_{11}a_{22} - a_{12}a_{21}$$
 
-### 1.2 三阶行列式 (Third-Order Determinant)
+### 1.2 三阶行列式
 设 $3 \times 3$ 矩阵的行列式为：
 $$\begin{vmatrix}
 a_{11} & a_{12} & a_{13} \\
@@ -36,7 +36,7 @@ $$D = a_{11}a_{22}a_{33} + a_{12}a_{23}a_{31} + a_{13}a_{21}a_{32} - a_{13}a_{22
 
 ---
 
-## 2. 计算方法：对角线法则与沙路法则 (Sarrus' Rule)
+## 2. 计算方法：对角线法则与沙路法则
 
 ### 2.1 沙路法则结构
 计算三阶行列式时，在右侧补写前两列：
@@ -52,7 +52,7 @@ a_{31} & a_{32} & a_{33} & a_{31} & a_{32}
 
 ---
 
-## 3. 手算书写与易错点纠正规范 (Notational Standards & Error Diagnostics)
+## 3. 手算书写与易错点纠正规范
 
 在草稿与解题实操中，极易因心算连乘与符号叠加产生连带错误。以下为规范化写法要求：
 

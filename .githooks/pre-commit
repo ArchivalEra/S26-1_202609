@@ -78,5 +78,7 @@ if [ "$EXIT_CODE" -ne 0 ]; then
   exit 1
 fi
 
+python3 "$(git rev-parse --show-toplevel)/.githooks/update-readme.py"
+
 echo "✅ [Hook] Pre-commit validation passed."
 exit 0
