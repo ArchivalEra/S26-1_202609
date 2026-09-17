@@ -1,27 +1,22 @@
-# Mathematics Research Knowledge Base
+# Mathematics Research & Practice Knowledge Base
 
-This repository is a pure mathematical theory and formal knowledge base built upon the **Open Knowledge Format (OKF v0.2)** specification. It is dedicated to foundational concept definitions, theorem formulations, formal proofs, and academic citations in abstract algebra, analysis, and topology.
+This repository is built upon the **Open Knowledge Format (OKF v0.2)** specification, dedicated to tracking lecture contents, proprietary derivation methods, error diagnostics, and standardized mathematical notation.
 
-## Structure and Domains
+## Directory Structure
 
-- `knowledge/`: Core mathematical concepts (OKF v0.2 specification)
-  - `algebra/`: Abstract algebra & category theory (groups, rings, fields, modules, categories)
-  - `analysis/`: Real, complex, and functional analysis (measure theory, Lebesgue integration, Hilbert spaces)
-  - `topology/`: General topology and differential manifolds
+- `knowledge/`: Core mathematical concepts & lecture archives (OKF v0.2 specification)
+  - `linear-algebra/`: Linear algebra (determinants, matrices, elementary transformations, vector spaces)
+  - `algebra/`: Abstract algebra & category theory
+  - `analysis/`: Real & functional analysis
+  - `topology/`: General topology & differential manifolds
 - `.githooks/`: Automated Git quality guard hooks
 
-## Automated Enforcement & Guardrails (Git Hooks)
+## Repository Guidelines
 
-This repository enforces strict pre-commit and pre-push validations:
+1. **Mandatory Date Stamping**: Every concept file must embed its date in the filename (`YYYY-MM-DD-<slug>.md`).
+2. **Focus on Methodology & Notation**: External citations are not strictly required; emphasis is placed on proprietary methods, scratchwork error diagnostics, and rigorous writing standards.
+3. **Bilingual Pairing & Strict Whitelist**: Enforced by `pre-commit`, requiring `*.md` and `*.en.md` pairing and absolute-path `.gitignore` entries.
 
-1. **`pre-commit`**:
-   - **Strict Whitelist**: `.gitignore` requires explicit absolute-root paths (must start with `!/`, wildcards prohibited).
-   - **Bilingual Pairing**: All markdown files in the Git index must have an exact `*.md` <-> `*.en.md` counterpart.
-2. **`pre-push`**:
-   - **Catalog Index Sync Guard**: Any push updating concepts in `knowledge/` strictly requires updating `knowledge/index.md`, `knowledge/index.en.md`, `README.md`, and `README.en.md`.
+## Lecture & Concept Archives
 
-## Enabling Git Hooks
-
-```bash
-git config core.hooksPath .githooks
-```
+- **2026-09-17**: [`knowledge/linear-algebra/2026-09-17-determinants-order-2-3.en.md`](./knowledge/linear-algebra/2026-09-17-determinants-order-2-3.en.md) —— Evaluation of 2nd & 3rd Order Determinants, Sarrus' Rule, and Scratchwork Notation Standards

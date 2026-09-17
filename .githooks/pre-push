@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Git pre-push hook:
-# Enforces that whenever changes to the knowledge base (under knowledge/) are pushed,
-# the Mathematical Foundation & Domain Index in knowledge/index.md and knowledge/index.en.md
+# Enforces that whenever additions or modifications to the knowledge base (under knowledge/) are pushed,
+# the index files in knowledge/index.md and knowledge/index.en.md
 # as well as README.md / README.en.md MUST be updated and synchronized.
 
 set -euo pipefail
@@ -10,31 +10,32 @@ EXIT_CODE=0
 
 echo "🔍 [Hook] Running pre-push validation (Mathematical Knowledge Base Guard)..."
 
-# 1. Collect all changed files in the push
+# 1. Collect all changed files and commit range in the push
 CHANGED_FILES=""
 
 if [ -t 0 ]; then
   # Running in a terminal / manual execution without stdin
   if git rev-parse --verify @{u} >/dev/null 2>&1; then
     CHANGED_FILES=$(git log --name-only --format="" @{u}..HEAD 2>/dev/null || true)
+    DIFF_BASE="@{u}"
   else
-    # First push or upstream not set: check last commit
     CHANGED_FILES=$(git log -n 1 --name-only --format="" HEAD 2>/dev/null || true)
+    DIFF_BASE="HEAD~1"
   fi
 else
   # Called by git push: read lines from stdin (local_ref local_oid remote_ref remote_oid)
+  DIFF_BASE=""
   while IFS=' ' read -r local_ref local_oid remote_ref remote_oid; do
     if [ "$local_oid" = "0000000000000000000000000000000000000000" ]; then
-      # Branch deletion, skip
       continue
     elif [ "$remote_oid" = "0000000000000000000000000000000000000000" ]; then
-      # New branch push: inspect all commits unique to local_oid
       FILES=$(git diff-tree -r --no-commit-id --name-only "$local_oid" || true)
       CHANGED_FILES="$CHANGED_FILES"$'\n'"$FILES"
+      DIFF_BASE=""
     else
-      # Existing branch update: inspect diff between remote_oid and local_oid
       FILES=$(git diff --name-only "$remote_oid" "$local_oid" || true)
       CHANGED_FILES="$CHANGED_FILES"$'\n'"$FILES"
+      DIFF_BASE="$remote_oid"
     fi
   done
 fi
@@ -42,23 +43,32 @@ fi
 # Clean up empty lines and duplicates
 CHANGED_FILES=$(echo "$CHANGED_FILES" | sed '/^[[:space:]]*$/d' | sort -u || true)
 
-# 2. Check if any concept files under knowledge/ were changed
-KNOWLEDGE_CONCEPTS=$(echo "$CHANGED_FILES" | grep -E '^knowledge/[^/]+/[^/]+\.md$' | grep -vE 'index\.(en\.)?md$|log\.(en\.)?md$' || true)
+# 2. Check if any concept files under knowledge/ were added or modified (ignore deleted files)
+KNOWLEDGE_CONCEPTS=""
+while IFS= read -r file; do
+  [ -z "$file" ] && continue
+  if [[ "$file" =~ ^knowledge/[^/]+/[^/]+\.md$ ]] && [[ ! "$file" =~ (index|log)\.(en\.)?md$ ]]; then
+    # Only check if file currently exists in worktree/HEAD (i.e. not deleted)
+    if [ -f "$file" ]; then
+      KNOWLEDGE_CONCEPTS="$KNOWLEDGE_CONCEPTS"$'\n'"$file"
+    fi
+  fi
+done <<< "$CHANGED_FILES"
+
+KNOWLEDGE_CONCEPTS=$(echo "$KNOWLEDGE_CONCEPTS" | sed '/^[[:space:]]*$/d' | sort -u || true)
 
 if [ -n "$KNOWLEDGE_CONCEPTS" ]; then
-  echo "📚 Detected knowledge concept updates in push:"
+  echo "📚 Detected active knowledge concept updates in push:"
   echo "$KNOWLEDGE_CONCEPTS" | sed 's/^/   - /'
 
   INDEX_ZH="knowledge/index.md"
   INDEX_EN="knowledge/index.en.md"
 
-  # 2.1 Check if master index files exist
   if [ ! -f "$INDEX_ZH" ] || [ ! -f "$INDEX_EN" ]; then
     echo "❌ [Error] Master index files missing: '$INDEX_ZH' or '$INDEX_EN'!" >&2
     EXIT_CODE=1
   fi
 
-  # 2.2 Check if both index files were updated in this push
   INDEX_ZH_UPDATED=$(echo "$CHANGED_FILES" | grep -Fx "$INDEX_ZH" || true)
   INDEX_EN_UPDATED=$(echo "$CHANGED_FILES" | grep -Fx "$INDEX_EN" || true)
 
@@ -74,7 +84,6 @@ if [ -n "$KNOWLEDGE_CONCEPTS" ]; then
     EXIT_CODE=1
   fi
 
-  # 2.3 Verify modified concepts are referenced in both indexes
   while IFS= read -r concept_file; do
     [ -z "$concept_file" ] && continue
 
@@ -83,14 +92,12 @@ if [ -n "$KNOWLEDGE_CONCEPTS" ]; then
     rel_base="${rel_base%.md}"
     concept_name=$(basename "$rel_base")
 
-    # Check if concept is referenced in the Chinese Index
     if ! grep -q "$concept_name" "$INDEX_ZH" 2>/dev/null; then
       echo "❌ [Knowledge Index Check] Concept '$rel_base' was updated but is not referenced in '$INDEX_ZH'!" >&2
       echo "   Required: Register '$concept_name' in the catalog registry in $INDEX_ZH" >&2
       EXIT_CODE=1
     fi
 
-    # Check if concept is referenced in the English Index
     if ! grep -q "$concept_name" "$INDEX_EN" 2>/dev/null; then
       echo "❌ [Knowledge Index Check] Concept '$rel_base' was updated but is not referenced in '$INDEX_EN'!" >&2
       echo "   Required: Register '$concept_name' in the catalog registry in $INDEX_EN" >&2
@@ -98,7 +105,6 @@ if [ -n "$KNOWLEDGE_CONCEPTS" ]; then
     fi
   done <<< "$KNOWLEDGE_CONCEPTS"
 
-  # 2.4 Check if README.md and README.en.md were updated in this push
   README_ZH="README.md"
   README_EN="README.en.md"
 

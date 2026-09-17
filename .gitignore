@@ -23,16 +23,20 @@
 !/knowledge/index.md
 !/knowledge/index.en.md
 
-# 5. 代数领域 (Algebra)
+# 5. 线性代数领域 (Linear Algebra)
+!/knowledge/linear-algebra/index.md
+!/knowledge/linear-algebra/index.en.md
+!/knowledge/linear-algebra/2026-09-17-determinants-order-2-3.md
+!/knowledge/linear-algebra/2026-09-17-determinants-order-2-3.en.md
+
+# 6. 抽象代数领域 (Algebra)
 !/knowledge/algebra/index.md
 !/knowledge/algebra/index.en.md
-!/knowledge/algebra/group-axioms.md
-!/knowledge/algebra/group-axioms.en.md
 
-# 6. 分析领域 (Analysis)
+# 7. 分析领域 (Analysis)
 !/knowledge/analysis/index.md
 !/knowledge/analysis/index.en.md
 
-# 7. 拓扑领域 (Topology)
+# 8. 拓扑领域 (Topology)
 !/knowledge/topology/index.md
 !/knowledge/topology/index.en.md
