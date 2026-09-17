@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# Git pre-push hook:
+# Enforces that whenever changes to the knowledge base (under knowledge/) are pushed,
+# the Mathematical Foundation & Domain Index in knowledge/index.md and knowledge/index.en.md
+# as well as README.md / README.en.md MUST be updated and synchronized.
+
+set -euo pipefail
+
+EXIT_CODE=0
+
+echo "🔍 [Hook] Running pre-push validation (Mathematical Knowledge Base Guard)..."
+
+# 1. Collect all changed files in the push
+CHANGED_FILES=""
+
+if [ -t 0 ]; then
+  # Running in a terminal / manual execution without stdin
+  if git rev-parse --verify @{u} >/dev/null 2>&1; then
+    CHANGED_FILES=$(git log --name-only --format="" @{u}..HEAD 2>/dev/null || true)
+  else
+    # First push or upstream not set: check last commit
+    CHANGED_FILES=$(git log -n 1 --name-only --format="" HEAD 2>/dev/null || true)
+  fi
+else
+  # Called by git push: read lines from stdin (local_ref local_oid remote_ref remote_oid)
+  while IFS=' ' read -r local_ref local_oid remote_ref remote_oid; do
+    if [ "$local_oid" = "0000000000000000000000000000000000000000" ]; then
+      # Branch deletion, skip
+      continue
+    elif [ "$remote_oid" = "0000000000000000000000000000000000000000" ]; then
+      # New branch push: inspect all commits unique to local_oid
+      FILES=$(git diff-tree -r --no-commit-id --name-only "$local_oid" || true)
+      CHANGED_FILES="$CHANGED_FILES"$'\n'"$FILES"
+    else
+      # Existing branch update: inspect diff between remote_oid and local_oid
+      FILES=$(git diff --name-only "$remote_oid" "$local_oid" || true)
+      CHANGED_FILES="$CHANGED_FILES"$'\n'"$FILES"
+    fi
+  done
+fi
+
+# Clean up empty lines and duplicates
+CHANGED_FILES=$(echo "$CHANGED_FILES" | sed '/^[[:space:]]*$/d' | sort -u || true)
+
+# 2. Check if any concept files under knowledge/ were changed
+KNOWLEDGE_CONCEPTS=$(echo "$CHANGED_FILES" | grep -E '^knowledge/[^/]+/[^/]+\.md$' | grep -vE 'index\.(en\.)?md$|log\.(en\.)?md$' || true)
+
+if [ -n "$KNOWLEDGE_CONCEPTS" ]; then
+  echo "📚 Detected knowledge concept updates in push:"
+  echo "$KNOWLEDGE_CONCEPTS" | sed 's/^/   - /'
+
+  INDEX_ZH="knowledge/index.md"
+  INDEX_EN="knowledge/index.en.md"
+
+  # 2.1 Check if master index files exist
+  if [ ! -f "$INDEX_ZH" ] || [ ! -f "$INDEX_EN" ]; then
+    echo "❌ [Error] Master index files missing: '$INDEX_ZH' or '$INDEX_EN'!" >&2
+    EXIT_CODE=1
+  fi
+
+  # 2.2 Check if both index files were updated in this push
+  INDEX_ZH_UPDATED=$(echo "$CHANGED_FILES" | grep -Fx "$INDEX_ZH" || true)
+  INDEX_EN_UPDATED=$(echo "$CHANGED_FILES" | grep -Fx "$INDEX_EN" || true)
+
+  if [ -z "$INDEX_ZH_UPDATED" ] || [ -z "$INDEX_EN_UPDATED" ]; then
+    echo "❌ [Knowledge Index Check] Knowledge concepts were modified, but '$INDEX_ZH' and/or '$INDEX_EN' were NOT updated in this push!" >&2
+    echo "   Rule: Whenever knowledge files are pushed, both master index files must be synchronized." >&2
+    if [ -z "$INDEX_ZH_UPDATED" ]; then
+      echo "   Missing in push: $INDEX_ZH" >&2
+    fi
+    if [ -z "$INDEX_EN_UPDATED" ]; then
+      echo "   Missing in push: $INDEX_EN" >&2
+    fi
+    EXIT_CODE=1
+  fi
+
+  # 2.3 Verify modified concepts are referenced in both indexes
+  while IFS= read -r concept_file; do
+    [ -z "$concept_file" ] && continue
+
+    rel_path="${concept_file#knowledge/}"
+    rel_base="${rel_path%.en.md}"
+    rel_base="${rel_base%.md}"
+    concept_name=$(basename "$rel_base")
+
+    # Check if concept is referenced in the Chinese Index
+    if ! grep -q "$concept_name" "$INDEX_ZH" 2>/dev/null; then
+      echo "❌ [Knowledge Index Check] Concept '$rel_base' was updated but is not referenced in '$INDEX_ZH'!" >&2
+      echo "   Required: Register '$concept_name' in the catalog registry in $INDEX_ZH" >&2
+      EXIT_CODE=1
+    fi
+
+    # Check if concept is referenced in the English Index
+    if ! grep -q "$concept_name" "$INDEX_EN" 2>/dev/null; then
+      echo "❌ [Knowledge Index Check] Concept '$rel_base' was updated but is not referenced in '$INDEX_EN'!" >&2
+      echo "   Required: Register '$concept_name' in the catalog registry in $INDEX_EN" >&2
+      EXIT_CODE=1
+    fi
+  done <<< "$KNOWLEDGE_CONCEPTS"
+
+  # 2.4 Check if README.md and README.en.md were updated in this push
+  README_ZH="README.md"
+  README_EN="README.en.md"
+
+  README_ZH_UPDATED=$(echo "$CHANGED_FILES" | grep -Fx "$README_ZH" || true)
+  README_EN_UPDATED=$(echo "$CHANGED_FILES" | grep -Fx "$README_EN" || true)
+
+  if [ -z "$README_ZH_UPDATED" ] || [ -z "$README_EN_UPDATED" ]; then
+    echo "❌ [README Sync Check] Knowledge concepts were modified, but '$README_ZH' and/or '$README_EN' were NOT updated in this push!" >&2
+    echo "   Rule: Whenever new knowledge files under knowledge/ are pushed, README.md and README.en.md must be updated and synchronized." >&2
+    if [ -z "$README_ZH_UPDATED" ]; then
+      echo "   Missing in push: $README_ZH" >&2
+    fi
+    if [ -z "$README_EN_UPDATED" ]; then
+      echo "   Missing in push: $README_EN" >&2
+    fi
+    EXIT_CODE=1
+  fi
+fi
+
+if [ "$EXIT_CODE" -ne 0 ]; then
+  echo "" >&2
+  echo "🚫 Pre-push hook rejected the push." >&2
+  echo "   Pushing to knowledge/ requires:" >&2
+  echo "   1. Updating and syncing knowledge/index.md and knowledge/index.en.md" >&2
+  echo "   2. Updating README.md and README.en.md with the newly added knowledge concepts" >&2
+  exit 1
+fi
+
+echo "✅ [Hook] Pre-push validation passed."
+exit 0

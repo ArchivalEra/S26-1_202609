@@ -1,0 +1,38 @@
+# ==============================================================================
+# 严格白名单模式 (Strict Whitelist Configuration)
+# 默认忽略一切文件，只有显式在此处添加绝对路径的文件才会被 git 跟踪与推送。
+# 注意事项：
+# 1. 白名单项必须以 "!/" 开头（绝对定位至仓库根目录）。
+# 2. 禁止使用广义通配符（如 *.md、*.py 等），必须是具体文件的绝对路径。
+# ==============================================================================
+
+# 1. 默认忽略所有文件
+*
+
+# 2. 允许遍历目录树（Git 必须穿透目录结构以定位白名单文件）
+!*/
+
+# 3. 基础工程白名单
+!/.gitignore
+!/.githooks/pre-commit
+!/.githooks/pre-push
+!/README.md
+!/README.en.md
+
+# 4. 知识库主索引
+!/knowledge/index.md
+!/knowledge/index.en.md
+
+# 5. 代数领域 (Algebra)
+!/knowledge/algebra/index.md
+!/knowledge/algebra/index.en.md
+!/knowledge/algebra/group-axioms.md
+!/knowledge/algebra/group-axioms.en.md
+
+# 6. 分析领域 (Analysis)
+!/knowledge/analysis/index.md
+!/knowledge/analysis/index.en.md
+
+# 7. 拓扑领域 (Topology)
+!/knowledge/topology/index.md
+!/knowledge/topology/index.en.md

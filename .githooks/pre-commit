@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# Git pre-commit hook:
+# 1. Enforce bilingual markdown pairing (*.md <-> *.en.md) in git index.
+# 2. Enforce strict absolute-path whitelist in .gitignore (no broad wildcards, rooted paths starting with '!/').
+
+set -euo pipefail
+
+EXIT_CODE=0
+
+echo "🔍 [Hook] Running pre-commit validation..."
+
+# -------------------------------------------------------------
+# 1. Check .gitignore strict whitelist format
+# -------------------------------------------------------------
+if [ -f .gitignore ]; then
+  line_num=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    line_num=$((line_num + 1))
+    trimmed="$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+
+    # Skip empty lines and comments
+    if [ -z "$trimmed" ] || [[ "$trimmed" =~ ^# ]]; then
+      continue
+    fi
+
+    # Allowed structural rules: default ignore all and allow directory traversal
+    if [ "$trimmed" = "*" ] || [ "$trimmed" = "/*" ] || [ "$trimmed" = "!*/" ]; then
+      continue
+    fi
+
+    # Whitelist entries must start with '!'
+    if [[ "$trimmed" =~ ^! ]]; then
+      # Must start with '!/' to represent absolute repository-root paths
+      if [[ ! "$trimmed" =~ ^!/ ]]; then
+        echo "❌ [.gitignore:$line_num] Whitelist path must be absolute (must start with '!/'): '$trimmed'" >&2
+        EXIT_CODE=1
+        continue
+      fi
+
+      # Must not contain broad wildcards (* or ?)
+      path_part="${trimmed#!}"
+      if [[ "$path_part" == *\** ]] || [[ "$path_part" == *\?* ]]; then
+        echo "❌ [.gitignore:$line_num] Wildcards are prohibited in whitelist: '$trimmed'. Specify exact absolute path." >&2
+        EXIT_CODE=1
+        continue
+      fi
+    else
+      echo "⚠️  [.gitignore:$line_num] Non-whitelist entry found: '$trimmed'. Note that this repository enforces a strict whitelist pattern." >&2
+    fi
+  done < .gitignore
+fi
+
+# -------------------------------------------------------------
+# 2. Check bilingual Markdown requirement (*.md <-> *.en.md)
+# -------------------------------------------------------------
+missing_pairs=0
+
+while IFS= read -r -d '' file; do
+  [ -z "$file" ] && continue
+
+  if [[ "$file" == *.en.md ]]; then
+    # English doc -> base doc must exist
+    base_file="${file%.en.md}.md"
+    if ! git ls-files --error-unmatch -- "$base_file" >/dev/null 2>&1; then
+      echo "❌ [Markdown Pair Check] Missing base markdown file in git index: '$base_file' (paired with '$file')" >&2
+      if [ -f "$base_file" ]; then
+        echo "   💡 Hint: '$base_file' exists on disk. Did you forget to add it to .gitignore and run 'git add $base_file'?" >&2
+      fi
+      missing_pairs=$((missing_pairs + 1))
+    fi
+  elif [[ "$file" == *.md ]]; then
+    # Base doc -> English doc must exist
+    en_file="${file%.md}.en.md"
+    if ! git ls-files --error-unmatch -- "$en_file" >/dev/null 2>&1; then
+      echo "❌ [Markdown Pair Check] Missing English markdown file in git index: '$en_file' (paired with '$file')" >&2
+      if [ -f "$en_file" ]; then
+        echo "   💡 Hint: '$en_file' exists on disk. Did you forget to add it to .gitignore and run 'git add $en_file'?" >&2
+      fi
+      missing_pairs=$((missing_pairs + 1))
+    fi
+  fi
+done < <(git ls-files -z '*.md')
+
+if [ "$missing_pairs" -gt 0 ]; then
+  EXIT_CODE=1
+fi
+
+# -------------------------------------------------------------
+# Summary result
+# -------------------------------------------------------------
+if [ "$EXIT_CODE" -ne 0 ]; then
+  echo "" >&2
+  echo "🚫 Pre-commit hook rejected the commit." >&2
+  echo "   - Every *.md must be paired with *.en.md in git index." >&2
+  echo "   - .gitignore must use absolute paths without wildcards (e.g., '!/path/to/file.ext')." >&2
+  exit 1
+fi
+
+echo "✅ [Hook] Pre-commit validation passed."
+exit 0
