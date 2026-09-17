@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Git pre-push hook:
-# Enforces that whenever additions or modifications to the knowledge base (under knowledge/) are pushed,
-# the index files in knowledge/index.md and knowledge/index.en.md
-# as well as README.md / README.en.md MUST be updated and synchronized.
+# Enforces that whenever additions or modifications to knowledge concepts (under knowledge/) are pushed,
+# the index file in knowledge/index.md and README.md MUST be updated and synchronized.
 
 set -euo pipefail
 
@@ -10,32 +9,27 @@ EXIT_CODE=0
 
 echo "🔍 [Hook] Running pre-push validation (Mathematical Knowledge Base Guard)..."
 
-# 1. Collect all changed files and commit range in the push
+# 1. Collect all changed files in the push
 CHANGED_FILES=""
 
 if [ -t 0 ]; then
   # Running in a terminal / manual execution without stdin
   if git rev-parse --verify @{u} >/dev/null 2>&1; then
     CHANGED_FILES=$(git log --name-only --format="" @{u}..HEAD 2>/dev/null || true)
-    DIFF_BASE="@{u}"
   else
     CHANGED_FILES=$(git log -n 1 --name-only --format="" HEAD 2>/dev/null || true)
-    DIFF_BASE="HEAD~1"
   fi
 else
   # Called by git push: read lines from stdin (local_ref local_oid remote_ref remote_oid)
-  DIFF_BASE=""
   while IFS=' ' read -r local_ref local_oid remote_ref remote_oid; do
     if [ "$local_oid" = "0000000000000000000000000000000000000000" ]; then
       continue
     elif [ "$remote_oid" = "0000000000000000000000000000000000000000" ]; then
       FILES=$(git diff-tree -r --no-commit-id --name-only "$local_oid" || true)
       CHANGED_FILES="$CHANGED_FILES"$'\n'"$FILES"
-      DIFF_BASE=""
     else
       FILES=$(git diff --name-only "$remote_oid" "$local_oid" || true)
       CHANGED_FILES="$CHANGED_FILES"$'\n'"$FILES"
-      DIFF_BASE="$remote_oid"
     fi
   done
 fi
@@ -47,8 +41,8 @@ CHANGED_FILES=$(echo "$CHANGED_FILES" | sed '/^[[:space:]]*$/d' | sort -u || tru
 KNOWLEDGE_CONCEPTS=""
 while IFS= read -r file; do
   [ -z "$file" ] && continue
-  if [[ "$file" =~ ^knowledge/[^/]+/[^/]+\.md$ ]] && [[ ! "$file" =~ (index|log)\.(en\.)?md$ ]]; then
-    # Only check if file currently exists in worktree/HEAD (i.e. not deleted)
+  if [[ "$file" =~ ^knowledge/[^/]+/[^/]+\.md$ ]] && [[ ! "$file" =~ (index|log)\.md$ ]]; then
+    # Only check if file currently exists in worktree (i.e. not deleted)
     if [ -f "$file" ]; then
       KNOWLEDGE_CONCEPTS="$KNOWLEDGE_CONCEPTS"$'\n'"$file"
     fi
@@ -62,25 +56,17 @@ if [ -n "$KNOWLEDGE_CONCEPTS" ]; then
   echo "$KNOWLEDGE_CONCEPTS" | sed 's/^/   - /'
 
   INDEX_ZH="knowledge/index.md"
-  INDEX_EN="knowledge/index.en.md"
 
-  if [ ! -f "$INDEX_ZH" ] || [ ! -f "$INDEX_EN" ]; then
-    echo "❌ [Error] Master index files missing: '$INDEX_ZH' or '$INDEX_EN'!" >&2
+  if [ ! -f "$INDEX_ZH" ]; then
+    echo "❌ [Error] Master index file missing: '$INDEX_ZH'!" >&2
     EXIT_CODE=1
   fi
 
   INDEX_ZH_UPDATED=$(echo "$CHANGED_FILES" | grep -Fx "$INDEX_ZH" || true)
-  INDEX_EN_UPDATED=$(echo "$CHANGED_FILES" | grep -Fx "$INDEX_EN" || true)
 
-  if [ -z "$INDEX_ZH_UPDATED" ] || [ -z "$INDEX_EN_UPDATED" ]; then
-    echo "❌ [Knowledge Index Check] Knowledge concepts were modified, but '$INDEX_ZH' and/or '$INDEX_EN' were NOT updated in this push!" >&2
-    echo "   Rule: Whenever knowledge files are pushed, both master index files must be synchronized." >&2
-    if [ -z "$INDEX_ZH_UPDATED" ]; then
-      echo "   Missing in push: $INDEX_ZH" >&2
-    fi
-    if [ -z "$INDEX_EN_UPDATED" ]; then
-      echo "   Missing in push: $INDEX_EN" >&2
-    fi
+  if [ -z "$INDEX_ZH_UPDATED" ]; then
+    echo "❌ [Knowledge Index Check] Knowledge concepts were modified, but '$INDEX_ZH' was NOT updated in this push!" >&2
+    echo "   Rule: Whenever knowledge files are pushed, knowledge/index.md must be synchronized." >&2
     EXIT_CODE=1
   fi
 
@@ -88,8 +74,7 @@ if [ -n "$KNOWLEDGE_CONCEPTS" ]; then
     [ -z "$concept_file" ] && continue
 
     rel_path="${concept_file#knowledge/}"
-    rel_base="${rel_path%.en.md}"
-    rel_base="${rel_base%.md}"
+    rel_base="${rel_path%.md}"
     concept_name=$(basename "$rel_base")
 
     if ! grep -q "$concept_name" "$INDEX_ZH" 2>/dev/null; then
@@ -97,29 +82,14 @@ if [ -n "$KNOWLEDGE_CONCEPTS" ]; then
       echo "   Required: Register '$concept_name' in the catalog registry in $INDEX_ZH" >&2
       EXIT_CODE=1
     fi
-
-    if ! grep -q "$concept_name" "$INDEX_EN" 2>/dev/null; then
-      echo "❌ [Knowledge Index Check] Concept '$rel_base' was updated but is not referenced in '$INDEX_EN'!" >&2
-      echo "   Required: Register '$concept_name' in the catalog registry in $INDEX_EN" >&2
-      EXIT_CODE=1
-    fi
   done <<< "$KNOWLEDGE_CONCEPTS"
 
   README_ZH="README.md"
-  README_EN="README.en.md"
-
   README_ZH_UPDATED=$(echo "$CHANGED_FILES" | grep -Fx "$README_ZH" || true)
-  README_EN_UPDATED=$(echo "$CHANGED_FILES" | grep -Fx "$README_EN" || true)
 
-  if [ -z "$README_ZH_UPDATED" ] || [ -z "$README_EN_UPDATED" ]; then
-    echo "❌ [README Sync Check] Knowledge concepts were modified, but '$README_ZH' and/or '$README_EN' were NOT updated in this push!" >&2
-    echo "   Rule: Whenever new knowledge files under knowledge/ are pushed, README.md and README.en.md must be updated and synchronized." >&2
-    if [ -z "$README_ZH_UPDATED" ]; then
-      echo "   Missing in push: $README_ZH" >&2
-    fi
-    if [ -z "$README_EN_UPDATED" ]; then
-      echo "   Missing in push: $README_EN" >&2
-    fi
+  if [ -z "$README_ZH_UPDATED" ]; then
+    echo "❌ [README Sync Check] Knowledge concepts were modified, but '$README_ZH' was NOT updated in this push!" >&2
+    echo "   Rule: Whenever new knowledge files under knowledge/ are pushed, README.md must be updated and synchronized." >&2
     EXIT_CODE=1
   fi
 fi
@@ -128,8 +98,8 @@ if [ "$EXIT_CODE" -ne 0 ]; then
   echo "" >&2
   echo "🚫 Pre-push hook rejected the push." >&2
   echo "   Pushing to knowledge/ requires:" >&2
-  echo "   1. Updating and syncing knowledge/index.md and knowledge/index.en.md" >&2
-  echo "   2. Updating README.md and README.en.md with the newly added knowledge concepts" >&2
+  echo "   1. Updating and syncing knowledge/index.md" >&2
+  echo "   2. Updating README.md with the newly added knowledge concepts" >&2
   exit 1
 fi
 

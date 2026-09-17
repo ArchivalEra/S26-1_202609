@@ -17,26 +17,19 @@
 !/.githooks/pre-commit
 !/.githooks/pre-push
 !/README.md
-!/README.en.md
 
 # 4. 知识库主索引
 !/knowledge/index.md
-!/knowledge/index.en.md
 
 # 5. 线性代数领域 (Linear Algebra)
 !/knowledge/linear-algebra/index.md
-!/knowledge/linear-algebra/index.en.md
 !/knowledge/linear-algebra/2026-09-17-determinants-order-2-3.md
-!/knowledge/linear-algebra/2026-09-17-determinants-order-2-3.en.md
 
 # 6. 抽象代数领域 (Algebra)
 !/knowledge/algebra/index.md
-!/knowledge/algebra/index.en.md
 
 # 7. 分析领域 (Analysis)
 !/knowledge/analysis/index.md
-!/knowledge/analysis/index.en.md
 
 # 8. 拓扑领域 (Topology)
 !/knowledge/topology/index.md
-!/knowledge/topology/index.en.md
