@@ -130,9 +130,10 @@ body {
   line-height: 1.75;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  overflow-x: hidden;
   max-width: 100%;
-  position: relative;
+  /* 这里不能设 overflow-x: hidden —— 它让 body 成为 sticky 的包含块
+     （body 与内容等高），侧栏 sticky 因此失效、导航随页面滚走。
+     横向溢出交由 .main-column 处理。 */
   -webkit-overflow-scrolling: touch;
 }
 
@@ -408,7 +409,10 @@ body {
   min-height: 100vh;
   width: 100%;
   position: relative;
-  overflow-x: clip;
+  /* 这里不能设 overflow-x: clip —— 它会让 sticky 子项相对 .site-shell
+     （与页面等高）吸附，等于失效，侧栏导航会随页面滚走。
+     横向溢出由 .layout-container 自己处理。 */
+  overflow-x: visible;
 }
 
 /* Sidebar Column (整列导航栏) */
@@ -430,6 +434,29 @@ body {
   box-sizing: border-box;
   transition: width 0.25s cubic-bezier(0.2, 0, 0, 1), opacity 0.2s;
   overflow: visible;
+}
+
+/* 侧栏底色铺满整页高度（仅桌面端）。
+   drawer 是 sticky + 100dvh，只覆盖视口，长页面滚到底时左侧会露出页面底色。
+   这里在 .site-shell 上加一层与侧栏同宽、贯穿整个页面高度的背景，
+   位置在 drawer 之下，不影响 drawer 的悬停与拖拽。 */
+@media (min-width: 861px) {
+  .site-shell::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: var(--sidebar-width);
+    background-color: var(--md-sys-color-surface-container-low);
+    border-right: 1px solid var(--md-sys-color-outline-variant);
+    pointer-events: none;
+    z-index: 0;
+  }
+  body.sidebar-collapsed .site-shell::before {
+    width: 0;
+    border-right-color: transparent;
+  }
 }
 
 /* Sidebar Brand Header (Top of sidebar column) */
