@@ -69,12 +69,24 @@ class ReadmeHookTest(unittest.TestCase):
         self.git('push', '-u', 'origin', 'main')
         before = self.readme.read_bytes()
         self.note.write_text(self.note.read_text() + '\n新增方法。\n')
+        self.index.write_text('[笔记](2026-09-17-test.md)\n\n内容有更新。\n')
         self.stage()
-        self.git('commit', '-m', '仅修改正文，无需索引假更新')
+        self.git('commit', '-m', '修改正文并同步索引')
         self.assertNotEqual(before, self.readme.read_bytes())
         self.assertIn('%E4%B8%AD%E6%96%87%20', self.readme.read_text())
         self.assertEqual(self.git('status', '--porcelain').stdout, b'')
         self.git('push')
+
+    def test_content_edit_without_index_rejected(self):
+        """课程资料改了而对应分类索引没动，提交必须被拒。"""
+        self.note.write_text(self.note.read_text() + '\n新增方法。\n')
+        self.stage()
+        result = self.git('commit', '-m', '未同步索引', success=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('更新对应分类索引', result.stdout.decode())
+        self.index.write_text('[笔记](2026-09-17-test.md)\n\n已同步。\n')
+        self.stage()
+        self.git('commit', '-m', '补上索引')
 
     def test_preserves_unstaged_readme(self):
         self.readme.write_text(self.readme.read_text() + '\n未准备提交。\n')
@@ -88,6 +100,7 @@ class ReadmeHookTest(unittest.TestCase):
 
     def test_uses_staged_content_only(self):
         self.note.write_text('# 暂存标题\n')
+        self.index.write_text('[笔记](2026-09-17-test.md)\n\n已同步。\n')
         self.git('add', '课程')
         self.note.write_text('# 尚未暂存的标题\n')
         self.git('commit', '-m', '部分暂存')
@@ -124,8 +137,9 @@ class ReadmeHookTest(unittest.TestCase):
         self.assertIn('课堂笔记', self.details.read_text())
         before = self.details.read_bytes()
         self.assertEqual(self.git('status', '--porcelain').stdout, b'')
-        # 纯正文编辑也要改变状态区块（内容摘要行）。
+        # 正文编辑也要改变状态区块（内容摘要行）；同时须同步分类索引。
         self.note.write_text(self.note.read_text() + '\n补充说明。\n')
+        self.index.write_text('[笔记](2026-09-17-test.md)\n\n补充说明已入库。\n')
         self.stage()
         self.git('commit', '-m', '正文编辑应刷新维护细则')
         self.assertNotEqual(before, self.details.read_bytes())

@@ -247,6 +247,35 @@ def validate(files):
                 raise ValueError(f'课程入口缺少分类链接：{index}')
 
 
+def changed_paths(files, base):
+    """相对基线有变化的路径：新增、修改、删除都算。"""
+    return {p for p in set(files) | set(base) if files.get(p) != base.get(p)}
+
+
+def check_index_sync(files, base):
+    """课程资料有变动，对应分类索引必须在同一次提交更新。
+
+    规则：`课程/<课程>/<类别>/` 下任何文件（不含 index.md）内容变化——
+    新增、删除、修改都算——则 `课程/<课程>/<类别>/index.md` 必须同时变化。
+    索引是该类资料的登记处（含 `last_updated`），资料动了索引不动即为过期。
+    """
+    if base is None:
+        return
+    changed = changed_paths(files, base)
+    stale = {}
+    for path in sorted(changed):
+        category = classify(path)
+        if not category:
+            continue
+        course, kind = category
+        stale.setdefault(f'课程/{course}/{kind}/index.md', []).append(path)
+    problems = [f'{index}：' + '、'.join(items)
+                for index, items in sorted(stale.items()) if index not in changed]
+    if problems:
+        raise ValueError('课程资料有变动，必须在同一次提交更新对应分类索引（并更新其中的 '
+                         'last_updated）—— ' + '；'.join(problems))
+
+
 def check_worktree_sync(files):
     """未加 --worktree 时，工作区的两处自动区块文件必须与暂存内容一致。"""
     for path in ('README.md', MAINT_PATH):
@@ -254,6 +283,16 @@ def check_worktree_sync(files):
             raise ValueError(f'缺少 {path}。')
         if not Path(path).is_file() or Path(path).read_bytes() != files[path]:
             raise ValueError(f'{path} 有未暂存修改；请先暂存或保存这些修改。')
+
+
+def head_snapshot(base_ref=None):
+    """基线快照（默认 HEAD）。仓库尚无提交时返回 None，索引同步检查跳过。"""
+    ref = base_ref or 'HEAD'
+    try:
+        git('rev-parse', '--verify', '--quiet', ref + '^{commit}')
+    except subprocess.CalledProcessError:
+        return None
+    return snapshot(git('rev-parse', ref + '^{commit}').decode().strip())
 
 
 def sync(worktree=False):
@@ -270,12 +309,14 @@ def sync(worktree=False):
     staged['README.md'] = render(staged['README.md'].decode(), staged).encode()
     outputs = {'README.md': staged['README.md'], MAINT_PATH: maintenance}
     validate(staged)
+    check_index_sync(staged, head_snapshot())
     for path, data in outputs.items():
         if files[path] != data:
             Path(path).write_bytes(data)
             if not worktree:
                 git('add', '--', path)
     print('README 课程目录、维护细则状态、白名单、命名与索引检查通过。')
+    print('课程资料与分类索引同步检查通过。')
 
 
 def main():
@@ -287,6 +328,7 @@ def main():
                 continue
             files = snapshot(git('rev-parse', oid + '^{commit}').decode().strip())
             validate(files)
+            check_index_sync(files, head_snapshot(oid + '^'))
             if render(files['README.md'].decode(), files).encode() != files['README.md']:
                 raise ValueError(f'待推送提交 README 自动目录未同步：{local_ref}')
             if MAINT_PATH not in files:
