@@ -60,6 +60,81 @@
     });
   });
 
+  // Theme Palette (Color Picker & Presets)
+  const DEFAULT_HUE = 248;
+  const paletteToggleBtn = document.getElementById("palette-toggle");
+  const palettePopover = document.getElementById("palette-popover");
+  const hueSlider = document.getElementById("hue-slider");
+  const hueBadge = document.getElementById("palette-hue-badge");
+  const resetBtn = document.getElementById("palette-reset-btn");
+  const swatchButtons = document.querySelectorAll(".palette-swatch-item");
+
+  function applyHue(hue, save = true) {
+    const val = parseInt(hue, 10);
+    document.documentElement.style.setProperty("--hue", val);
+    document.documentElement.style.setProperty("--primary-h", val);
+    if (hueBadge) hueBadge.textContent = `Hue ${val}°`;
+    if (hueSlider) hueSlider.value = val;
+
+    swatchButtons.forEach(btn => {
+      const btnHue = parseInt(btn.getAttribute("data-hue"), 10);
+      if (btnHue === val) {
+        btn.classList.add("active");
+      } else {
+        btn.classList.remove("active");
+      }
+    });
+
+    if (save) {
+      localStorage.setItem("theme-hue", val);
+    }
+  }
+
+  // Load saved hue or default
+  const savedHue = localStorage.getItem("theme-hue");
+  if (savedHue !== null) {
+    applyHue(savedHue, false);
+  } else {
+    applyHue(DEFAULT_HUE, false);
+  }
+
+  if (paletteToggleBtn && palettePopover) {
+    paletteToggleBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      palettePopover.classList.toggle("open");
+    });
+
+    palettePopover.addEventListener("click", (e) => {
+      e.stopPropagation();
+    });
+
+    document.addEventListener("click", () => {
+      palettePopover.classList.remove("open");
+    });
+  }
+
+  if (hueSlider) {
+    hueSlider.addEventListener("input", (e) => {
+      applyHue(e.target.value, true);
+    });
+  }
+
+  swatchButtons.forEach(btn => {
+    btn.addEventListener("click", () => {
+      const hue = btn.getAttribute("data-hue");
+      if (hue) {
+        applyHue(hue, true);
+      }
+    });
+  });
+
+  if (resetBtn) {
+    resetBtn.addEventListener("click", () => {
+      localStorage.removeItem("theme-hue");
+      applyHue(DEFAULT_HUE, false);
+    });
+  }
+
   // Table of Contents ScrollSpy
   const tocLinks = document.querySelectorAll(".toc-item a");
   if (tocLinks.length > 0) {
