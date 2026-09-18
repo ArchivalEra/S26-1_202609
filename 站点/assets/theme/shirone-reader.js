@@ -371,20 +371,25 @@
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
-  function renderHits(hits, query) {
+  function renderHits(hits, query, opts = {}) {
     currentHits = hits;
     activeIndex = -1;
     if (!hits.length) {
       results.innerHTML = `<p class="search-hint">没有找到「${escapeHtml(query)}」相关内容。</p>`;
       return;
     }
-    results.innerHTML = hits.map((hit, i) => {
+    const list = hits.map((hit, i) => {
       const url = resolveHitUrl(hit.url);
       return `<a class="search-hit" href="${url}" data-index="${i}">
         <span class="search-hit-title">${escapeHtml(hit.meta?.title || hit.url)}</span>
         <span class="search-hit-excerpt">${hit.excerpt}</span>
       </a>`;
     }).join("");
+    // 渐进式渲染时，末尾提示还有结果在载入
+    const more = opts.partial
+      ? '<div class="search-progress search-progress-inline"><div class="search-progress-label">正在载入更多结果…</div><div class="search-progress-track"><div class="search-progress-bar search-progress-bar-indeterminate"></div></div></div>'
+      : "";
+    results.innerHTML = list + more;
   }
 
   function setActive(next) {
@@ -407,6 +412,16 @@
   }
 
   let searchSeq = 0;
+
+  // 加载进度条：阶段文字 + 宽度推进。首次搜索要拉 wasm 与索引分片，
+  // 在 EdgeOne 上约需数秒，进度条让等待可见。
+  function showProgress(percent, label) {
+    results.innerHTML = `<div class="search-progress">
+      <div class="search-progress-label">${escapeHtml(label)}</div>
+      <div class="search-progress-track"><div class="search-progress-bar" style="width:${percent}%"></div></div>
+    </div>`;
+  }
+
   async function runSearch(query) {
     const q = query.trim();
     if (!q) {
@@ -414,23 +429,39 @@
       return;
     }
     const seq = ++searchSeq;
-    // 首次搜索要下载 wasm 与索引分片，可能几秒；先给反馈，避免看起来像卡住。
-    if (!pagefind) {
-      results.innerHTML = '<p class="search-hint">正在加载搜索索引…</p>';
-    }
+    const firstLoad = !pagefind;
+    if (firstLoad) showProgress(15, "正在加载搜索索引…");
     let pf;
     try {
       pf = await loadPagefind();
+      if (seq === searchSeq && firstLoad) showProgress(55, "正在初始化…");
       await pf.init();
+      if (seq === searchSeq && firstLoad) showProgress(80, "正在检索…");
     } catch (err) {
       results.innerHTML = '<p class="search-hint">搜索索引未能加载（本地直接打开文件时不可用，请通过站点地址访问）。</p>';
       return;
     }
     const found = await pf.search(q);
     if (seq !== searchSeq) return;   // 已有更新的查询，丢弃这次结果
-    const hits = await Promise.all(found.results.slice(0, 12).map((r) => r.data()));
-    if (seq !== searchSeq) return;
-    renderHits(hits, q);
+
+    // 渐进式渲染：结果分片是逐个请求的（每片约 6KB，但受网络往返限制，
+    // 等齐 10 条要两秒多）。哪条先到就先显示，首条通常几百毫秒内出现。
+    const slice = found.results.slice(0, 10);
+    if (!slice.length) { renderHits([], q); return; }
+    const collected = [];
+    let arrived = 0;
+    await Promise.all(slice.map(async (r) => {
+      let data;
+      try { data = await r.data(); } catch (_) { return; }
+      if (seq !== searchSeq) return;
+      collected.push(data);
+      arrived += 1;
+      // 首条立即显示；其后每 3 条刷新一次，避免频繁重排
+      if (arrived === 1 || arrived % 3 === 0 || arrived === slice.length) {
+        renderHits(collected.slice(), q, { partial: arrived < slice.length });
+      }
+    }));
+    if (seq === searchSeq && collected.length) renderHits(collected, q);
   }
   toggleBtn.addEventListener("click", () => {
     if (panel.hidden) openPanel(); else closePanel();
