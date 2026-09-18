@@ -18,6 +18,7 @@ const TARGET_FILES = [
   '课程/index.md',
   '课程/工程数学/index.md',
   '课程/工程数学/作业/index.md',
+  '课程/工程数学/作业/2026-09-17-作业1.md',
   '课程/工程数学/教材解析/index.md',
   '课程/工程数学/教材解析/第01章-行列式/第01章-1.1-二阶与三阶行列式.md',
   '课程/工程数学/教材解析/第01章-行列式/第01章-1.2-n阶行列式.md',
@@ -138,7 +139,13 @@ const NAV_STRUCTURE = [
               { label: "09-17 课堂听课整理", path: "课程/工程数学/课堂笔记/2026-09-17-determinants-transcript-notes.md" }
             ]
           },
-          { label: "作业 (索引)", path: "课程/工程数学/作业/index.md" },
+          {
+            label: "作业",
+            path: "课程/工程数学/作业/index.md",
+            children: [
+              { label: "作业1", path: "课程/工程数学/作业/2026-09-17-作业1.md" }
+            ]
+          },
           { label: "原始资料 (索引)", path: "课程/工程数学/原始资料/index.md" },
           { label: "音频 (索引)", path: "课程/工程数学/音频/index.md" }
         ]
