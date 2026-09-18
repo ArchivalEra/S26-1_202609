@@ -1,0 +1,88 @@
+name: Build and Deploy Site
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "README.md"
+      - "课程/**"
+      - "站点/**"
+      - "维护条例.md"
+      - "维护细则.md"
+      - ".github/workflows/**"
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-site
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-deploy:
+    name: Build site & push to isui.ren-heart
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Build static site
+        run: |
+          set -euo pipefail
+          node 站点/build.mjs
+
+      - name: Deploy to isui.ren-heart@deploy
+        env:
+          HEART_DEPLOY_KEY: ${{ secrets.HEART_DEPLOY_KEY }}
+          REPO_NAME: S26-1_202609
+        run: |
+          set -euo pipefail
+
+          # 配置 SSH Key
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$HEART_DEPLOY_KEY" > ~/.ssh/heart_deploy_key
+          chmod 600 ~/.ssh/heart_deploy_key
+          ssh-keyscan -H github.com >> ~/.ssh/known_hosts
+
+          cat > ~/.ssh/config <<'SSHCFG'
+          Host github.com
+            HostName github.com
+            IdentityFile ~/.ssh/heart_deploy_key
+            IdentitiesOnly yes
+          SSHCFG
+          chmod 600 ~/.ssh/config
+
+          # Clone isui.ren-heart 的 deploy 分支
+          rm -rf /tmp/heart-deploy
+          git clone --depth 1 --branch deploy \
+            git@github.com:ArchivalEra/isui.ren-heart.git \
+            /tmp/heart-deploy
+
+          # 同步产物到 repo/S26-1_202609/
+          cd /tmp/heart-deploy
+          mkdir -p repo/"$REPO_NAME"
+          rm -rf repo/"$REPO_NAME"/*
+          cp -r "$GITHUB_WORKSPACE/站点/dist/." repo/"$REPO_NAME"/
+
+          # 提交与推送
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add repo/"$REPO_NAME"
+
+          if git diff --staged --quiet; then
+            echo "No changes in built site to commit."
+          else
+            git commit -m "deploy: update repo/$REPO_NAME from commit ${GITHUB_SHA:0:8} at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            git push origin deploy
+            echo "Successfully deployed repo/$REPO_NAME to isui.ren-heart@deploy!"
+          fi

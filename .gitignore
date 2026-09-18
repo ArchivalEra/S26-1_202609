@@ -17,6 +17,7 @@
 !/.githooks/test-update-readme.py
 !/.githooks/check-markdown.py
 !/.githooks/prepare-photos.py
+!/.github/workflows/deploy.yml
 
 # 学期与课程索引
 !/课程/index.md
