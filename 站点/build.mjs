@@ -468,20 +468,51 @@ for (const relPath of TARGET_FILES) {
   if (frontmatter.last_updated) metaChipsHtml += `<span class="meta-chip">📅 更新: ${frontmatter.last_updated}</span>`;
   if (frontmatter.sources) metaChipsHtml += `<span class="meta-chip">📖 来源: ${Array.isArray(frontmatter.sources) ? frontmatter.sources.join(', ') : frontmatter.sources}</span>`;
 
+  // Helper to format paging cards cleanly and prevent orphan single character on line break
+  function formatPagingCard(page) {
+    if (!page || !page.title) return { title: '', pages: '' };
+    let rawTitle = page.title.trim();
+    let pagesTag = '';
+    const match = rawTitle.match(/[（(](原书\s*p[^）)]+)[）)]/);
+    if (match) {
+      pagesTag = match[1];
+      rawTitle = rawTitle.replace(/[（(]原书\s*p[^）)]+[）)]/, '').trim();
+    }
+    // Prevent orphan single character at the end of the title
+    if (rawTitle.length > 3) {
+      const head = rawTitle.slice(0, -2);
+      const tail = rawTitle.slice(-2);
+      rawTitle = `${head}<span class="paging-tail">${tail}</span>`;
+    }
+    return { title: rawTitle, pages: pagesTag };
+  }
+
   // Render Paging HTML
   let pagingHtml = '';
   if (prevPage || nextPage) {
     pagingHtml = '<div class="m3-paging-container">';
     if (prevPage) {
+      const p = formatPagingCard(prevPage);
       pagingHtml += `<a class="paging-card paging-prev" href="${rootRel}${prevPage.htmlRelPath}">
-        <span class="paging-label">← 上一节</span>
-        <span class="paging-title">${prevPage.title}</span>
+        <div class="paging-label-row">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+          <span class="paging-label">上一节</span>
+          ${p.pages ? `<span class="paging-pages-badge">${p.pages}</span>` : ''}
+        </div>
+        <span class="paging-title">${p.title}</span>
       </a>`;
     }
     if (nextPage) {
+      const p = formatPagingCard(nextPage);
       pagingHtml += `<a class="paging-card paging-next" href="${rootRel}${nextPage.htmlRelPath}">
-        <span class="paging-label">下一节 →</span>
-        <span class="paging-title">${nextPage.title}</span>
+        <div class="paging-label-row paging-label-row-next">
+          <div class="paging-label-group">
+            <span class="paging-label">下一节</span>
+            ${p.pages ? `<span class="paging-pages-badge">${p.pages}</span>` : ''}
+          </div>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+        </div>
+        <span class="paging-title">${p.title}</span>
       </a>`;
     }
     pagingHtml += '</div>';
