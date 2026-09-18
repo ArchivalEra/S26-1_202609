@@ -1379,3 +1379,50 @@ body.search-open {
     border: none;
   }
 }
+
+/* 搜索加载进度条：首次搜索需拉索引分片，用可见进度替代空白等待 */
+.search-progress {
+  padding: 1.4rem 1rem 1.6rem;
+}
+
+.search-progress-inline {
+  padding: 0.9rem 1rem 1.1rem;
+}
+
+.search-progress-label {
+  font-size: 0.82rem;
+  color: var(--md-sys-color-on-surface-variant);
+  margin-bottom: 0.6rem;
+}
+
+.search-progress-track {
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background-color: var(--md-sys-color-surface-container-highest);
+}
+
+.search-progress-bar {
+  height: 100%;
+  border-radius: 2px;
+  background-color: var(--md-sys-color-primary);
+  transition: width 0.35s cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* 不确定进度：左右往复流动，表示"还在进行但进度未知" */
+.search-progress-bar-indeterminate {
+  width: 40% !important;
+  animation: search-indeterminate 1.1s ease-in-out infinite;
+}
+
+@keyframes search-indeterminate {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-progress-bar-indeterminate {
+    animation: none;
+    width: 100% !important;
+  }
+}
