@@ -3,6 +3,7 @@
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -24,6 +25,8 @@ class ReadmeHookTest(unittest.TestCase):
         self.git('config', 'core.hooksPath', '.githooks')
         shutil.copytree(SOURCE, self.repo / '.githooks', ignore=shutil.ignore_patterns('__pycache__'))
         self.readme = self.write('README.md', '# 学期\n\n<!-- AUTO-CATALOG:START -->\n<!-- AUTO-CATALOG:END -->\n')
+        self.details = self.write('维护细则.md', '# 维护细则\n\n见[仓库维护条例](./维护条例.md)。\n\n<!-- AUTO-MAINTENANCE:START -->\n<!-- AUTO-MAINTENANCE:END -->\n')
+        self.write('维护条例.md', '# 仓库维护条例\n\n原则性规定。\n')
         self.write('课程/index.md', '[工程数学](工程数学/index.md)\n')
         self.course('工程数学')
         self.note = self.write('课程/工程数学/课堂笔记/2026-09-17-test.md', '# 行列式学习\n\n课堂方法。\n')
@@ -114,6 +117,50 @@ class ReadmeHookTest(unittest.TestCase):
         before = self.readme.read_bytes()
         self.assertNotEqual(self.git('commit', '-m', '拒绝', success=False).returncode, 0)
         self.assertEqual(before, self.readme.read_bytes())
+
+    def test_maintenance_block_regenerated_and_synced(self):
+        self.assertNotIn('AUTO-MAINTENANCE:START -->\n\n<!--', self.details.read_text())
+        self.assertIn('工程数学', self.details.read_text())
+        self.assertIn('课堂笔记', self.details.read_text())
+        before = self.details.read_bytes()
+        self.assertEqual(self.git('status', '--porcelain').stdout, b'')
+        # 纯正文编辑也要改变状态区块（内容摘要行）。
+        self.note.write_text(self.note.read_text() + '\n补充说明。\n')
+        self.stage()
+        self.git('commit', '-m', '正文编辑应刷新维护细则')
+        self.assertNotEqual(before, self.details.read_bytes())
+        self.assertIn('暂存内容摘要', self.details.read_text())
+        self.remote()
+        self.git('push', 'origin', 'main')
+
+    def test_missing_maintenance_markers_rejected(self):
+        self.details.write_text('# 维护细则未设自动区块\n')
+        self.git('add', '维护细则.md')
+        before = self.details.read_bytes()
+        result = self.git('commit', '-m', '拒绝', success=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('AUTO-MAINTENANCE', result.stdout.decode())
+        self.assertEqual(before, self.details.read_bytes())
+
+    def test_preserves_unstaged_maintenance(self):
+        self.details.write_text(self.details.read_text() + '\n未准备提交。\n')
+        before = self.details.read_bytes()
+        self.note.write_text('# 新标题\n')
+        self.git('add', '课程')
+        result = self.git('commit', '-m', '拒绝', success=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('维护细则.md 有未暂存修改', result.stdout.decode())
+        self.assertEqual(before, self.details.read_bytes())
+
+    def test_tampered_maintenance_block_is_regenerated(self):
+        text = self.details.read_text()
+        self.details.write_text(text.replace('## 仓库状态（自动生成）', '## 手工篡改', 1))
+        self.git('add', '-A')
+        result = subprocess.run([sys.executable, '.githooks/hook_lib.py', '--worktree'],
+                                cwd=self.repo, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        self.assertEqual(result.returncode, 0, result.stdout.decode())
+        self.assertNotIn('手工篡改', self.details.read_text())
+        self.assertIn('## 仓库状态（自动生成）', self.details.read_text())
 
     def test_multicourse_deep_chapter_and_audio(self):
         self.course('大学物理')
