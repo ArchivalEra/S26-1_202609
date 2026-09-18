@@ -4,6 +4,10 @@
   "type": "module",
   "description": "Engineering Mathematics course reading site with Shirone M3E theme",
   "scripts": {
-    "build": "node build.mjs"
+    "build": "node build.mjs && pagefind --site dist",
+    "build:only": "node build.mjs"
+  },
+  "devDependencies": {
+    "pagefind": "^1.5.2"
   }
 }

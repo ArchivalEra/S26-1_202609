@@ -302,3 +302,160 @@
     onScroll();
   }
 })();
+
+/* ==========================================================================
+   全站搜索（Pagefind）
+   索引由构建产物生成（npx pagefind --site dist），这里只做前端交互：
+   点击放大镜展开 → 输入 → 结果列表 → 方向键选择 → 回车/点击跳转 → ESC 关闭。
+   结果链接是站点根为基准的相对路径，需按当前页深度拼前缀。
+   ========================================================================== */
+(function () {
+  const toggleBtn = document.getElementById("search-toggle");
+  const panel = document.getElementById("search-panel");
+  const input = document.getElementById("search-input");
+  const results = document.getElementById("search-results");
+  const closeBtn = document.getElementById("search-close");
+  if (!toggleBtn || !panel || !input || !results) return;
+
+  let pagefind = null;      // 懒加载：首次打开才引入索引模块
+  let activeIndex = -1;     // 方向键选中的结果序号
+  let currentHits = [];
+
+  // 站点根 URL：从当前页地址逐级上跳 data-depth 层。
+  // 例：/repo/S26-1_202609/课程/…/x.html（depth=4）→ /repo/S26-1_202609/
+  function siteRootUrl() {
+    const depth = parseInt(document.documentElement.dataset.depth || "0", 10);
+    let dir = location.pathname.replace(/[^/]*$/, "");   // 当前页所在目录，以 / 结尾
+    for (let i = 0; i < depth; i++) {
+      dir = dir.replace(/[^/]+\/$/, "");                  // 逐级上跳
+    }
+    if (!dir.endsWith("/")) dir += "/";
+    return location.origin + dir;
+  }
+
+  // Pagefind 索引里的 url 是「站点根相对路径」（如 /课程/…/x.html），
+  // 与部署前缀无关，所以这里按当前页位置拼出站点根，再拼接。
+  // 中文路径段可能已是百分号编码，先解码再统一编码，避免二次编码。
+  function resolveHitUrl(rawUrl) {
+    let decoded = rawUrl;
+    try { decoded = decodeURIComponent(rawUrl); } catch (_) { /* 保留原样 */ }
+    const encoded = decoded.replace(/^\//, "").split("/")
+      .map((seg) => encodeURIComponent(seg)).join("/");
+    return siteRootUrl() + encoded;
+  }
+
+  function openPanel() {
+    panel.hidden = false;
+    document.body.classList.add("search-open");
+    input.focus();
+  }
+
+  function closePanel() {
+    panel.hidden = true;
+    document.body.classList.remove("search-open");
+    activeIndex = -1;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  function renderHits(hits, query) {
+    currentHits = hits;
+    activeIndex = -1;
+    if (!hits.length) {
+      results.innerHTML = `<p class="search-hint">没有找到「${escapeHtml(query)}」相关内容。</p>`;
+      return;
+    }
+    results.innerHTML = hits.map((hit, i) => {
+      const url = resolveHitUrl(hit.url);
+      return `<a class="search-hit" href="${url}" data-index="${i}">
+        <span class="search-hit-title">${escapeHtml(hit.meta?.title || hit.url)}</span>
+        <span class="search-hit-excerpt">${hit.excerpt}</span>
+      </a>`;
+    }).join("");
+  }
+
+  function setActive(next) {
+    const items = results.querySelectorAll(".search-hit");
+    if (!items.length) return;
+    if (activeIndex >= 0 && items[activeIndex]) items[activeIndex].classList.remove("active");
+    activeIndex = (next + items.length) % items.length;
+    items[activeIndex].classList.add("active");
+    items[activeIndex].scrollIntoView({ block: "nearest" });
+  }
+
+  async function loadPagefind() {
+    if (pagefind) return pagefind;
+    // 动态 import 的相对路径是相对「当前脚本文件」而非页面，
+    // 所以要用站点根绝对地址，否则会错误地请求
+    // /assets/theme/pagefind/pagefind.js。
+    const mod = await import(/* @vite-ignore */ siteRootUrl() + "pagefind/pagefind.js");
+    pagefind = mod;
+    return pagefind;
+  }
+
+  let searchSeq = 0;
+  async function runSearch(query) {
+    const q = query.trim();
+    if (!q) {
+      results.innerHTML = '<p class="search-hint">输入关键词开始搜索。支持中文词组与公式外的正文；结果按相关度排序，回车打开第一条。</p>';
+      return;
+    }
+    const seq = ++searchSeq;
+    let pf;
+    try {
+      pf = await loadPagefind();
+      await pf.init();
+    } catch (err) {
+      results.innerHTML = '<p class="search-hint">搜索索引未能加载（本地直接打开文件时不可用，请通过站点地址访问）。</p>';
+      return;
+    }
+    const found = await pf.search(q);
+    if (seq !== searchSeq) return;   // 已有更新的查询，丢弃这次结果
+    const hits = await Promise.all(found.results.slice(0, 12).map((r) => r.data()));
+    if (seq !== searchSeq) return;
+    renderHits(hits, q);
+  }
+  toggleBtn.addEventListener("click", () => {
+    if (panel.hidden) openPanel(); else closePanel();
+  });
+  closeBtn?.addEventListener("click", closePanel);
+
+  let debounceTimer = null;
+  input.addEventListener("input", () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => runSearch(input.value), 160);
+  });
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      const items = results.querySelectorAll(".search-hit");
+      const target = activeIndex >= 0 ? items[activeIndex] : items[0];
+      if (target) { e.preventDefault(); target.click(); }
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault(); setActive(activeIndex + 1);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault(); setActive(activeIndex - 1);
+    } else if (e.key === "Escape") {
+      closePanel();
+    }
+  });
+
+  // 点击面板外部关闭
+  panel.addEventListener("click", (e) => {
+    if (e.target === panel) closePanel();
+  });
+
+  // 快捷键：/ 或 Ctrl/Cmd+K 打开搜索；ESC 关闭
+  document.addEventListener("keydown", (e) => {
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || "");
+    if ((e.key === "/" && !typing) || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k")) {
+      e.preventDefault();
+      openPanel();
+    } else if (e.key === "Escape" && !panel.hidden) {
+      closePanel();
+    }
+  });
+})();

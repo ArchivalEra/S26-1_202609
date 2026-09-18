@@ -544,7 +544,7 @@ for (const relPath of TARGET_FILES) {
 
   // Final HTML Document
   const finalHtml = `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-depth="${rootRel === './' ? 0 : rootRel.split('../').length - 1}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -669,11 +669,31 @@ for (const relPath of TARGET_FILES) {
             </div>
           </div>
 
+          <button class="m3-icon-btn" id="search-toggle" aria-label="全站搜索" title="全站搜索">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          </button>
+
           <button class="m3-icon-btn" id="theme-toggle" aria-label="切换昼夜主题">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
           </button>
         </div>
       </header>
+
+      <!-- 全站搜索面板（点击顶栏放大镜展开；ESC 或点外部关闭） -->
+      <div class="search-panel" id="search-panel" hidden>
+        <div class="search-panel-inner" role="dialog" aria-modal="true" aria-label="全站搜索">
+          <div class="search-panel-head">
+            <svg class="search-panel-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input type="search" id="search-input" class="search-panel-input" placeholder="搜索知识点、例题、习题…" autocomplete="off" spellcheck="false">
+            <button class="m3-icon-btn" id="search-close" aria-label="关闭搜索" title="关闭（ESC）">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+          <div class="search-panel-body" id="search-results" data-pagefind-ignore>
+            <p class="search-hint">输入关键词开始搜索。支持中文词组与公式外的正文；结果按相关度排序，回车打开第一条。</p>
+          </div>
+        </div>
+      </div>
 
       <div class="layout-container">
         <!-- Content Area -->
@@ -686,7 +706,7 @@ for (const relPath of TARGET_FILES) {
 
             ${metaChipsHtml ? `<div class="meta-chip-bar">${metaChipsHtml}</div>` : ''}
 
-            <div class="article-content">
+            <div class="article-content" data-pagefind-body>
               ${htmlContent}
             </div>
 
