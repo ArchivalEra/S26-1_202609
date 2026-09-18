@@ -214,6 +214,35 @@ class ReadmeHookTest(unittest.TestCase):
         self.git('add', '-f', '未许可.md')
         self.assertNotEqual(self.git('commit', '-m', '缺少白名单', success=False).returncode, 0)
 
+    def test_build_targets_must_cover_all_material(self):
+        """站点构建清单漏列资料时要拒绝提交（漏填会让页面静默不上线）。"""
+        full = ("const TARGET_FILES = [\n  'README.md',\n  '维护条例.md',\n  '维护细则.md',\n"
+                "  '课程/index.md',\n  '课程/工程数学/index.md',\n"
+                "  '课程/工程数学/作业/index.md',\n  '课程/工程数学/教材解析/index.md',\n"
+                "  '课程/工程数学/课堂笔记/index.md',\n  '课程/工程数学/课堂笔记/2026-09-17-test.md',\n"
+                "  '课程/工程数学/原始资料/index.md',\n  '课程/工程数学/音频/index.md'\n];\n")
+        build = self.write('站点/build.mjs', full)
+        self.stage()
+        self.git('commit', '-m', '清单完整')          # 完整清单可提交
+
+        # 漏列一份资料 → 拒绝
+        build.write_text(full.replace("  '课程/工程数学/课堂笔记/2026-09-17-test.md',\n", ''))
+        self.stage()
+        result = self.git('commit', '-m', '清单漏列', success=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('TARGET_FILES 漏列', result.stdout.decode())
+
+        # 列出仓库中不存在的文件 → 拒绝
+        build.write_text(full.replace("];\n", "  '课程/工程数学/课堂笔记/查无此文件.md'\n];\n"))
+        self.stage()
+        result = self.git('commit', '-m', '列了不存在的文件', success=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('查无此文件', result.stdout.decode())
+
+        build.write_text(full + "\n// 清单已恢复\n")
+        self.stage()
+        self.git('commit', '-m', '清单与资料对齐')
+
     def test_move_and_index_links(self):
         moved = self.note.with_name('2026-09-17-移动.md')
         self.note.rename(moved)
