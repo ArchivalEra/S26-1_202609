@@ -397,24 +397,61 @@ for (const relPath of TARGET_FILES) {
     if (idx < NOTES_ORDER.length - 1) nextPage = pageMetaMap.get(NOTES_ORDER[idx + 1]);
   }
 
-  // Render Sidebar Tree HTML
-  function renderNav(nodes) {
+  // Helper to check if node or any descendant is active
+  function isNodeOrDescendantActive(node, targetPath) {
+    if (node.path === targetPath) return true;
+    if (node.children) {
+      return node.children.some(child => isNodeOrDescendantActive(child, targetPath));
+    }
+    return false;
+  }
+
+  // Render Sidebar Tree HTML with Collapsible Groups
+  function renderNav(nodes, depth = 0) {
     let out = '<ul class="drawer-nav-list">';
     for (const node of nodes) {
-      if (node.path) {
-        const itemMeta = pageMetaMap.get(node.path);
-        const isActive = node.path === relPath;
-        const itemHref = `${rootRel}${itemMeta ? itemMeta.htmlRelPath : node.path}`;
-        out += `<li class="drawer-nav-item ${isActive ? 'active' : ''}">
-          <a href="${itemHref}">
-            <span>${node.label}</span>
-          </a>
+      const hasChildren = node.children && node.children.length > 0;
+      const isActive = node.path === relPath;
+      const isDescendantActive = isNodeOrDescendantActive(node, relPath);
+
+      // Default expanded if active, or any descendant is active, or top-level "课程总览"
+      const isExpanded = isDescendantActive || (depth === 0 && node.label === "课程总览");
+
+      if (hasChildren) {
+        const itemMeta = node.path ? pageMetaMap.get(node.path) : null;
+        const itemHref = node.path ? `${rootRel}${itemMeta ? itemMeta.htmlRelPath : node.path}` : '';
+
+        out += `<li class="drawer-nav-group ${isExpanded ? 'expanded' : 'collapsed'}">
+          <div class="nav-group-header ${!node.path ? 'nav-header-clickable' : ''}">
+            ${node.path ? `
+              <a href="${itemHref}" class="drawer-nav-link ${isActive ? 'active' : ''}">
+                <span>${node.label}</span>
+              </a>
+            ` : `
+              <span class="drawer-section-title-text">${node.label}</span>
+            `}
+            <button class="nav-collapse-btn" aria-label="折叠或展开 ${node.label}" title="折叠/展开">
+              <svg class="chevron-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+          </div>
+          <div class="nav-nested-wrapper">
+            <div class="nav-nested">
+              ${renderNav(node.children, depth + 1)}
+            </div>
+          </div>
         </li>`;
       } else {
-        out += `<li class="drawer-section-title">${node.label}</li>`;
-      }
-      if (node.children) {
-        out += `<div class="nav-nested">${renderNav(node.children)}</div>`;
+        if (node.path) {
+          const itemMeta = pageMetaMap.get(node.path);
+          const itemHref = `${rootRel}${itemMeta ? itemMeta.htmlRelPath : node.path}`;
+          out += `<li class="drawer-nav-item ${isActive ? 'active' : ''}">
+            <a href="${itemHref}" class="drawer-nav-link">
+              <span>${node.label}</span>
+            </a>
+          </li>`;
+        } else {
+          out += `<li class="drawer-section-title">${node.label}</li>`;
+        }
       }
     }
     out += '</ul>';
@@ -559,7 +596,15 @@ for (const relPath of TARGET_FILES) {
   <div class="layout-container">
     <!-- Sidebar Drawer -->
     <nav class="m3-drawer" id="m3-drawer">
-      <div class="drawer-section-title">课程导航目录</div>
+      <div class="drawer-header-toolbar">
+        <span class="drawer-section-title">课程导航目录</span>
+        <button class="drawer-action-btn" id="toggle-all-groups-btn" title="一键收起或展开所有课程分类">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M7 15l5 5 5-5M7 9l5-5 5 5"/>
+          </svg>
+          <span id="toggle-all-text">全部收起</span>
+        </button>
+      </div>
       ${drawerHtml}
     </nav>
 
