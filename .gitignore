@@ -94,3 +94,6 @@
 !/knowledge/algebra/index.md
 !/knowledge/analysis/index.md
 !/knowledge/topology/index.md
+
+# 教材复现工具：本机用 GNU Octave 复跑教材里的 MATLAB 输出
+!/工具/教材复现/工程数学MATLAB复现.m
