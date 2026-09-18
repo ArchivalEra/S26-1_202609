@@ -97,45 +97,51 @@ for (const relPath of TARGET_FILES) {
 const NAV_STRUCTURE = [
   { label: "首页", path: "README.md" },
   {
-    label: "工程数学",
-    path: "课程/工程数学/index.md",
+    label: "课程总览",
+    path: "课程/index.md",
     children: [
       {
-        label: "教材解析",
-        path: "课程/工程数学/教材解析/index.md",
+        label: "工程数学",
+        path: "课程/工程数学/index.md",
         children: [
           {
-            label: "第01章 行列式",
+            label: "教材解析",
+            path: "课程/工程数学/教材解析/index.md",
             children: [
-              { label: "1.1 二阶与三阶行列式", path: "课程/工程数学/教材解析/第01章-行列式/第01章-1.1-二阶与三阶行列式.md" },
-              { label: "1.2 n阶行列式", path: "课程/工程数学/教材解析/第01章-行列式/第01章-1.2-n阶行列式.md" },
-              { label: "1.3 克莱姆法则", path: "课程/工程数学/教材解析/第01章-行列式/第01章-1.3-克莱姆法则.md" },
-              { label: "1.4 用MATLAB计算行列式", path: "课程/工程数学/教材解析/第01章-行列式/第01章-1.4-用MATLAB计算行列式.md" }
+              {
+                label: "第01章 行列式",
+                children: [
+                  { label: "1.1 二阶与三阶行列式", path: "课程/工程数学/教材解析/第01章-行列式/第01章-1.1-二阶与三阶行列式.md" },
+                  { label: "1.2 n阶行列式", path: "课程/工程数学/教材解析/第01章-行列式/第01章-1.2-n阶行列式.md" },
+                  { label: "1.3 克莱姆法则", path: "课程/工程数学/教材解析/第01章-行列式/第01章-1.3-克莱姆法则.md" },
+                  { label: "1.4 用MATLAB计算行列式", path: "课程/工程数学/教材解析/第01章-行列式/第01章-1.4-用MATLAB计算行列式.md" }
+                ]
+              },
+              {
+                label: "第02章 矩阵",
+                children: [
+                  { label: "2.1 矩阵的概念及运算", path: "课程/工程数学/教材解析/第02章-矩阵/第02章-2.1-矩阵的概念及运算.md" },
+                  { label: "2.2 逆矩阵", path: "课程/工程数学/教材解析/第02章-矩阵/第02章-2.2-逆矩阵.md" },
+                  { label: "2.3 初等变换与初等矩阵", path: "课程/工程数学/教材解析/第02章-矩阵/第02章-2.3-矩阵的初等变换与初等矩阵.md" },
+                  { label: "2.4 矩阵的秩", path: "课程/工程数学/教材解析/第02章-矩阵/第02章-2.4-矩阵的秩.md" },
+                  { label: "2.5 用MATLAB进行矩阵运算", path: "课程/工程数学/教材解析/第02章-矩阵/第02章-2.5-用MATLAB进行矩阵运算.md" }
+                ]
+              }
             ]
           },
           {
-            label: "第02章 矩阵",
+            label: "课堂笔记",
+            path: "课程/工程数学/课堂笔记/index.md",
             children: [
-              { label: "2.1 矩阵的概念及运算", path: "课程/工程数学/教材解析/第02章-矩阵/第02章-2.1-矩阵的概念及运算.md" },
-              { label: "2.2 逆矩阵", path: "课程/工程数学/教材解析/第02章-矩阵/第02章-2.2-逆矩阵.md" },
-              { label: "2.3 初等变换与初等矩阵", path: "课程/工程数学/教材解析/第02章-矩阵/第02章-2.3-矩阵的初等变换与初等矩阵.md" },
-              { label: "2.4 矩阵的秩", path: "课程/工程数学/教材解析/第02章-矩阵/第02章-2.4-矩阵的秩.md" },
-              { label: "2.5 用MATLAB进行矩阵运算", path: "课程/工程数学/教材解析/第02章-矩阵/第02章-2.5-用MATLAB进行矩阵运算.md" }
+              { label: "09-17 行列式与沙路法则", path: "课程/工程数学/课堂笔记/2026-09-17-determinants-order-2-3.md" },
+              { label: "09-17 课堂听课整理", path: "课程/工程数学/课堂笔记/2026-09-17-determinants-transcript-notes.md" }
             ]
-          }
+          },
+          { label: "作业 (索引)", path: "课程/工程数学/作业/index.md" },
+          { label: "原始资料 (索引)", path: "课程/工程数学/原始资料/index.md" },
+          { label: "音频 (索引)", path: "课程/工程数学/音频/index.md" }
         ]
-      },
-      {
-        label: "课堂笔记",
-        path: "课程/工程数学/课堂笔记/index.md",
-        children: [
-          { label: "09-17 行列式与沙路法则", path: "课程/工程数学/课堂笔记/2026-09-17-determinants-order-2-3.md" },
-          { label: "09-17 课堂听课整理", path: "课程/工程数学/课堂笔记/2026-09-17-determinants-transcript-notes.md" }
-        ]
-      },
-      { label: "作业 (索引)", path: "课程/工程数学/作业/index.md" },
-      { label: "原始资料 (索引)", path: "课程/工程数学/原始资料/index.md" },
-      { label: "音频 (索引)", path: "课程/工程数学/音频/index.md" }
+      }
     ]
   },
   {
@@ -362,7 +368,10 @@ for (const relPath of TARGET_FILES) {
   const breadcrumbs = [
     { label: "首页", href: `${rootRel}index.html` }
   ];
-  if (relPath.startsWith('课程/工程数学/')) {
+  if (relPath === '课程/index.md') {
+    // Top-level course index
+  } else if (relPath.startsWith('课程/工程数学/')) {
+    breadcrumbs.push({ label: "课程总览", href: `${rootRel}课程/index.html` });
     breadcrumbs.push({ label: "工程数学", href: `${rootRel}课程/工程数学/index.html` });
     if (relPath.includes('/教材解析/')) {
       breadcrumbs.push({ label: "教材解析", href: `${rootRel}课程/工程数学/教材解析/index.html` });
@@ -458,7 +467,7 @@ for (const relPath of TARGET_FILES) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${pageMeta.title} | 工程数学知识库 - isui.ren</title>
+  <title>${pageMeta.title} | S26-1 课程知识库 - isui.ren</title>
   <link rel="stylesheet" href="${rootRel}assets/katex/katex.min.css">
   <link rel="stylesheet" href="${rootRel}assets/theme/shirone-reader.css">
 </head>
@@ -470,11 +479,75 @@ for (const relPath of TARGET_FILES) {
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
       </button>
       <a href="${rootRel}index.html" class="site-title">
-        <span>工程数学 · 课程知识库</span>
-        <span class="badge-tag">Shirone M3E</span>
+        <span>S26-1 课程知识库</span>
       </a>
     </div>
     <div class="top-bar-right">
+      <button class="m3-icon-btn" id="palette-toggle" aria-label="调色盘" title="自定义主题强调色">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/>
+          <circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/>
+          <circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/>
+          <circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/>
+          <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>
+        </svg>
+      </button>
+
+      <!-- Palette Popover -->
+      <div class="palette-popover" id="palette-popover">
+        <div class="palette-header">
+          <span class="palette-title">主题强调色调色盘</span>
+          <button class="palette-reset-btn" id="palette-reset-btn" title="重置为默认色">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          </button>
+        </div>
+        <div class="palette-current-row">
+          <span class="palette-hue-badge" id="palette-hue-badge">Hue 248°</span>
+          <div class="palette-color-dot" id="palette-color-dot"></div>
+        </div>
+        <div class="palette-slider-container">
+          <span class="palette-slider-label">色相微调 (0° - 360°)</span>
+          <input type="range" min="0" max="360" value="248" class="palette-slider" id="hue-slider">
+        </div>
+        <div>
+          <div class="palette-swatches-title">预设配色</div>
+          <div class="palette-swatches-grid">
+            <button class="palette-swatch-item" data-hue="315" title="经典粉紫">
+              <span class="palette-swatch-dot" style="background: hsl(315, 75%, 45%);"></span>
+              <span class="palette-swatch-name">粉紫</span>
+            </button>
+            <button class="palette-swatch-item" data-hue="280" title="紫罗兰">
+              <span class="palette-swatch-dot" style="background: hsl(280, 75%, 45%);"></span>
+              <span class="palette-swatch-name">紫罗兰</span>
+            </button>
+            <button class="palette-swatch-item active" data-hue="248" title="学术深蓝">
+              <span class="palette-swatch-dot" style="background: hsl(248, 75%, 45%);"></span>
+              <span class="palette-swatch-name">深蓝</span>
+            </button>
+            <button class="palette-swatch-item" data-hue="205" title="天青蓝">
+              <span class="palette-swatch-dot" style="background: hsl(205, 75%, 45%);"></span>
+              <span class="palette-swatch-name">天青</span>
+            </button>
+            <button class="palette-swatch-item" data-hue="150" title="翡翠绿">
+              <span class="palette-swatch-dot" style="background: hsl(150, 75%, 40%);"></span>
+              <span class="palette-swatch-name">翡翠</span>
+            </button>
+            <button class="palette-swatch-item" data-hue="75" title="琥珀黄">
+              <span class="palette-swatch-dot" style="background: hsl(75, 75%, 40%);"></span>
+              <span class="palette-swatch-name">琥珀</span>
+            </button>
+            <button class="palette-swatch-item" data-hue="30" title="晚霞橙">
+              <span class="palette-swatch-dot" style="background: hsl(30, 80%, 48%);"></span>
+              <span class="palette-swatch-name">晚霞</span>
+            </button>
+            <button class="palette-swatch-item" data-hue="355" title="绯红">
+              <span class="palette-swatch-dot" style="background: hsl(355, 75%, 45%);"></span>
+              <span class="palette-swatch-name">绯红</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
       <button class="m3-icon-btn" id="theme-toggle" aria-label="切换昼夜主题">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
       </button>
@@ -527,6 +600,13 @@ for (const relPath of TARGET_FILES) {
   }
 
   console.log(`[build] Generated: ${targetHtmlPath}`);
+  const encodedTargetHtmlPath = targetHtmlPath.split('/').map(seg => encodeURIComponent(seg)).join('/');
+  if (encodedTargetHtmlPath !== targetHtmlPath) {
+    const encodedOutFilePath = path.join(DIST_DIR, encodedTargetHtmlPath);
+    fs.mkdirSync(path.dirname(encodedOutFilePath), { recursive: true });
+    fs.writeFileSync(encodedOutFilePath, finalHtml, 'utf-8');
+    console.log(`[build] Generated encoded alias: ${encodedTargetHtmlPath}`);
+  }
 }
 
 console.log(`[build] Completed! Rendered ${totalFormulasRendered} math formulas with ${formulaErrors} errors.`);
