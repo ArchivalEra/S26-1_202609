@@ -184,6 +184,8 @@ def render_maintenance(text, files):
 
 def links(path, data):
     text = re.sub(r'```.*?```', '', data.decode(), flags=re.S)
+    # 行内代码里的 ]( 不是链接（CommonMark），示例与讨论文本不应被判为失效链接。
+    text = re.sub(r'`[^`\n]*`', '', text)
     found = set()
     for target in re.findall(r'\[[^\]\n]*\]\(([^\s)]+)(?:\s+[^)]*)?\)', text):
         target = target.strip('<>')
