@@ -35,10 +35,14 @@ jobs:
         with:
           node-version: 22
 
-      - name: Build static site
+      - name: Build static site (含 Pagefind 搜索索引)
+        working-directory: 站点
         run: |
           set -euo pipefail
-          node 站点/build.mjs
+          # 安装 pagefind（唯一构建期依赖，锁版本）
+          npm ci --no-audit --no-fund 2>/dev/null || npm install --no-audit --no-fund
+          # 在「站点/」目录下运行：pagefind.yml（排除 KaTeX 与导航噪声）才会被读取
+          npm run build
 
       - name: Deploy to isui.ren-heart@deploy
         env:
