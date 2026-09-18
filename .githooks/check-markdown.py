@@ -25,13 +25,72 @@ import sys
 from pathlib import Path
 
 ROOT = Path(subprocess.check_output(['git', 'rev-parse', '--show-toplevel']).decode().strip())
-DEFAULT_TARGETS = ('README.md', '维护条例.md', '维护细则.md', '课程', '模板', '.agents')
+DEFAULT_TARGETS = ('README.md', '维护条例.md', '维护细则.md', '课程', '模板', '站点', '.agents')
 FENCE_RE = re.compile(r'^(\s*)(`{3,}|~{3,})\s*(\S*)\s*$')
+FENCE_ANY_RE = re.compile(r'^\s*(`{3,}|~{3,})')
 HEADING_RE = re.compile(r'^(#{1,6})\s+(.*?)\s*$')
 SEPARATOR_CELL_RE = re.compile(r'^:?-{2,}:?$')
 LONG_LINE_LIMIT = 200
 # 这些标题在每个小节的“先抄后析”结构里本来就会重复，不算问题。
 STRUCTURAL_HEADINGS = {'原书抄录', '解析'}
+
+CJK_RE = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]')
+# 把中文包进这些命令后，数学模式里出现中文才是合法的。
+TEXT_WRAP_RE = re.compile(r'\\(?:text|textrm|textit|textbf|mathrm|mathbf|operatorname|mbox)\s*\{[^{}]*\}')
+DISPLAY_MATH_RE = re.compile(r'\$\$(.+?)\$\$', re.S)
+INLINE_MATH_RE = re.compile(r'(?<!\$)\$(?!\$)((?:[^$\\]|\\.)+?)\$(?!\$)')
+
+
+def masked_for_math(lines: list[str]) -> str:
+    """屏蔽围栏代码块与行内代码（保留行数），只留下可能含数学的正文。"""
+    masked: list[str] = []
+    in_fence = False
+    fence_char = ''
+    fence_len = 0
+    for line in lines:
+        if in_fence:
+            if len(line) - len(line.lstrip()) < 4 and line.lstrip().startswith(fence_char * fence_len):
+                in_fence = False
+            masked.append('')
+            continue
+        fence = FENCE_ANY_RE.match(line)
+        if fence:
+            in_fence = True
+            fence_char = fence.group(1)[0]
+            fence_len = len(fence.group(1))
+            masked.append('')
+            continue
+        masked.append(strip_code_spans(line))
+    return '\n'.join(masked)
+
+
+def math_cjk_issues(lines: list[str]) -> list[tuple[int, str]]:
+    """找出数学模式里未用 \\text{} 之类包裹的中文。
+
+    KaTeX 在数学模式遇到非 ASCII 会直接报错，而这类写法肉眼很难发现，
+    所以单独扫一遍：先取 $$...$$ 与 $...$ 的公式体，去掉 \\text{} 包裹后再找中文。
+    """
+    text = masked_for_math(lines)
+    spans: list[tuple[int, str]] = []
+    for match in DISPLAY_MATH_RE.finditer(text):
+        spans.append((match.start(), match.group(1)))
+    without_display = DISPLAY_MATH_RE.sub(lambda m: ' ' * (m.end() - m.start()), text)
+    for match in INLINE_MATH_RE.finditer(without_display):
+        spans.append((match.start(), match.group(1)))
+
+    issues: list[tuple[int, str]] = []
+    reported: set[int] = set()
+    for position, segment in sorted(spans):
+        hit = CJK_RE.search(TEXT_WRAP_RE.sub('', segment))
+        if not hit:
+            continue
+        line_no = text.count('\n', 0, position) + 1
+        if line_no in reported:
+            continue
+        reported.add(line_no)
+        issues.append((line_no, f'数学模式内出现未包裹的中文「{hit.group()}」，'
+                                f'KaTeX 会解析失败，请用 \\text{{}} 包裹'))
+    return issues
 
 
 def strip_code_spans(text: str) -> str:
@@ -57,7 +116,9 @@ def split_cells(row: str) -> list[str]:
         body = body[1:]
     if body.endswith('|'):
         body = body[:-1]
-    return [cell.strip() for cell in body.split('|')]
+    # GFM 表格里用 \| 表示字面竖线，不能当列分隔符。
+    parts = re.split(r'(?<!\\)\|', body)
+    return [cell.strip().replace('\\|', '|') for cell in parts]
 
 
 def looks_like_table_row(line: str) -> bool:
@@ -243,6 +304,8 @@ class Checker:
             self.error(1, '缺少一级标题')
         elif h1 > 1:
             self.error(1, f'一级标题出现 {h1} 次，应只有一个')
+        for line_no, message in math_cjk_issues(self.lines):
+            self.warn(line_no, message)
         return self.issues
 
 
@@ -297,7 +360,7 @@ def main() -> int:
             issues.append((len(text.splitlines()), '错误', '文件末尾缺少换行'))
         if issues:
             bad_files += 1
-            rel = path.relative_to(ROOT).as_posix()
+            rel = path.relative_to(ROOT).as_posix() if path.is_relative_to(ROOT) else str(path)
             print(rel)
             for line_no, severity, message in sorted(issues):
                 print(f'  {line_no}: [{severity}] {message}')
