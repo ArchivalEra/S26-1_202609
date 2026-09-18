@@ -95,6 +95,6 @@ git config core.hooksPath .githooks
 
 已登记 **1** 门课程、**12** 份资料（不含索引、模板和历史入口）。
 
-<!-- 仓库内容摘要（不含 README）：5db2f14b05fa45b2097a5418cb2eeac4f3dc9e6db54cac3f15a0b76a3fd15f56 -->
+<!-- 仓库内容摘要（不含 README）：07e78995184c44e5a59ed731b4c0cfd1b98e829afe31973200f69b81970f8500 -->
 
 <!-- AUTO-CATALOG:END -->
