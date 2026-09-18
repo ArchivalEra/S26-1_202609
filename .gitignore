@@ -49,6 +49,8 @@
 !/站点/前端交接词.md
 !/站点/package.json
 !/站点/vendor.mjs
+!/站点/pagefind.yml
+!/站点/package-lock.json
 !/站点/build.mjs
 !/站点/assets/theme/shirone-reader.css
 !/站点/assets/theme/shirone-reader.js
