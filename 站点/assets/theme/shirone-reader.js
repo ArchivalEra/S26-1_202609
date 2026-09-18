@@ -20,25 +20,81 @@
     });
   }
 
-  // Mobile Drawer Toggle
+  // Drawer Toggle (Mobile slide-out & Desktop sidebar collapse)
   const drawerToggleBtn = document.getElementById("drawer-toggle");
   const drawer = document.getElementById("m3-drawer");
   const backdrop = document.getElementById("drawer-backdrop");
 
   function toggleDrawer() {
-    if (!drawer) return;
-    const isOpen = drawer.classList.contains("open");
-    if (isOpen) {
-      drawer.classList.remove("open");
-      if (backdrop) backdrop.classList.remove("open");
+    if (window.innerWidth <= 860) {
+      if (!drawer) return;
+      const isOpen = drawer.classList.contains("open");
+      if (isOpen) {
+        drawer.classList.remove("open");
+        if (backdrop) backdrop.classList.remove("open");
+      } else {
+        drawer.classList.add("open");
+        if (backdrop) backdrop.classList.add("open");
+      }
     } else {
-      drawer.classList.add("open");
-      if (backdrop) backdrop.classList.add("open");
+      document.body.classList.toggle("sidebar-collapsed");
     }
   }
 
   if (drawerToggleBtn) drawerToggleBtn.addEventListener("click", toggleDrawer);
   if (backdrop) backdrop.addEventListener("click", toggleDrawer);
+
+  // Collapsible Navigation Groups (Accordion & Collapse-All)
+  const navGroups = document.querySelectorAll(".drawer-nav-group");
+  const toggleAllBtn = document.getElementById("toggle-all-groups-btn");
+  const toggleAllText = document.getElementById("toggle-all-text");
+
+  function updateToggleAllButtonState() {
+    if (!toggleAllBtn || !toggleAllText) return;
+    const hasExpanded = Array.from(navGroups).some(g => g.classList.contains("expanded"));
+    toggleAllText.textContent = hasExpanded ? "全部收起" : "全部展开";
+  }
+
+  navGroups.forEach(group => {
+    const collapseBtn = group.querySelector(":scope > .nav-group-header .nav-collapse-btn");
+    const clickableHeader = group.querySelector(":scope > .nav-group-header.nav-header-clickable");
+
+    function toggleGroup(e) {
+      if (e) e.stopPropagation();
+      const isExpanded = group.classList.contains("expanded");
+      if (isExpanded) {
+        group.classList.remove("expanded");
+        group.classList.add("collapsed");
+      } else {
+        group.classList.remove("collapsed");
+        group.classList.add("expanded");
+      }
+      updateToggleAllButtonState();
+    }
+
+    if (collapseBtn) {
+      collapseBtn.addEventListener("click", toggleGroup);
+    }
+    if (clickableHeader) {
+      clickableHeader.addEventListener("click", toggleGroup);
+    }
+  });
+
+  if (toggleAllBtn) {
+    toggleAllBtn.addEventListener("click", () => {
+      const hasExpanded = Array.from(navGroups).some(g => g.classList.contains("expanded"));
+      navGroups.forEach(group => {
+        if (hasExpanded) {
+          group.classList.remove("expanded");
+          group.classList.add("collapsed");
+        } else {
+          group.classList.remove("collapsed");
+          group.classList.add("expanded");
+        }
+      });
+      updateToggleAllButtonState();
+    });
+  }
 
   // Copy Code
   document.querySelectorAll(".copy-btn").forEach((btn) => {
