@@ -11,9 +11,11 @@
     - `课堂笔记/`：按上课日期整理的课堂笔记；
     - `原始资料/`：原始转写与讲义等原始文件；
     - `音频/`：音频下载链接与元数据记录。
+- `维护条例.md` / `维护细则.md`：原则性规定与操作规程。**维护细则里的「仓库状态」区块和下方课程目录一样，每次提交自动重算、推送前校验**。
+- `.agents/skills/repo-maintenance/SKILL.md`：给 AI 助手用的维护流程 skill，含「批量读图必须派子代理」的强制规则（主对话每对话仅 60 张图片）。
 - `模板/`：各类资料的 [OKF 模板](./模板/课程索引.md)（课程索引、作业、教材章节解析、课堂笔记、音频记录）。
 - `knowledge/`：改版前的知识库入口，仅保留[迁移说明](./knowledge/index.md)供旧链接兼容；正文已迁入课程目录，不再平行维护。
-- `.githooks/`：提交检查、README 自动同步与推送检查。
+- `.githooks/`：提交检查、README 与维护细则自动同步、推送检查。
 - `Original/`：旧仓库原始资料根目录的历史位置；新原始资料一律放对应课程目录。
 
 ## 整理与命名约定
@@ -37,22 +39,23 @@
 4. 更新课程总索引与课程入口；运行下方 CLI 验证命令确认 README 目录可正常同步。
 5. 提交前由 hook 校验命名与白名单，README 自动区块由 hook 从暂存区生成；正式提交、推送由主流程执行。
 
-## 提交时自动同步 README
+## 提交时自动同步 README 与维护细则
 
 新克隆仓库后执行一次 `git config core.hooksPath .githooks`，并确保安装 Python 3。当前本地仓库已启用该配置。
 
-每次正常 `git commit`，`pre-commit` 先检查现有命名与白名单规则，再从**暂存区**生成下方自动目录，自动暂存 README。README 若有未暂存修改，提交会停止，需先自行暂存或保存这些修改。`--no-verify` 可绕过本地 hook，因此它不等同于服务端强制规则。
+每次正常 `git commit`，`pre-commit` 先检查命名、白名单、链接与索引，再从**暂存区**生成下方自动目录和[维护细则](./维护细则.md)里的仓库状态区块，并自动暂存这两个文件。任一文件若有未暂存修改，提交会停止，需先自行暂存或保存。`--no-verify` 可绕过本地 hook，因此它不等同于服务端强制规则；`pre-push` 仍会校验待推送提交里的两处区块。
 
 常用 CLI 验证命令：
 
 ```bash
 python3 .githooks/test-update-readme.py
-python3 .githooks/update-readme.py --worktree   # 直接写入工作区 README，不自动暂存
+python3 .githooks/update-readme.py --worktree   # 同步工作区 README 与维护细则，不自动暂存
 python3 .githooks/check-markdown.py              # Markdown 美观度与可读性检查
+git fsck --no-progress                           # 仓库对象完整性
 git config core.hooksPath .githooks
 ```
 
-`--worktree` 只更新工作区 README，不自动暂存；推送时仍要求索引同步。新克隆仓库需先执行 `git config core.hooksPath .githooks` 启用钩子，再运行上述验证命令。
+`--worktree` 只更新工作区文件，不自动暂存；推送时仍要求两处区块同步。新克隆仓库需先执行 `git config core.hooksPath .githooks` 启用钩子，再运行上述验证命令。
 
 <!-- AUTO-CATALOG:START -->
 
@@ -151,6 +154,6 @@ git config core.hooksPath .githooks
 
 已登记 **1** 门课程、**72** 份资料（不含索引、模板和历史入口）。
 
-<!-- 仓库内容摘要（不含 README）：e6656c1c0f8544a8b607fc5a4b9da34ab73ca9e2dcecc569d07b1d045efa8260 -->
+<!-- 仓库内容摘要（不含 README）：e1f59c9b84c4b6d6b18f1fe47c94ca6ecbc725158af19f9285f076f4d21ebc1f -->
 
 <!-- AUTO-CATALOG:END -->

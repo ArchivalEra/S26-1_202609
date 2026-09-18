@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(subprocess.check_output(['git', 'rev-parse', '--show-toplevel']).decode().strip())
-DEFAULT_TARGETS = ('README.md', '维护条例.md', '课程', '模板')
+DEFAULT_TARGETS = ('README.md', '维护条例.md', '维护细则.md', '课程', '模板', '.agents')
 FENCE_RE = re.compile(r'^(\s*)(`{3,}|~{3,})\s*(\S*)\s*$')
 HEADING_RE = re.compile(r'^(#{1,6})\s+(.*?)\s*$')
 SEPARATOR_CELL_RE = re.compile(r'^:?-{2,}:?$')
@@ -123,7 +123,8 @@ class Checker:
                 fence_line = line_no
                 if not fence_lang:
                     self.warn(line_no, '围栏代码块未标注语言（建议 matlab / text / bash 等）')
-                if prev_kind not in ('blank', 'start'):
+                # 缩进的围栏位于列表项内部，紧跟条目文字是合法且常见的写法。
+                if prev_kind not in ('blank', 'start') and len(line) == len(line.lstrip()):
                     self.warn(line_no, '代码围栏前缺少空行')
                 prev_kind = 'fence'
                 i += 1
