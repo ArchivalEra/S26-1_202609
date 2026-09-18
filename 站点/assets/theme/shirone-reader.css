@@ -1,104 +1,114 @@
-/* Shirone Material 3 Expressive Academic Reader Theme */
+/* Shirone Material 3 Expressive Reader Theme with Dynamic Color System */
 :root {
-  --md-sys-color-primary: #1a5fb4;
+  --hue: 248; /* Default Academic Blue, configurable by user */
+  --primary-h: var(--hue);
+
+  /* Dynamic Light Mode Palette */
+  --md-sys-color-primary: hsl(var(--primary-h), 75%, 42%);
   --md-sys-color-on-primary: #ffffff;
-  --md-sys-color-primary-container: #d6e4ff;
-  --md-sys-color-on-primary-container: #001b3f;
-  --md-sys-color-secondary: #535f70;
+  --md-sys-color-primary-container: hsl(var(--primary-h), 90%, 92%);
+  --md-sys-color-on-primary-container: hsl(var(--primary-h), 95%, 15%);
+  --md-sys-color-secondary: hsl(var(--primary-h), 25%, 38%);
   --md-sys-color-on-secondary: #ffffff;
-  --md-sys-color-secondary-container: #d7e3f8;
-  --md-sys-color-on-secondary-container: #101c2b;
-  --md-sys-color-tertiary: #6b5778;
+  --md-sys-color-secondary-container: hsl(var(--primary-h), 35%, 88%);
+  --md-sys-color-on-secondary-container: hsl(var(--primary-h), 45%, 12%);
+  --md-sys-color-tertiary: hsl(calc(var(--primary-h) + 60), 30%, 42%);
   --md-sys-color-on-tertiary: #ffffff;
-  --md-sys-color-tertiary-container: #f3daff;
-  --md-sys-color-on-tertiary-container: #251432;
-  --md-sys-color-surface: #f8f9fc;
-  --md-sys-color-surface-dim: #dadce0;
-  --md-sys-color-surface-bright: #f8f9fc;
+  --md-sys-color-tertiary-container: hsl(calc(var(--primary-h) + 60), 50%, 90%);
+  --md-sys-color-on-tertiary-container: hsl(calc(var(--primary-h) + 60), 60%, 15%);
+
+  --md-sys-color-surface: hsl(var(--primary-h), 20%, 98%);
+  --md-sys-color-surface-dim: hsl(var(--primary-h), 12%, 87%);
+  --md-sys-color-surface-bright: hsl(var(--primary-h), 20%, 98%);
   --md-sys-color-surface-container-lowest: #ffffff;
-  --md-sys-color-surface-container-low: #f2f3f7;
-  --md-sys-color-surface-container: #eceef2;
-  --md-sys-color-surface-container-high: #e6e8ec;
-  --md-sys-color-surface-container-highest: #e0e2e7;
-  --md-sys-color-on-surface: #191c20;
-  --md-sys-color-on-surface-variant: #43474e;
-  --md-sys-color-outline: #73777f;
-  --md-sys-color-outline-variant: #c3c6cf;
-  --md-sys-color-inverse-surface: #2e3035;
-  --md-sys-color-inverse-on-surface: #f0f0f5;
-  --md-sys-color-inverse-primary: #a8c8ff;
+  --md-sys-color-surface-container-low: hsl(var(--primary-h), 18%, 96%);
+  --md-sys-color-surface-container: hsl(var(--primary-h), 15%, 94%);
+  --md-sys-color-surface-container-high: hsl(var(--primary-h), 12%, 91%);
+  --md-sys-color-surface-container-highest: hsl(var(--primary-h), 10%, 88%);
+  --md-sys-color-on-surface: hsl(var(--primary-h), 10%, 12%);
+  --md-sys-color-on-surface-variant: hsl(var(--primary-h), 8%, 30%);
+  --md-sys-color-outline: hsl(var(--primary-h), 6%, 48%);
+  --md-sys-color-outline-variant: hsl(var(--primary-h), 12%, 78%);
+  --md-sys-color-inverse-surface: hsl(var(--primary-h), 10%, 20%);
+  --md-sys-color-inverse-on-surface: hsl(var(--primary-h), 15%, 95%);
+  --md-sys-color-inverse-primary: hsl(var(--primary-h), 85%, 75%);
+
   --shadow-1: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.05);
   --shadow-2: 0 3px 6px rgba(0,0,0,0.1), 0 2px 4px rgba(0,0,0,0.06);
-  --shadow-3: 0 10px 20px rgba(0,0,0,0.12), 0 3px 6px rgba(0,0,0,0.08);
+  --shadow-3: 0 10px 24px rgba(0,0,0,0.14), 0 4px 8px rgba(0,0,0,0.08);
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --header-height: 64px;
-  --sidebar-width: 280px;
+  --sidebar-width: 290px;
   --toc-width: 240px;
 }
 
 [data-theme="dark"] {
-  --md-sys-color-primary: #a8c8ff;
-  --md-sys-color-on-primary: #003062;
-  --md-sys-color-primary-container: #00468a;
-  --md-sys-color-on-primary-container: #d6e4ff;
-  --md-sys-color-secondary: #bbc7db;
-  --md-sys-color-on-secondary: #253141;
-  --md-sys-color-secondary-container: #3c4858;
-  --md-sys-color-on-secondary-container: #d7e3f8;
-  --md-sys-color-tertiary: #d7bee5;
-  --md-sys-color-on-tertiary: #3b2948;
-  --md-sys-color-tertiary-container: #523f5f;
-  --md-sys-color-on-tertiary-container: #f3daff;
-  --md-sys-color-surface: #111318;
-  --md-sys-color-surface-dim: #111318;
-  --md-sys-color-surface-bright: #37393e;
-  --md-sys-color-surface-container-lowest: #0c0e13;
-  --md-sys-color-surface-container-low: #191c20;
-  --md-sys-color-surface-container: #1d2024;
-  --md-sys-color-surface-container-high: #272a2f;
-  --md-sys-color-surface-container-highest: #32353a;
-  --md-sys-color-on-surface: #e1e2e8;
-  --md-sys-color-on-surface-variant: #c3c6cf;
-  --md-sys-color-outline: #8d9199;
-  --md-sys-color-outline-variant: #43474e;
-  --md-sys-color-inverse-surface: #e1e2e8;
-  --md-sys-color-inverse-on-surface: #2e3035;
-  --md-sys-color-inverse-primary: #1a5fb4;
+  /* Dynamic Dark Mode Palette */
+  --md-sys-color-primary: hsl(var(--primary-h), 85%, 75%);
+  --md-sys-color-on-primary: hsl(var(--primary-h), 95%, 15%);
+  --md-sys-color-primary-container: hsl(var(--primary-h), 80%, 28%);
+  --md-sys-color-on-primary-container: hsl(var(--primary-h), 90%, 90%);
+  --md-sys-color-secondary: hsl(var(--primary-h), 30%, 75%);
+  --md-sys-color-on-secondary: hsl(var(--primary-h), 35%, 18%);
+  --md-sys-color-secondary-container: hsl(var(--primary-h), 30%, 30%);
+  --md-sys-color-on-secondary-container: hsl(var(--primary-h), 40%, 88%);
+  --md-sys-color-tertiary: hsl(calc(var(--primary-h) + 60), 45%, 78%);
+  --md-sys-color-on-tertiary: hsl(calc(var(--primary-h) + 60), 50%, 18%);
+  --md-sys-color-tertiary-container: hsl(calc(var(--primary-h) + 60), 40%, 32%);
+  --md-sys-color-on-tertiary-container: hsl(calc(var(--primary-h) + 60), 55%, 90%);
+
+  --md-sys-color-surface: hsl(var(--primary-h), 15%, 8%);
+  --md-sys-color-surface-dim: hsl(var(--primary-h), 15%, 8%);
+  --md-sys-color-surface-bright: hsl(var(--primary-h), 10%, 22%);
+  --md-sys-color-surface-container-lowest: hsl(var(--primary-h), 20%, 5%);
+  --md-sys-color-surface-container-low: hsl(var(--primary-h), 14%, 11%);
+  --md-sys-color-surface-container: hsl(var(--primary-h), 12%, 13%);
+  --md-sys-color-surface-container-high: hsl(var(--primary-h), 10%, 16%);
+  --md-sys-color-surface-container-highest: hsl(var(--primary-h), 8%, 20%);
+  --md-sys-color-on-surface: hsl(var(--primary-h), 12%, 89%);
+  --md-sys-color-on-surface-variant: hsl(var(--primary-h), 10%, 78%);
+  --md-sys-color-outline: hsl(var(--primary-h), 8%, 56%);
+  --md-sys-color-outline-variant: hsl(var(--primary-h), 10%, 28%);
+  --md-sys-color-inverse-surface: hsl(var(--primary-h), 12%, 89%);
+  --md-sys-color-inverse-on-surface: hsl(var(--primary-h), 10%, 15%);
+  --md-sys-color-inverse-primary: hsl(var(--primary-h), 75%, 42%);
+
   --shadow-1: 0 1px 3px rgba(0,0,0,0.3);
   --shadow-2: 0 3px 6px rgba(0,0,0,0.4);
-  --shadow-3: 0 10px 20px rgba(0,0,0,0.5);
+  --shadow-3: 0 10px 24px rgba(0,0,0,0.5);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --md-sys-color-primary: #a8c8ff;
-    --md-sys-color-on-primary: #003062;
-    --md-sys-color-primary-container: #00468a;
-    --md-sys-color-on-primary-container: #d6e4ff;
-    --md-sys-color-secondary: #bbc7db;
-    --md-sys-color-on-secondary: #253141;
-    --md-sys-color-secondary-container: #3c4858;
-    --md-sys-color-on-secondary-container: #d7e3f8;
-    --md-sys-color-tertiary: #d7bee5;
-    --md-sys-color-on-tertiary: #3b2948;
-    --md-sys-color-tertiary-container: #523f5f;
-    --md-sys-color-on-tertiary-container: #f3daff;
-    --md-sys-color-surface: #111318;
-    --md-sys-color-surface-dim: #111318;
-    --md-sys-color-surface-bright: #37393e;
-    --md-sys-color-surface-container-lowest: #0c0e13;
-    --md-sys-color-surface-container-low: #191c20;
-    --md-sys-color-surface-container: #1d2024;
-    --md-sys-color-surface-container-high: #272a2f;
-    --md-sys-color-surface-container-highest: #32353a;
-    --md-sys-color-on-surface: #e1e2e8;
-    --md-sys-color-on-surface-variant: #c3c6cf;
-    --md-sys-color-outline: #8d9199;
-    --md-sys-color-outline-variant: #43474e;
-    --md-sys-color-inverse-surface: #e1e2e8;
-    --md-sys-color-inverse-on-surface: #2e3035;
-    --md-sys-color-inverse-primary: #1a5fb4;
+    --md-sys-color-primary: hsl(var(--primary-h), 85%, 75%);
+    --md-sys-color-on-primary: hsl(var(--primary-h), 95%, 15%);
+    --md-sys-color-primary-container: hsl(var(--primary-h), 80%, 28%);
+    --md-sys-color-on-primary-container: hsl(var(--primary-h), 90%, 90%);
+    --md-sys-color-secondary: hsl(var(--primary-h), 30%, 75%);
+    --md-sys-color-on-secondary: hsl(var(--primary-h), 35%, 18%);
+    --md-sys-color-secondary-container: hsl(var(--primary-h), 30%, 30%);
+    --md-sys-color-on-secondary-container: hsl(var(--primary-h), 40%, 88%);
+    --md-sys-color-tertiary: hsl(calc(var(--primary-h) + 60), 45%, 78%);
+    --md-sys-color-on-tertiary: hsl(calc(var(--primary-h) + 60), 50%, 18%);
+    --md-sys-color-tertiary-container: hsl(calc(var(--primary-h) + 60), 40%, 32%);
+    --md-sys-color-on-tertiary-container: hsl(calc(var(--primary-h) + 60), 55%, 90%);
+
+    --md-sys-color-surface: hsl(var(--primary-h), 15%, 8%);
+    --md-sys-color-surface-dim: hsl(var(--primary-h), 15%, 8%);
+    --md-sys-color-surface-bright: hsl(var(--primary-h), 10%, 22%);
+    --md-sys-color-surface-container-lowest: hsl(var(--primary-h), 20%, 5%);
+    --md-sys-color-surface-container-low: hsl(var(--primary-h), 14%, 11%);
+    --md-sys-color-surface-container: hsl(var(--primary-h), 12%, 13%);
+    --md-sys-color-surface-container-high: hsl(var(--primary-h), 10%, 16%);
+    --md-sys-color-surface-container-highest: hsl(var(--primary-h), 8%, 20%);
+    --md-sys-color-on-surface: hsl(var(--primary-h), 12%, 89%);
+    --md-sys-color-on-surface-variant: hsl(var(--primary-h), 10%, 78%);
+    --md-sys-color-outline: hsl(var(--primary-h), 8%, 56%);
+    --md-sys-color-outline-variant: hsl(var(--primary-h), 10%, 28%);
+    --md-sys-color-inverse-surface: hsl(var(--primary-h), 12%, 89%);
+    --md-sys-color-inverse-on-surface: hsl(var(--primary-h), 10%, 15%);
+    --md-sys-color-inverse-primary: hsl(var(--primary-h), 75%, 42%);
   }
 }
 
@@ -136,7 +146,8 @@ body {
 .top-bar-left, .top-bar-right {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.5rem;
+  position: relative;
 }
 
 .m3-icon-btn {
@@ -150,7 +161,7 @@ body {
   background: transparent;
   color: var(--md-sys-color-on-surface-variant);
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: background-color 0.2s, color 0.2s;
 }
 
 .m3-icon-btn:hover {
@@ -166,15 +177,177 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  transition: color 0.2s;
 }
 
-.badge-tag {
-  font-size: 0.75rem;
-  padding: 0.15rem 0.5rem;
+/* Theme Palette Popover */
+.palette-popover {
+  position: absolute;
+  top: calc(var(--header-height) - 4px);
+  right: 0;
+  width: 280px;
+  background-color: var(--md-sys-color-surface-container-lowest);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 16px;
+  box-shadow: var(--shadow-3);
+  padding: 1.2rem;
+  z-index: 100;
+  display: none;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.palette-popover.open {
+  display: flex;
+}
+
+.palette-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.palette-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--md-sys-color-on-surface);
+}
+
+.palette-reset-btn {
+  background: transparent;
+  border: none;
+  color: var(--md-sys-color-outline);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.palette-reset-btn:hover {
+  background-color: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-primary);
+}
+
+.palette-current-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.palette-hue-badge {
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.15rem 0.6rem;
+  border-radius: 8px;
+  background-color: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  font-family: var(--font-mono);
+}
+
+.palette-color-dot {
+  width: 28px;
+  height: 28px;
   border-radius: 9999px;
+  background-color: var(--md-sys-color-primary);
+  border: 2px solid var(--md-sys-color-outline-variant);
+  transition: background-color 0.15s;
+}
+
+.palette-slider-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.palette-slider-label {
+  font-size: 0.75rem;
+  color: var(--md-sys-color-outline);
+}
+
+.palette-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 10px;
+  border-radius: 9999px;
+  background: linear-gradient(to right,
+    hsl(0, 80%, 50%),
+    hsl(60, 80%, 50%),
+    hsl(120, 80%, 50%),
+    hsl(180, 80%, 50%),
+    hsl(240, 80%, 50%),
+    hsl(300, 80%, 50%),
+    hsl(360, 80%, 50%)
+  );
+  outline: none;
+  cursor: pointer;
+}
+
+.palette-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2px solid var(--md-sys-color-outline);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.palette-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+.palette-swatches-title {
+  font-size: 0.75rem;
+  color: var(--md-sys-color-outline);
+  margin-bottom: 0.25rem;
+}
+
+.palette-swatches-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+}
+
+.palette-swatch-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 0.35rem 0.2rem;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.palette-swatch-item:hover {
+  background-color: var(--md-sys-color-surface-container);
+}
+
+.palette-swatch-item.active {
+  border-color: var(--md-sys-color-primary);
   background-color: var(--md-sys-color-primary-container);
-  color: var(--md-sys-color-on-primary-container);
-  font-weight: 600;
+}
+
+.palette-swatch-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 9999px;
+  border: 1px solid rgba(0,0,0,0.15);
+}
+
+.palette-swatch-name {
+  font-size: 0.68rem;
+  color: var(--md-sys-color-on-surface-variant);
+  white-space: nowrap;
 }
 
 /* Main Layout Grid */
@@ -651,5 +824,9 @@ pre code {
   .paging-next {
     grid-column: 1;
     text-align: left;
+  }
+  .palette-popover {
+    right: 10px;
+    width: 260px;
   }
 }
