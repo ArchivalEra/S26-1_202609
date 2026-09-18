@@ -546,93 +546,23 @@ for (const relPath of TARGET_FILES) {
   <link rel="stylesheet" href="${rootRel}assets/theme/shirone-reader.css">
 </head>
 <body>
-  <!-- Top App Bar -->
-  <header class="m3-top-app-bar">
-    <div class="top-bar-left">
-      <button class="m3-icon-btn" id="drawer-toggle" aria-label="打开菜单">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
-      </button>
-      <a href="${rootRel}index.html" class="site-title">
-        <span>S26-1 课程知识库</span>
-      </a>
-    </div>
-    <div class="top-bar-right">
-      <button class="m3-icon-btn" id="palette-toggle" aria-label="调色盘" title="自定义主题强调色">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/>
-          <circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/>
-          <circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/>
-          <circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/>
-          <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>
-        </svg>
-      </button>
-
-      <!-- Palette Popover -->
-      <div class="palette-popover" id="palette-popover">
-        <div class="palette-header">
-          <span class="palette-title">主题强调色调色盘</span>
-          <button class="palette-reset-btn" id="palette-reset-btn" title="重置为默认色">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-          </button>
-        </div>
-        <div class="palette-current-row">
-          <span class="palette-hue-badge" id="palette-hue-badge">Hue 248°</span>
-          <div class="palette-color-dot" id="palette-color-dot"></div>
-        </div>
-        <div class="palette-slider-container">
-          <span class="palette-slider-label">色相微调 (0° - 360°)</span>
-          <input type="range" min="0" max="360" value="248" class="palette-slider" id="hue-slider">
-        </div>
-        <div>
-          <div class="palette-swatches-title">预设配色</div>
-          <div class="palette-swatches-grid">
-            <button class="palette-swatch-item" data-hue="315" title="经典粉紫">
-              <span class="palette-swatch-dot" style="background: hsl(315, 75%, 45%);"></span>
-              <span class="palette-swatch-name">粉紫</span>
-            </button>
-            <button class="palette-swatch-item" data-hue="280" title="紫罗兰">
-              <span class="palette-swatch-dot" style="background: hsl(280, 75%, 45%);"></span>
-              <span class="palette-swatch-name">紫罗兰</span>
-            </button>
-            <button class="palette-swatch-item active" data-hue="248" title="学术深蓝">
-              <span class="palette-swatch-dot" style="background: hsl(248, 75%, 45%);"></span>
-              <span class="palette-swatch-name">深蓝</span>
-            </button>
-            <button class="palette-swatch-item" data-hue="205" title="天青蓝">
-              <span class="palette-swatch-dot" style="background: hsl(205, 75%, 45%);"></span>
-              <span class="palette-swatch-name">天青</span>
-            </button>
-            <button class="palette-swatch-item" data-hue="150" title="翡翠绿">
-              <span class="palette-swatch-dot" style="background: hsl(150, 75%, 40%);"></span>
-              <span class="palette-swatch-name">翡翠</span>
-            </button>
-            <button class="palette-swatch-item" data-hue="75" title="琥珀黄">
-              <span class="palette-swatch-dot" style="background: hsl(75, 75%, 40%);"></span>
-              <span class="palette-swatch-name">琥珀</span>
-            </button>
-            <button class="palette-swatch-item" data-hue="30" title="晚霞橙">
-              <span class="palette-swatch-dot" style="background: hsl(30, 80%, 48%);"></span>
-              <span class="palette-swatch-name">晚霞</span>
-            </button>
-            <button class="palette-swatch-item" data-hue="355" title="绯红">
-              <span class="palette-swatch-dot" style="background: hsl(355, 75%, 45%);"></span>
-              <span class="palette-swatch-name">绯红</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <button class="m3-icon-btn" id="theme-toggle" aria-label="切换昼夜主题">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-      </button>
-    </div>
-  </header>
-
   <div class="drawer-backdrop" id="drawer-backdrop"></div>
 
-  <div class="layout-container">
-    <!-- Sidebar Drawer -->
-    <nav class="m3-drawer" id="m3-drawer">
+  <div class="site-shell">
+    <!-- Left Column: Full-Height Sidebar (整列导航栏) -->
+    <aside class="m3-drawer" id="m3-drawer">
+      <div class="drawer-header-brand">
+        <a href="${rootRel}index.html" class="sidebar-brand">
+          <span class="site-title-icon">📚</span>
+          <span class="sidebar-brand-text">S26-1 课程知识库</span>
+        </a>
+        <button class="m3-icon-btn drawer-collapse-btn" id="drawer-collapse-btn" aria-label="收起侧边栏" title="收起侧边栏">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M15 18l-6-6 6-6"/>
+          </svg>
+        </button>
+      </div>
+
       <div class="drawer-header-toolbar">
         <span class="drawer-section-title">课程导航目录</span>
         <button class="drawer-action-btn" id="toggle-all-groups-btn" title="一键收起或展开所有课程分类">
@@ -642,29 +572,125 @@ for (const relPath of TARGET_FILES) {
           <span id="toggle-all-text">全部收起</span>
         </button>
       </div>
-      ${drawerHtml}
-    </nav>
 
-    <!-- Content Area -->
-    <main class="content-wrapper">
-      <article class="article-container">
-        <!-- Breadcrumb -->
-        <nav class="m3-breadcrumb">
-          ${breadcrumbs.map((b, i) => i === breadcrumbs.length - 1 ? `<span>${b.label}</span>` : `<a href="${b.href}">${b.label}</a><span class="m3-breadcrumb-sep">/</span>`).join('')}
-        </nav>
+      <div class="drawer-nav-scroll-area">
+        ${drawerHtml}
+      </div>
 
-        ${metaChipsHtml ? `<div class="meta-chip-bar">${metaChipsHtml}</div>` : ''}
+      <div class="sidebar-resizer" id="sidebar-resizer" title="按住拖拽调整侧边栏宽度，双击恢复默认宽度"></div>
+    </aside>
 
-        <div class="article-content">
-          ${htmlContent}
+    <!-- Right Column: Main Content Column (主内容列) -->
+    <div class="main-column">
+      <!-- Top App Bar -->
+      <header class="m3-top-app-bar">
+        <div class="top-bar-left">
+          <button class="m3-icon-btn" id="drawer-toggle" aria-label="展开/收起侧边栏" title="展开/收起侧边栏">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+          </button>
+          <a href="${rootRel}index.html" class="top-bar-mobile-title">
+            <span>S26-1 课程知识库</span>
+          </a>
+          <nav class="top-bar-breadcrumbs" aria-label="当前路径">
+            ${breadcrumbs.map((b, i) => i === breadcrumbs.length - 1 ? `<span class="current-crumb">${b.label}</span>` : `<a href="${b.href}">${b.label}</a><span class="m3-breadcrumb-sep">/</span>`).join('')}
+          </nav>
         </div>
 
-        ${pagingHtml}
-      </article>
-    </main>
+        <div class="top-bar-right">
+          <button class="m3-icon-btn" id="palette-toggle" aria-label="调色盘" title="自定义主题强调色">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/>
+              <circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/>
+              <circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/>
+              <circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/>
+              <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>
+            </svg>
+          </button>
 
-    <!-- Table of Contents -->
-    ${tocHtml}
+          <!-- Palette Popover -->
+          <div class="palette-popover" id="palette-popover">
+            <div class="palette-header">
+              <span class="palette-title">主题强调色调色盘</span>
+              <button class="palette-reset-btn" id="palette-reset-btn" title="重置为默认色">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+              </button>
+            </div>
+            <div class="palette-current-row">
+              <span class="palette-hue-badge" id="palette-hue-badge">Hue 248°</span>
+              <div class="palette-color-dot" id="palette-color-dot"></div>
+            </div>
+            <div class="palette-slider-container">
+              <span class="palette-slider-label">色相微调 (0° - 360°)</span>
+              <input type="range" min="0" max="360" value="248" class="palette-slider" id="hue-slider">
+            </div>
+            <div>
+              <div class="palette-swatches-title">预设配色</div>
+              <div class="palette-swatches-grid">
+                <button class="palette-swatch-item" data-hue="315" title="经典粉紫">
+                  <span class="palette-swatch-dot" style="background: hsl(315, 75%, 45%);"></span>
+                  <span class="palette-swatch-name">粉紫</span>
+                </button>
+                <button class="palette-swatch-item" data-hue="280" title="紫罗兰">
+                  <span class="palette-swatch-dot" style="background: hsl(280, 75%, 45%);"></span>
+                  <span class="palette-swatch-name">紫罗兰</span>
+                </button>
+                <button class="palette-swatch-item active" data-hue="248" title="学术深蓝">
+                  <span class="palette-swatch-dot" style="background: hsl(248, 75%, 45%);"></span>
+                  <span class="palette-swatch-name">深蓝</span>
+                </button>
+                <button class="palette-swatch-item" data-hue="205" title="天青蓝">
+                  <span class="palette-swatch-dot" style="background: hsl(205, 75%, 45%);"></span>
+                  <span class="palette-swatch-name">天青</span>
+                </button>
+                <button class="palette-swatch-item" data-hue="150" title="翡翠绿">
+                  <span class="palette-swatch-dot" style="background: hsl(150, 75%, 40%);"></span>
+                  <span class="palette-swatch-name">翡翠</span>
+                </button>
+                <button class="palette-swatch-item" data-hue="75" title="琥珀黄">
+                  <span class="palette-swatch-dot" style="background: hsl(75, 75%, 40%);"></span>
+                  <span class="palette-swatch-name">琥珀</span>
+                </button>
+                <button class="palette-swatch-item" data-hue="30" title="晚霞橙">
+                  <span class="palette-swatch-dot" style="background: hsl(30, 80%, 48%);"></span>
+                  <span class="palette-swatch-name">晚霞</span>
+                </button>
+                <button class="palette-swatch-item" data-hue="355" title="绯红">
+                  <span class="palette-swatch-dot" style="background: hsl(355, 75%, 45%);"></span>
+                  <span class="palette-swatch-name">绯红</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <button class="m3-icon-btn" id="theme-toggle" aria-label="切换昼夜主题">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="layout-container">
+        <!-- Content Area -->
+        <main class="content-wrapper">
+          <article class="article-container">
+            <!-- Breadcrumb in page body -->
+            <nav class="m3-breadcrumb">
+              ${breadcrumbs.map((b, i) => i === breadcrumbs.length - 1 ? `<span>${b.label}</span>` : `<a href="${b.href}">${b.label}</a><span class="m3-breadcrumb-sep">/</span>`).join('')}
+            </nav>
+
+            ${metaChipsHtml ? `<div class="meta-chip-bar">${metaChipsHtml}</div>` : ''}
+
+            <div class="article-content">
+              ${htmlContent}
+            </div>
+
+            ${pagingHtml}
+          </article>
+        </main>
+
+        <!-- Table of Contents -->
+        ${tocHtml}
+      </div>
+    </div>
   </div>
 
   <script src="${rootRel}assets/katex/katex.min.js"></script>

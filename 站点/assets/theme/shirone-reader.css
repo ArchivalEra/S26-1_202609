@@ -38,8 +38,8 @@
   --shadow-3: 0 10px 24px rgba(0,0,0,0.14), 0 4px 8px rgba(0,0,0,0.08);
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-  --header-height: 64px;
-  --sidebar-width: 290px;
+  --header-height: 60px;
+  --sidebar-width: 320px;
   --toc-width: 240px;
 }
 
@@ -146,8 +146,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 1rem;
-  z-index: 50;
+  padding: 0 1.25rem;
+  z-index: 30;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   max-width: 100%;
@@ -157,7 +157,7 @@ body {
 .top-bar-left {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.6rem;
   min-width: 0;
   flex: 1;
 }
@@ -174,8 +174,8 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 38px;
+  height: 38px;
   border-radius: 9999px;
   border: none;
   background: transparent;
@@ -190,21 +190,43 @@ body {
   color: var(--md-sys-color-on-surface);
 }
 
-.site-title {
-  font-size: 1.08rem;
+.top-bar-mobile-title {
+  display: none;
+  font-size: 1.05rem;
   font-weight: 700;
   color: var(--md-sys-color-primary);
   text-decoration: none;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  transition: color 0.2s;
-  min-width: 0;
-  overflow: hidden;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.site-title span {
+.top-bar-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.84rem;
+  color: var(--md-sys-color-outline);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.top-bar-breadcrumbs a {
+  color: var(--md-sys-color-on-surface-variant);
+  text-decoration: none;
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+
+.top-bar-breadcrumbs a:hover {
+  color: var(--md-sys-color-primary);
+}
+
+.top-bar-breadcrumbs .current-crumb {
+  color: var(--md-sys-color-on-surface);
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -380,47 +402,153 @@ body {
   white-space: nowrap;
 }
 
-/* Main Layout Grid */
-.layout-container {
+/* Site Shell & Layout Column */
+.site-shell {
   display: flex;
-  min-height: calc(100vh - var(--header-height));
-  position: relative;
+  min-height: 100vh;
   width: 100%;
-  max-width: 100%;
+  position: relative;
   overflow-x: clip;
 }
 
-/* Sidebar Drawer */
+/* Sidebar Column (整列导航栏) */
 .m3-drawer {
   width: var(--sidebar-width);
-  flex-shrink: 0;
+  min-width: 240px;
+  max-width: 580px;
+  height: 100vh;
+  height: 100dvh;
+  position: sticky;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
   background-color: var(--md-sys-color-surface-container-low);
   border-right: 1px solid var(--md-sys-color-outline-variant);
-  padding: 0.75rem 0.6rem;
-  height: calc(100vh - var(--header-height));
-  position: sticky;
-  top: var(--header-height);
-  overflow-y: auto;
-  transition: width 0.25s cubic-bezier(0.2, 0, 0, 1), padding 0.25s;
+  flex-shrink: 0;
+  z-index: 40;
+  box-sizing: border-box;
+  transition: width 0.25s cubic-bezier(0.2, 0, 0, 1), opacity 0.2s;
+  overflow: visible;
 }
 
-@media (min-width: 861px) {
-  body.sidebar-collapsed .m3-drawer {
-    width: 0;
-    padding-left: 0;
-    padding-right: 0;
-    border-right-color: transparent;
-    overflow: hidden;
-  }
+/* Sidebar Brand Header (Top of sidebar column) */
+.drawer-header-brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: var(--header-height);
+  padding: 0 0.8rem 0 1.1rem;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  flex-shrink: 0;
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-decoration: none;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--md-sys-color-primary);
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.sidebar-brand-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drawer-collapse-btn {
+  width: 34px;
+  height: 34px;
+  color: var(--md-sys-color-outline);
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.drawer-collapse-btn:hover {
+  background-color: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-primary);
 }
 
 .drawer-header-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.4rem 0.5rem 0.65rem;
+  padding: 0.5rem 0.85rem 0.5rem 1rem;
   border-bottom: 1px solid var(--md-sys-color-outline-variant);
-  margin-bottom: 0.75rem;
+  flex-shrink: 0;
+  background: var(--md-sys-color-surface-container-low);
+}
+
+.drawer-nav-scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0.6rem 0.6rem 2rem;
+}
+
+/* Sidebar Resizer (Desktop drag handle) */
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 50;
+  transition: background-color 0.15s;
+}
+
+.sidebar-resizer:hover,
+.sidebar-resizer.resizing {
+  background-color: var(--md-sys-color-primary);
+}
+
+body.sidebar-resizing,
+body.sidebar-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+body.sidebar-resizing .m3-drawer {
+  transition: none !important;
+}
+
+/* Main Column */
+.main-column {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* Main Layout Grid inside Main Column */
+.layout-container {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+@media (min-width: 861px) {
+  body.sidebar-collapsed .m3-drawer {
+    width: 0 !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    border-right-color: transparent !important;
+    overflow: hidden !important;
+    opacity: 0;
+    pointer-events: none;
+  }
 }
 
 .drawer-section-title {
@@ -1013,13 +1141,17 @@ pre code {
 }
 
 @media (max-width: 860px) {
+  .site-shell {
+    display: block;
+    width: 100%;
+  }
   .m3-drawer {
     position: fixed;
     top: 0;
     left: 0;
     bottom: 0;
-    width: 280px;
-    max-width: 82vw;
+    width: 285px;
+    max-width: 84vw;
     height: 100vh;
     height: 100dvh;
     z-index: 100;
@@ -1031,6 +1163,18 @@ pre code {
   .m3-drawer.open {
     transform: translateX(0);
     visibility: visible;
+  }
+  .sidebar-resizer {
+    display: none;
+  }
+  .top-bar-breadcrumbs {
+    display: none;
+  }
+  .top-bar-mobile-title {
+    display: flex;
+  }
+  .drawer-collapse-btn {
+    display: none;
   }
   .drawer-backdrop {
     display: block;
