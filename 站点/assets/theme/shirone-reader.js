@@ -44,6 +44,83 @@
   if (drawerToggleBtn) drawerToggleBtn.addEventListener("click", toggleDrawer);
   if (backdrop) backdrop.addEventListener("click", toggleDrawer);
 
+  // Desktop Brand Collapse Button
+  const drawerCollapseBtn = document.getElementById("drawer-collapse-btn");
+  if (drawerCollapseBtn) {
+    drawerCollapseBtn.addEventListener("click", () => {
+      document.body.classList.toggle("sidebar-collapsed");
+    });
+  }
+
+  // Keyboard shortcut: "[" to toggle sidebar
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "[" && !["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) {
+      e.preventDefault();
+      toggleDrawer();
+    }
+  });
+
+  // Sidebar Resizer (Desktop drag-to-resize & double-click reset)
+  const resizer = document.getElementById("sidebar-resizer");
+  const DEFAULT_SIDEBAR_WIDTH = 320;
+  const MIN_SIDEBAR_WIDTH = 240;
+  const MAX_SIDEBAR_WIDTH = 580;
+
+  // Restore saved width on desktop
+  const savedWidth = localStorage.getItem("shirone-sidebar-width");
+  if (savedWidth && window.innerWidth > 860) {
+    const num = parseInt(savedWidth, 10);
+    if (!isNaN(num) && num >= MIN_SIDEBAR_WIDTH && num <= MAX_SIDEBAR_WIDTH) {
+      document.documentElement.style.setProperty("--sidebar-width", num + "px");
+    }
+  }
+
+  if (resizer) {
+    let isResizing = false;
+    let startX = 0;
+    let startWidth = 0;
+
+    resizer.addEventListener("mousedown", (e) => {
+      if (window.innerWidth <= 860) return;
+      isResizing = true;
+      startX = e.clientX;
+      const currentW = drawer ? drawer.getBoundingClientRect().width : DEFAULT_SIDEBAR_WIDTH;
+      startWidth = currentW;
+      resizer.classList.add("resizing");
+      document.body.classList.add("sidebar-resizing");
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      e.preventDefault();
+    });
+
+    window.addEventListener("mousemove", (e) => {
+      if (!isResizing) return;
+      const dx = e.clientX - startX;
+      let newWidth = Math.round(startWidth + dx);
+      if (newWidth < MIN_SIDEBAR_WIDTH) newWidth = MIN_SIDEBAR_WIDTH;
+      if (newWidth > MAX_SIDEBAR_WIDTH) newWidth = MAX_SIDEBAR_WIDTH;
+      document.documentElement.style.setProperty("--sidebar-width", newWidth + "px");
+    });
+
+    window.addEventListener("mouseup", () => {
+      if (!isResizing) return;
+      isResizing = false;
+      resizer.classList.remove("resizing");
+      document.body.classList.remove("sidebar-resizing");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      if (drawer) {
+        const finalW = Math.round(drawer.getBoundingClientRect().width);
+        localStorage.setItem("shirone-sidebar-width", finalW);
+      }
+    });
+
+    resizer.addEventListener("dblclick", () => {
+      document.documentElement.style.setProperty("--sidebar-width", DEFAULT_SIDEBAR_WIDTH + "px");
+      localStorage.setItem("shirone-sidebar-width", DEFAULT_SIDEBAR_WIDTH);
+    });
+  }
+
   // Collapsible Navigation Groups (Accordion & Collapse-All)
   const navGroups = document.querySelectorAll(".drawer-nav-group");
   const toggleAllBtn = document.getElementById("toggle-all-groups-btn");
