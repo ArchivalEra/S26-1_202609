@@ -185,13 +185,18 @@ function wrapBareCJK(tex) {
 // Custom renderer for Marked
 const renderer = new marked.Renderer();
 
-renderer.heading = function ({ depth, text }) {
-  const clean = text.replace(/<[^>]+>/g, '');
+renderer.heading = function ({ depth, text, tokens }) {
+  // 标题里可能内嵌行内语法（README 自动目录的 `### [工程数学](./…)` 就是链接），
+  // 必须走行内解析，否则会以字面 markdown 泄漏到页面与右侧目录。
+  const inner = tokens
+    ? this.parser.parseInline(tokens)
+    : text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const clean = inner.replace(/<[^>]+>/g, '');
   const id = clean
     .toLowerCase()
     .replace(/[^\w\u4e00-\u9fa5]+/g, '-')
     .replace(/^-+|-+$/g, '') || ('h-' + Math.random().toString(36).substring(2, 7));
-  return `<h${depth} id="${id}">${text}</h${depth}>`;
+  return `<h${depth} id="${id}">${inner}</h${depth}>`;
 };
 
 marked.use({ renderer });
@@ -311,15 +316,15 @@ for (const relPath of TARGET_FILES) {
     .replace(/<table>/g, '<div class="table-scroll-container"><table>')
     .replace(/<\/table>/g, '</table></div>');
 
-  // Extract TOC headings
+  // Extract TOC headings（标题里可能有 <a> 等行内元素，取标签内纯文本）
   const toc = [];
-  const headingRegex = /<h([23]) id="([^"]+)">([^<]+)<\/h[23]>/g;
+  const headingRegex = /<h([23]) id="([^"]+)">([\s\S]*?)<\/h[23]>/g;
   let hMatch;
   while ((hMatch = headingRegex.exec(htmlContent)) !== null) {
     toc.push({
       level: parseInt(hMatch[1]),
       id: hMatch[2],
-      title: hMatch[3]
+      title: hMatch[3].replace(/<[^>]+>/g, '').trim()
     });
   }
 
