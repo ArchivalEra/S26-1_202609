@@ -333,15 +333,25 @@
     return location.origin + dir;
   }
 
-  // Pagefind 索引里的 url 是「站点根相对路径」（如 /课程/…/x.html），
-  // 与部署前缀无关，所以这里按当前页位置拼出站点根，再拼接。
-  // 中文路径段可能已是百分号编码，先解码再统一编码，避免二次编码。
+  // 把索引里的 url 解析成可用地址。两种形态都要兼容：
+  // - 未带部署前缀：/课程/…（需补上当前站点根）
+  // - 已带部署前缀：/repo/S26-1_202609/课程/…（直接用）
+  // 判据用「站点根路径本身」做前缀比较，而不是只比首段，避免 /repo 这类
+  // 首段相同但层级不同的误判。
   function resolveHitUrl(rawUrl) {
     let decoded = rawUrl;
     try { decoded = decodeURIComponent(rawUrl); } catch (_) { /* 保留原样 */ }
     const encoded = decoded.replace(/^\//, "").split("/")
       .map((seg) => encodeURIComponent(seg)).join("/");
-    return siteRootUrl() + encoded;
+
+    const rootPath = new URL(siteRootUrl()).pathname;   // /repo/S26-1_202609/
+    const rootPrefix = rootPath.replace(/^\//, "");      // repo/S26-1_202609/
+
+    // 已含部署前缀：直接拼到 origin
+    if (rootPrefix && (encoded + "/").startsWith(rootPrefix)) {
+      return location.origin + "/" + encoded;
+    }
+    return location.origin + rootPath + encoded;
   }
 
   function openPanel() {
@@ -404,6 +414,10 @@
       return;
     }
     const seq = ++searchSeq;
+    // 首次搜索要下载 wasm 与索引分片，可能几秒；先给反馈，避免看起来像卡住。
+    if (!pagefind) {
+      results.innerHTML = '<p class="search-hint">正在加载搜索索引…</p>';
+    }
     let pf;
     try {
       pf = await loadPagefind();
