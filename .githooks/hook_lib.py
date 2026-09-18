@@ -245,6 +245,7 @@ def validate(files):
             index = f'课程/{course}/{kind}/index.md'
             if index not in files or index not in links(course_index, files[course_index]):
                 raise ValueError(f'课程入口缺少分类链接：{index}')
+    check_build_targets(files)
 
 
 def changed_paths(files, base):
@@ -274,6 +275,47 @@ def check_index_sync(files, base):
     if problems:
         raise ValueError('课程资料有变动，必须在同一次提交更新对应分类索引（并更新其中的 '
                          'last_updated）—— ' + '；'.join(problems))
+
+
+BUILD_SCRIPT = '站点/build.mjs'
+# 静态站构建脚本里硬编码的待渲染清单。它与 .gitignore 白名单一样是显式枚举，
+# 但漏填不会报错、只会静默不上线，故在此校验二者一致。
+TARGET_FILES_RE = re.compile(r'^const TARGET_FILES = \[(.*?)^\];', re.M | re.S)
+
+
+def build_targets(files):
+    """从 build.mjs 读出的 TARGET_FILES 清单；脚本不存在时返回 None。"""
+    if BUILD_SCRIPT not in files:
+        return None
+    match = TARGET_FILES_RE.search(files[BUILD_SCRIPT].decode())
+    if not match:
+        raise ValueError(f'{BUILD_SCRIPT} 中找不到 TARGET_FILES 清单，无法校验站点渲染范围。')
+    return re.findall(r"'([^']+)'", match.group(1))
+
+
+def check_build_targets(files):
+    """站点要渲染的文件必须都被 build.mjs 的 TARGET_FILES 覆盖。
+
+    清单是硬编码的（与白名单同理，便于人工确认站点范围），代价是新增资料
+    容易漏填——漏填不报错、页面静默不上线。这里把"应渲染"与"清单"对齐：
+    清单里列出但仓库没有的文件视为过期条目，仓库有却没列出的视为漏填。
+    """
+    targets = build_targets(files)
+    if targets is None:
+        return
+    listed = set(targets)
+    # 应渲染范围：仓库说明 + 课程目录下所有 Markdown（模板、历史入口除外）
+    expected = {'README.md', '维护条例.md', '维护细则.md'}
+    expected |= {p for p in files
+                 if p.startswith('课程/') and p.endswith('.md')}
+    missing = sorted(expected - listed)
+    if missing:
+        raise ValueError(f'{BUILD_SCRIPT} 的 TARGET_FILES 漏列以下文件，站点不会渲染它们：'
+                         + '、'.join(missing))
+    stale = sorted(p for p in listed if p not in files)
+    if stale:
+        raise ValueError(f'{BUILD_SCRIPT} 的 TARGET_FILES 列了仓库中不存在的文件：'
+                         + '、'.join(stale))
 
 
 def check_worktree_sync(files):
