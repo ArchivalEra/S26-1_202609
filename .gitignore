@@ -12,6 +12,7 @@
 !/维护细则.md
 !/.agents/skills/repo-maintenance/SKILL.md
 !/.agents/skills/human-first-solution/SKILL.md
+!/.agents/skills/double-sign/SKILL.md
 !/.githooks/pre-commit
 !/.githooks/pre-push
 !/.githooks/update-readme.py
