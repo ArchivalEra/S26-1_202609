@@ -1064,6 +1064,73 @@ pre code {
   color: var(--md-sys-color-on-surface);
 }
 
+/* 深链接跳到某个面板时的定位高亮：浏览器原生 :target，零 JS。
+ * 配合 disclosure-anchor.js 的自动展开——跳到收起面板 = 展开 + 高亮。 */
+.m3-disclosure:target {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+}
+
+/* 符号气泡（math-glossary.mjs）：正文符号加虚线下标示可点；
+ * 点击弹出就地解释的小气泡，气泡里带「详细 ↗」跳符号入门。
+ * 无 JS 时符号就是普通链接，点击直达符号入门页锚点。 */
+.custom-md a.sym-gloss,
+a.sym-gloss {
+  border-bottom: 1px dashed var(--md-sys-color-tertiary);
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+a.sym-gloss:hover {
+  border-bottom-style: solid;
+  color: var(--md-sys-color-on-surface);
+}
+
+.sym-gloss-pop {
+  position: absolute;
+  z-index: 1000;
+  max-width: 320px;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 12px;
+  background-color: var(--md-sys-color-surface-container-high);
+  color: var(--md-sys-color-on-surface);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+.sym-gloss-pop p {
+  margin: 0.3rem 0 0.45rem;
+}
+.sym-gloss-pop__more {
+  color: var(--md-sys-color-primary);
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+.sym-gloss-pop__more:hover {
+  text-decoration: underline;
+}
+
+/* 页脚：版权 / 许可 / 归属声明（全站每页文章末尾） */
+.site-footer {
+  margin-top: 2.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+  font-size: 0.82rem;
+  line-height: 1.7;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.site-footer p {
+  margin: 0.2rem 0;
+}
+.site-footer a {
+  color: var(--md-sys-color-primary);
+  text-decoration: none;
+}
+.site-footer a:hover {
+  text-decoration: underline;
+}
+
 /* 去掉 WebKit 的默认展开三角 */
 .m3-disclosure__summary::-webkit-details-marker {
   display: none;

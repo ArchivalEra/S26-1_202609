@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { marked, yaml } from './vendor.mjs';
 import katex from './assets/katex/katex.mjs';
 import { renderCollapse } from './plugins/collapse.mjs';
+import { DISCLOSURE_ANCHOR_JS } from './plugins/disclosure-anchor.mjs';
+import { parseGlossaryDict, renderGlossary, GLOSSARY_JS } from './plugins/math-glossary.mjs';
 
 const SITE_DIR = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = path.resolve(SITE_DIR, '..');
@@ -21,7 +23,9 @@ const TARGET_FILES = [
   '课程/工程数学/作业/index.md',
   '课程/工程数学/作业/2026-09-17-作业1.md',
   '课程/工程数学/教材解析/index.md',
+  '课程/工程数学/教材解析/0.0-符号入门.md',
   '课程/工程数学/教材解析/第一部分-线性代数/index.md',
+  '课程/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.0-本章通关攻略.md',
   '课程/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.1-二阶与三阶行列式.md',
   '课程/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.2-n阶行列式.md',
   '课程/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.3-克莱姆法则.md',
@@ -62,6 +66,24 @@ function copyDir(src, dest) {
 
 copyDir(path.join(SITE_DIR, 'assets'), path.join(DIST_DIR, 'assets'));
 console.log(`[build] Copied offline assets to dist/assets/`);
+
+// 折叠面板深链接的客户端增强，来自独立插件模块 disclosure-anchor.mjs。
+// 可拆卸：删掉本段与页面模板里的 disclosure-anchor <script> 即回退
+// （锚点仍可滚动定位，只是收起的面板要手动点开）。
+const disclosureAnchorDist = path.join(DIST_DIR, 'assets', 'plugins', 'disclosure-anchor.js');
+fs.mkdirSync(path.dirname(disclosureAnchorDist), { recursive: true });
+fs.writeFileSync(disclosureAnchorDist, DISCLOSURE_ANCHOR_JS);
+
+// 符号气泡词典：唯一来源是符号入门页里的 :::glossary-dict 围栏（内容侧维护，
+// 改词条不碰代码）。实现见 站点/plugins/math-glossary.mjs（独立可拆卸模块：
+// 删掉本段、Step 2.6 与页面模板里对应 <script> 即回退，令牌恢复成字面文本）。
+const NOTATION_PAGE = '课程/工程数学/教材解析/0.0-符号入门.md';
+const glossaryDict = fs.existsSync(path.join(ROOT, NOTATION_PAGE))
+  ? parseGlossaryDict(fs.readFileSync(path.join(ROOT, NOTATION_PAGE), 'utf-8'))
+  : {};
+const mathGlossaryDist = path.join(DIST_DIR, 'assets', 'plugins', 'math-glossary.js');
+fs.mkdirSync(path.dirname(mathGlossaryDist), { recursive: true });
+fs.writeFileSync(mathGlossaryDist, GLOSSARY_JS);
 
 // 2. Pre-read metadata of all files for navigation & paging
 const pageMetaMap = new Map();
@@ -112,6 +134,7 @@ const NAV_STRUCTURE = [
             label: "教材解析",
             path: "课程/工程数学/教材解析/index.md",
             children: [
+              { label: "符号入门", path: "课程/工程数学/教材解析/0.0-符号入门.md" },
               {
                 label: "第一部分 线性代数",
                 path: "课程/工程数学/教材解析/第一部分-线性代数/index.md",
@@ -119,6 +142,7 @@ const NAV_STRUCTURE = [
                   {
                     label: "第01章 行列式",
                     children: [
+                      { label: "★ 通关攻略", path: "课程/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.0-本章通关攻略.md" },
                       { label: "1.1 二阶与三阶行列式", path: "课程/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.1-二阶与三阶行列式.md" },
                       { label: "1.2 n阶行列式", path: "课程/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.2-n阶行列式.md" },
                       { label: "1.3 克莱姆法则", path: "课程/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.3-克莱姆法则.md" },
@@ -171,6 +195,8 @@ const NAV_STRUCTURE = [
 
 // Linear sequence for textbook chapters and lecture notes
 const TEXTBOOK_ORDER = [
+  "课程/工程数学/教材解析/0.0-符号入门.md",
+  "课程/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.0-本章通关攻略.md",
   "课程/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.1-二阶与三阶行列式.md",
   "课程/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.2-n阶行列式.md",
   "课程/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.3-克莱姆法则.md",
@@ -321,7 +347,10 @@ for (const relPath of TARGET_FILES) {
   raw = raw.replace(/\$\$([\s\S]+?)\$\$/g, (_, tex) => {
     const id = mathBlocks.length;
     totalFormulasRendered++;
-    const safeTex = wrapBareCJK(tex.trim());
+    // 教材排版惯例把句末标点写进显示公式（$$….$$），在网页上独立成块后
+    // 看着像渲染出了一个多余的点（用户实测反馈）。渲染前剥掉**收尾的一个**
+    // 标点——只剥一个：万一公式真以省略号收尾不至于被整串误删。
+    const safeTex = wrapBareCJK(tex.trim().replace(/[.。，、；;][ \t]*$/, ''));
     let rendered = '';
     try {
       rendered = katex.renderToString(safeTex, {
@@ -369,6 +398,37 @@ for (const relPath of TARGET_FILES) {
   //   - 之前：折叠块内的链接仍会被 Step 3/4 正常降级与重写。
   // 实现见 站点/plugins/collapse.mjs（独立可拆卸：删文件 + 摘掉这一行即回退）。
   raw = renderCollapse(raw);
+
+  // Step 2.6: 符号气泡 [tex]{#term} → 可点击符号（渐进增强，零 JS 也可用）。
+  // 位置：公式提取之后（令牌内 TeX 不与 $…$ 冲突，且渲染回调走同一套
+  // wrapBareCJK）、链接降级（Step 3/4）之前（本步产物是 raw HTML，由
+  // marked 原样透传）。实现见 站点/plugins/math-glossary.mjs（独立可拆卸）。
+  const notationHref = encodeURI(
+    path.relative(path.dirname(fullPath), path.join(ROOT, NOTATION_PAGE))
+      .replace(/\\/g, '/').replace(/\.md$/, '.html')
+  );
+  raw = renderGlossary(raw, {
+    dict: glossaryDict,
+    renderTex: (tex) => {
+      try {
+        return katex.renderToString(wrapBareCJK(tex), {
+          displayMode: false,
+          throwOnError: false,
+          trust: true
+        });
+      } catch (e) {
+        return `<span class="katex-error">${e.message}</span>`;
+      }
+    },
+    notationHref,
+  });
+  // 气泡词典按页烘焙成 JSON（词条的 href 已是当页可用的相对链接），
+  // 客户端模块从 #sym-glossary-json 读，不发任何请求。
+  const glossaryJsonPayload = {
+    terms: Object.fromEntries(
+      Object.entries(glossaryDict).map(([id, e]) => [id, { title: e.title, text: e.text, href: notationHref }])
+    )
+  };
 
   // Step 3: Degrade Non-MD resources (.jpg, .heic, .doc)
   raw = raw.replace(/\[([^\]]*)\]\(([^)]+\.(?:jpg|heic|doc))\)/gi, (_, text, filePath) => {
@@ -799,6 +859,18 @@ for (const relPath of TARGET_FILES) {
             </div>
 
             ${pagingHtml}
+
+            <footer class="site-footer">
+              <p class="site-footer__legal">
+                © 2026 ArchivalEra · 本站自研代码与解析文字以
+                <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="license noopener">AGPL-3.0</a>
+                许可发布 · <a href="https://github.com/ArchivalEra/S26-1_202609" target="_blank" rel="noopener">仓库源码</a>
+              </p>
+              <p class="site-footer__disclaimer">
+                教材《工程数学基础》的题目原文与章节结构版权归原书作者与出版社所有，本站解析为个人学习笔记；
+                页面主题样式来自 Shirone Material 3 Reader；KaTeX、marked、Pagefind 等第三方库依其自身许可证分发。
+              </p>
+            </footer>
           </article>
         </main>
 
@@ -810,6 +882,9 @@ for (const relPath of TARGET_FILES) {
 
   <script src="${rootRel}assets/katex/katex.min.js"></script>
   <script src="${rootRel}assets/theme/shirone-reader.js"></script>
+  <script src="${rootRel}assets/plugins/disclosure-anchor.js" defer></script>
+  <script type="application/json" id="sym-glossary-json">${JSON.stringify(glossaryJsonPayload).replace(/<\//g, '<\\/')}</script>
+  <script src="${rootRel}assets/plugins/math-glossary.js" defer></script>
 </body>
 </html>`;
 

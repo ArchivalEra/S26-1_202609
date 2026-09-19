@@ -71,6 +71,14 @@ describe("折叠块：选项与标记", () => {
     assert.equal((out.match(/open/g) || []).length, 2);
   });
 
+  it("全角冒号的标记也能剥掉（手写中文易打成 ：+ / ：-）", () => {
+    const out = renderCollapse(":::collapse\n- 展开我：+\nx\n- 收起我：-\ny\n:::");
+    assert.ok(out.includes("展开我"));
+    assert.ok(!String(out).includes("：+"));
+    assert.ok(!String(out).includes("：-"));
+    assert.equal((out.match(/\bopen\b/g) || []).length, 1);
+  });
+
   it(":+ 让该项默认展开，:- 保持收起", () => {
     const out = renderCollapse(":::collapse\n- 展开我 :+\nx\n- 收起我 :-\ny\n:::");
     assert.ok(String(out).includes("展开我"));
@@ -83,6 +91,44 @@ describe("折叠块：选项与标记", () => {
   it("选项大小写不敏感", () => {
     const out = renderCollapse(":::collapse ACCORDION\n- A\na\n- B\nb\n:::");
     assert.ok(String(out).includes('name="'));
+  });
+});
+
+describe("折叠块：面板锚点 {#id}", () => {
+  it("{#id} 渲染成 <details id=...>，且不出现在可见标题里", () => {
+    const out = renderCollapse(":::collapse\n- 标题 :+ {#pass-1-2}\n正文\n:::");
+    assert.ok(String(out).includes('id="pass-1-2"'));
+    assert.ok(String(out).includes("标题"));
+    assert.ok(!String(out).includes("{#pass-1-2}"));
+    assert.ok(!String(out).includes("{#"));
+  });
+
+  it("锚点写在标记之前也认（谁前谁后都行）", () => {
+    const out = renderCollapse(":::collapse\n- 标题 {#abc-1} :-\n正文\n:::");
+    assert.ok(String(out).includes('id="abc-1"'));
+    assert.equal((out.match(/\bopen\b/g) || []).length, 0);
+  });
+
+  it("没有锚点的面板不产生 id 属性", () => {
+    const out = renderCollapse(":::collapse\n- 标题\n正文\n:::");
+    assert.ok(!String(out).includes("<details id="));
+  });
+
+  it("不合法的 {#…}（空 id、带空格、数字开头）原样保留，不静默吞内容", () => {
+    for (const bad of ["{#}", "{#有 空 格}", "{#9lives}"]) {
+      const out = renderCollapse(`:::collapse\n- 标题 ${bad}\n正文\n:::`);
+      assert.ok(String(out).includes(bad), `${bad} 应原样保留`);
+      assert.ok(!String(out).includes("<details id="), `${bad} 不应生成 id`);
+    }
+  });
+
+  it("同组多个面板可以各有锚点，互不影响 open/name", () => {
+    const out = renderCollapse(
+      ":::collapse accordion\n- A :+ {#a-1}\na\n- B {#b-1} :-\nb\n:::",
+    );
+    assert.ok(String(out).includes('id="a-1"'));
+    assert.ok(String(out).includes('id="b-1"'));
+    assert.equal((out.match(/\bopen\b/g) || []).length, 1);
   });
 });
 
