@@ -57,7 +57,7 @@
 
 已登记 **1** 门课程、**15** 份资料（不含索引、模板和历史入口）。
 
-<!-- 仓库内容摘要（不含 README）：62c037ba7656d2fac7a711e53de3b8bf0816af6c5fcb30d6aae3462d77576019 -->
+<!-- 仓库内容摘要（不含 README）：fc8a356e93eca2dfb97e57aa5ce9873d5a3da0390fd19d7e652caadaeceee962 -->
 
 <!-- AUTO-CATALOG:END -->
 
