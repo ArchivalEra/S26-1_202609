@@ -1006,6 +1006,124 @@ pre code {
   font-family: var(--font-mono);
 }
 
+/* Collapsible Panels（:::collapse → 原生 <details>，零 JS）
+ *
+ * 样式与 Shirone 生态的 .m3-disclosure 保持同一套命名，便于以后迁移。
+ * 折叠靠浏览器原生 <details>/<summary>，不依赖任何脚本；
+ * accordion 分组走原生 name 属性，也不需要 JS。
+ */
+.custom-md .m3-disclosure,
+.m3-disclosure {
+  margin: 0.5rem 0;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 12px;
+  background-color: var(--md-sys-color-surface-container-low, var(--md-sys-color-surface-container));
+  overflow: hidden;
+}
+
+/* 连续多个面板之间收紧一点，避免整页被撑得过散 */
+.m3-disclosure + .m3-disclosure {
+  margin-top: 0.35rem;
+}
+
+.m3-disclosure__summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  padding: 0.7rem 0.95rem;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--md-sys-color-on-surface);
+  background-color: var(--md-sys-color-surface-container-high);
+  list-style: none; /* 去掉默认三角，用自绘指示器 */
+  user-select: none;
+  transition: background-color 0.15s ease;
+}
+
+/* 收起的面板做出「可点」的暗示：左侧主色竖条 + 悬停变底色 */
+.m3-disclosure:not([open]) > .m3-disclosure__summary {
+  box-shadow: inset 3px 0 0 0 var(--md-sys-color-primary);
+}
+.m3-disclosure:not([open]) > .m3-disclosure__summary:hover {
+  background-color: var(--md-sys-color-surface-container-highest, var(--md-sys-color-surface-container-high));
+}
+/* 展开的面板：标题行染主色底 + 左侧竖条转淡，
+ * 让「这个是打开的」一眼可辨，不必去数箭头方向。 */
+.m3-disclosure[open] > .m3-disclosure__summary {
+  box-shadow: inset 3px 0 0 0 var(--md-sys-color-outline-variant);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  background-color: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
+}
+.m3-disclosure[open] > .m3-disclosure__summary > .m3-disclosure__indicator {
+  border-left-color: var(--md-sys-color-on-primary-container);
+}
+
+/* 面板正文：比页面默认正文略亮一档，避免"展开后发灰" */
+.m3-disclosure > *:not(summary) {
+  color: var(--md-sys-color-on-surface);
+}
+
+/* 去掉 WebKit 的默认展开三角 */
+.m3-disclosure__summary::-webkit-details-marker {
+  display: none;
+}
+.m3-disclosure__summary::marker {
+  content: "";
+}
+
+.m3-disclosure__summary:hover {
+  color: var(--md-sys-color-primary);
+}
+
+.m3-disclosure__summary:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: -2px;
+}
+
+/* 指示器：纯 CSS 三角，靠 details[open] 旋转 —— 不用一个字节的 JS。
+ * 做得比一般列表明显：实心主色、尺寸加大——学生要一眼看出「这里能点」。 */
+.m3-disclosure__indicator {
+  flex: none;
+  width: 0;
+  height: 0;
+  margin-top: 0.36em;
+  border-left: 9px solid var(--md-sys-color-primary);
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
+  transition: transform 0.18s ease;
+}
+
+.m3-disclosure[open] > .m3-disclosure__summary > .m3-disclosure__indicator {
+  transform: rotate(90deg);
+}
+
+.m3-disclosure__title {
+  flex: 1;
+}
+
+.m3-disclosure__content,
+.m3-disclosure > *:not(summary) {
+  padding: 0.2rem 0.95rem 0.7rem;
+}
+
+/* 折叠面板内部的首尾元素不要顶到边框 */
+.m3-disclosure__content > :first-child,
+.m3-disclosure > *:not(summary):first-of-type {
+  margin-top: 0.35rem;
+}
+.m3-disclosure__content > :last-child,
+.m3-disclosure > *:not(summary):last-child {
+  margin-bottom: 0.2rem;
+}
+
+/* 减少动效：指示器不做旋转过渡 */
+@media (prefers-reduced-motion: reduce) {
+  .m3-disclosure__indicator {
+    transition: none;
+  }
+}
+
 /* Prev / Next Pagination Cards */
 .m3-paging-container {
   display: grid;
