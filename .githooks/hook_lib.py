@@ -196,6 +196,70 @@ def links(path, data):
     return found
 
 
+def fragments(path, data):
+    """本文件写下的全部深链接：(目标文件, 锚点)。覆盖 相对.md#锚点 与 同页 #锚点。"""
+    text = re.sub(r'```.*?```', '', data.decode(), flags=re.S)
+    text = re.sub(r'`[^`\n]*`', '', text)
+    found = []
+    for target in re.findall(r'\[[^\]\n]*\]\(([^\s)]+)(?:\s+[^)]*)?\)', text):
+        target = target.strip('<>')
+        parsed = urlsplit(target)
+        if not parsed.fragment:
+            continue
+        if parsed.scheme or not parsed.path:
+            found.append((path, unquote(parsed.fragment)))
+        else:
+            resolved = posixpath.normpath(
+                posixpath.join(posixpath.dirname(path), unquote(parsed.path)))
+            found.append((resolved, unquote(parsed.fragment)))
+    return found
+
+
+def anchors(path, data):
+    """目标文件里可被深链接命中的锚点集合（近似 站点/build.mjs 的生成规则）：
+
+    ① 折叠面板/令牌的 {#id}（collapse 面板与符号词条都走这个语法）；
+    ② 显式 HTML id="…"；
+    ③ 标题 slug——行内公式剔除后小写、非字词序列转单个 -、去首尾 -；
+       重复 slug 依次追加 -2、-3……与渲染器的逐页去重规则一致。
+    代码围栏内的内容不算锚点。近似点：标题里的公式按「整体剔除」处理，
+    而渲染器会保留其纯文本——因此含公式的标题请用面板锚点或显式 id 深链接。
+    """
+    text = re.sub(r'```.*?```', '', data.decode(), flags=re.S)
+    ids = set(re.findall(r'\{#([A-Za-z_][A-Za-z0-9_-]*)\}', text))
+    ids |= set(re.findall(r'\bid="([^"]+)"', text))
+    used = set()
+    for line in text.splitlines():
+        if not re.match(r'#{1,6}\s', line):
+            continue
+        h = re.sub(r'\$[^$]*\$', ' ', line)
+        h = re.sub(r'<[^>]+>', '', h)
+        h = re.sub(r'^#{1,6}\s+', '', h).strip()
+        slug = re.sub(r'[^\w\u4e00-\u9fa5]+', '-', h).strip('-').lower()
+        if not slug:
+            continue
+        if slug in used:
+            n = 2
+            while f'{slug}-{n}' in used:
+                n += 1
+            slug = f'{slug}-{n}'
+        used.add(slug)
+    return ids | used
+
+
+def check_fragments(files):
+    """深链接锚点校验：xxx.md#锚点 与同页 #锚点 的目标必须真实存在。
+    目标文件本身缺失由本地链接检查负责；这里只管「文件在、锚点不在」。"""
+    for path, data in files.items():
+        if not path.endswith('.md') or path.startswith('模板/'):
+            continue
+        for target, fragment in fragments(path, data):
+            if target not in files:
+                continue
+            if fragment not in anchors(target, files[target]):
+                raise ValueError(f'深链接锚点失效：{path} → {target}#{fragment}')
+
+
 def validate(files):
     if '.gitignore' not in files:
         raise ValueError('缺少精确白名单 .gitignore。')
@@ -259,6 +323,7 @@ def validate(files):
         for target in links(path, data):
             if target not in files and not any(p.startswith(target.rstrip('/') + '/') for p in files):
                 raise ValueError(f'本地链接失效：{path} → {target}')
+    check_fragments(files)
     names = {PurePosixPath(p).parts[1] for p in files if p.startswith('课程/') and len(PurePosixPath(p).parts) >= 3}
     for course in names:
         course_index = f'课程/{course}/index.md'
