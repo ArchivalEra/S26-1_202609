@@ -4,7 +4,7 @@ name: 工程数学课堂笔记索引
 type: CatalogIndex
 spec_version: "0.2"
 status: active
-last_updated: "2026-09-17"
+last_updated: "2026-09-19"
 stewards:
   - team: 工程数学课程学习记录
 course: 工程数学

@@ -219,15 +219,40 @@ def validate(files):
         name = PurePosixPath(path).name
         if kind != '原始资料':
             if kind == '教材解析':
-                if not re.fullmatch(r'第\d{2,}章-.+\.md', name):
-                    raise ValueError(f'教材解析须使用第01章-节号-名称.md：{path}')
+                # 教材分三部分，每部分各有自己的第 1、2、3 章，所以目录顶层用
+                # 「第N部分-<部分名>/第M章-<章名>/」区分，文件名只写真章节号：
+                #   第一部分-线性代数/第1章-行列式/1.1-二阶与三阶行列式.md
+                # 两种写法都接受（后者是兼容早期的整章单文件写法）：
+                #   <节号>-<名称>.md             如 1.1-二阶与三阶行列式.md
+                #   第NN章-<名称>.md             如 第01章-测试.md
+                # 前面可再带「第N部分-」（更早期写法）。
+                ok = (
+                    re.fullmatch(r'(?:第\d+部分-)?(?:第\d{2,}章-)?\d+\.\d+.*\.md', name)
+                    or re.fullmatch(r'(?:第\d+部分-)?第\d{2,}章-.+\.md', name)
+                )
+                if not ok:
+                    raise ValueError(
+                        f'教材解析须使用「<节号>-<名称>.md」（如 1.1-二阶与三阶行列式.md）：{path}')
             else:
                 if not re.fullmatch(r'\d{4}-\d{2}-\d{2}-.+\.md', name):
                     raise ValueError(f'日期资料须使用 YYYY-MM-DD-名称.md：{path}')
                 datetime.date.fromisoformat(name[:10])
         index = f'课程/{course}/{kind}/index.md'
-        if index not in files or path not in links(index, files[index]):
-            raise ValueError(f'资料未登记到分类索引 {index}：{path}')
+        # 教材解析分三部分，链接登记在分部索引里（如 …/教材解析/第一部分-线性代数/index.md），
+        # 所以除分类总索引外，也接受该分类下**任意一层的 index.md** 里被链接到。
+        # 其它分类仍只认分类索引本身。
+        candidates = [index]
+        if kind == '教材解析':
+            prefix = f'课程/{course}/教材解析/'
+            candidates += sorted(
+                p for p in files
+                if p.startswith(prefix) and p.endswith('/index.md')
+            )
+        if not any(c in files and path in links(c, files[c]) for c in candidates):
+            raise ValueError(
+                f'资料未登记到分类索引 {index}'
+                + ('（或其分部索引）' if kind == '教材解析' else '')
+                + f'：{path}')
     for path, data in files.items():
         if not path.endswith('.md') or path.startswith('模板/'):
             continue
