@@ -271,6 +271,7 @@ def validate(files):
             if index not in files or index not in links(course_index, files[course_index]):
                 raise ValueError(f'课程入口缺少分类链接：{index}')
     check_build_targets(files)
+    check_readme_documents_ui(files)
 
 
 def changed_paths(files, base):
@@ -341,6 +342,52 @@ def check_build_targets(files):
     if stale:
         raise ValueError(f'{BUILD_SCRIPT} 的 TARGET_FILES 列了仓库中不存在的文件：'
                          + '、'.join(stale))
+
+
+# README 手写区里的「网页版怎么看」按钮表，与站点顶栏实际按钮必须对得上。
+# 为什么需要这条：钩子原来只管 AUTO-CATALOG 自动区块，README 正文是手写的——
+# 于是站点加了搜索按钮，README 的按钮表还是三个，没有任何校验发现。
+# 这里只做**单向**检查（站点有的按钮，README 必须提到），不做措辞检查。
+BUTTON_IDS_RE = re.compile(r'class="m3-icon-btn" id="([a-z-]+)"')
+# 不参与检查的按钮：搜索面板内部的关闭键、以及将来可能的辅助控件
+BUTTON_SKIP = {'search-close'}
+# 站点按钮 id → README 里应当出现的说明关键词（任一命中即可）
+BUTTON_HINTS = {
+    'drawer-toggle': ('导航', '汉堡'),
+    'palette-toggle': ('调色盘', '强调色'),
+    'search-toggle': ('搜索',),
+    'theme-toggle': ('昼夜', '深浅', '深色'),
+}
+
+
+def check_readme_documents_ui(files):
+    """站点顶栏按钮必须在 README 手写区里有说明。
+
+    只做**单向**检查：站点有的按钮，README 必须提到。
+    找不到按钮定义时**不报错**——那样会让「只改 TARGET_FILES」之类的场景被误伤，
+    而且站点结构本来就可能变。真正该拦的是「有按钮、README 没写」。
+    新增按钮时若未登记到 BUTTON_HINTS，则提示补登记（防止加按钮时忘了同步检查）。
+    """
+    if BUILD_SCRIPT not in files or 'README.md' not in files:
+        return
+    ids = set(BUTTON_IDS_RE.findall(files[BUILD_SCRIPT].decode()))
+    ids -= BUTTON_SKIP
+    if not ids:
+        return
+    readme = files['README.md'].decode()
+    unknown = sorted(i for i in ids if i not in BUTTON_HINTS)
+    if unknown:
+        raise ValueError('以下站点按钮未登记到 README 按钮说明的校验表 '
+                         f'（BUTTON_HINTS），请补上：' + '、'.join(unknown))
+    missing = sorted(
+        i for i in ids
+        if not any(h in readme for h in BUTTON_HINTS[i])
+    )
+    if missing:
+        raise ValueError(
+            '站点顶栏有这些按钮，但 README 的「网页版怎么看」没有介绍：'
+            + '、'.join(missing)
+            + '。请在 README.md 里补上（按钮表就在「网页版怎么看」那一段）。')
 
 
 def check_worktree_sync(files):
