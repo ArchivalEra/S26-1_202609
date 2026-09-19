@@ -13,9 +13,15 @@
  *   [a_{ij}]{#sym-index}
  *   [r_2-3r_1]{#sym-rowcol}
  *
- * 渲染为一个虚线下的可点击符号（构建期 KaTeX 出公式）。
+ * 渲染为一个**强调色**的可点击符号（构建期 KaTeX 出公式），
+ * 无下划线、无链接框——术语高亮的样子，不是链接的样子。
  * 无 JavaScript 时它就是普通链接，点击直达符号入门页锚点——
  * 气泡只是渐进增强，不装 JS 页面照样可用。
+ *
+ * 公式内部同样可点：glossifyTex 把 TeX 里的 r_1/c_4 行列记号与
+ * (-1)^{...} 正负号公式包成 \htmlData{term=...}{...}（需 KaTeX
+ * trust 选项），渲染产物里的 <span data-term> 由同一个气泡脚本接管。
+ * 裸字母（a、b、c）与矩阵元素（a_{11}）刻意不取词——它们不是术语。
  *
  * 词典数据**不放在本模块**，放在符号入门页自己的 :::glossary-dict 围栏里
  * （内容侧单一来源，改词条不用碰代码）：
@@ -45,6 +51,39 @@ const FENCE_RE = /^[\t ]{0,3}(`{3,}|~{3,})/;
 const TERM_ID_RE = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 /** 行内令牌：[tex]{#id}。只认合法 id，防止误伤普通方括号文本。 */
 const TOKEN_RE = /\[([^\][\n]+)\]\{#([A-Za-z_][A-Za-z0-9_-]*)\}/g;
+
+/**
+ * TeX 内自动取词的模式（按用户约定收窄）：
+ *   [rc]_<数字/字母>          —— r_1、c_4 这类行列记号（sym-rowcol）
+ *   (-1)^{...} 或 (-1)^n      —— 正负号公式（sym-power）
+ * 刻意**不**匹配裸字母与 a_{ij} 一类矩阵元素——a、b、c 本身不是术语，
+ * 矩阵里的 a_{11} 满屏都是，逐个上色是灾难。
+ */
+const TEX_TERM_RE = /([rc])_(\{[A-Za-z0-9]+\}|[A-Za-z0-9]+)|\(-1\)\^(\{[^{}]*\}|[A-Za-z0-9]+)/g;
+
+/**
+ * 把 TeX 源里的行列记号与正负号公式包进 \htmlData{term=...}{...}，
+ * 使它们在 KaTeX 渲染产物里带 data-term，可被气泡脚本点中。
+ * 只在词典里确有对应词条时才包（没有词条的上色是骗人）；
+ * 已在 \htmlData 内的内容不会重复匹配（替换结果里 term= 挡住了回扫）。
+ * @param {string} tex
+ * @param {object} dict parseGlossaryDict 的产物
+ */
+export function glossifyTex(tex, dict = {}) {
+  if (typeof tex !== "string") return tex;
+  const hasRowcol = Object.prototype.hasOwnProperty.call(dict, "sym-rowcol");
+  const hasPower = Object.prototype.hasOwnProperty.call(dict, "sym-power");
+  if (!hasRowcol && !hasPower) return tex;
+  return tex.replace(TEX_TERM_RE, (match, rc, rcSub, powExp) => {
+    if (rc && hasRowcol) {
+      return `\\htmlData{term=sym-rowcol}{${rc}_${rcSub}}`;
+    }
+    if (powExp && hasPower) {
+      return `\\htmlData{term=sym-power}{(-1)^${powExp}}`;
+    }
+    return match;
+  });
+}
 
 const esc = (s) =>
   String(s)
@@ -215,7 +254,9 @@ function () {
     current = link;
   }
   document.addEventListener("click", function (e) {
-    var link = e.target.closest ? e.target.closest("a.sym-gloss") : null;
+    var link = e.target.closest
+      ? e.target.closest("a.sym-gloss, .katex [data-term]")
+      : null;
     if (link) { e.preventDefault(); openFor(link); return; }
     if (pop && !pop.contains(e.target)) close();
   });

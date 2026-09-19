@@ -1071,19 +1071,26 @@ pre code {
   outline-offset: 2px;
 }
 
-/* 符号气泡（math-glossary.mjs）：正文符号加虚线下标示可点；
- * 点击弹出就地解释的小气泡，气泡里带「详细 ↗」跳符号入门。
- * 无 JS 时符号就是普通链接，点击直达符号入门页锚点。 */
+/* 符号气泡（math-glossary.mjs）：术语符号上**强调色**，无下划线、无链接框——
+ * 是「术语高亮」的样子，不是「链接」的样子。正文令牌（a.sym-gloss）与
+ * KaTeX 公式内部的取词符号（[data-term]，由 glossifyTex 写入）同一套配色。
+ * 无 JS 时令牌就是普通链接，点击直达符号入门页锚点。 */
 .custom-md a.sym-gloss,
 a.sym-gloss {
-  border-bottom: 1px dashed var(--md-sys-color-tertiary);
-  color: inherit;
+  color: var(--md-sys-color-tertiary);
   text-decoration: none;
   cursor: pointer;
 }
 a.sym-gloss:hover {
-  border-bottom-style: solid;
-  color: var(--md-sys-color-on-surface);
+  color: var(--md-sys-color-primary);
+}
+
+.katex [data-term] {
+  color: var(--md-sys-color-tertiary);
+  cursor: pointer;
+}
+.katex [data-term]:hover {
+  color: var(--md-sys-color-primary);
 }
 
 .sym-gloss-pop {

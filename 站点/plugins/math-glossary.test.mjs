@@ -11,10 +11,58 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { parseGlossaryDict, renderGlossary, GLOSSARY_JS } from "./math-glossary.mjs";
+import { parseGlossaryDict, renderGlossary, glossifyTex, GLOSSARY_JS } from "./math-glossary.mjs";
 
 /** 宿主注入的假 KaTeX 渲染回调：包一层标记便于断言。 */
 const fakeTex = (tex) => `<k>${tex}</k>`;
+
+describe("glossifyTex：TeX 内自动取词", () => {
+  const fullDict = {
+    "sym-rowcol": { title: "t", text: "x" },
+    "sym-power": { title: "t", text: "x" },
+    "sym-index": { title: "t", text: "x" },
+  };
+
+  it("r_1 / c_4 / r_{12} 包成 \\htmlData{term=sym-rowcol}", () => {
+    assert.equal(
+      glossifyTex("r_1-3r_2", fullDict),
+      "\\htmlData{term=sym-rowcol}{r_1}-3\\htmlData{term=sym-rowcol}{r_2}",
+    );
+    assert.equal(
+      glossifyTex("c_{4}+2c_1", fullDict),
+      "\\htmlData{term=sym-rowcol}{c_{4}}+2\\htmlData{term=sym-rowcol}{c_1}",
+    );
+  });
+
+  it("(-1)^{...} 包成 \\htmlData{term=sym-power}", () => {
+    assert.equal(
+      glossifyTex("(-1)^{i+j}", fullDict),
+      "\\htmlData{term=sym-power}{(-1)^{i+j}}",
+    );
+  });
+
+  it("裸字母与矩阵元素不取词（a、b、c 本身不是术语）", () => {
+    const src = "a_{11}a_{22}-a_{12}a_{21}+x_1+b^2";
+    assert.equal(glossifyTex(src, fullDict), src);
+  });
+
+  it("词典里没有对应词条时不包（没有词条的上色是骗人）", () => {
+    assert.equal(glossifyTex("r_1+(-1)^{i+j}", {}), "r_1+(-1)^{i+j}");
+    assert.equal(glossifyTex("r_1", { "sym-power": { title: "t", text: "x" } }), "r_1");
+  });
+
+  it("\\xrightarrow 标签内的 c_4+2c_1 也能取词", () => {
+    assert.equal(
+      glossifyTex("\\xrightarrow{c_4+2c_1}", fullDict),
+      "\\xrightarrow{\\htmlData{term=sym-rowcol}{c_4}+2\\htmlData{term=sym-rowcol}{c_1}}",
+    );
+  });
+
+  it("非法输入原样返回", () => {
+    assert.equal(glossifyTex(null, fullDict), null);
+    assert.equal(glossifyTex(42, fullDict), 42);
+  });
+});
 
 describe("glossary：词典解析 parseGlossaryDict", () => {
   it("按 `id | 标题 | 文本` 解析，文本里再出现 | 不切分", () => {
@@ -110,6 +158,10 @@ describe("glossary：令牌渲染 renderGlossary", () => {
 describe("glossary：客户端气泡脚本契约", () => {
   it("脚本串是语法合法的 JavaScript", () => {
     assert.doesNotThrow(() => new Function(GLOSSARY_JS));
+  });
+
+  it("点击目标同时认正文令牌与 KaTeX 内部取词符号", () => {
+    assert.ok(GLOSSARY_JS.includes('closest("a.sym-gloss, .katex [data-term]")'));
   });
 
   it("从页面内 JSON 标签读词典，不发任何请求（离线硬约束）", () => {
