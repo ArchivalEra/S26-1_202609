@@ -6,7 +6,6 @@ import katex from './assets/katex/katex.mjs';
 import { renderCollapse } from './plugins/collapse.mjs';
 import { DISCLOSURE_ANCHOR_JS } from './plugins/disclosure-anchor.mjs';
 import { parseGlossaryDict, renderGlossary, glossifyTex, GLOSSARY_JS } from './plugins/math-glossary.mjs';
-import { FEED_JS } from './plugins/pretext-feed.mjs';
 
 const SITE_DIR = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = path.resolve(SITE_DIR, '..');
@@ -87,34 +86,6 @@ const mathGlossaryDist = path.join(DIST_DIR, 'assets', 'plugins', 'math-glossary
 fs.mkdirSync(path.dirname(mathGlossaryDist), { recursive: true });
 fs.writeFileSync(mathGlossaryDist, GLOSSARY_JS);
 
-// pretext 资料门户客户端（module 脚本，静态 import ../vendor/pretext.mjs）。
-// 独立可拆卸：删掉本段与首页模板注入即回退到服务端渲染的静态列表。
-const pretextFeedDist = path.join(DIST_DIR, 'assets', 'plugins', 'pretext-feed.js');
-fs.writeFileSync(pretextFeedDist, FEED_JS);
-
-// 门户卡片摘要预扫描：从各页正文抽前 ~120 字（去 frontmatter/代码/公式/表格），
-// 只在 README 首页的资料门户使用。独立一遍扫描，不干扰主渲染循环。
-function extractSnippet(relPath) {
-  try {
-    let t = fs.readFileSync(path.join(ROOT, relPath), 'utf-8');
-    t = t.replace(/^---\r?\n[\s\S]+?\r?\n---/, '')
-      .replace(/<!--[\s\S]*?-->/g, '')
-      .replace(/(```|~~~)[\s\S]*?\r?\n\1/g, '')
-      .replace(/\$\$[\s\S]+?\$\$/g, ' ')
-      .replace(/\$[^$\n]+\$/g, ' ')
-      .replace(/\|[^\n]*\|\s*$/gm, '')
-      .replace(/^#{1,6}\s+/gm, '')
-      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-      .replace(/[*_`>]+/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-    return t.slice(0, 120);
-  } catch (_) { return ''; }
-}
-
-// 门户卡片数据在 pageMetaMap 建好后再取（需要 title/htmlRelPath 元数据）
-const portalCards = [];
-
 // 2. Pre-read metadata of all files for navigation & paging
 const pageMetaMap = new Map();
 
@@ -147,50 +118,6 @@ for (const relPath of TARGET_FILES) {
     course: frontmatter.course || '',
     htmlRelPath: relPath === 'README.md' ? 'index.html' : relPath.replace(/\.md$/, '.html')
   });
-}
-
-// 门户卡片：全部内容页按 课程 → 类别 → 标题 排序（README 首页资料门户的数据源）
-for (const [relPath, meta] of pageMetaMap) {
-  if (relPath === 'README.md') continue;
-  if (!meta.htmlRelPath.endsWith('.html')) continue;
-  const f = meta.frontmatter || {};
-  portalCards.push({
-    title: escHtml(meta.title),
-    href: meta.htmlRelPath,
-    meta: [f.category, f.status ? `状态：${f.status}` : null, f.last_updated ? `更新 ${f.last_updated}` : null]
-      .filter(Boolean).join(' · '),
-    snippet: escHtml(extractSnippet(relPath) || '（暂无摘要）'),
-    course: meta.course,
-    category: meta.category,
-  });
-}
-portalCards.sort((a, b) =>
-  a.course.localeCompare(b.course, 'zh') || a.category.localeCompare(b.category, 'zh') ||
-  a.title.localeCompare(b.title, 'zh'));
-
-function escHtml(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-function buildPortalSection() {
-  const data = JSON.stringify({
-    font: '14px ' + "system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif",
-    lineHeight: 22,
-    titleLineHeight: 24,
-    cards: portalCards,
-  }).replace(/</g, '\\u003c');
-  const fallback = portalCards
-    .map(c => `<li><a href="${c.href}">${c.title}</a> — ${c.meta}</li>`)
-    .join('\n');
-  return `
-      <section class="pretext-portal" data-pagefind-ignore>
-        <h2 id="全站资料门户">全站资料门户 <span class="pretext-portal__badge">pretext 预测布局</span></h2>
-        <p class="pretext-portal__note">卡片高度由 @chenglou/pretext（canvas 测量 + 纯算术排版）预测，布局阶段零 reflow；
-        <code>?feedmode=dom</code> 切换 DOM 测量基线对比，<code>?feedstress=300</code> 压测卡片规模。</p>
-        <div id="pretext-feed" class="pretext-feed" aria-label="全站资料卡片流"></div>
-        <div id="pretext-feed-fallback" class="pretext-feed__fallback"><ul>${fallback}</ul></div>
-        <script type="application/json" id="pretext-feed-data">${data}</script>
-      </section>`;
 }
 
 // 3. Define navigation structure
@@ -613,10 +540,6 @@ for (const relPath of TARGET_FILES) {
     });
   }
 
-  // 首页资料门户（pretext-feed 插件）：仅 README 注入；其余页面零改动。
-  // 摘掉 = 删掉这行 + 模板里两处插值 + 写资产段，即回到纯静态目录。
-  const feedSectionHtml = relPath === 'README.md' ? buildPortalSection() : '';
-
   // Step 7: Compute relative path to root for assets
   const targetHtmlPath = relPath === 'README.md' ? 'index.html' : relPath.replace(/\.md$/, '.html');
   const depth = targetHtmlPath.split('/').length - 1;
@@ -952,7 +875,7 @@ for (const relPath of TARGET_FILES) {
             ${metaChipsHtml ? `<div class="meta-chip-bar">${metaChipsHtml}</div>` : ''}
 
             <div class="article-content" data-pagefind-body>
-              ${htmlContent}${feedSectionHtml}
+              ${htmlContent}
             </div>
 
             ${pagingHtml}
@@ -981,8 +904,7 @@ for (const relPath of TARGET_FILES) {
   <script src="${rootRel}assets/theme/shirone-reader.js"></script>
   <script src="${rootRel}assets/plugins/disclosure-anchor.js" defer></script>
   <script type="application/json" id="sym-glossary-json">${JSON.stringify(glossaryJsonPayload).replace(/<\//g, '<\\/')}</script>
-  <script src="${rootRel}assets/plugins/math-glossary.js" defer></script>${relPath === 'README.md' ? `
-  <script type="module" src="${rootRel}assets/plugins/pretext-feed.js?v=2"></script>` : ''}
+  <script src="${rootRel}assets/plugins/math-glossary.js" defer></script>
 </body>
 </html>`;
 
