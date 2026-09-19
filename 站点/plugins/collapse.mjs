@@ -17,6 +17,13 @@
  * 列表项标记：
  *   :+  该项默认展开
  *   :-  该项默认收起
+ * 面板锚点：
+ *   {#id} 写在标题行尾（与 :+/:- 谁前谁后都行），渲染为 <details id="...">，
+ *   让别的页面能深链接到具体面板，例如 [xxx](攻略.md#pass-1-2)。
+ *   id 只认 ASCII 字母开头的字母/数字/下划线/连字符；不合法的 {#…} 原样保留。
+ *   注意：锚点只负责定位，收起面板被跳到时默认不会自动展开——
+ *   自动展开由独立模块 disclosure-anchor.mjs（客户端渐进增强）负责，
+ *   本模块自己保持零 JavaScript。
  *
  * 产物是**原生 <details>/<summary>**，不产生任何 JavaScript，
  * 也没有客户端水合——这是从 Shirone 的 createDisclosure 学来的做法
@@ -111,11 +118,36 @@ function parseItems(bodyLines) {
   return items.map((it) => ({ ...it, bodyLines: dedent(it.bodyLines) }));
 }
 
-/** 从标题尾部剥掉 `:+` / `:-` 标记，作为默认开合。 */
-function stripMarker(title) {
-  const m = title.match(/[\t ]*:([+-])[\t ]*$/);
-  if (!m) return { title: title.trim(), open: false, marker: null };
-  return { title: title.slice(0, m.index).trim(), open: m[1] === "+", marker: m[1] };
+/** 标题行尾的锚点 {#id}：只认 ASCII 字母开头、字母/数字/下划线/连字符组成。 */
+const TRAILING_ID_RE = /[\t ]*\{#([A-Za-z_][A-Za-z0-9_-]*)\}[\t ]*$/;
+
+/**
+ * 从标题尾部剥掉 `:+` / `:-` 标记与 `{#id}` 锚点，二者谁前谁后都认。
+ * 都靠「行尾」锚定并循环剥离，所以只吃行尾的标记，不会误伤标题中间
+ * 恰好长得像标记的文本；不合法的 `{#…}`（如空 id、带空格）原样保留。
+ */
+function stripTitleDecor(title) {
+  let cur = title.trim();
+  let open = false;
+  let id = null;
+  for (;;) {
+    const m = cur.match(/[\t ]*[：:]([+-])[\t ]*$/);
+    if (m) {
+      cur = cur.slice(0, m.index).trim();
+      // 全角冒号「：」也要认——手写中文时很容易打成全角（本攻略就踩过，
+      // 残留的「：-」在标题里显示成一个小点）。
+      open = m[1] === "+";
+      continue;
+    }
+    const a = cur.match(TRAILING_ID_RE);
+    if (a) {
+      cur = cur.slice(0, a.index).trim();
+      id = a[1];
+      continue;
+    }
+    break;
+  }
+  return { title: cur, open, id };
 }
 
 /**
@@ -204,10 +236,11 @@ export function renderCollapse(source) {
     const parts = [];
 
     for (const it of items) {
-      const { title, open: marked } = stripMarker(it.title);
+      const { title, open: marked, id } = stripTitleDecor(it.title);
       const isOpen = marked || expandAll;
       const attrs = [
         `class="m3-disclosure"`,
+        id ? `id="${esc(id)}"` : "",
         isOpen ? "open" : "",
         accordion ? `name="${esc(groupName)}"` : "",
       ]
