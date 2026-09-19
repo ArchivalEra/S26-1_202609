@@ -57,7 +57,7 @@
 
 已登记 **1** 门课程、**15** 份资料（不含索引、模板和历史入口）。
 
-<!-- 仓库内容摘要（不含 README）：fc8a356e93eca2dfb97e57aa5ce9873d5a3da0390fd19d7e652caadaeceee962 -->
+<!-- 仓库内容摘要（不含 README）：b6ba6232d511fc36fc28292970b82d6fed7e81867f2665dd9c0c7fd940e5fd34 -->
 
 <!-- AUTO-CATALOG:END -->
 
@@ -121,4 +121,4 @@ git config core.hooksPath .githooks
 
 - 本仓**自研代码**（`站点/build.mjs` 与 `站点/plugins/` 下的全部模块）与**原创文字**（教材解析的讲解、作业解答、通关攻略、课堂笔记整理）以 [AGPL-3.0](./LICENSE) 许可发布：使用须开源同许可，署名「ArchivalEra」。
 - 教材《工程数学基础》的题目原文、例题与章节结构**版权归原书作者与出版社所有**。本仓解析为个人学习笔记，题面仅作学习用途引用，不随 AGPL 再许可。
-- 站点主题样式来自 Shirone Material 3 Reader（来源署名，许可证待与作者确认）；KaTeX、marked、Pagefind 等第三方库依其自身许可证分发，AGPL 不覆盖这些组件。
+- 站点主题样式来自 Shirone Material 3 Reader（MIT 许可证）；KaTeX、marked、Pagefind 等第三方库依其自身许可证分发，AGPL 不覆盖这些组件。
