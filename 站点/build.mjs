@@ -872,7 +872,7 @@ for (const relPath of TARGET_FILES) {
               </p>
               <p class="site-footer__disclaimer">
                 教材《工程数学基础》的题目原文与章节结构版权归原书作者与出版社所有，本站解析为个人学习笔记；
-                页面主题样式来自 Shirone Material 3 Reader；KaTeX、marked、Pagefind 等第三方库依其自身许可证分发。
+                页面主题样式来自 Shirone Material 3 Reader（MIT）；KaTeX、marked、Pagefind 等第三方库依其自身许可证分发。
               </p>
             </footer>
           </article>
