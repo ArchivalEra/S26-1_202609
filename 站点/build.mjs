@@ -5,7 +5,7 @@ import { marked, yaml } from './vendor.mjs';
 import katex from './assets/katex/katex.mjs';
 import { renderCollapse } from './plugins/collapse.mjs';
 import { DISCLOSURE_ANCHOR_JS } from './plugins/disclosure-anchor.mjs';
-import { parseGlossaryDict, renderGlossary, GLOSSARY_JS } from './plugins/math-glossary.mjs';
+import { parseGlossaryDict, renderGlossary, glossifyTex, GLOSSARY_JS } from './plugins/math-glossary.mjs';
 
 const SITE_DIR = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = path.resolve(SITE_DIR, '..');
@@ -350,13 +350,14 @@ for (const relPath of TARGET_FILES) {
     // 教材排版惯例把句末标点写进显示公式（$$….$$），在网页上独立成块后
     // 看着像渲染出了一个多余的点（用户实测反馈）。渲染前剥掉**收尾的一个**
     // 标点——只剥一个：万一公式真以省略号收尾不至于被整串误删。
-    const safeTex = wrapBareCJK(tex.trim().replace(/[.。，、；;][ \t]*$/, ''));
+    const safeTex = wrapBareCJK(glossifyTex(tex.trim().replace(/[.。，、；;][ \t]*$/, ''), glossaryDict));
     let rendered = '';
     try {
       rendered = katex.renderToString(safeTex, {
         displayMode: true,
         throwOnError: false,
-        trust: true
+        trust: true,
+        strict: false
       });
     } catch (e) {
       formulaErrors++;
@@ -372,13 +373,14 @@ for (const relPath of TARGET_FILES) {
   raw = raw.replace(/(?<!\$)\$(?!\$)((?:[^$\\\r\n]|\\.)+?)\$(?!\$)/g, (_, tex) => {
     const id = mathBlocks.length;
     totalFormulasRendered++;
-    const safeTex = wrapBareCJK(tex.trim());
+    const safeTex = wrapBareCJK(glossifyTex(tex.trim(), glossaryDict));
     let rendered = '';
     try {
       rendered = katex.renderToString(safeTex, {
         displayMode: false,
         throwOnError: false,
-        trust: true
+        trust: true,
+        strict: false
       });
     } catch (e) {
       formulaErrors++;
@@ -411,10 +413,12 @@ for (const relPath of TARGET_FILES) {
     dict: glossaryDict,
     renderTex: (tex) => {
       try {
-        return katex.renderToString(wrapBareCJK(tex), {
+        return katex.renderToString(wrapBareCJK(glossifyTex(tex, glossaryDict)), {
           displayMode: false,
           throwOnError: false,
-          trust: true
+          trust: true,
+          strict: false,
+        strict: false
         });
       } catch (e) {
         return `<span class="katex-error">${e.message}</span>`;
