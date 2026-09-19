@@ -270,6 +270,9 @@ const renderer = new marked.Renderer();
  * 每个文件开始处理前清空，避免下标串到别的文件。
  */
 const mathPlainOf = [];
+// 每页已用的标题锚点 id（renderer 是模块级的，与 mathPlainOf 同款桥接：
+// 建页循环开头清空，页内用来做碰撞去重）
+const usedHeadingIds = new Set();
 
 renderer.heading = function ({ depth, text, tokens }) {
   // 标题里可能内嵌行内语法（README 自动目录的 `### [工程数学](./…)` 就是链接），
@@ -292,10 +295,19 @@ renderer.heading = function ({ depth, text, tokens }) {
     .replace(/@@MATH_INLINE_(\d+)@@/g, (_, i) => mathPlainOf[parseInt(i)] ?? '')
     .replace(/@@MATH_BLOCK_(\d+)@@/g, (_, i) => mathPlainOf[parseInt(i)] ?? '');
   const clean = forId.replace(/<[^>]+>/g, '');
-  const id = clean
+  let id = clean
     .toLowerCase()
     .replace(/[^\w\u4e00-\u9fa5]+/g, '-')
     .replace(/^-+|-+$/g, '') || ('h-' + Math.random().toString(36).substring(2, 7));
+  // 逐页去重：解析文件每个小节都有「原书抄录」「解析」标题，重复 id 会让
+  // 目录点击永远跳到第一处、滚动高亮一串全亮（用户实测反馈「目录崩坏」）。
+  // 碰撞时追加 -2、-3……（GitHub 风格）；首个出现保持裸 id，旧深链接不受影响。
+  if (usedHeadingIds.has(id)) {
+    let n = 2;
+    while (usedHeadingIds.has(`${id}-${n}`)) n++;
+    id = `${id}-${n}`;
+  }
+  usedHeadingIds.add(id);
   return `<h${depth} id="${id}">${inner}</h${depth}>`;
 };
 
@@ -345,6 +357,7 @@ for (const relPath of TARGET_FILES) {
   const mathBlocks = [];
   // 同步清空标题锚点用的中转表（下标与 mathBlocks 完全同构）
   mathPlainOf.length = 0;
+  usedHeadingIds.clear();
 
   // 2.1 Display Math $$...$$
   raw = raw.replace(/\$\$([\s\S]+?)\$\$/g, (_, tex) => {
