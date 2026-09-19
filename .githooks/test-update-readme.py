@@ -77,6 +77,47 @@ class ReadmeHookTest(unittest.TestCase):
         self.assertEqual(self.git('status', '--porcelain').stdout, b'')
         self.git('push')
 
+    def test_deep_link_anchor_validation(self):
+        """深链接的锚点在目标文件里必须真实存在，否则提交被拒。"""
+        target = self.write(
+            '课程/工程数学/课堂笔记/2026-09-19-anchor-target.md',
+            '# 锚点目标\n\n'
+            ':::collapse accordion\n'
+            '- 面板标题 :+ {#pass-test}\n'
+            '  面板正文。\n'
+            ':::\n'
+            '\n'
+            '<a id="sym-demo"></a>\n'
+            '\n'
+            '## 深链接小节\n\n'
+            '正文。\n')
+        self.index.write_text(
+            '[笔记](2026-09-17-test.md)\n'
+            '[锚点目标](2026-09-19-anchor-target.md)\n'
+            '[面板深链接](2026-09-19-anchor-target.md#pass-test)\n'
+            '[显式 id 深链接](2026-09-19-anchor-target.md#sym-demo)\n'
+            '[标题深链接](2026-09-19-anchor-target.md#深链接小节)\n')
+        self.stage()
+        self.git('commit', '-m', '合法深链接放行')
+
+        self.index.write_text(
+            '[笔记](2026-09-17-test.md)\n'
+            '[锚点目标](2026-09-19-anchor-target.md)\n'
+            '[坏锚点](2026-09-19-anchor-target.md#不存在的锚点)\n')
+        self.stage()
+        result = self.git('commit', '-m', '坏锚点被拒', success=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('深链接锚点失效', result.stdout.decode())
+        self.assertIn('#不存在的锚点', result.stdout.decode())
+
+        # 修复锚点后放行
+        self.index.write_text(
+            '[笔记](2026-09-17-test.md)\n'
+            '[锚点目标](2026-09-19-anchor-target.md)\n'
+            '[标题深链接](2026-09-19-anchor-target.md#深链接小节)\n')
+        self.stage()
+        self.git('commit', '-m', '修复锚点')
+
     def test_content_edit_without_index_rejected(self):
         """课程资料改了而对应分类索引没动，提交必须被拒。"""
         self.note.write_text(self.note.read_text() + '\n新增方法。\n')
