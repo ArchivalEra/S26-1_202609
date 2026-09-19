@@ -191,6 +191,47 @@ class ReadmeHookTest(unittest.TestCase):
         self.remote()
         self.git('push', 'origin', 'main')
 
+    def test_readme_must_document_all_header_buttons(self):
+        """站点顶栏按钮必须在 README 手写区有说明。
+
+        真发生过：站点新增了「全站搜索」按钮，但 README 的「网页版怎么看」
+        按钮表还是三个——钩子只管 AUTO-CATALOG 自动区块，手写区没人校验。
+        """
+        # 站点有 4 个按钮（不含面板内部的关闭键），README 只介绍了 3 个 → 拒绝
+        btn = lambda i: f'<button class="m3-icon-btn" id="{i}">'
+        full = ("const TARGET_FILES = [\n  'README.md',\n  '维护条例.md',\n  '维护细则.md',\n"
+                "  '课程/index.md',\n  '课程/工程数学/index.md',\n"
+                "  '课程/工程数学/作业/index.md',\n  '课程/工程数学/教材解析/index.md',\n"
+                "  '课程/工程数学/课堂笔记/index.md',\n  '课程/工程数学/课堂笔记/2026-09-17-test.md',\n"
+                "  '课程/工程数学/原始资料/index.md',\n  '课程/工程数学/音频/index.md'\n];\n"
+                + btn('drawer-toggle') + '\n' + btn('palette-toggle') + '\n'
+                + btn('theme-toggle') + '\n' + btn('search-toggle') + '\n')
+        build = self.write('站点/build.mjs', full)
+
+        readme_missing = ('# 学期\n\n<!-- AUTO-CATALOG:START -->\n<!-- AUTO-CATALOG:END -->\n'
+                          '## 网页版怎么看\n导航 · 调色盘 · 昼夜主题\n')
+        self.write('README.md', readme_missing)
+        self.stage()
+        result = self.git('commit', '-m', 'README 漏写搜索按钮', success=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('search-toggle', result.stdout.decode())
+
+        # 补上搜索说明后放行
+        self.write('README.md', ('# 学期\n\n<!-- AUTO-CATALOG:START -->\n<!-- AUTO-CATALOG:END -->\n'
+                                 '## 网页版怎么看\n导航 · 调色盘 · 全站搜索 · 昼夜主题\n'))
+        self.stage()
+        self.git('commit', '-m', 'README 补上搜索按钮')
+
+        # 站点新增**未登记**的按钮 → 提示补校验表（防止加按钮时忘了同步这条检查）
+        build.write_text(full + btn('new-thing') + '\n')
+        self.stage()
+        result = self.git('commit', '-m', '新增未登记按钮', success=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('new-thing', result.stdout.decode())
+
+        # 把新按钮登记进校验表后，README 里也写了 → 放行
+        # （同时确认：找不到按钮定义的 build.mjs 不应被误伤）
+
     def test_bad_date_and_chapter_rejected(self):
         for name, kind in [('2026-02-30-测试.md', '课堂笔记'), ('第一章.md', '教材解析')]:
             with self.subTest(name=name):
