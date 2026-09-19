@@ -1074,15 +1074,22 @@ pre code {
 /* 符号气泡（math-glossary.mjs）：术语符号上**强调色**，无下划线、无链接框——
  * 是「术语高亮」的样子，不是「链接」的样子。正文令牌（a.sym-gloss）与
  * KaTeX 公式内部的取词符号（[data-term]，由 glossifyTex 写入）同一套配色。
+ * 选择器带 .article-content 前缀：它的通用链接样式（虚线下划线）特异性
+ * 为 (0,1,1)，裸 a.sym-gloss (0,1,0) 压不住——这里必须 (0,2,0) 以上。
  * 无 JS 时令牌就是普通链接，点击直达符号入门页锚点。 */
+.article-content a.sym-gloss,
 .custom-md a.sym-gloss,
 a.sym-gloss {
-  color: var(--md-sys-color-tertiary);
+  color: var(--md-sys-color-tertiary) !important;
+  border-bottom: none;
   text-decoration: none;
   cursor: pointer;
 }
+.article-content a.sym-gloss:hover,
+.custom-md a.sym-gloss:hover,
 a.sym-gloss:hover {
-  color: var(--md-sys-color-primary);
+  color: var(--md-sys-color-primary) !important;
+  border-bottom: none;
 }
 
 .katex [data-term] {
