@@ -69,17 +69,18 @@
 # 符号气泡（正文符号点击出解释气泡；词典在符号入门页的 :::glossary-dict 围栏里）
 !/站点/plugins/math-glossary.mjs
 !/站点/plugins/math-glossary.test.mjs
-# pretext 资料门户（vendored @chenglou/pretext 0.0.9 MIT + 预测式卡片流插件）
-!/站点/assets/vendor/README.md
-!/站点/assets/vendor/layout.js
-!/站点/assets/vendor/analysis.js
-!/站点/assets/vendor/bidi.js
-!/站点/assets/vendor/line-break.js
-!/站点/assets/vendor/line-text.js
-!/站点/assets/vendor/measurement.js
-!/站点/assets/vendor/generated/bidi-data.js
-!/站点/plugins/pretext-feed.mjs
-!/站点/plugins/pretext-feed.test.mjs
+# 归档：pretext 资料门户试验（活体已拆除；结论与复活步骤见归档 README）
+!/工具/归档-pretext门户/README.md
+!/工具/归档-pretext门户/pretext-feed.mjs
+!/工具/归档-pretext门户/pretext-feed.test.mjs
+!/工具/归档-pretext门户/vendor/README.md
+!/工具/归档-pretext门户/vendor/layout.js
+!/工具/归档-pretext门户/vendor/analysis.js
+!/工具/归档-pretext门户/vendor/bidi.js
+!/工具/归档-pretext门户/vendor/line-break.js
+!/工具/归档-pretext门户/vendor/line-text.js
+!/工具/归档-pretext门户/vendor/measurement.js
+!/工具/归档-pretext门户/vendor/generated/bidi-data.js
 !/站点/assets/theme/shirone-reader.css
 !/站点/assets/theme/shirone-reader.js
 !/站点/assets/katex/katex.min.css
