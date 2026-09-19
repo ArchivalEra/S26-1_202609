@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { marked, yaml } from './vendor.mjs';
 import katex from './assets/katex/katex.mjs';
+import { renderCollapse } from './plugins/collapse.mjs';
 
 const SITE_DIR = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = path.resolve(SITE_DIR, '..');
@@ -189,8 +190,50 @@ function wrapBareCJK(tex) {
   return parts.join('');
 }
 
+/**
+ * TeX → 可读纯文本，**只用于标题锚点**。
+ *
+ * 为什么需要：标题里的公式在 Step 2 已变成 @@MATH_INLINE_N@@ 占位符，
+ * 而 marked 用那时的文本生成 heading id，于是锚点会变成
+ * `#第一步-处理前两行-提出-math_inline_125` 这种脏值、点击直接失效。
+ * 这里给出一份去掉 TeX 标记的纯文本，供 id 与 TOC 使用；
+ * 正文里显示的仍是完整 KaTeX 排版，二者互不影响。
+ *
+ * 注意这是**有损**转换：`\frac{a}{b}` 变成 `a/b`、`x^2` 变成 `x2`……
+ * 对锚点足够（可读、稳定），但它不是数学排版，不用于正文。
+ */
+function mathPlain(tex) {
+  let s = String(tex);
+  // 先处理常见的分数/上下标，再统一清掉反斜杠命令
+  s = s.replace(/\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, '$1/$2');
+  s = s.replace(/\\sqrt\s*\{([^{}]*)\}/g, '√$1');
+  s = s.replace(/\\text\s*\{([^{}]*)\}/g, '$1');
+  s = s.replace(/\\times/g, '×').replace(/\\cdot/g, '·')
+       .replace(/\\div/g, '÷').replace(/\\pm/g, '±')
+       .replace(/\\neq/g, '≠').replace(/\\leq/g, '≤').replace(/\\geq/g, '≥')
+       .replace(/\\to/g, '→').replace(/\\Rightarrow/g, '⇒')
+       .replace(/\\alpha/g, 'α').replace(/\\beta/g, 'β').replace(/\\lambda/g, 'λ')
+       .replace(/\\pi/g, 'π').replace(/\\infty/g, '∞');
+  s = s.replace(/\^\{([^{}]*)\}/g, '$1').replace(/\^(\S)/g, '$1');
+  s = s.replace(/_\{([^{}]*)\}/g, '$1').replace(/_(\S)/g, '$1');
+  s = s.replace(/\\[a-zA-Z]+/g, ' ');   // 其余命令（\begin 等）一律去掉
+  s = s.replace(/[{}$]/g, ' ');
+  s = s.replace(/\s+/g, ' ').trim();
+  return s;
+}
+
 // Custom renderer for Marked
 const renderer = new marked.Renderer();
+
+/**
+ * 标题锚点用的公式纯文本中转表（下标与 mathBlocks **完全同构**）。
+ *
+ * 为什么需要中转：`renderer.heading` 定义在模块级，而 `mathBlocks`
+ * 建在每个 Markdown 文件的循环里（函数作用域），两者不通用。
+ * 这里按同一套下标记「纯文本」，供 heading 渲染器取用。
+ * 每个文件开始处理前清空，避免下标串到别的文件。
+ */
+const mathPlainOf = [];
 
 renderer.heading = function ({ depth, text, tokens }) {
   // 标题里可能内嵌行内语法（README 自动目录的 `### [工程数学](./…)` 就是链接），
@@ -198,7 +241,21 @@ renderer.heading = function ({ depth, text, tokens }) {
   const inner = tokens
     ? this.parser.parseInline(tokens)
     : text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const clean = inner.replace(/<[^>]+>/g, '');
+
+  // 锚点 id 的清洗：从**渲染后**的 HTML 里取纯文本，
+  // 并把公式占位符先换成可读的纯文本（否则 id 会变成
+  // `第一步-处理前两行-提出-math_inline_125` 这种脏值，点击跳转失效）。
+  //
+  // 注意：**只在算 id 时**做这个替换——<h3> 里输出的仍是完整 KaTeX 排版。
+  // 曾试过在 marked 之前把整个标题行的公式替换成纯文本，那样标题就不排版了，
+  // 属于过度修正；现在改成只在 id 这一处降级，两边都拿到。
+  //
+  // mathPlainOf 是模块级的中转表：mathBlocks 建在每个文件的循环里，
+  // 而本 renderer 是模块级的，作用域不通用它来桥接（见其定义处的注释）。
+  const forId = inner
+    .replace(/@@MATH_INLINE_(\d+)@@/g, (_, i) => mathPlainOf[parseInt(i)] ?? '')
+    .replace(/@@MATH_BLOCK_(\d+)@@/g, (_, i) => mathPlainOf[parseInt(i)] ?? '');
+  const clean = forId.replace(/<[^>]+>/g, '');
   const id = clean
     .toLowerCase()
     .replace(/[^\w\u4e00-\u9fa5]+/g, '-')
@@ -250,6 +307,8 @@ for (const relPath of TARGET_FILES) {
 
   // Step 2: Extract and Render Math
   const mathBlocks = [];
+  // 同步清空标题锚点用的中转表（下标与 mathBlocks 完全同构）
+  mathPlainOf.length = 0;
 
   // 2.1 Display Math $$...$$
   raw = raw.replace(/\$\$([\s\S]+?)\$\$/g, (_, tex) => {
@@ -267,7 +326,9 @@ for (const relPath of TARGET_FILES) {
       formulaErrors++;
       rendered = `<span class="katex-error">${e.message}</span>`;
     }
-    mathBlocks.push({ display: true, html: rendered });
+    const plain = mathPlain(safeTex);
+    mathBlocks.push({ display: true, html: rendered, plain });
+    mathPlainOf[id] = plain;
     return `@@MATH_BLOCK_${id}@@`;
   });
 
@@ -287,9 +348,20 @@ for (const relPath of TARGET_FILES) {
       formulaErrors++;
       rendered = `<span class="katex-error">${e.message}</span>`;
     }
-    mathBlocks.push({ display: false, html: rendered });
+    const plain = mathPlain(safeTex);
+    mathBlocks.push({ display: false, html: rendered, plain });
+    mathPlainOf[id] = plain;
     return `@@MATH_INLINE_${id}@@`;
   });
+
+  // Step 2.5: 折叠块 :::collapse → 原生 <details>（零 JS）
+  //
+  // 位置是刻意的：必须在公式提取（Step 2）**之后**、链接降级（Step 3）**之前**。
+  //   - 之后：折叠块内的 $…$ 已变成单行占位符 @@MATH_*@@，模块不必懂公式语法；
+  //     代码围栏也已保护，`:::` 出现在代码里不会被误转。
+  //   - 之前：折叠块内的链接仍会被 Step 3/4 正常降级与重写。
+  // 实现见 站点/plugins/collapse.mjs（独立可拆卸：删文件 + 摘掉这一行即回退）。
+  raw = renderCollapse(raw);
 
   // Step 3: Degrade Non-MD resources (.jpg, .heic, .doc)
   raw = raw.replace(/\[([^\]]*)\]\(([^)]+\.(?:jpg|heic|doc))\)/gi, (_, text, filePath) => {
@@ -318,22 +390,13 @@ for (const relPath of TARGET_FILES) {
   });
 
   // Step 5: Render Markdown to HTML via marked
+  //
+  // 标题里的公式锚点问题在 renderer.heading 里解决（只对 id 降级、不影响排版），
+  // 详见上面 renderer.heading 的注释。
   let htmlContent = marked.parse(raw);
   htmlContent = htmlContent
     .replace(/<table>/g, '<div class="table-scroll-container"><table>')
     .replace(/<\/table>/g, '</table></div>');
-
-  // Extract TOC headings（标题里可能有 <a> 等行内元素，取标签内纯文本）
-  const toc = [];
-  const headingRegex = /<h([23]) id="([^"]+)">([\s\S]*?)<\/h[23]>/g;
-  let hMatch;
-  while ((hMatch = headingRegex.exec(htmlContent)) !== null) {
-    toc.push({
-      level: parseInt(hMatch[1]),
-      id: hMatch[2],
-      title: hMatch[3].replace(/<[^>]+>/g, '').trim()
-    });
-  }
 
   // Step 6: Restore Code Fences
   htmlContent = htmlContent.replace(/@@CODE_FENCE_(\d+)@@/g, (_, id) => {
@@ -371,6 +434,24 @@ for (const relPath of TARGET_FILES) {
     const math = mathBlocks[parseInt(id)];
     return math.html;
   });
+
+  // Extract TOC headings —— **必须在公式还原之后**。
+  //
+  // 曾经的顺序是「marked 之后立刻提取 TOC、再还原公式」，结果是标题里的公式
+  // 还是占位符，锚点变成 `#第一步-处理前两行-提出-math_inline_125` 这种脏值，
+  // 点击目录跳转直接失效（dist 里可见）。
+  // 现在改为：① marked 之前先把**标题行**里的占位符换成纯文本（供 id 生成）；
+  //           ② 公式还原之后再提取 TOC，此时标题已是真 HTML，取纯文本即可。
+  const toc = [];
+  const headingRegex = /<h([23]) id="([^"]+)">([\s\S]*?)<\/h[23]>/g;
+  let hMatch;
+  while ((hMatch = headingRegex.exec(htmlContent)) !== null) {
+    toc.push({
+      level: parseInt(hMatch[1]),
+      id: hMatch[2],
+      title: hMatch[3].replace(/<[^>]+>/g, '').trim()
+    });
+  }
 
   // Step 7: Compute relative path to root for assets
   const targetHtmlPath = relPath === 'README.md' ? 'index.html' : relPath.replace(/\.md$/, '.html');
