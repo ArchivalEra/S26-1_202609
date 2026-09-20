@@ -41,6 +41,12 @@ const TARGET_FILES = [
   '课程/工程数学/课堂笔记/2026-09-17-determinants-transcript-notes.md',
   '课程/工程数学/原始资料/index.md',
   '课程/工程数学/音频/index.md',
+  '课程/大电网安全稳定智能分析与控制/index.md',
+  '课程/大电网安全稳定智能分析与控制/作业/index.md',
+  '课程/大电网安全稳定智能分析与控制/教材解析/index.md',
+  '课程/大电网安全稳定智能分析与控制/课堂笔记/index.md',
+  '课程/大电网安全稳定智能分析与控制/原始资料/index.md',
+  '课程/大电网安全稳定智能分析与控制/音频/index.md',
   '维护条例.md',
   '维护细则.md'
 ];
@@ -182,6 +188,17 @@ const NAV_STRUCTURE = [
           },
           { label: "原始资料 (索引)", path: "课程/工程数学/原始资料/index.md" },
           { label: "音频 (索引)", path: "课程/工程数学/音频/index.md" }
+        ]
+      },
+      {
+        label: "大电网安全稳定智能分析与控制",
+        path: "课程/大电网安全稳定智能分析与控制/index.md",
+        children: [
+          { label: "作业 (索引)", path: "课程/大电网安全稳定智能分析与控制/作业/index.md" },
+          { label: "教材解析 (索引)", path: "课程/大电网安全稳定智能分析与控制/教材解析/index.md" },
+          { label: "课堂笔记 (索引)", path: "课程/大电网安全稳定智能分析与控制/课堂笔记/index.md" },
+          { label: "原始资料 (索引)", path: "课程/大电网安全稳定智能分析与控制/原始资料/index.md" },
+          { label: "音频 (索引)", path: "课程/大电网安全稳定智能分析与控制/音频/index.md" }
         ]
       }
     ]
