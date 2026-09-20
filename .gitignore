@@ -65,7 +65,6 @@
 !/站点/数学可视化需求计划书.md
 !/站点/package.json
 !/站点/vendor.mjs
-!/站点/pagefind.yml
 !/站点/package-lock.json
 !/站点/build.mjs
 # 折叠块模块（build.mjs 导入它；漏加白名单会导致 CI 构建失败——
@@ -78,6 +77,9 @@
 # 符号气泡（正文符号点击出解释气泡；词典在符号入门页的 :::glossary-dict 围栏里）
 !/站点/plugins/math-glossary.mjs
 !/站点/plugins/math-glossary.test.mjs
+# 全站搜索（自持倒排索引，替代 Pagefind——它按单字索引中文）
+!/站点/plugins/site-search.mjs
+!/站点/plugins/site-search.test.mjs
 # 归档：pretext 资料门户试验（活体已拆除；结论与复活步骤见归档 README）
 !/工具/归档-pretext门户/README.md
 !/工具/归档-pretext门户/pretext-feed.mjs

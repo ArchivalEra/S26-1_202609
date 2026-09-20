@@ -6,6 +6,7 @@ import katex from './assets/katex/katex.mjs';
 import { renderCollapse } from './plugins/collapse.mjs';
 import { DISCLOSURE_ANCHOR_JS } from './plugins/disclosure-anchor.mjs';
 import { parseGlossaryDict, renderGlossary, glossifyTex, GLOSSARY_JS } from './plugins/math-glossary.mjs';
+import { extractSearchDoc, buildSearchBundle, SEARCH_JS, SEARCH_CSS } from './plugins/site-search.mjs';
 
 const SITE_DIR = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = path.resolve(SITE_DIR, '..');
@@ -92,6 +93,18 @@ const glossaryDict = fs.existsSync(path.join(ROOT, NOTATION_PAGE))
 const mathGlossaryDist = path.join(DIST_DIR, 'assets', 'plugins', 'math-glossary.js');
 fs.mkdirSync(path.dirname(mathGlossaryDist), { recursive: true });
 fs.writeFileSync(mathGlossaryDist, GLOSSARY_JS);
+
+// 全站搜索：构建期生成倒排索引，浏览器端零依赖。实现与设计理由见
+// 站点/plugins/site-search.mjs（那里也记录了为什么弃用 Pagefind：它按单字索引中文，
+// 「的」能命中 62/66 页）。
+// 可拆卸：删掉本段、页面模板里的两行注入、以及最后的 buildSearchBundle 写盘即回退。
+const searchPluginDir = path.join(DIST_DIR, 'assets', 'plugins');
+fs.mkdirSync(searchPluginDir, { recursive: true });
+fs.writeFileSync(path.join(searchPluginDir, 'site-search.js'), SEARCH_JS);
+fs.writeFileSync(path.join(searchPluginDir, 'site-search.css'), SEARCH_CSS);
+
+// 检索语料：渲染循环里逐页填，循环结束后统一建索引。
+const searchDocs = [];
 
 // 2. Pre-read metadata of all files for navigation & paging
 const pageMetaMap = new Map();
@@ -741,6 +754,7 @@ for (const relPath of TARGET_FILES) {
   <title>${pageMeta.title} | S26-1 课程知识库 - isui.ren</title>
   <link rel="stylesheet" href="${rootRel}assets/katex/katex.min.css">
   <link rel="stylesheet" href="${rootRel}assets/theme/shirone-reader.css">
+  <link rel="stylesheet" href="${rootRel}assets/plugins/site-search.css">
 </head>
 <body>
   <div class="drawer-backdrop" id="drawer-backdrop"></div>
@@ -879,8 +893,8 @@ for (const relPath of TARGET_FILES) {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
             </button>
           </div>
-          <div class="search-panel-body" id="search-results" data-pagefind-ignore>
-            <p class="search-hint">输入关键词开始搜索。支持中文词组与公式外的正文；结果按相关度排序，回车打开第一条。</p>
+          <div class="search-panel-body" id="search-results">
+            <p class="search-hint">输入关键词开始搜索。中文按字面子串匹配——搜「沙路法则」只出真正连着出现这四个字的地方；结果按相关度排序，回车打开第一条。</p>
           </div>
         </div>
       </div>
@@ -896,7 +910,7 @@ for (const relPath of TARGET_FILES) {
 
             ${metaChipsHtml ? `<div class="meta-chip-bar">${metaChipsHtml}</div>` : ''}
 
-            <div class="article-content" data-pagefind-body>
+            <div class="article-content">
               ${htmlContent}
             </div>
 
@@ -910,7 +924,7 @@ for (const relPath of TARGET_FILES) {
               </p>
               <p class="site-footer__disclaimer">
                 教材《工程数学基础》的题目原文与章节结构版权归原书作者与出版社所有，本站解析为个人学习笔记；
-                页面主题样式来自 Shirone Material 3 Reader（MIT）；KaTeX、marked、Pagefind 等第三方库依其自身许可证分发。
+                页面主题样式来自 Shirone Material 3 Reader（MIT）；KaTeX、marked 等第三方库依其自身许可证分发。
               </p>
             </footer>
           </article>
@@ -927,12 +941,20 @@ for (const relPath of TARGET_FILES) {
   <script src="${rootRel}assets/plugins/disclosure-anchor.js" defer></script>
   <script type="application/json" id="sym-glossary-json">${JSON.stringify(glossaryJsonPayload).replace(/<\//g, '<\\/')}</script>
   <script src="${rootRel}assets/plugins/math-glossary.js" defer></script>
+  <script src="${rootRel}assets/plugins/site-search.js" defer></script>
 </body>
 </html>`;
 
   const outFilePath = path.join(DIST_DIR, targetHtmlPath);
   fs.mkdirSync(path.dirname(outFilePath), { recursive: true });
   fs.writeFileSync(outFilePath, finalHtml, 'utf-8');
+
+  // 检索语料：只收正文（htmlContent），标题用页面标题；URL 存**相对站点根**的路径
+  // （不带前导斜杠），这样部署在任意子路径下都能由客户端补上站点根前缀。
+  searchDocs.push(extractSearchDoc(htmlContent, {
+    url: targetHtmlPath.split('/').map(seg => encodeURIComponent(seg)).join('/'),
+    title: pageMeta.title
+  }));
 
   // Also create README.html at root if it's README.md
   if (relPath === 'README.md') {
@@ -950,3 +972,18 @@ for (const relPath of TARGET_FILES) {
 }
 
 console.log(`[build] Completed! Rendered ${totalFormulasRendered} math formulas with ${formulaErrors} errors.`);
+
+// 全站搜索索引：等所有页面都渲染完再建（每页正文在渲染循环里已经收进 searchDocs）。
+// 产物落在 dist/search/：index.json（页面清单 + 小节锚点）、g/<n>.json（二元组倒排分桶）、
+// t/<id>.json（单页正文，供摘要按需拉取）。
+{
+  const { files, stats } = buildSearchBundle(searchDocs);
+  for (const [relPath, content] of Object.entries(files)) {
+    const filePath = path.join(DIST_DIR, relPath);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, content, 'utf-8');
+  }
+  const bytes = Object.values(files).reduce((sum, content) => sum + Buffer.byteLength(content, 'utf-8'), 0);
+  console.log(`[search] Indexed ${stats.pages} pages → ${stats.buckets} buckets, `
+    + `${stats.grams} grams / ${stats.positions} positions, ${(bytes / 1024 / 1024).toFixed(2)} MB raw`);
+}
