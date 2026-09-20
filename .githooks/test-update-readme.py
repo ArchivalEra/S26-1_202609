@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Exercise commits and pushes exclusively in temporary local repositories."""
 from pathlib import Path
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 SOURCE = Path(__file__).resolve().parent
@@ -76,6 +78,33 @@ class ReadmeHookTest(unittest.TestCase):
         self.assertIn('%E4%B8%AD%E6%96%87%20', self.readme.read_text())
         self.assertEqual(self.git('status', '--porcelain').stdout, b'')
         self.git('push')
+
+    def test_handoff_freshness_enforced(self):
+        """改动 课程/ 或 站点/ 而未更新 .zcode/handoff.md 的提交必须被拒。"""
+        handoff = self.write('.zcode/handoff.md', '# Handoff\n\n维护约定：每实施完一步回来更新。\n')
+        self.stage()
+        self.git('commit', '-m', '建立 handoff')
+        stale = time.time() - 3600
+        os.utime(handoff, (stale, stale))
+
+        # 改课堂笔记（课程/ 区域）且同步索引，但 handoff 陈旧 → 拒绝
+        self.note.write_text(self.note.read_text() + '\n新增一段。\n')
+        self.index.write_text('[笔记](2026-09-17-test.md)\n\n已同步。\n')
+        self.stage()
+        result = self.git('commit', '-m', '未更新 handoff', success=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('handoff', result.stdout.decode())
+
+        # 更新 handoff 后放行
+        handoff.write_text(handoff.read_text() + '\n- 已更新。\n')
+        self.stage()
+        self.git('commit', '-m', '更新 handoff 后提交')
+
+        # 范围收窄验证：只改 README（不在 课程/ 站点/）不受这条规则限制
+        os.utime(handoff, (stale, stale))
+        self.readme.write_text(self.readme.read_text().replace('# 学期', '# 学期总览'))
+        self.stage()
+        self.git('commit', '-m', '只改 README 不受限')
 
     def test_deep_link_anchor_validation(self):
         """深链接的锚点在目标文件里必须真实存在，否则提交被拒。"""
