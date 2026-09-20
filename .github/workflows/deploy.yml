@@ -35,14 +35,15 @@ jobs:
         with:
           node-version: 22
 
-      - name: Build static site (含 Pagefind 搜索索引)
+      - name: Build static site (含自持搜索索引)
         working-directory: 站点
         run: |
           set -euo pipefail
-          # 安装 pagefind（唯一构建期依赖，锁版本）
-          npm ci --no-audit --no-fund 2>/dev/null || npm install --no-audit --no-fund
-          # 在「站点/」目录下运行：pagefind.yml（排除 KaTeX 与导航噪声）才会被读取
+          # 零构建期依赖：搜索索引由 plugins/site-search.mjs 在 build.mjs 里直接产出
+          # （此前用 pagefind，但它按单字索引中文，已弃用）。
           npm run build
+          # 顺手跑一遍插件测试：搜索的折叠/短语校验逻辑一旦回归，这里会先炸
+          npm test
 
       - name: Deploy to isui.ren-heart@deploy
         env:
