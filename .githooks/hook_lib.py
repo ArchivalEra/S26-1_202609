@@ -369,6 +369,34 @@ def check_index_sync(files, base):
 
 
 BUILD_SCRIPT = '站点/build.mjs'
+HANDOFF_PATH = '.zcode/handoff.md'
+# 「实施一步」的工作区：这两处有改动，就要求自更新 handoff 同步更新过
+WORK_AREAS = ('课程/', '站点/')
+
+
+def check_handoff_freshness(files, base):
+    """改动 课程/ 或 站点/ 的提交，`.zcode/handoff.md` 必须比上一次提交更新。
+
+    自更新 handoff 是抗上下文压缩的唯一载体，此前只靠「维护约定」——此处改为强制：
+    handoff 的修改时间不早于 HEAD 的提交时间，才算「实施完一步回来更新过」。
+    **仅当工作区存在该文件时强制**：handoff 按用户要求不入库，外部克隆与 CI
+    没有它，不应被这条规则拦截。
+    """
+    if base is None:
+        return
+    handoff = Path(HANDOFF_PATH)
+    if not handoff.is_file():
+        return
+    changed = changed_paths(files, base)
+    if not any(p.startswith(WORK_AREAS) for p in changed):
+        return
+    head_time = int(git('log', '-1', '--format=%ct').decode().strip() or '0')
+    if handoff.stat().st_mtime < head_time:
+        raise ValueError(
+            '本次提交改动了 课程/ 或 站点/，但 .zcode/handoff.md 未更新——'
+            '按维护约定「实施完一步就回来更新」：改 §1 当前状态 / §6 下一步 / §7 速查，'
+            '把新踩的坑追加进 §8 坑清单。'
+            '（确认本次改动无需更新 handoff 时：touch .zcode/handoff.md）')
 # 静态站构建脚本里硬编码的待渲染清单。它与 .gitignore 白名单一样是显式枚举，
 # 但漏填不会报错、只会静默不上线，故在此校验二者一致。
 TARGET_FILES_RE = re.compile(r'^const TARGET_FILES = \[(.*?)^\];', re.M | re.S)
@@ -489,6 +517,9 @@ def sync(worktree=False):
     outputs = {'README.md': staged['README.md'], MAINT_PATH: maintenance}
     validate(staged)
     check_index_sync(staged, head_snapshot())
+    if not worktree:
+        # 提交时强制「实施一步 → 更新 handoff」；--worktree 只生成文件、不提交，不拦
+        check_handoff_freshness(staged, head_snapshot())
     for path, data in outputs.items():
         if files[path] != data:
             Path(path).write_bytes(data)
