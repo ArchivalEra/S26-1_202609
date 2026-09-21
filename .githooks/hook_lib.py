@@ -23,7 +23,24 @@ MAINT_PATH = '维护细则.md'
 MAINT_START = '<!-- AUTO-MAINTENANCE:START -->'
 MAINT_END = '<!-- AUTO-MAINTENANCE:END -->'
 KINDS = ('作业', '教材解析', '课堂笔记', '原始资料', '音频')
-INDEX_LABEL = '五类索引'
+INDEX_LABEL = '分类索引'
+
+# 默认每门课建五类子目录；但确实没有某一类内容的课程可以在这里声明豁免。
+# 例：形势与政策、思政类公共课没有可整理的教材正文，强行建一个永远空着的
+# 「教材解析」目录只会给课程入口和自动目录添噪音。
+#
+# 边界（很重要）：豁免只声明「本课不建该类目录」，**不是**「该类资料可以乱放」。
+# 若某课豁免后仍然出现了该类资料文件，register 环节的「资料未登记到分类索引」
+# 会要求它有自己的 index.md——半吊子状态自然被堵住。
+COURSE_SKIPPED_KINDS = {
+    '形势与政策': ('教材解析',),
+}
+
+
+def kinds_of(course):
+    """该课程应建/应校验的分类，默认即 KINDS，按 COURSE_SKIPPED_KINDS 去掉豁免项。"""
+    skipped = COURSE_SKIPPED_KINDS.get(course, ())
+    return tuple(kind for kind in KINDS if kind not in skipped)
 
 
 def git(*args):
@@ -82,7 +99,7 @@ def render(readme, files):
             digest.update(path.encode() + b'\0' + hashlib.sha256(data).digest())
     for course in names:
         lines.extend([f'### [{course}](./{quote("课程/" + course + "/index.md")})', ''])
-        for kind in KINDS:
+        for kind in kinds_of(course):
             paths = sorted(p for p in files if classify(p) == (course, kind))
             total += len(paths)
             lines.extend([f'#### {kind}（{len(paths)} 份）', ''])
@@ -131,12 +148,18 @@ def render_maintenance(text, files):
     header = '| 课程 | ' + ' | '.join(KINDS) + f' | {INDEX_LABEL} |'
     lines.extend([header, '| :--- | ' + ' | '.join(['---:'] * len(KINDS)) + ' | :--- |'])
     for course in names:
-        cells = [str(count_kind(files, course, kind)) for kind in KINDS]
-        missing = [kind for kind in KINDS if f'课程/{course}/{kind}/index.md' not in files]
+        required = kinds_of(course)
+        # 豁免的分类在表里留列（全仓一张表），格子写「—」以示本课不设该类目录。
+        cells = ['—' if kind not in required else str(count_kind(files, course, kind))
+                 for kind in KINDS]
+        missing = [kind for kind in required if f'课程/{course}/{kind}/index.md' not in files]
         lines.append(f'| {course} | ' + ' | '.join(cells) + ' | ' + ('齐全' if not missing else '缺 ' + '、'.join(missing)) + ' |')
     lines.append('')
     lines.extend(['### 教材解析进度', ''])
     for course in names:
+        if '教材解析' not in kinds_of(course):
+            lines.extend([f'**{course}**（本课声明不设教材解析）', ''])
+            continue
         paths = sorted(p for p in files if classify(p) == (course, '教材解析'))
         lines.append(f'**{course}**（{len(paths)} 个文件）')
         lines.append('')
@@ -166,12 +189,12 @@ def render_maintenance(text, files):
     hints = []
     for course in names:
         for kind in ('作业', '音频'):
-            if count_kind(files, course, kind) == 0:
+            if kind in kinds_of(course) and count_kind(files, course, kind) == 0:
                 hints.append(f'- {course}：{kind}目录尚无记录，待正式通知或链接，登记前不得编造。')
     if hints:
         lines.extend(hints)
     else:
-        lines.append('- 各课程五类资料均已有记录。')
+        lines.append('- 各课程应建的分类资料均已有记录。')
     lines.append('')
     lines.extend(['### 验证基线', '',
                   '- `python3 .githooks/update-readme.py --worktree`：同步 README 与维护细则自动区块。',
@@ -331,7 +354,7 @@ def validate(files):
             raise ValueError(f'课程未登记到课程总索引：{course}')
         if course_index not in files:
             raise ValueError(f'缺少课程入口：{course_index}')
-        for kind in KINDS:
+        for kind in kinds_of(course):
             index = f'课程/{course}/{kind}/index.md'
             if index not in files or index not in links(course_index, files[course_index]):
                 raise ValueError(f'课程入口缺少分类链接：{index}')
