@@ -55,6 +55,13 @@ const TARGET_FILES = [
   '课程/形势与政策/课堂笔记/2026-09-21-经济热点专题与考试安排.md',
   '课程/形势与政策/原始资料/index.md',
   '课程/形势与政策/音频/index.md',
+  '课程/电路原理/index.md',
+  '课程/电路原理/作业/index.md',
+  '课程/电路原理/教材解析/index.md',
+  '课程/电路原理/课堂笔记/index.md',
+  '课程/电路原理/课堂笔记/2026-09-21-开课说明与电路的基本概念.md',
+  '课程/电路原理/原始资料/index.md',
+  '课程/电路原理/音频/index.md',
   '维护条例.md',
   '维护细则.md'
 ];
@@ -239,6 +246,21 @@ const NAV_STRUCTURE = [
           },
           { label: "原始资料", path: "课程/形势与政策/原始资料/index.md" },
           { label: "音频", path: "课程/形势与政策/音频/index.md" }
+        ]
+      },
+      {
+        label: "电路原理",
+        path: "课程/电路原理/index.md",
+        children: [
+          { label: "作业", path: "课程/电路原理/作业/index.md" },
+          { label: "教材解析", path: "课程/电路原理/教材解析/index.md" },
+          { label: "课堂笔记", path: "课程/电路原理/课堂笔记/index.md",
+            children: [
+              { label: "09-21 开课说明与电路的基本概念", path: "课程/电路原理/课堂笔记/2026-09-21-开课说明与电路的基本概念.md" }
+            ]
+          },
+          { label: "原始资料", path: "课程/电路原理/原始资料/index.md" },
+          { label: "音频", path: "课程/电路原理/音频/index.md" }
         ]
       }
     ]
