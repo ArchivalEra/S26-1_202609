@@ -261,6 +261,51 @@ class ReadmeHookTest(unittest.TestCase):
         self.remote()
         self.git('push', 'origin', 'main')
 
+    def test_declared_course_may_skip_a_kind(self):
+        """在 COURSE_SKIPPED_KINDS 里声明豁免的课程，可以不建该类目录与索引。
+
+        真需求：形势与政策这类公共课没有可整理的教材正文，强行建一个永远空着的
+        「教材解析」目录只会给课程入口、自动目录和站点侧边栏添噪音。
+        """
+        name = '形势与政策'  # hook_lib.COURSE_SKIPPED_KINDS 里已声明豁免教材解析
+        kinds = [k for k in KINDS if k != '教材解析']
+        self.write(f'课程/{name}/index.md', ''.join(f'[{k}]({k}/index.md)\n' for k in kinds))
+        for kind in kinds:
+            self.write(f'课程/{name}/{kind}/index.md', f'# {kind}\n')
+        self.write(f'课程/{name}/课堂笔记/2026-09-21-经济热点.md', '# 经济热点专题\n\n课堂内容。\n')
+        self.write(f'课程/{name}/课堂笔记/index.md', '[笔记](2026-09-21-经济热点.md)\n')
+        self.write('课程/index.md', '[数学](工程数学/index.md)\n[形策](形势与政策/index.md)\n')
+        self.stage()
+        self.git('commit', '-m', '接入豁免课程的课')
+
+        readme = self.readme.read_text()
+        self.assertIn('形势与政策', readme)
+        # 豁免的分类整节不出现在 README 自动目录里（不留「教材解析（0 份）」空壳）
+        section = readme.split('形势与政策')[1] if '形势与政策' in readme else ''
+        block = readme[readme.index('### [形势与政策]'):]
+        block = block[:block.index('###', 10)] if '###' in block[10:] else block
+        self.assertNotIn('教材解析', block)
+        # 维护细则的分类一览：豁免格写「—」，索引列仍判齐全
+        details = self.details.read_text()
+        row = [line for line in details.splitlines() if line.startswith('| 形势与政策 |')][0]
+        self.assertIn('—', row)
+        self.assertTrue(row.rstrip().endswith('| 齐全 |'), row)
+        self.remote()
+        self.git('push', 'origin', 'main')
+
+    def test_undeclared_course_missing_kind_still_rejected(self):
+        """未声明豁免的课程缺一类索引仍必须被拒——防止豁免机制被当成后门。"""
+        name = '大学物理'
+        kinds = [k for k in KINDS if k != '音频']
+        self.write(f'课程/{name}/index.md', ''.join(f'[{k}]({k}/index.md)\n' for k in kinds))
+        for kind in kinds:
+            self.write(f'课程/{name}/{kind}/index.md', f'# {kind}\n')
+        self.write('课程/index.md', '[数学](工程数学/index.md)\n[物理](大学物理/index.md)\n')
+        self.stage()
+        result = self.git('commit', '-m', '未声明豁免却缺音频索引', success=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('课程入口缺少分类链接', result.stdout.decode())
+
     def test_readme_must_document_all_header_buttons(self):
         """站点顶栏按钮必须在 README 手写区有说明。
 
