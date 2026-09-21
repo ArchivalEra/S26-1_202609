@@ -62,6 +62,13 @@ const TARGET_FILES = [
   '课程/电路原理/课堂笔记/2026-09-21-开课说明与电路的基本概念.md',
   '课程/电路原理/原始资料/index.md',
   '课程/电路原理/音频/index.md',
+  '课程/电子技术/index.md',
+  '课程/电子技术/作业/index.md',
+  '课程/电子技术/教材解析/index.md',
+  '课程/电子技术/课堂笔记/index.md',
+  '课程/电子技术/课堂笔记/2026-09-21-开课说明与半导体基础到PN结.md',
+  '课程/电子技术/原始资料/index.md',
+  '课程/电子技术/音频/index.md',
   '维护条例.md',
   '维护细则.md'
 ];
@@ -261,6 +268,21 @@ const NAV_STRUCTURE = [
           },
           { label: "原始资料", path: "课程/电路原理/原始资料/index.md" },
           { label: "音频", path: "课程/电路原理/音频/index.md" }
+        ]
+      },
+      {
+        label: "电子技术",
+        path: "课程/电子技术/index.md",
+        children: [
+          { label: "作业", path: "课程/电子技术/作业/index.md" },
+          { label: "教材解析", path: "课程/电子技术/教材解析/index.md" },
+          { label: "课堂笔记", path: "课程/电子技术/课堂笔记/index.md",
+            children: [
+              { label: "09-21 开课说明与半导体基础到 PN 结", path: "课程/电子技术/课堂笔记/2026-09-21-开课说明与半导体基础到PN结.md" }
+            ]
+          },
+          { label: "原始资料", path: "课程/电子技术/原始资料/index.md" },
+          { label: "音频", path: "课程/电子技术/音频/index.md" }
         ]
       }
     ]
