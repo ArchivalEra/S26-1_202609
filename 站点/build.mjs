@@ -774,6 +774,22 @@ for (const relPath of TARGET_FILES) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${pageMeta.title} | S26-1 课程知识库 - isui.ren</title>
+  <script>
+  /* 首帧前应用已保存的主题色与明暗，避免先用默认色渲染再变色（闪光弹 + 二次全量重绘） */
+  (function () {
+    try {
+      var root = document.documentElement;
+      var m = localStorage.getItem("theme") ||
+        (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      root.setAttribute("data-theme", m === "dark" ? "dark" : "light");
+      var hue = localStorage.getItem("theme-hue");
+      if (hue !== null && /^\\d+$/.test(hue)) {
+        root.style.setProperty("--hue", hue);
+        root.style.setProperty("--primary-h", hue);
+      }
+    } catch (e) { /* 隐私模式下 localStorage 可能抛错，忽略 */ }
+  })();
+  </script>
   <link rel="stylesheet" href="${rootRel}assets/katex/katex.min.css">
   <link rel="stylesheet" href="${rootRel}assets/theme/shirone-reader.css">
   <link rel="stylesheet" href="${rootRel}assets/plugins/site-search.css">
@@ -958,8 +974,7 @@ for (const relPath of TARGET_FILES) {
     </div>
   </div>
 
-  <script src="${rootRel}assets/katex/katex.min.js"></script>
-  <script src="${rootRel}assets/theme/shirone-reader.js"></script>
+  <script src="${rootRel}assets/theme/shirone-reader.js" defer></script>
   <script src="${rootRel}assets/plugins/disclosure-anchor.js" defer></script>
   <script type="application/json" id="sym-glossary-json">${JSON.stringify(glossaryJsonPayload).replace(/<\//g, '<\\/')}</script>
   <script src="${rootRel}assets/plugins/math-glossary.js" defer></script>
