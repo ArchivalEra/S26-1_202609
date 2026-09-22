@@ -12,6 +12,7 @@
 !/维护条例.md
 !/维护细则.md
 !/.agents/skills/repo-maintenance/SKILL.md
+!/.agents/skills/repo-maintenance/读图提示词.md
 !/.agents/skills/human-first-solution/SKILL.md
 !/.agents/skills/double-sign/SKILL.md
 !/.githooks/pre-commit
