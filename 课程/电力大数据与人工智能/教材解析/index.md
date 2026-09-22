@@ -1,18 +1,18 @@
 ---
-id: okf.course.grid_stability.textbook.index
-name: 大电网安全稳定智能分析与控制教材解析索引
+id: okf.course.power_bigdata_ai.textbook.index
+name: 电力大数据与人工智能教材解析索引
 type: CatalogIndex
 spec_version: "0.2"
 status: active
-last_updated: "2026-09-20"
+last_updated: "2026-09-22"
 stewards:
-  - team: 大电网安全稳定智能分析与控制课程学习记录
-course: 大电网安全稳定智能分析与控制
+  - team: 电力大数据与人工智能课程学习记录
+course: 电力大数据与人工智能
 category: 教材解析
 sources: []
 ---
 
-# 大电网安全稳定智能分析与控制教材解析
+# 电力大数据与人工智能教材解析
 
 [返回课程索引](../index.md) · [教材章节解析模板](../../../模板/教材章节解析.md)
 
