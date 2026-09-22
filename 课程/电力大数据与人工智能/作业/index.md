@@ -1,18 +1,18 @@
 ---
-id: okf.course.grid_stability.homework.index
-name: 大电网安全稳定智能分析与控制作业索引
+id: okf.course.power_bigdata_ai.homework.index
+name: 电力大数据与人工智能作业索引
 type: CatalogIndex
 spec_version: "0.2"
 status: active
-last_updated: "2026-09-20"
+last_updated: "2026-09-22"
 stewards:
-  - team: 大电网安全稳定智能分析与控制课程学习记录
-course: 大电网安全稳定智能分析与控制
+  - team: 电力大数据与人工智能课程学习记录
+course: 电力大数据与人工智能
 category: 作业
 sources: []
 ---
 
-# 大电网安全稳定智能分析与控制作业
+# 电力大数据与人工智能作业
 
 [返回课程索引](../index.md) · [作业模板](../../../模板/作业.md)
 

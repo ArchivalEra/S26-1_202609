@@ -1,18 +1,18 @@
 ---
-id: okf.course.grid_stability.audio.index
-name: 大电网安全稳定智能分析与控制音频索引
+id: okf.course.power_bigdata_ai.audio.index
+name: 电力大数据与人工智能音频索引
 type: CatalogIndex
 spec_version: "0.2"
 status: active
-last_updated: "2026-09-20"
+last_updated: "2026-09-22"
 stewards:
-  - team: 大电网安全稳定智能分析与控制课程学习记录
-course: 大电网安全稳定智能分析与控制
+  - team: 电力大数据与人工智能课程学习记录
+course: 电力大数据与人工智能
 category: 音频
 sources: []
 ---
 
-# 大电网安全稳定智能分析与控制音频记录
+# 电力大数据与人工智能音频记录
 
 [返回课程索引](../index.md) · [音频记录模板](../../../模板/音频记录.md)
 
