@@ -72,6 +72,7 @@ const TARGET_FILES = [
   '课程/电子技术/音频/index.md',
   '课程/电机学/index.md',
   '课程/电机学/作业/index.md',
+  '课程/电机学/作业/2026-09-22-第1章概述客观题.md',
   '课程/电机学/教材解析/index.md',
   '课程/电机学/课堂笔记/index.md',
   '课程/电机学/原始资料/index.md',
@@ -297,7 +298,11 @@ const NAV_STRUCTURE = [
         label: "电机学",
         path: "课程/电机学/index.md",
         children: [
-          { label: "作业", path: "课程/电机学/作业/index.md" },
+          { label: "作业", path: "课程/电机学/作业/index.md",
+            children: [
+              { label: "09-22 第1章概述客观题（25题）", path: "课程/电机学/作业/2026-09-22-第1章概述客观题.md" }
+            ]
+          },
           { label: "教材解析", path: "课程/电机学/教材解析/index.md" },
           { label: "课堂笔记", path: "课程/电机学/课堂笔记/index.md" },
           { label: "原始资料", path: "课程/电机学/原始资料/index.md" },
