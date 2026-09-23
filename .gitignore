@@ -22,6 +22,7 @@
 !/.githooks/test-update-readme.py
 !/.githooks/check-markdown.py
 !/.githooks/prepare-photos.py
+!/.githooks/extract-transcript.py
 !/.githooks/flip-photo.py
 !/.github/workflows/deploy.yml
 
