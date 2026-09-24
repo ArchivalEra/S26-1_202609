@@ -45,8 +45,8 @@
 
 #### 课堂笔记（2 份）
 
-- [二阶与三阶行列式计算、沙路法则与手算书写规范 (2026-09-17)](./%E8%AF%BE%E7%A8%8B/%E5%B7%A5%E7%A8%8B%E6%95%B0%E5%AD%A6/%E8%AF%BE%E5%A0%82%E7%AC%94%E8%AE%B0/2026-09-17-determinants-order-2-3.md)
-- [工程数学开课转写整理：行列式入门、展开与基本性质（2026-09-17）](./%E8%AF%BE%E7%A8%8B/%E5%B7%A5%E7%A8%8B%E6%95%B0%E5%AD%A6/%E8%AF%BE%E5%A0%82%E7%AC%94%E8%AE%B0/2026-09-17-determinants-transcript-notes.md)
+- [二阶与三阶行列式计算、沙路法则与手算书写规范](./%E8%AF%BE%E7%A8%8B/%E5%B7%A5%E7%A8%8B%E6%95%B0%E5%AD%A6/%E8%AF%BE%E5%A0%82%E7%AC%94%E8%AE%B0/2026-09-17-determinants-order-2-3.md)
+- [工程数学 2026-09-17：行列式的展开、三角结构与基本性质](./%E8%AF%BE%E7%A8%8B/%E5%B7%A5%E7%A8%8B%E6%95%B0%E5%AD%A6/%E8%AF%BE%E5%A0%82%E7%AC%94%E8%AE%B0/2026-09-17-determinants-transcript-notes.md)
 
 #### 原始资料（1 份）
 
@@ -176,7 +176,7 @@
 
 已登记 **6** 门课程、**38** 份资料（不含索引、模板和历史入口）。
 
-<!-- 仓库内容摘要（不含 README）：48a05357043e1a5d2314c4be9d498cde57ad6859e1f6a3d9a347eeead7121ac8 -->
+<!-- 仓库内容摘要（不含 README）：f42e792766822ce944ff6c10a15fe2afb14f0fea52efe9dfbda98ec9a2345565 -->
 
 <!-- AUTO-CATALOG:END -->
 
