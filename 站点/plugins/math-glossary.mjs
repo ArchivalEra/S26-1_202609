@@ -86,6 +86,19 @@ export function glossifyTex(tex, dict = {}) {
   if (typeof tex !== "string") return tex;
   let out = tex;
 
+  // ⓪ 先把「当文字排」的片段与「环境骨架」保护起来，否则取词会把公式打断：
+  //    \mathrm{...}/\text{...} 里是单位（H/m、Wb、N·m）；
+  //    \begin{aligned}、\begin{array}{l} 里的字母是环境名与列格式——KaTeX 遇到
+  //    \htmlData 混进这两处会直接报 "Expected node of ... type, but got node of type html"。
+  const guarded = [];
+  out = out.replace(
+    /\\(?:mathrm|text|textrm|operatorname|mbox)\{[^{}]*\}|\\(?:begin|end)\{[^{}]*\}(?:\{[^{}]*\})*/g,
+    (m) => {
+      guarded.push(m);
+      return `\u0001${guarded.length - 1}\u0001`;
+    },
+  );
+
   // ① 词典声明过的 TeX 原子（entry.tex）：整原子取词，长的优先。
   //    前后不挨字母/数字/下划线（B 不会被 \Big 之类命令吃掉），
   //    后面紧跟 _ 或 ^ 的跳过（B_m、H_c 另有词条，不拆开单个字母）。
@@ -104,10 +117,11 @@ export function glossifyTex(tex, dict = {}) {
   }
 
   // ② 行列记号与正负号公式（按用户约定收窄，与词典是否声明无关）
+  const restore = (s) => s.replace(/\u0001(\d+)\u0001/g, (m, i) => guarded[Number(i)] ?? m);
   const hasRowcol = Object.prototype.hasOwnProperty.call(dict, "sym-rowcol");
   const hasPower = Object.prototype.hasOwnProperty.call(dict, "sym-power");
-  if (!hasRowcol && !hasPower) return out;
-  return out.replace(TEX_TERM_RE, (match, rc, rcSub, powExp) => {
+  if (!hasRowcol && !hasPower) return restore(out);
+  return restore(out.replace(TEX_TERM_RE, (match, rc, rcSub, powExp) => {
     if (rc && hasRowcol) {
       return `\\htmlData{term=sym-rowcol}{${rc}_${rcSub}}`;
     }
@@ -115,7 +129,7 @@ export function glossifyTex(tex, dict = {}) {
       return `\\htmlData{term=sym-power}{(-1)^${powExp}}`;
     }
     return match;
-  });
+  }));
 }
 
 const esc = (s) =>
