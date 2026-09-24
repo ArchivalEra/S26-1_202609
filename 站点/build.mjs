@@ -495,10 +495,40 @@ for (const relPath of TARGET_FILES) {
       .replace(/\\/g, '/').replace(/\.md$/, '.html') + '#' + id
   );
   const here = courseOf(relPath || path.relative(ROOT, fullPath));
+
+  // 气泡文本在构建期处理好：① 先转义 HTML；② 把 $…$ 渲染成 KaTeX（词条里就能写真分式
+  // `\frac`，而不是拿斜杠或 unicode 上下标凑）；③ 文本里若出现 [tex]{#id} 令牌写法，
+  // 保持字面——气泡里不套气泡。**标题与文本走同一条路**（气泡顶上的 `B_r：…` 也该是真公式）。
+  // 客户端两者都用 innerHTML 插入（见 GLOSSARY_JS）。
+  const renderBubbleText = (s) =>
+    String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\$([^$\n]+)\$/g, (m, tex) => {
+        try {
+          return katex.renderToString(wrapBareCJK(tex), {
+            displayMode: false,
+            throwOnError: false,
+            trust: true,
+            strict: false,
+          });
+        } catch (err) {
+          return m;
+        }
+      });
+  // 同一段文字的**纯文本**版（读屏用）：只脱掉 $ 与 TeX 的反斜杠花括号，够读即可——
+  // 标题的 aria-label 不该念出「美元号、反斜杠、下划线」。
+  const plainBubbleText = (s) =>
+    String(s).replace(/\$([^$\n]+)\$/g, (m, tex) => tex.replace(/\\/g, '').replace(/[{}]/g, ''));
+
   // 两本词典：merged 管显式令牌（跨课程可用，链接按词条所属课程解析）；
   // page 只管自动取词（只认本课程的声明）。
   const mergedGlossaryDict = Object.fromEntries(
-    Object.entries(glossaryDict).map(([id, e]) => [id, { ...e, href: notationHrefOf(id, e) }])
+    Object.entries(glossaryDict).map(([id, e]) => [
+      id,
+      { ...e, href: notationHrefOf(id, e), titleText: plainBubbleText(e.title) },
+    ])
   );
   const pageGlossaryDict = Object.fromEntries(
     Object.entries(glossaryDict).filter(([, e]) => courseOf(e.page) === here)
@@ -602,9 +632,37 @@ for (const relPath of TARGET_FILES) {
   // wrapBareCJK）、链接降级（Step 3/4）之前（本步产物是 raw HTML，由
   // marked 原样透传）。实现见 站点/plugins/math-glossary.mjs（独立可拆卸）。
   // 词典（pageGlossaryDict）在本页处理开头就备好了——Step 2 也用它。
+  // `:::glossary-dict table` 的围栏（电机学符号入门页用的）渲染成**符号总表**：
+  // 每行以词条 id 作锚点，气泡里的「详细 ↗」才有精确落点。族面板只讲其中一部分符号，
+  // 光靠它们拿不到逐符号的锚点（130 个符号里有 100 个只出现在教材那张符号表里）。
+  const renderDictTable = (entries) =>
+    [
+      '<table>',
+      '<thead><tr><th>符号</th><th>含义</th></tr></thead>',
+      '<tbody>',
+      ...entries.map(
+        (e) =>
+          `<tr id="${e.id}"><th scope="row">${renderBubbleText(e.title)}</th>` +
+          `<td>${renderBubbleText(e.text)}</td></tr>`,
+      ),
+      '</tbody>',
+      '</table>',
+    ].join('\n');
+
   raw = renderGlossary(raw, {
     dict: mergedGlossaryDict,
     wrapDict: pageGlossaryDict,
+    // 总表的词条**按围栏给的顺序、但取模块级解析的原文**：围栏行里的 $…$ 在 Step 2 已经
+    // 被换成 MATH 占位符，还原出来的是**正文口径**的渲染（带自动取词的 \htmlData），
+    // 与气泡口径（renderBubbleText，不取词）不一致，而且会在 `\mathbf F` 这种
+    // 「命令 + 空格 + 参数」处把命令劈开（KaTeX 直接报错）。
+    dictTable: (entries) =>
+      renderDictTable(
+        entries.map(({ id }) => {
+          const e = pageGlossaryDict[id] || {};
+          return { id, title: e.title ?? id, text: e.text ?? '' };
+        }),
+      ),
     renderTex: (tex) => {
       try {
         // 令牌内部的 TeX 不再二次取词（令牌自己就是可点符号，嵌套 htmlData 会互相打架）
@@ -613,7 +671,6 @@ for (const relPath of TARGET_FILES) {
           throwOnError: false,
           trust: true,
           strict: false,
-        strict: false
         });
       } catch (e) {
         return `<span class="katex-error">${e.message}</span>`;
@@ -624,30 +681,11 @@ for (const relPath of TARGET_FILES) {
   });
   // 气泡词典按页烘焙成 JSON（词条的 href 已是当页可用的相对链接），
   // 客户端模块从 #sym-glossary-json 读，不发任何请求。
-  // 气泡文本在构建期处理好：① 先转义 HTML；② 把 $…$ 渲染成 KaTeX（词条里就能写 \frac 出真分式，
-  // 而不是拿斜杠凑）；③ 文本里若出现 [tex]{#id} 令牌写法，保持字面——气泡里不套气泡。
-  const renderBubbleText = (s) =>
-    String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/\$([^$\n]+)\$/g, (m, tex) => {
-        try {
-          return katex.renderToString(wrapBareCJK(tex), {
-            displayMode: false,
-            throwOnError: false,
-            trust: true,
-            strict: false,
-          });
-        } catch (err) {
-          return m;
-        }
-      });
   const glossaryJsonPayload = {
     terms: Object.fromEntries(
       Object.entries(mergedGlossaryDict).map(([id, e]) => [
         id,
-        { title: e.title, text: renderBubbleText(e.text), href: e.href },
+        { title: renderBubbleText(e.title), text: renderBubbleText(e.text), href: e.href },
       ])
     )
   };

@@ -38,12 +38,20 @@
  * （内容侧单一来源，改词条不用碰代码）：
  *
  *   :::glossary-dict
- *   sym-index | 下标：门牌号 | 下标是坐标：前行后列，a₂₃ 即第 2 行第 3 列。
- *   sym-power | 上标：乘方 | 右上角是乘方；(-1)^{i+j} 只管正负号。
+ *   sym-index | 下标：门牌号 | 下标是坐标：前行后列，$a_{23}$ 即第 2 行第 3 列。
+ *   sym-power | 上标：乘方 | 右上角是乘方；$(-1)^{i+j}$ 只管正负号。
  *   :::
  *
  * 每行 `id | 标题 | 气泡文本`；文本里的 | 用不着转义（按前两根切分）。
+ * **标题与文本都可以写 $…$**——两者都在构建期渲染成公式（见宿主注入的 renderBubbleText），
+ * 所以词条里能写真分式，不必拿斜杠或 unicode 上下标凑。词条文本里再写 [tex]{#id}
+ * 令牌则保持字面：气泡里不套气泡。
  * 渲染符号页自身时围栏会被剥掉（那是给构建读的数据，不是给人看的正文）。
+ *
+ * **`:::glossary-dict table`（可选第二个词）**：围栏位置改渲染成一张**符号总表**
+ * （每行 `id="<词条id>"`，行的标题格就是锚点）。符号入门页里符号多、族面板只讲其中一部分时，
+ * 气泡的「详细 ↗」需要一个精确落点——总表把每个词条的锚点补齐，顺带让那页真的把表列出来。
+ * 表格 HTML 由宿主注入（本模块不懂 KaTeX），没注入时行为与普通围栏一致（剥掉，不留残影）。
  *
  * ============================ 与宿主的接缝 ============================
  *
@@ -56,7 +64,8 @@
  * wrapBareCJK 等私有约定），没有回调时令牌退化为纯文本。
  */
 
-const DICT_OPEN_RE = /^[\t ]{0,3}:::glossary-dict[\t ]*$/;
+/** 词典围栏；可选第二个词（如 `table`）是围栏级选项，见文件头。 */
+const DICT_OPEN_RE = /^[\t ]{0,3}:::glossary-dict(?:[\t ]+([A-Za-z][A-Za-z0-9_-]*))?[\t ]*$/;
 /** 自动取词声明：`id | 正文形式（、分隔）| TeX 形式（、分隔，可省）`。 */
 const MATCH_OPEN_RE = /^[\t ]{0,3}:::glossary-match[\t ]*$/;
 const CLOSE_RE = /^[\t ]{0,3}:{3,}[\t ]*$/;
@@ -118,6 +127,9 @@ export function glossifyTex(tex, dict = {}) {
       // 前面是反斜杠 = 这个字母属于命令名（\Delta 的 D、\left 的 l、\times 的 t），
       // 插进去会把命令劈开；命令型原子（\oint）遇到反斜杠也说明是更长的命令。
       if (before === "\\") return whole;
+      // 前面是「吃参数的命令 + 空白」= 这个原子是那条命令的参数（\mathbf F 里的 F）：
+      // 同样不能插，否则命令缺参数。
+      if (ARG_COMMANDS.test(full.slice(0, offset))) return whole;
       const isScript = before === "_" || before === "^";
       if (atom.startsWith("\\")) {
         // 数学里 V\oint、B\cos 这种紧邻写法正常，前面是字母照取；
@@ -158,6 +170,18 @@ const esc = (s) =>
     .replace(/"/g, "&quot;");
 
 /**
+ * 解析一行词典词条：`id | 标题 | 文本`（文本里可再含 |，按前两根切分）。
+ * 缺字段或 id 不合法返回 null——跳过，不猜。
+ */
+function parseDictLine(line) {
+  const parts = line.split("|");
+  if (parts.length < 3) return null;
+  const id = parts[0].trim();
+  if (!TERM_ID_RE.test(id)) return null;
+  return { id, title: parts[1].trim(), text: parts.slice(2).join("|").trim() };
+}
+
+/**
  * 从 Markdown 源里解析 :::glossary-dict 围栏，返回 { id: {title, text} }。
  * 跟踪代码围栏（围栏内的 ::: 不算数）；重复 id 后者覆盖前者。
  */
@@ -185,11 +209,8 @@ export function parseGlossaryDict(source) {
       continue;
     }
     if (line.trim() === "" || line.trim().startsWith("#")) continue;
-    const parts = line.split("|");
-    if (parts.length < 3) continue; // 缺字段：跳过，不猜
-    const id = parts[0].trim();
-    if (!TERM_ID_RE.test(id)) continue;
-    dict[id] = { title: parts[1].trim(), text: parts.slice(2).join("|").trim() };
+    const entry = parseDictLine(line);
+    if (entry) dict[entry.id] = { title: entry.title, text: entry.text };
   }
   return dict;
 }
@@ -233,11 +254,22 @@ export function parseGlossaryMatch(source) {
   return out;
 }
 
-/** 从源里剥掉全部 :::glossary-dict 与 :::glossary-match 围栏（数据块不该出现在正文里）。 */
-function stripDictFences(lines) {
+/**
+ * 剥掉全部 :::glossary-dict 与 :::glossary-match 围栏（数据块不该出现在正文里）。
+ * `:::glossary-dict table` 且给了 onTable 时，围栏原位置留下 onTable(entries) 的产物
+ * （entry 按围栏里的书写顺序），供符号入门页把词典本身列成表。
+ * @param {string[]} lines
+ * @param {((entries: {id: string, title: string, text: string}[]) => string) | null} [onTable]
+ */
+function stripDictFences(lines, onTable = null) {
   const out = [];
   let fence = null;
   let inDict = false;
+  let asTable = false;
+  let entries = [];
+  const flush = () => {
+    if (asTable && onTable && entries.length) out.push(onTable(entries));
+  };
   for (const line of lines) {
     const f = line.match(FENCE_RE);
     if (f) {
@@ -251,15 +283,34 @@ function stripDictFences(lines) {
       out.push(line);
       continue;
     }
-    if (!inDict && (DICT_OPEN_RE.test(line) || MATCH_OPEN_RE.test(line))) {
-      inDict = true;
+    if (!inDict) {
+      const open = line.match(DICT_OPEN_RE);
+      if (open) {
+        inDict = true;
+        asTable = open[1] === "table";
+        entries = [];
+        continue;
+      }
+      if (MATCH_OPEN_RE.test(line)) {
+        inDict = true;
+        asTable = false;
+        entries = [];
+        continue;
+      }
+      out.push(line);
       continue;
     }
-    if (inDict) {
-      if (CLOSE_RE.test(line)) inDict = false;
+    if (CLOSE_RE.test(line)) {
+      inDict = false;
+      flush();
+      asTable = false;
+      entries = [];
       continue;
     }
-    out.push(line);
+    if (asTable) {
+      const entry = parseDictLine(line);
+      if (entry) entries.push(entry);
+    }
   }
   return out;
 }
@@ -274,6 +325,13 @@ function stripDictFences(lines) {
  */
 const PROTECT_RE = /(`[^`\n]*`|\$[^$\n]*\$|\[[^\]\n]+\]\{#[A-Za-z_][A-Za-z0-9_-]*\}|\]\([^)\n]*\)|<[^>\n]+>)/;
 const SKIP_AFTER = "图表级相极端样附";
+/**
+ * 会**吃参数**的命令：紧跟在 `\mathbf ` 后面的那个字母是它的参数，不是独立符号，
+ * 把 `\htmlData` 插进那中间等于把命令劈开（`\mathbf \htmlData{…}{F}` →
+ * KaTeX 报 "Unexpected end of input in a macro argument"）。
+ * 只列这类命令，别把 `\mu`、`\alpha` 这些不接参数的符号命令算进来——`\mu H` 里的 H 要取词。
+ */
+const ARG_COMMANDS = /\\(?:math(?:bf|it|rm|sf|tt|cal|bb|frak)|vec|hat|bar|tilde|dot|ddot|overline|underline|sqrt|left|right|big|Big|bigg|Bigg|text|textnormal|operatorname|boldsymbol|pmb)\s*$/;
 export function autoWrapTerms(source, dict = {}) {
   const forms = [];
   for (const [id, entry] of Object.entries(dict)) {
@@ -317,23 +375,37 @@ export function autoWrapTerms(source, dict = {}) {
  * 词典里没有的 id **原样保留**（显式可见的坏令牌好过静默吞掉）。
  *
  * @param {string} source
- * @param {{dict: object, renderTex?: (tex: string) => string, notationHref?: string}} opts
+ * @param {{dict: object, wrapDict?: object, renderTex?: (tex: string) => string,
+ *          notationHref?: string, dictTable?: (entries: Array<{id: string, title: string, text: string}>) => string}} opts
  *   renderTex   宿主注入的 KaTeX 行内渲染回调；缺省时令牌用纯文本。
  *   notationHref 当页到符号入门页的链接（.html）；缺省落到 '#id' 纯锚点。
  *                多课程合并词典时，改在词条上带 href（优先级更高，见 build.mjs）。
+ *   dictTable   `:::glossary-dict table` 围栏的渲染回调（宿主注入，本模块不懂 KaTeX）；
+ *               缺省时该围栏与普通围栏一样被剥掉。
  */
 export function renderGlossary(source, opts = {}) {
   if (typeof source !== "string") return source;
-  const { dict = {}, wrapDict = null, renderTex = null, notationHref = "" } = opts;
+  const { dict = {}, wrapDict = null, renderTex = null, notationHref = "", dictTable = null } = opts;
   // 两本词典分工：
   //   dict     —— **合并词典**，管显式令牌 [tex]{#id}。作者手写的令牌允许跨课程
   //               （气泡里的「详细 ↗」按词条所属课程解析，链接不会串错页）。
   //   wrapDict —— **本课程词典**，只管自动取词：别的课的符号拿到这一页取词会闹笑话
   //               （工程数学的 A 是矩阵、电机学的 A 是 A 相）。
   const wrapSource = wrapDict || dict;
-  // 先剥数据围栏、再按词典声明自动取词，最后才判断「这一页有没有活干」——
-  // 短路必须在自动取词之后，否则裸写符号的页面会被当成没活干而原样返回。
-  const stripped = stripDictFences(source.split(/\r?\n/)).join("\n");
+  // 先剥数据围栏（`table` 围栏换成总表，但只留占位符——总表 HTML 里全是 KaTeX 产物，
+  // 若此刻就插进来，自动取词会把手伸进标签之间的文字里，把 <td>B</td> 这类文本当裸符号
+  // 上色，甚至插进 MathML annotation 内部），再按词典声明自动取词，最后才判断
+  // 「这一页有没有活干」——短路必须在自动取词之后，否则裸写符号的页面会被当成没活干而原样返回。
+  const tables = [];
+  const stripped = stripDictFences(
+    source.split(/\r?\n/),
+    dictTable
+      ? (entries) => {
+          tables.push(dictTable(entries));
+          return `@@GLOSS_TABLE_${tables.length - 1}@@`;
+        }
+      : null,
+  ).join("\n");
   const wrapped = autoWrapTerms(stripped, wrapSource);
   const hasWork =
     source.includes(":::glossary-dict") ||
@@ -342,19 +414,23 @@ export function renderGlossary(source, opts = {}) {
   TOKEN_RE.lastIndex = 0; // 全局正则带状态，复用前必须归零
   if (!hasWork) return source;
 
-  return wrapped.replace(TOKEN_RE, (match, tex, term) => {
-    if (!Object.prototype.hasOwnProperty.call(dict, term)) return match;
-    const entry = dict[term];
-    const inner =
-      renderTex && tex.trim() !== ""
-        ? renderTex(tex)
-        : esc(tex);
-    const href = entry.href || `${notationHref}#${term}`;
-    return (
-      `<a class="sym-gloss" data-term="${esc(term)}" href="${esc(href)}"` +
-      ` aria-label="${esc(entry.title)}">${inner}</a>`
-    );
-  });
+  return wrapped
+    .replace(TOKEN_RE, (match, tex, term) => {
+      if (!Object.prototype.hasOwnProperty.call(dict, term)) return match;
+      const entry = dict[term];
+      const inner =
+        renderTex && tex.trim() !== ""
+          ? renderTex(tex)
+          : esc(tex);
+      const href = entry.href || `${notationHref}#${term}`;
+      // aria-label 用**纯文本**标题（词条标题可为 $…$，读屏不该念出美元号与反斜杠）
+      const label = entry.titleText || entry.title;
+      return (
+        `<a class="sym-gloss" data-term="${esc(term)}" href="${esc(href)}"` +
+        ` aria-label="${esc(label)}">${inner}</a>`
+      );
+    })
+    .replace(/@@GLOSS_TABLE_(\d+)@@/g, (match, i) => tables[Number(i)] ?? "");
 }
 
 /**
@@ -393,7 +469,8 @@ function () {
     pop = document.createElement("div");
     pop.className = "sym-gloss-pop";
     var t = document.createElement("strong");
-    t.textContent = entry.title;
+    // 标题与正文一样由构建期渲染：HTML 已转义、$…$ 已出公式（所以两者都用 innerHTML）
+    t.innerHTML = entry.title;
     pop.appendChild(t);
     var p = document.createElement("p");
     // 词条文本由构建期处理好：HTML 已转义、$…$ 已渲染成公式（所以这里用 innerHTML），
