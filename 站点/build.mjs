@@ -495,10 +495,13 @@ for (const relPath of TARGET_FILES) {
       .replace(/\\/g, '/').replace(/\.md$/, '.html') + '#' + id
   );
   const here = courseOf(relPath || path.relative(ROOT, fullPath));
+  // 两本词典：merged 管显式令牌（跨课程可用，链接按词条所属课程解析）；
+  // page 只管自动取词（只认本课程的声明）。
+  const mergedGlossaryDict = Object.fromEntries(
+    Object.entries(glossaryDict).map(([id, e]) => [id, { ...e, href: notationHrefOf(id, e) }])
+  );
   const pageGlossaryDict = Object.fromEntries(
-    Object.entries(glossaryDict)
-      .filter(([, e]) => courseOf(e.page) === here)
-      .map(([id, e]) => [id, { ...e, href: notationHrefOf(id, e) }])
+    Object.entries(glossaryDict).filter(([, e]) => courseOf(e.page) === here)
   );
 
   // Strip frontmatter
@@ -600,10 +603,12 @@ for (const relPath of TARGET_FILES) {
   // marked 原样透传）。实现见 站点/plugins/math-glossary.mjs（独立可拆卸）。
   // 词典（pageGlossaryDict）在本页处理开头就备好了——Step 2 也用它。
   raw = renderGlossary(raw, {
-    dict: pageGlossaryDict,
+    dict: mergedGlossaryDict,
+    wrapDict: pageGlossaryDict,
     renderTex: (tex) => {
       try {
-        return katex.renderToString(wrapBareCJK(glossifyTex(tex, pageGlossaryDict)), {
+        // 令牌内部的 TeX 不再二次取词（令牌自己就是可点符号，嵌套 htmlData 会互相打架）
+        return katex.renderToString(wrapBareCJK(tex), {
           displayMode: false,
           throwOnError: false,
           trust: true,
@@ -621,7 +626,7 @@ for (const relPath of TARGET_FILES) {
   // 客户端模块从 #sym-glossary-json 读，不发任何请求。
   const glossaryJsonPayload = {
     terms: Object.fromEntries(
-      Object.entries(pageGlossaryDict).map(([id, e]) => [id, { title: e.title, text: e.text, href: e.href }])
+      Object.entries(mergedGlossaryDict).map(([id, e]) => [id, { title: e.title, text: e.text, href: e.href }])
     )
   };
 
