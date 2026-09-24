@@ -624,9 +624,31 @@ for (const relPath of TARGET_FILES) {
   });
   // 气泡词典按页烘焙成 JSON（词条的 href 已是当页可用的相对链接），
   // 客户端模块从 #sym-glossary-json 读，不发任何请求。
+  // 气泡文本在构建期处理好：① 先转义 HTML；② 把 $…$ 渲染成 KaTeX（词条里就能写 \frac 出真分式，
+  // 而不是拿斜杠凑）；③ 文本里若出现 [tex]{#id} 令牌写法，保持字面——气泡里不套气泡。
+  const renderBubbleText = (s) =>
+    String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\$([^$\n]+)\$/g, (m, tex) => {
+        try {
+          return katex.renderToString(wrapBareCJK(tex), {
+            displayMode: false,
+            throwOnError: false,
+            trust: true,
+            strict: false,
+          });
+        } catch (err) {
+          return m;
+        }
+      });
   const glossaryJsonPayload = {
     terms: Object.fromEntries(
-      Object.entries(mergedGlossaryDict).map(([id, e]) => [id, { title: e.title, text: e.text, href: e.href }])
+      Object.entries(mergedGlossaryDict).map(([id, e]) => [
+        id,
+        { title: e.title, text: renderBubbleText(e.text), href: e.href },
+      ])
     )
   };
 
