@@ -89,6 +89,9 @@ describe("自动取词：词典声明过的符号在正文与公式里自动可�
     // 但外课的符号不会在本页被自动取词
     const plain = renderGlossary("这里出现了一个 Z。", { dict: merged, wrapDict: {}, renderTex: fakeTex });
     assert.ok(!plain.includes("data-term"));
+    // 客户端脚本契约：详细链接不会拼成双锚点；词条文本走构建期渲染好的 HTML
+    assert.ok(GLOSSARY_JS.includes('indexOf("#")'), "客户端应识别 href 里已含锚点");
+    assert.ok(GLOSSARY_JS.includes("p.innerHTML = entry.text"), "气泡文本按构建期 HTML 渲染（支持公式）");
   });
 
   it("不劈开命令名与上下标参数（\\Delta 的 D、\\left 的 l 不能被取词）", () => {
@@ -107,8 +110,7 @@ describe("自动取词：词典声明过的符号在正文与公式里自动可�
 });
 
 describe("glossifyTex：TeX 内自动取词", () => {
-  const fullDict = {
-    "sym-rowcol": { title: "t", text: "x" },
+  const fullDict = {    "sym-rowcol": { title: "t", text: "x" },
     "sym-power": { title: "t", text: "x" },
     "sym-index": { title: "t", text: "x" },
   };
