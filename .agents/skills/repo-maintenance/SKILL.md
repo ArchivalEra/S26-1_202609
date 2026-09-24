@@ -74,8 +74,7 @@ python3 .githooks/update-readme.py --worktree && python3 .githooks/test-update-r
 - **转写用第 1 步的脚本提取**，随手重写 python 解析是浪费。
 - **索引最小 diff**：只加行、只改 `last_updated`，不整篇重写，也不先通读（新写的内容本就在上下文里）。
 - **handoff 最小更新**：§1 该课那一行 + §6 该课小节追加 2–4 行 + §9 加一行。
-- **推送即结束**：`git push` 后看一次 CI 状态就收工——`gh run list --limit 1`；gh 未解锁时用公开 API（仓库是公开的，免 token）：
-  `curl -s -H "Accept: application/vnd.github+json" "https://api.github.com/repos/ArchivalEra/S26-1_202609/actions/runs?per_page=1"`
-  （**必须带 Accept 头**，否则返回体里没有 `workflow_runs`，看着像失败；重跑失败的 workflow 需要 gh，替代办法是 `git commit --allow-empty` 再推一次）。
-  **不 `sleep` 等 CI 与 CDN**：线上页面只在改动 `站点/` 或用户要看时抓。
+- **推送即结束，禁止等 CI**（2026-09-24 用户定案）：本地构建与 CI 等效（同一个 `node build.mjs`、同一套钩子），
+  所以 `git push` 就是终点——不 `sleep`、不轮询、不为「看 CI 绿不绿」多花一分钟；线上页面只在改动 `站点/`
+  或用户要看时抓。只有部署步骤本身报错（如密钥被拒）时才偶尔看一眼运行状态。
 - 读图规程（含照抄用的提示词模板、照片登记）在 [读图提示词.md](./读图提示词.md)，有图才打开。
