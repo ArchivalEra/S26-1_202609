@@ -28,7 +28,10 @@ skill 的正文**不会自动加载**——上下文里只有它的名字和一�
 - **资料与索引同进同出**：`课程/<课程>/<类别>/` 下任何资料变动，同一次提交必须更新对应 `index.md`。
 - **改 `课程/` 或 `站点/` 的提交必须同轮更新 `.zcode/handoff.md`**（pre-commit 强制）。不要用 `--no-verify`。
 - 提交前跑：`update-readme.py --worktree`、`check-markdown.py`、`test-update-readme.py`、`git fsck --no-progress`。
-- **入库保持一次过**（2026-09-23 定案）：转写用 `.githooks/extract-transcript.py` 提取，索引只做最小 diff（加行 + `last_updated`），收尾用 skill 里那条命令**一次跑完**，`git push` 后看一次 `gh run list` 就收工——**不 sleep 等 CI 与 CDN**，线上页面只在动过 `站点/` 或用户要看时抓。
+- **禁止等 CI**（2026-09-24 用户定案）：本地构建与 CI 构建等效（同一个 `node build.mjs`、同一套钩子、同一批素材），
+  **`git push` 就是这一步的终点**——不要 `sleep`、不要轮询、不要为了「看 CI 绿不绿」多等一分钟。
+  只有怀疑基础设施本身（比如部署步骤报密钥错）时才偶尔看一眼。
+- **入库保持一次过**（2026-09-23 定案）：转写用 `.githooks/extract-transcript.py` 提取，索引只做最小 diff（加行 + `last_updated`），收尾用 skill 里那条命令**一次跑完**；线上页面只在动过 `站点/` 或用户要看时抓。
 
 ## 三、写作口径
 
