@@ -119,13 +119,23 @@ const disclosureAnchorDist = path.join(DIST_DIR, 'assets', 'plugins', 'disclosur
 fs.mkdirSync(path.dirname(disclosureAnchorDist), { recursive: true });
 fs.writeFileSync(disclosureAnchorDist, DISCLOSURE_ANCHOR_JS);
 
-// 符号气泡词典：唯一来源是符号入门页里的 :::glossary-dict 围栏（内容侧维护，
-// 改词条不碰代码）。实现见 站点/plugins/math-glossary.mjs（独立可拆卸模块：
+// 符号气泡词典：来源是**每门课自己的**符号入门页里的 :::glossary-dict 围栏（内容侧维护，
+// 改词条不碰代码）。构建期把各课的词典合并，词条记下它所属的页面（「详细 ↗」按词条解析，
+// 不跨课程串页）；同一 id 出现在两门课里直接报错——id 必须全局唯一。
+// 实现见 站点/plugins/math-glossary.mjs（独立可拆卸模块：
 // 删掉本段、Step 2.6 与页面模板里对应 <script> 即回退，令牌恢复成字面文本）。
-const NOTATION_PAGE = '课程/工程数学/教材解析/0.0-符号入门.md';
-const glossaryDict = fs.existsSync(path.join(ROOT, NOTATION_PAGE))
-  ? parseGlossaryDict(fs.readFileSync(path.join(ROOT, NOTATION_PAGE), 'utf-8'))
-  : {};
+const NOTATION_PAGES = TARGET_FILES.filter((p) => p.endsWith('0.0-符号入门.md'));
+const glossaryDict = {};
+for (const page of NOTATION_PAGES) {
+  const abs = path.join(ROOT, page);
+  if (!fs.existsSync(abs)) continue;
+  for (const [id, entry] of Object.entries(parseGlossaryDict(fs.readFileSync(abs, 'utf-8')))) {
+    if (glossaryDict[id]) {
+      throw new Error(`符号词条 id 冲突：${id} 同时出现在 ${glossaryDict[id].page} 与 ${page}（词条 id 需全局唯一）`);
+    }
+    glossaryDict[id] = { ...entry, page };
+  }
+}
 const mathGlossaryDist = path.join(DIST_DIR, 'assets', 'plugins', 'math-glossary.js');
 fs.mkdirSync(path.dirname(mathGlossaryDist), { recursive: true });
 fs.writeFileSync(mathGlossaryDist, GLOSSARY_JS);
@@ -569,12 +579,16 @@ for (const relPath of TARGET_FILES) {
   // 位置：公式提取之后（令牌内 TeX 不与 $…$ 冲突，且渲染回调走同一套
   // wrapBareCJK）、链接降级（Step 3/4）之前（本步产物是 raw HTML，由
   // marked 原样透传）。实现见 站点/plugins/math-glossary.mjs（独立可拆卸）。
-  const notationHref = encodeURI(
-    path.relative(path.dirname(fullPath), path.join(ROOT, NOTATION_PAGE))
-      .replace(/\\/g, '/').replace(/\.md$/, '.html')
+  // 词条的「详细 ↗」按**词条所属课程**的符号入门页解析成当页可用的相对链接
+  const notationHrefOf = (id, entry) => encodeURI(
+    path.relative(path.dirname(fullPath), path.join(ROOT, entry.page))
+      .replace(/\\/g, '/').replace(/\.md$/, '.html') + '#' + id
+  );
+  const pageGlossaryDict = Object.fromEntries(
+    Object.entries(glossaryDict).map(([id, e]) => [id, { ...e, href: notationHrefOf(id, e) }])
   );
   raw = renderGlossary(raw, {
-    dict: glossaryDict,
+    dict: pageGlossaryDict,
     renderTex: (tex) => {
       try {
         return katex.renderToString(wrapBareCJK(glossifyTex(tex, glossaryDict)), {
@@ -588,13 +602,14 @@ for (const relPath of TARGET_FILES) {
         return `<span class="katex-error">${e.message}</span>`;
       }
     },
-    notationHref,
+    // 链接一律走词条自带的 href（多课程词典）；这个回退参数只作兜底
+    notationHref: '',
   });
   // 气泡词典按页烘焙成 JSON（词条的 href 已是当页可用的相对链接），
   // 客户端模块从 #sym-glossary-json 读，不发任何请求。
   const glossaryJsonPayload = {
     terms: Object.fromEntries(
-      Object.entries(glossaryDict).map(([id, e]) => [id, { title: e.title, text: e.text, href: notationHref }])
+      Object.entries(pageGlossaryDict).map(([id, e]) => [id, { title: e.title, text: e.text, href: e.href }])
     )
   };
 
