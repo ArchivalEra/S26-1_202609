@@ -324,11 +324,17 @@ export function autoWrapTerms(source, dict = {}) {
  */
 export function renderGlossary(source, opts = {}) {
   if (typeof source !== "string") return source;
-  const { dict = {}, renderTex = null, notationHref = "" } = opts;
+  const { dict = {}, wrapDict = null, renderTex = null, notationHref = "" } = opts;
+  // 两本词典分工：
+  //   dict     —— **合并词典**，管显式令牌 [tex]{#id}。作者手写的令牌允许跨课程
+  //               （气泡里的「详细 ↗」按词条所属课程解析，链接不会串错页）。
+  //   wrapDict —— **本课程词典**，只管自动取词：别的课的符号拿到这一页取词会闹笑话
+  //               （工程数学的 A 是矩阵、电机学的 A 是 A 相）。
+  const wrapSource = wrapDict || dict;
   // 先剥数据围栏、再按词典声明自动取词，最后才判断「这一页有没有活干」——
   // 短路必须在自动取词之后，否则裸写符号的页面会被当成没活干而原样返回。
   const stripped = stripDictFences(source.split(/\r?\n/)).join("\n");
-  const wrapped = autoWrapTerms(stripped, dict);
+  const wrapped = autoWrapTerms(stripped, wrapSource);
   const hasWork =
     source.includes(":::glossary-dict") ||
     source.includes(":::glossary-match") ||
