@@ -485,6 +485,22 @@ for (const relPath of TARGET_FILES) {
   let raw = fs.readFileSync(fullPath, 'utf-8');
   const pageMeta = pageMetaMap.get(relPath);
 
+  // 本页可用的符号词典：**按课程作用域**——一页只用自己的课程词典。跨课程合并会把
+  // 别的课的符号拿到这一页取词（工程数学的 A 是矩阵、电机学的 A 是 A 相，含义不同），
+  // 那既是语义错误也是一屏噪声。这一份要在 Step 2（公式渲染）之前备好。
+  // 词条的「详细 ↗」按词条所属课程解析成当页可用的相对链接。
+  const courseOf = (p) => String(p).split('/')[1] || '';
+  const notationHrefOf = (id, entry) => encodeURI(
+    path.relative(path.dirname(fullPath), path.join(ROOT, entry.page))
+      .replace(/\\/g, '/').replace(/\.md$/, '.html') + '#' + id
+  );
+  const here = courseOf(relPath || path.relative(ROOT, fullPath));
+  const pageGlossaryDict = Object.fromEntries(
+    Object.entries(glossaryDict)
+      .filter(([, e]) => courseOf(e.page) === here)
+      .map(([id, e]) => [id, { ...e, href: notationHrefOf(id, e) }])
+  );
+
   // Strip frontmatter
   let frontmatter = {};
   const fmMatch = raw.match(/^---\r?\n([\s\S]+?)\r?\n---/);
@@ -527,7 +543,7 @@ for (const relPath of TARGET_FILES) {
     // 教材排版惯例把句末标点写进显示公式（$$….$$），在网页上独立成块后
     // 看着像渲染出了一个多余的点（用户实测反馈）。渲染前剥掉**收尾的一个**
     // 标点——只剥一个：万一公式真以省略号收尾不至于被整串误删。
-    const safeTex = wrapBareCJK(glossifyTex(tex.trim().replace(/[.。，、；;][ \t]*$/, ''), glossaryDict));
+    const safeTex = wrapBareCJK(glossifyTex(tex.trim().replace(/[.。，、；;][ \t]*$/, ''), pageGlossaryDict));
     let rendered = '';
     try {
       rendered = katex.renderToString(safeTex, {
@@ -550,7 +566,7 @@ for (const relPath of TARGET_FILES) {
   raw = raw.replace(/(?<!\$)\$(?!\$)((?:[^$\\\r\n]|\\.)+?)\$(?!\$)/g, (_, tex) => {
     const id = mathBlocks.length;
     totalFormulasRendered++;
-    const safeTex = wrapBareCJK(glossifyTex(tex.trim(), glossaryDict));
+    const safeTex = wrapBareCJK(glossifyTex(tex.trim(), pageGlossaryDict));
     let rendered = '';
     try {
       rendered = katex.renderToString(safeTex, {
@@ -582,19 +598,12 @@ for (const relPath of TARGET_FILES) {
   // 位置：公式提取之后（令牌内 TeX 不与 $…$ 冲突，且渲染回调走同一套
   // wrapBareCJK）、链接降级（Step 3/4）之前（本步产物是 raw HTML，由
   // marked 原样透传）。实现见 站点/plugins/math-glossary.mjs（独立可拆卸）。
-  // 词条的「详细 ↗」按**词条所属课程**的符号入门页解析成当页可用的相对链接
-  const notationHrefOf = (id, entry) => encodeURI(
-    path.relative(path.dirname(fullPath), path.join(ROOT, entry.page))
-      .replace(/\\/g, '/').replace(/\.md$/, '.html') + '#' + id
-  );
-  const pageGlossaryDict = Object.fromEntries(
-    Object.entries(glossaryDict).map(([id, e]) => [id, { ...e, href: notationHrefOf(id, e) }])
-  );
+  // 词典（pageGlossaryDict）在本页处理开头就备好了——Step 2 也用它。
   raw = renderGlossary(raw, {
     dict: pageGlossaryDict,
     renderTex: (tex) => {
       try {
-        return katex.renderToString(wrapBareCJK(glossifyTex(tex, glossaryDict)), {
+        return katex.renderToString(wrapBareCJK(glossifyTex(tex, pageGlossaryDict)), {
           displayMode: false,
           throwOnError: false,
           trust: true,
