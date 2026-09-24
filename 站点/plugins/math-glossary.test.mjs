@@ -77,6 +77,20 @@ describe("自动取词：词典声明过的符号在正文与公式里自动可�
     assert.ok(tex.includes("u=Ri"));
   });
 
+  it("显式令牌跨课程可用（详细链接按词条所属课程解析），自动取词只认本课程", () => {
+    const merged = {
+      ...dict(),
+      "sym-other": { title: "外课符号", text: "x", prose: ["Z"], href: "../外课/0.0-符号入门.html#sym-other" },
+    };
+    // 本页不属于外课（wrapDict 为空）：手写令牌照样解析，且链接指向外课那一页
+    const token = renderGlossary("[Z]{#sym-other}", { dict: merged, wrapDict: {}, renderTex: fakeTex });
+    assert.ok(token.includes('data-term="sym-other"'));
+    assert.ok(token.includes('href="../外课/0.0-符号入门.html#sym-other"'));
+    // 但外课的符号不会在本页被自动取词
+    const plain = renderGlossary("这里出现了一个 Z。", { dict: merged, wrapDict: {}, renderTex: fakeTex });
+    assert.ok(!plain.includes("data-term"));
+  });
+
   it("不劈开命令名与上下标参数（\\Delta 的 D、\\left 的 l 不能被取词）", () => {
     const d = { ...dict(), "sym-D": { title: "D", text: "x", tex: ["D"] }, "sym-l": { title: "l", text: "x", tex: ["l"] } };
     const out = glossifyTex("\\Delta\\mu,\\ \\left.x\\right)", d);
