@@ -94,14 +94,16 @@ export function glossifyTex(tex, dict = {}) {
   out = out.replace(
     /\\(?:mathrm|text|textrm|operatorname|mbox)\{[^{}]*\}|\\(?:begin|end)\{[^{}]*\}(?:\{[^{}]*\})*/g,
     (m) => {
+      if (m === "\\mathrm{d}") return m; // 微分号 d 是术语，留给下面取词
       guarded.push(m);
       return `\u0001${guarded.length - 1}\u0001`;
     },
   );
 
   // ① 词典声明过的 TeX 原子（entry.tex）：整原子取词，长的优先。
-  //    前后不挨字母/数字/下划线（B 不会被 \Big 之类命令吃掉），
-  //    后面紧跟 _ 或 ^ 的跳过（B_m、H_c 另有词条，不拆开单个字母）。
+  //    前后不挨字母/数字/下划线（B 不会被 \Big 之类命令吃掉）；**单字母**后面紧跟
+  //    _ 或 ^ 的跳过（B_m、H_c 另有词条，不拆开单个字母），而命令型与多字符符号
+  //    （\oint_l、\Phi_{c1}、R_m 之类）放行——带下标的算子正是最需要解释的那些。
   const atoms = [];
   for (const [id, entry] of Object.entries(dict)) {
     for (const atom of entry.tex || []) if (atom) atoms.push({ atom, id });
@@ -110,10 +112,20 @@ export function glossifyTex(tex, dict = {}) {
     atoms.sort((a, b) => b.atom.length - a.atom.length);
     const alt = atoms.map((x) => x.atom.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
     const idOf = new Map(atoms.map((x) => [x.atom, x.id]));
-    out = out.replace(
-      new RegExp(`(?<![A-Za-z0-9_\\\\])(${alt})(?![_^])`, "g"),
-      (m, atom) => `\\htmlData{term=${idOf.get(atom)}}{${atom}}`,
-    );
+    out = out.replace(new RegExp(`(${alt})`, "g"), (whole, atom, offset, full) => {
+      const before = offset > 0 ? full[offset - 1] : "";
+      const next = full[offset + whole.length] || "";
+      if (atom.startsWith("\\")) {
+        // 命令型（\oint、\Phi、\mathrm{d}）：前面是反斜杠说明属于更长的命令，跳过；
+        // 前面是字母没关系——数学里 V\oint、B\cos 这种紧邻写法很常见。
+        if (before === "\\") return whole;
+      } else {
+        if (/[A-Za-z0-9_]/.test(before)) return whole;
+        // 单字母后面紧跟上下标：留给它自己的带下标词条（B_m、H_c），不拆开
+        if (/^[A-Za-z]$/.test(atom) && (next === "_" || next === "^")) return whole;
+      }
+      return `\\htmlData{term=${idOf.get(atom)}}{${atom}}`;
+    });
   }
 
   // ② 行列记号与正负号公式（按用户约定收窄，与词典是否声明无关）
