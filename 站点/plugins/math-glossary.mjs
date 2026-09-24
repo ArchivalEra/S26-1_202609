@@ -396,12 +396,16 @@ function () {
     t.textContent = entry.title;
     pop.appendChild(t);
     var p = document.createElement("p");
-    p.textContent = entry.text;
+    // 词条文本由构建期处理好：HTML 已转义、$…$ 已渲染成公式（所以这里用 innerHTML），
+    // 而文本里若出现 [tex]{#id} 这样的令牌写法，**保持字面**——气泡里不再套气泡。
+    p.innerHTML = entry.text;
     pop.appendChild(p);
     if (entry.href) {
       var a = document.createElement("a");
       a.className = "sym-gloss-pop__more";
-      a.href = entry.href + "#" + term;
+      // href 是构建期按词条所属课程烘焙好的（可能已含 #锚点，也可能指向别的课程那一页），
+      // 只有没带锚点时才补上，否则会拼成 #id#id 这种双锚点。
+      a.href = entry.href.indexOf("#") >= 0 ? entry.href : entry.href + "#" + term;
       a.textContent = "详细 \u2197 符号入门";
       pop.appendChild(a);
     }
