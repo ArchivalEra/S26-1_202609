@@ -119,12 +119,17 @@ class ReadmeHookTest(unittest.TestCase):
             '<a id="sym-demo"></a>\n'
             '\n'
             '## 深链接小节\n\n'
-            '正文。\n')
+            '正文。\n'
+            '\n'
+            ':::glossary-dict table\n'
+            'sym-tabled | 总表词条 | 这行在页面上带 id="sym-tabled"。\n'
+            ':::\n')
         self.index.write_text(
             '[笔记](2026-09-17-test.md)\n'
             '[锚点目标](2026-09-19-anchor-target.md)\n'
             '[面板深链接](2026-09-19-anchor-target.md#pass-test)\n'
             '[显式 id 深链接](2026-09-19-anchor-target.md#sym-demo)\n'
+            '[总表行深链接](2026-09-19-anchor-target.md#sym-tabled)\n'
             '[标题深链接](2026-09-19-anchor-target.md#深链接小节)\n')
         self.stage()
         self.git('commit', '-m', '合法深链接放行')

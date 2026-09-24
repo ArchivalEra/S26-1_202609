@@ -154,6 +154,22 @@ describe("glossifyTex：TeX 内自动取词", () => {
     assert.equal(glossifyTex(null, fullDict), null);
     assert.equal(glossifyTex(42, fullDict), 42);
   });
+
+  it("吃参数的命令（\\mathbf F）不下手：劈开命令会让 KaTeX 报缺参数", () => {
+    const d = { "sym-F": { title: "t", text: "x", tex: ["F"] }, "sym-I": { title: "t", text: "x", tex: ["I"] } };
+    // 只放掉命令的参数：F、l 是 \mathbf 的参数不动，等号右边那个独立的 I 照常取词
+    assert.equal(glossifyTex("\\mathbf F=I\\mathbf l", d), "\\mathbf F=\\htmlData{term=sym-I}{I}\\mathbf l");
+    // 花括号形式是安全的（\htmlData 落在参数**内部**），照常取词
+    assert.equal(glossifyTex("\\mathbf{F}", d), "\\mathbf{\\htmlData{term=sym-F}{F}}");
+  });
+
+  it("不接参数的命令后面照常取词（\\mu H 里的 H 要上色）", () => {
+    const d = { "sym-H": { title: "t", text: "x", tex: ["H"] }, "sym-mu": { title: "t", text: "x", tex: ["\\mu"] } };
+    assert.equal(
+      glossifyTex("\\mu H", d),
+      "\\htmlData{term=sym-mu}{\\mu} \\htmlData{term=sym-H}{H}",
+    );
+  });
 });
 
 describe("glossary：词典解析 parseGlossaryDict", () => {
@@ -245,6 +261,61 @@ describe("glossary：令牌渲染 renderGlossary", () => {
     assert.equal(renderGlossary("[a]{#sym-index}"), "[a]{#sym-index}");
     assert.equal(renderGlossary(null), null);
   });
+
+  it("aria-label 取纯文本标题（标题可以是 $…$，读屏不该念美元号）", () => {
+    const d = { "sym-Br": { title: "$B_r$：剩磁", titleText: "B_r：剩磁", text: "x" } };
+    const out = renderGlossary("[B_r]{#sym-Br}", { dict: d, renderTex: fakeTex, notationHref: "x.html" });
+    assert.ok(out.includes('aria-label="B_r：剩磁"'));
+  });
+});
+
+describe("glossary：词典围栏可以长成一张表（:::glossary-dict table）", () => {
+  const src = [
+    "# 符号入门",
+    "",
+    ":::glossary-dict table",
+    "sym-B | B：磁通密度 | 单位 T；$B=\\mu H$。",
+    "sym-mu | μ：磁导率 | 真空值 $\\mu_0$。",
+    ":::",
+    "",
+    "正文一段。",
+  ].join("\n");
+  const asTable = (entries) =>
+    `<table>\n${entries.map((e) => `<tr id="${e.id}"><th>${e.title}</th></tr>`).join("\n")}\n</table>`;
+
+  it("宿主给了渲染器：围栏位置出表，每行以词条 id 作锚点", () => {
+    const out = renderGlossary(src, { dict: {}, renderTex: fakeTex, dictTable: asTable });
+    assert.ok(out.includes('<tr id="sym-B">'));
+    assert.ok(out.includes('<tr id="sym-mu">'));
+    assert.ok(out.includes("<th>B：磁通密度</th>"));
+    assert.ok(!String(out).includes("glossary-dict"));
+    assert.ok(out.includes("正文一段。"));
+  });
+
+  it("表 HTML 在自动取词之后才插回：表内文字不会被套上令牌", () => {
+    const out = renderGlossary(src, {
+      dict: {},
+      wrapDict: { "sym-B": { prose: ["B"], tex: ["B"] } },
+      renderTex: fakeTex,
+      dictTable: () => "<table><tr><td>B 与 μ</td></tr></table>",
+    });
+    assert.ok(out.includes("<td>B 与 μ</td>"), "表内文字保持原样");
+    assert.ok(!out.includes("[B]{#sym-B}"));
+  });
+
+  it("没有渲染器时不留残影（与普通围栏同样剥掉）", () => {
+    const out = renderGlossary(src, { dict: {}, renderTex: fakeTex });
+    assert.ok(!String(out).includes("glossary-dict"));
+    assert.ok(!String(out).includes("sym-B"));
+    assert.ok(out.includes("正文一段。"));
+  });
+
+  it("parseGlossaryDict 认带选项的围栏（选项不污染词条）", () => {
+    assert.deepEqual(parseGlossaryDict(src), {
+      "sym-B": { title: "B：磁通密度", text: "单位 T；$B=\\mu H$。" },
+      "sym-mu": { title: "μ：磁导率", text: "真空值 $\\mu_0$。" },
+    });
+  });
 });
 
 describe("glossary：客户端气泡脚本契约", () => {
@@ -272,5 +343,11 @@ describe("glossary：客户端气泡脚本契约", () => {
 
   it("气泡里有「详细」链接指向词条锚点", () => {
     assert.ok(GLOSSARY_JS.includes('entry.href + "#" + term'));
+  });
+
+  it("标题与正文都按构建期 HTML 插入（标题里也能写公式）", () => {
+    assert.ok(GLOSSARY_JS.includes("t.innerHTML = entry.title"));
+    assert.ok(GLOSSARY_JS.includes("p.innerHTML = entry.text"));
+    assert.ok(!GLOSSARY_JS.includes("t.textContent = entry.title"));
   });
 });

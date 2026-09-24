@@ -934,6 +934,12 @@ tr:last-child td {
   border-bottom: none;
 }
 
+/* 符号总表：深链接落到某一行时把那行标出来（气泡的「详细 ↗」就落在这里） */
+tr:target th,
+tr:target td {
+  background-color: var(--md-sys-color-secondary-container);
+}
+
 /* Code Blocks */
 .code-fence-wrapper {
   margin: 1.25rem 0;

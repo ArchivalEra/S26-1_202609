@@ -243,7 +243,9 @@ def anchors(path, data):
 
     ① 折叠面板/令牌的 {#id}（collapse 面板与符号词条都走这个语法）；
     ② 显式 HTML id="…"；
-    ③ 标题 slug——行内公式剔除后小写、非字词序列转单个 -、去首尾 -；
+    ③ 符号入门页的 :::glossary-dict table 围栏——每条词条在页面上是 id="<词条id>" 的一行
+       （见 站点/plugins/math-glossary.mjs 的 table 选项与 build.mjs 的 renderDictTable）；
+    ④ 标题 slug——行内公式剔除后小写、非字词序列转单个 -、去首尾 -；
        重复 slug 依次追加 -2、-3……与渲染器的逐页去重规则一致。
     代码围栏内的内容不算锚点。近似点：标题里的公式按「整体剔除」处理，
     而渲染器会保留其纯文本——因此含公式的标题请用面板锚点或显式 id 深链接。
@@ -251,6 +253,8 @@ def anchors(path, data):
     text = re.sub(r'```.*?```', '', data.decode(), flags=re.S)
     ids = set(re.findall(r'\{#([A-Za-z_][A-Za-z0-9_-]*)\}', text))
     ids |= set(re.findall(r'\bid="([^"]+)"', text))
+    for block in re.findall(r'^:::glossary-dict[ \t]+table[ \t]*$(.*?)^:{3,}[ \t]*$', text, flags=re.S | re.M):
+        ids |= set(re.findall(r'^([A-Za-z_][A-Za-z0-9_-]*)[ \t]*\|', block, flags=re.M))
     used = set()
     for line in text.splitlines():
         if not re.match(r'#{1,6}\s', line):
