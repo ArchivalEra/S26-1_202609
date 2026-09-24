@@ -22,11 +22,13 @@ describe("自动取词：词典声明过的符号在正文与公式里自动可�
     "sym-B | B：磁通密度 | 解释",
     "sym-Phi | Φ：磁通 | 解释",
     "sym-pFe | p_Fe：铁耗 | 解释",
+    "sym-sigma | σ：电导率 | 解释",
     ":::",
     ":::glossary-match",
     "sym-B | B | B",
     "sym-Phi | Φ | \\Phi",
     "sym-pFe | p_Fe | p_{Fe}",
+    "sym-sigma | σ | \\sigma",
     ":::",
   ].join("\n");
   const dict = () => {
@@ -73,6 +75,20 @@ describe("自动取词：词典声明过的符号在正文与公式里自动可�
     assert.ok(tex.includes("\\htmlData{term=sym-Phi}{\\Phi}"));
     assert.ok(tex.includes("\\htmlData{term=sym-B}{B}"));
     assert.ok(tex.includes("u=Ri"));
+  });
+
+  it("不劈开命令名与上下标参数（\\Delta 的 D、\\left 的 l 不能被取词）", () => {
+    const d = { ...dict(), "sym-D": { title: "D", text: "x", tex: ["D"] }, "sym-l": { title: "l", text: "x", tex: ["l"] } };
+    const out = glossifyTex("\\Delta\\mu,\\ \\left.x\\right)", d);
+    assert.ok(out.includes("\\Delta"));
+    assert.ok(out.includes("\\left"));
+    assert.ok(!out.includes("\\htmlData{term=sym-D}{D}elta"));
+  });
+
+  it("上下标位置的命令型符号要加花括号（\\Phi_\\sigma、B_m^n）", () => {
+    const out = glossifyTex("\\Phi_\\sigma,\\quad B_m^n", dict());
+    assert.ok(out.includes("{\\htmlData{term=sym-Phi}{\\Phi}}") === false); // \Phi 是脚本基底，允许不加括号
+    assert.ok(out.includes("{\\htmlData{term=sym-sigma}{\\sigma}}"));
   });
 });
 

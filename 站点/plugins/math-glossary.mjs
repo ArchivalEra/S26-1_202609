@@ -115,15 +115,21 @@ export function glossifyTex(tex, dict = {}) {
     out = out.replace(new RegExp(`(${alt})`, "g"), (whole, atom, offset, full) => {
       const before = offset > 0 ? full[offset - 1] : "";
       const next = full[offset + whole.length] || "";
+      // 前面是反斜杠 = 这个字母属于命令名（\Delta 的 D、\left 的 l、\times 的 t），
+      // 插进去会把命令劈开；命令型原子（\oint）遇到反斜杠也说明是更长的命令。
+      if (before === "\\") return whole;
+      const isScript = before === "_" || before === "^";
       if (atom.startsWith("\\")) {
-        // 命令型（\oint、\Phi、\mathrm{d}）：前面是反斜杠说明属于更长的命令，跳过；
-        // 前面是字母没关系——数学里 V\oint、B\cos 这种紧邻写法很常见。
-        if (before === "\\") return whole;
-      } else {
-        if (/[A-Za-z0-9_]/.test(before)) return whole;
-        // 单字母后面紧跟上下标：留给它自己的带下标词条（B_m、H_c），不拆开
-        if (/^[A-Za-z]$/.test(atom) && (next === "_" || next === "^")) return whole;
+        // 数学里 V\oint、B\cos 这种紧邻写法正常，前面是字母照取；
+        // 但当它本身就是上下标的参数时（\Phi_\sigma、B_m^n）要额外加花括号，
+        // 否则 "命令不能直接当脚本参数" 会报错。
+        const wrapped = `\\htmlData{term=${idOf.get(atom)}}{${atom}}`;
+        return isScript ? `{${wrapped}}` : wrapped;
       }
+      // 普通原子（单字母或字母串）
+      if (/[A-Za-z0-9_]/.test(before)) return whole;
+      if (isScript) return whole; // 单字母当下标参数：留给它自己的带下标词条
+      if (/^[A-Za-z]$/.test(atom) && (next === "_" || next === "^")) return whole;
       return `\\htmlData{term=${idOf.get(atom)}}{${atom}}`;
     });
   }
