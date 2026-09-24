@@ -21,7 +21,18 @@
  * 公式内部同样可点：glossifyTex 把 TeX 里的 r_1/c_4 行列记号与
  * (-1)^{...} 正负号公式包成 \htmlData{term=...}{...}（需 KaTeX
  * trust 选项），渲染产物里的 <span data-term> 由同一个气泡脚本接管。
- * 裸字母（a、b、c）与矩阵元素（a_{11}）刻意不取词——它们不是术语。
+ *
+ * **自动取词**（2026-09-24 加）：符号入门页里再用一个围栏声明每个词条的写法，
+ *
+ *   :::glossary-match
+ *   sym-B | B | B              ← id | 正文形式（、分隔） | TeX 形式（、分隔，可省）
+ *   sym-Phi | Φ | \Phi
+ *   sym-pFe | p_Fe | p_{Fe}
+ *   :::
+ *
+ * 声明过的符号，正文里裸写（「磁场强度 H」）与公式里出现（$B=\mu H$）都**自动**变成可点符号，
+ * 不必手写令牌；没声明的词条只能手写——自动取词只在内容侧点过名时发生，避免把每个字母都上色。
+ * 正文侧不碰代码、公式、链接、标题与已有令牌，并跳过「B 级绝缘」「B 图」这类明显不是术语的场合。
  *
  * 词典数据**不放在本模块**，放在符号入门页自己的 :::glossary-dict 围栏里
  * （内容侧单一来源，改词条不用碰代码）：
@@ -46,6 +57,8 @@
  */
 
 const DICT_OPEN_RE = /^[\t ]{0,3}:::glossary-dict[\t ]*$/;
+/** 自动取词声明：`id | 正文形式（、分隔）| TeX 形式（、分隔，可省）`。 */
+const MATCH_OPEN_RE = /^[\t ]{0,3}:::glossary-match[\t ]*$/;
 const CLOSE_RE = /^[\t ]{0,3}:{3,}[\t ]*$/;
 const FENCE_RE = /^[\t ]{0,3}(`{3,}|~{3,})/;
 const TERM_ID_RE = /^[A-Za-z_][A-Za-z0-9_-]*$/;
@@ -71,10 +84,30 @@ const TEX_TERM_RE = /([rc])_(\{[A-Za-z0-9]+\}|[A-Za-z0-9]+)|\(-1\)\^(\{[^{}]*\}|
  */
 export function glossifyTex(tex, dict = {}) {
   if (typeof tex !== "string") return tex;
+  let out = tex;
+
+  // ① 词典声明过的 TeX 原子（entry.tex）：整原子取词，长的优先。
+  //    前后不挨字母/数字/下划线（B 不会被 \Big 之类命令吃掉），
+  //    后面紧跟 _ 或 ^ 的跳过（B_m、H_c 另有词条，不拆开单个字母）。
+  const atoms = [];
+  for (const [id, entry] of Object.entries(dict)) {
+    for (const atom of entry.tex || []) if (atom) atoms.push({ atom, id });
+  }
+  if (atoms.length) {
+    atoms.sort((a, b) => b.atom.length - a.atom.length);
+    const alt = atoms.map((x) => x.atom.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+    const idOf = new Map(atoms.map((x) => [x.atom, x.id]));
+    out = out.replace(
+      new RegExp(`(?<![A-Za-z0-9_\\\\])(${alt})(?![_^])`, "g"),
+      (m, atom) => `\\htmlData{term=${idOf.get(atom)}}{${atom}}`,
+    );
+  }
+
+  // ② 行列记号与正负号公式（按用户约定收窄，与词典是否声明无关）
   const hasRowcol = Object.prototype.hasOwnProperty.call(dict, "sym-rowcol");
   const hasPower = Object.prototype.hasOwnProperty.call(dict, "sym-power");
-  if (!hasRowcol && !hasPower) return tex;
-  return tex.replace(TEX_TERM_RE, (match, rc, rcSub, powExp) => {
+  if (!hasRowcol && !hasPower) return out;
+  return out.replace(TEX_TERM_RE, (match, rc, rcSub, powExp) => {
     if (rc && hasRowcol) {
       return `\\htmlData{term=sym-rowcol}{${rc}_${rcSub}}`;
     }
@@ -129,7 +162,46 @@ export function parseGlossaryDict(source) {
   return dict;
 }
 
-/** 从源里剥掉全部 :::glossary-dict 围栏（数据块不该出现在正文里）。 */
+/**
+ * 解析 :::glossary-match 围栏：`id | 正文形式（、分隔）| TeX 形式（、分隔，可省）`。
+ * 返回 { id: { prose: [...], tex: [...] } }——声明了形式，正文与公式里的符号才会**自动**取词。
+ * 没声明的词条只能靠手写令牌，这是刻意的：自动取词只在内容侧明确点名时才发生。
+ */
+export function parseGlossaryMatch(source) {
+  const out = {};
+  if (typeof source !== "string") return out;
+  const lines = source.split(/\r?\n/);
+  let fence = null;
+  let inMatch = false;
+  const list = (s) => String(s || "").split(/[、,，]/).map((x) => x.trim()).filter(Boolean);
+  for (const line of lines) {
+    const f = line.match(FENCE_RE);
+    if (f) {
+      const marker = f[1];
+      if (!fence) fence = { ch: marker[0], len: marker.length };
+      else if (marker[0] === fence.ch && marker.length >= fence.len) fence = null;
+      continue;
+    }
+    if (fence) continue;
+    if (!inMatch) {
+      if (MATCH_OPEN_RE.test(line)) inMatch = true;
+      continue;
+    }
+    if (CLOSE_RE.test(line)) {
+      inMatch = false;
+      continue;
+    }
+    if (line.trim() === "" || line.trim().startsWith("#")) continue;
+    const parts = line.split("|");
+    if (parts.length < 2) continue;
+    const id = parts[0].trim();
+    if (!TERM_ID_RE.test(id)) continue;
+    out[id] = { prose: list(parts[1]), tex: list(parts[2]) };
+  }
+  return out;
+}
+
+/** 从源里剥掉全部 :::glossary-dict 与 :::glossary-match 围栏（数据块不该出现在正文里）。 */
 function stripDictFences(lines) {
   const out = [];
   let fence = null;
@@ -147,7 +219,7 @@ function stripDictFences(lines) {
       out.push(line);
       continue;
     }
-    if (!inDict && DICT_OPEN_RE.test(line)) {
+    if (!inDict && (DICT_OPEN_RE.test(line) || MATCH_OPEN_RE.test(line))) {
       inDict = true;
       continue;
     }
@@ -158,6 +230,54 @@ function stripDictFences(lines) {
     out.push(line);
   }
   return out;
+}
+
+/**
+ * 正文自动取词：把词典声明过的**正文形式**（`entry.prose`，见 :::glossary-match）包成令牌，
+ * 交给 TOKEN_RE 统一处理。没声明的词条仍只能手写令牌——自动取词只在内容侧点过名时发生。
+ *
+ * 不动这些地方：代码围栏与行内代码、行内/独立公式、已有令牌、markdown 链接目标、HTML 标签、标题行
+ * （标题里插令牌会让右侧目录重复三遍，见 handoff §8.1）。
+ * 另外跳过紧跟「图／表／级／相／极／端」的情况：「B 级绝缘」「B 图」里的 B 不是磁通密度。
+ */
+const PROTECT_RE = /(`[^`\n]*`|\$[^$\n]*\$|\[[^\]\n]+\]\{#[A-Za-z_][A-Za-z0-9_-]*\}|\]\([^)\n]*\)|<[^>\n]+>)/;
+const SKIP_AFTER = "图表级相极端样附";
+export function autoWrapTerms(source, dict = {}) {
+  const forms = [];
+  for (const [id, entry] of Object.entries(dict)) {
+    for (const form of entry.prose || []) if (form) forms.push({ form, id });
+  }
+  if (!forms.length) return source;
+  forms.sort((a, b) => b.form.length - a.form.length);
+  const alt = forms.map((x) => x.form.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  const idOf = new Map(forms.map((x) => [x.form, x.id]));
+  const re = new RegExp(`(${alt})(?![A-Za-z0-9_₀-₉ᵣ])`, "g");
+  let inFence = false;
+  return source
+    .split("\n")
+    .map((line) => {
+      if (FENCE_RE.test(line)) {
+        inFence = !inFence;
+        return line;
+      }
+      if (inFence) return line;
+      if (/^[\t ]{0,3}#{1,6}[\t ]/.test(line)) return line;
+      return line
+        .split(PROTECT_RE)
+        .map((seg, i) => {
+          if (i % 2 === 1) return seg;
+          return seg.replace(re, (whole, form, offset) => {
+            const before = offset > 0 ? seg[offset - 1] : "";
+            const rest = seg.slice(offset + form.length).replace(/^[\s\u3000]+/, "");
+            const after = rest[0] || "";
+            if (before && /[A-Za-z0-9_]/.test(before)) return whole;
+            if (after && SKIP_AFTER.includes(after)) return whole;
+            return `[${form}]{#${idOf.get(form)}}`;
+          });
+        })
+        .join("");
+    })
+    .join("\n");
 }
 
 /**
@@ -173,13 +293,18 @@ function stripDictFences(lines) {
 export function renderGlossary(source, opts = {}) {
   if (typeof source !== "string") return source;
   const { dict = {}, renderTex = null, notationHref = "" } = opts;
-  const hasWork = source.includes(":::glossary-dict") || TOKEN_RE.test(source);
+  // 先剥数据围栏、再按词典声明自动取词，最后才判断「这一页有没有活干」——
+  // 短路必须在自动取词之后，否则裸写符号的页面会被当成没活干而原样返回。
+  const stripped = stripDictFences(source.split(/\r?\n/)).join("\n");
+  const wrapped = autoWrapTerms(stripped, dict);
+  const hasWork =
+    source.includes(":::glossary-dict") ||
+    source.includes(":::glossary-match") ||
+    TOKEN_RE.test(wrapped);
   TOKEN_RE.lastIndex = 0; // 全局正则带状态，复用前必须归零
   if (!hasWork) return source;
 
-  const lines = stripDictFences(source.split(/\r?\n/));
-  const src = lines.join("\n");
-  return src.replace(TOKEN_RE, (match, tex, term) => {
+  return wrapped.replace(TOKEN_RE, (match, tex, term) => {
     if (!Object.prototype.hasOwnProperty.call(dict, term)) return match;
     const entry = dict[term];
     const inner =

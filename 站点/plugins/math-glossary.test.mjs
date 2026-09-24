@@ -11,10 +11,70 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { parseGlossaryDict, renderGlossary, glossifyTex, GLOSSARY_JS } from "./math-glossary.mjs";
+import { parseGlossaryDict, parseGlossaryMatch, renderGlossary, glossifyTex, autoWrapTerms, GLOSSARY_JS } from "./math-glossary.mjs";
 
 /** 宿主注入的假 KaTeX 渲染回调：包一层标记便于断言。 */
 const fakeTex = (tex) => `<k>${tex}</k>`;
+
+describe("自动取词：词典声明过的符号在正文与公式里自动可点", () => {
+  const src = [
+    ":::glossary-dict",
+    "sym-B | B：磁通密度 | 解释",
+    "sym-Phi | Φ：磁通 | 解释",
+    "sym-pFe | p_Fe：铁耗 | 解释",
+    ":::",
+    ":::glossary-match",
+    "sym-B | B | B",
+    "sym-Phi | Φ | \\Phi",
+    "sym-pFe | p_Fe | p_{Fe}",
+    ":::",
+  ].join("\n");
+  const dict = () => {
+    const d = parseGlossaryDict(src);
+    const m = parseGlossaryMatch(src);
+    for (const [id, e] of Object.entries(d)) Object.assign(e, m[id] || {});
+    return d;
+  };
+
+  it("parseGlossaryMatch 读出正文形式与 TeX 形式", () => {
+    const m = parseGlossaryMatch(src);
+    assert.deepEqual(m["sym-B"].prose, ["B"]);
+    assert.deepEqual(m["sym-Phi"].tex, ["\\Phi"]);
+    assert.deepEqual(m["sym-pFe"].prose, ["p_Fe"]);
+  });
+
+  it("两个围栏都被剥掉，不进正文", () => {
+    const out = renderGlossary(src, { dict: dict(), renderTex: fakeTex });
+    assert.ok(!out.includes(":::"));
+    assert.ok(!out.includes("sym-B | B：磁通密度"));
+  });
+
+  it("正文里裸写的符号自动变成令牌（并渲染）", () => {
+    const out = renderGlossary("磁场强度与 B 有关，铁耗是 p_Fe。", { dict: dict(), renderTex: fakeTex });
+    assert.ok(out.includes('data-term="sym-B"'));
+    assert.ok(out.includes('data-term="sym-pFe"'));
+    assert.ok(out.includes("<k>p_Fe</k>"));
+  });
+
+  it("不碰标题、行内代码、公式与已有令牌", () => {
+    const heading = renderGlossary("### 三、磁场强度 B", { dict: dict(), renderTex: fakeTex });
+    assert.ok(!heading.includes("data-term"));
+    const others = renderGlossary("`B` 与 $B$ 与 [B]{#sym-B}", { dict: dict(), renderTex: fakeTex });
+    assert.equal((others.match(/data-term=/g) || []).length, 1);
+  });
+
+  it("B 级绝缘 / B 图 里的 B 不取词；带下标的 B_m 也不误伤", () => {
+    const out = renderGlossary("B 级绝缘与 B 图，还有 B_m 这种带下标的。", { dict: dict(), renderTex: fakeTex });
+    assert.ok(!out.includes("data-term"));
+  });
+
+  it("公式里声明过的 TeX 原子自动取词，未声明的不动", () => {
+    const tex = glossifyTex("\\Phi=BS,\\quad u=Ri", dict());
+    assert.ok(tex.includes("\\htmlData{term=sym-Phi}{\\Phi}"));
+    assert.ok(tex.includes("\\htmlData{term=sym-B}{B}"));
+    assert.ok(tex.includes("u=Ri"));
+  });
+});
 
 describe("glossifyTex：TeX 内自动取词", () => {
   const fullDict = {

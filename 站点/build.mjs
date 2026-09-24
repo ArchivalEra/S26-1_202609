@@ -5,7 +5,7 @@ import { marked, yaml } from './vendor.mjs';
 import katex from './assets/katex/katex.mjs';
 import { renderCollapse } from './plugins/collapse.mjs';
 import { DISCLOSURE_ANCHOR_JS } from './plugins/disclosure-anchor.mjs';
-import { parseGlossaryDict, renderGlossary, glossifyTex, GLOSSARY_JS } from './plugins/math-glossary.mjs';
+import { parseGlossaryDict, parseGlossaryMatch, renderGlossary, glossifyTex, GLOSSARY_JS } from './plugins/math-glossary.mjs';
 import { extractSearchDoc, buildSearchBundle, SEARCH_JS, SEARCH_CSS } from './plugins/site-search.mjs';
 
 const SITE_DIR = fileURLToPath(new URL('.', import.meta.url));
@@ -129,11 +129,14 @@ const glossaryDict = {};
 for (const page of NOTATION_PAGES) {
   const abs = path.join(ROOT, page);
   if (!fs.existsSync(abs)) continue;
-  for (const [id, entry] of Object.entries(parseGlossaryDict(fs.readFileSync(abs, 'utf-8')))) {
+  const source = fs.readFileSync(abs, 'utf-8');
+  const entries = parseGlossaryDict(source);
+  const matches = parseGlossaryMatch(source);
+  for (const [id, entry] of Object.entries(entries)) {
     if (glossaryDict[id]) {
       throw new Error(`符号词条 id 冲突：${id} 同时出现在 ${glossaryDict[id].page} 与 ${page}（词条 id 需全局唯一）`);
     }
-    glossaryDict[id] = { ...entry, page };
+    glossaryDict[id] = { ...entry, ...(matches[id] || {}), page };
   }
 }
 const mathGlossaryDist = path.join(DIST_DIR, 'assets', 'plugins', 'math-glossary.js');
