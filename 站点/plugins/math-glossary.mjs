@@ -168,6 +168,7 @@ function stripDictFences(lines) {
  * @param {{dict: object, renderTex?: (tex: string) => string, notationHref?: string}} opts
  *   renderTex   宿主注入的 KaTeX 行内渲染回调；缺省时令牌用纯文本。
  *   notationHref 当页到符号入门页的链接（.html）；缺省落到 '#id' 纯锚点。
+ *                多课程合并词典时，改在词条上带 href（优先级更高，见 build.mjs）。
  */
 export function renderGlossary(source, opts = {}) {
   if (typeof source !== "string") return source;
@@ -185,7 +186,7 @@ export function renderGlossary(source, opts = {}) {
       renderTex && tex.trim() !== ""
         ? renderTex(tex)
         : esc(tex);
-    const href = `${notationHref}#${term}`;
+    const href = entry.href || `${notationHref}#${term}`;
     return (
       `<a class="sym-gloss" data-term="${esc(term)}" href="${esc(href)}"` +
       ` aria-label="${esc(entry.title)}">${inner}</a>`
