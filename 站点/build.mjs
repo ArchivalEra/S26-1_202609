@@ -40,6 +40,7 @@ const TARGET_FILES = [
   '课程/工程数学/课堂笔记/index.md',
   '课程/工程数学/课堂笔记/2026-09-17-determinants-order-2-3.md',
   '课程/工程数学/课堂笔记/2026-09-17-determinants-transcript-notes.md',
+  '课程/工程数学/课堂笔记/2026-09-24-降阶法克拉默法则与齐次方程组.md',
   '课程/工程数学/原始资料/index.md',
   '课程/工程数学/音频/index.md',
   '课程/电力大数据与人工智能/index.md',
@@ -239,7 +240,8 @@ const NAV_STRUCTURE = [
             path: "课程/工程数学/课堂笔记/index.md",
             children: [
               { label: "09-17 行列式与沙路法则", path: "课程/工程数学/课堂笔记/2026-09-17-determinants-order-2-3.md" },
-              { label: "09-17 课堂听课整理", path: "课程/工程数学/课堂笔记/2026-09-17-determinants-transcript-notes.md" }
+              { label: "09-17 课堂听课整理", path: "课程/工程数学/课堂笔记/2026-09-17-determinants-transcript-notes.md" },
+              { label: "09-24 降阶法与克拉默法则", path: "课程/工程数学/课堂笔记/2026-09-24-降阶法克拉默法则与齐次方程组.md" }
             ]
           },
           {
@@ -374,7 +376,8 @@ const TEXTBOOK_ORDER = [
 
 const NOTES_ORDER = [
   "课程/工程数学/课堂笔记/2026-09-17-determinants-order-2-3.md",
-  "课程/工程数学/课堂笔记/2026-09-17-determinants-transcript-notes.md"
+  "课程/工程数学/课堂笔记/2026-09-17-determinants-transcript-notes.md",
+  "课程/工程数学/课堂笔记/2026-09-24-降阶法克拉默法则与齐次方程组.md"
 ];
 
 // Helper: Wrap bare CJK in math mode
