@@ -67,6 +67,7 @@ const TARGET_FILES = [
   '课程/电路原理/音频/index.md',
   '课程/电子技术/index.md',
   '课程/电子技术/作业/index.md',
+  '课程/电子技术/作业/2026-09-23-第一章简答题.md',
   '课程/电子技术/教材解析/index.md',
   '课程/电子技术/课堂笔记/index.md',
   '课程/电子技术/课堂笔记/2026-09-21-开课说明与半导体基础到PN结.md',
@@ -307,7 +308,11 @@ const NAV_STRUCTURE = [
         label: "电子技术",
         path: "课程/电子技术/index.md",
         children: [
-          { label: "作业", path: "课程/电子技术/作业/index.md" },
+          { label: "作业", path: "课程/电子技术/作业/index.md",
+            children: [
+              { label: "2026-9-23作业（习题 1.1、1.3、1.5）", path: "课程/电子技术/作业/2026-09-23-第一章简答题.md" }
+            ]
+          },
           { label: "教材解析", path: "课程/电子技术/教材解析/index.md" },
           { label: "课堂笔记", path: "课程/电子技术/课堂笔记/index.md",
             children: [
