@@ -154,9 +154,41 @@
 
 ### [电路原理](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/index.md)
 
-#### 作业（0 份）
+#### 作业（33 份）
 
-暂无已归档资料。
+- [电路原理习题册·第一章 电路的基本概念与基本原理（选择 14 / 填空 16 / 计算 13）](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/2026-09-28-%E4%B9%A0%E9%A2%98%E5%86%8C%E7%AC%AC%E4%B8%80%E7%AB%A0.md)
+- [fig-1.1.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.1.jpg)
+- [fig-1.10.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.10.jpg)
+- [fig-1.11.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.11.jpg)
+- [fig-1.12.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.12.jpg)
+- [fig-1.13.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.13.jpg)
+- [fig-1.14.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.14.jpg)
+- [fig-1.15.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.15.jpg)
+- [fig-1.16.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.16.jpg)
+- [fig-1.17.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.17.jpg)
+- [fig-1.18.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.18.jpg)
+- [fig-1.19.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.19.jpg)
+- [fig-1.2.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.2.jpg)
+- [fig-1.20.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.20.jpg)
+- [fig-1.21.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.21.jpg)
+- [fig-1.22.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.22.jpg)
+- [fig-1.23.png](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.23.png)
+- [fig-1.24.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.24.jpg)
+- [fig-1.25.png](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.25.png)
+- [fig-1.26.png](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.26.png)
+- [fig-1.27.png](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.27.png)
+- [fig-1.28.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.28.jpg)
+- [fig-1.29.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.29.jpg)
+- [fig-1.3.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.3.jpg)
+- [fig-1.30.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.30.jpg)
+- [fig-1.31.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.31.jpg)
+- [fig-1.32.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.32.jpg)
+- [fig-1.4.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.4.jpg)
+- [fig-1.5.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.5.jpg)
+- [fig-1.6.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.6.jpg)
+- [fig-1.7.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.7.jpg)
+- [fig-1.8.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.8.jpg)
+- [fig-1.9.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.9.jpg)
 
 #### 教材解析（0 份）
 
@@ -176,9 +208,9 @@
 
 暂无已归档资料。
 
-已登记 **6** 门课程、**41** 份资料（不含索引、模板和历史入口）。
+已登记 **6** 门课程、**74** 份资料（不含索引、模板和历史入口）。
 
-<!-- 仓库内容摘要（不含 README）：baf580bced0f9c60e67c077ec04e358f8e3e296c6ed255ed00f4b9848f38974c -->
+<!-- 仓库内容摘要（不含 README）：4df132f9e42d7c485c683b2c4bbc6bf1bdf20b68159eacc2bc1ee1a44eb2c723 -->
 
 <!-- AUTO-CATALOG:END -->
 
