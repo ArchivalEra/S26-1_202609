@@ -99,13 +99,16 @@ def safe(name: str) -> str:
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
-    def _send(self, code: int, text: str):
+    def _send(self, code: int, text: str, ctype: str = "text/plain; charset=utf-8"):
         body = text.encode("utf-8")
         self.send_response(code)
-        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _peer(self) -> str:
+        return self.headers.get("X-Forwarded-For") or self.client_address[0]
 
     def _body_to(self, path: pathlib.Path) -> int:
         length = int(self.headers.get("Content-Length") or 0)
@@ -122,9 +125,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return got
 
     def do_GET(self):
+        # 表单页必须回 text/html：回 text/plain 的话浏览器会把源码当正文印出来（实弹踩过）
         if self.path.rstrip("/") == f"/u/{TOKEN}":
-            self._send(200, FORM)
+            print(f"[recv] GET form from {self._peer()}", flush=True)
+            self._send(200, FORM, "text/html; charset=utf-8")
         else:
+            print(f"[recv] GET {self.path} from {self._peer()} -> 404", flush=True)
             self._send(404, "not found")
 
     def do_PUT(self):
