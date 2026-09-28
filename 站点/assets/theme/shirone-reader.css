@@ -1633,3 +1633,6 @@ body.search-open {
     width: 100% !important;
   }
 }
+
+/* 作业配图（习题册原图）：限宽随版心缩放 */
+.article-content img { max-width: 100%; height: auto; }

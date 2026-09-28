@@ -324,10 +324,14 @@ def validate(files):
                 if not ok:
                     raise ValueError(
                         f'教材解析须使用「<节号>-<名称>.md」（如 1.1-二阶与三阶行列式.md）：{path}')
-            else:
-                if not re.fullmatch(r'\d{4}-\d{2}-\d{2}-.+\.md', name):
-                    raise ValueError(f'日期资料须使用 YYYY-MM-DD-名称.md：{path}')
-                datetime.date.fromisoformat(name[:10])
+        else:
+            if not name.endswith('.md'):
+                # 配图等二进制资产（如 作业/figures/*.jpg）不是「日期资料」，豁免命名检查；
+                # 是否随批次登记到分类索引仍由 index-sync 检查统一把关。
+                continue
+            if not re.fullmatch(r'\d{4}-\d{2}-\d{2}-.+\.md', name):
+                raise ValueError(f'日期资料须使用 YYYY-MM-DD-名称.md：{path}')
+            datetime.date.fromisoformat(name[:10])
         index = f'课程/{course}/{kind}/index.md'
         # 教材解析分三部分，链接登记在分部索引里（如 …/教材解析/第一部分-线性代数/index.md），
         # 所以除分类总索引外，也接受该分类下**任意一层的 index.md** 里被链接到。
@@ -339,6 +343,10 @@ def validate(files):
                 p for p in files
                 if p.startswith(prefix) and p.endswith('/index.md')
             )
+        # 配图等非 .md 资产（如 作业/figures/*.jpg）是所属页面的内嵌资产：
+        # 命名豁免同理，不要求逐张登记进分类索引（随作业页一起入库）。
+        if not path.endswith('.md'):
+            continue
         if not any(c in files and path in links(c, files[c]) for c in candidates):
             raise ValueError(
                 f'资料未登记到分类索引 {index}'

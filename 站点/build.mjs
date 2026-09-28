@@ -59,6 +59,7 @@ const TARGET_FILES = [
   '课程/形势与政策/音频/index.md',
   '课程/电路原理/index.md',
   '课程/电路原理/作业/index.md',
+  '课程/电路原理/作业/2026-09-28-习题册第一章.md',
   '课程/电路原理/教材解析/index.md',
   '课程/电路原理/课堂笔记/index.md',
   '课程/电路原理/课堂笔记/2026-09-21-开课说明与电路的基本概念.md',
@@ -113,6 +114,16 @@ function copyDir(src, dest) {
 
 copyDir(path.join(SITE_DIR, 'assets'), path.join(DIST_DIR, 'assets'));
 console.log(`[build] Copied offline assets to dist/assets/`);
+
+// 课程目录内的配图目录（figures/）原样拷进 dist，路径保持相对仓库根。
+for (const course of fs.readdirSync(path.join(ROOT, '课程'), { withFileTypes: true })) {
+  if (!course.isDirectory()) continue;
+  const figDir = path.join(ROOT, '课程', course.name, '作业', 'figures');
+  if (fs.existsSync(figDir)) {
+    copyDir(figDir, path.join(DIST_DIR, '课程', course.name, '作业', 'figures'));
+    console.log(`[build] Copied homework figures: 课程/${course.name}/作业/figures/`);
+  }
+}
 
 // 折叠面板深链接的客户端增强，来自独立插件模块 disclosure-anchor.mjs。
 // 可拆卸：删掉本段与页面模板里的 disclosure-anchor <script> 即回退
@@ -292,7 +303,11 @@ const NAV_STRUCTURE = [
         label: "电路原理",
         path: "课程/电路原理/index.md",
         children: [
-          { label: "作业", path: "课程/电路原理/作业/index.md" },
+          { label: "作业", path: "课程/电路原理/作业/index.md",
+            children: [
+              { label: "习题册第一章（43 题）", path: "课程/电路原理/作业/2026-09-28-习题册第一章.md" }
+            ]
+          },
           { label: "教材解析", path: "课程/电路原理/教材解析/index.md" },
           { label: "课堂笔记", path: "课程/电路原理/课堂笔记/index.md",
             children: [
@@ -792,6 +807,12 @@ for (const relPath of TARGET_FILES) {
   const targetHtmlPath = relPath === 'README.md' ? 'index.html' : relPath.replace(/\.md$/, '.html');
   const depth = targetHtmlPath.split('/').length - 1;
   const rootRel = depth === 0 ? './' : '../'.repeat(depth);
+
+  // 配图（作业 figures/）以「页面目录相对路径」书写；encoded-alias 页面（整条路径压成
+  // 单个百分号段）下浏览器会把相对 src 挂到错误层级，这里统一改写成「站点根相对」。
+  const pageDir = targetHtmlPath.includes('/') ? targetHtmlPath.slice(0, targetHtmlPath.lastIndexOf('/') + 1) : '';
+  htmlContent = htmlContent.replace(/src="(?!https?:|data:|\.\.\/|\/)(figures\/[^"]*)"/g,
+    `src="${rootRel}${pageDir}$1"`);
 
   // Compute Breadcrumbs
   const breadcrumbs = [
