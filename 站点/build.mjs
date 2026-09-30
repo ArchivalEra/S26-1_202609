@@ -5,7 +5,8 @@ import { marked, yaml } from './vendor.mjs';
 import katex from './assets/katex/katex.mjs';
 import { renderCollapse } from './plugins/collapse.mjs';
 import { DISCLOSURE_ANCHOR_JS } from './plugins/disclosure-anchor.mjs';
-import { parseGlossaryDict, parseGlossaryMatch, renderGlossary, glossifyTex, GLOSSARY_JS } from './plugins/math-glossary.mjs';
+import { parseGlossaryDict, parseGlossaryMatch, renderGlossary, glossifyTex, peelNotationFences, GLOSSARY_JS } from './plugins/math-glossary.mjs';
+import { SYMBOL_PACKS, COURSE_ENV, BUILD_PHASES } from './符号环境.mjs';
 import { extractSearchDoc, buildSearchBundle, SEARCH_JS, SEARCH_CSS } from './plugins/site-search.mjs';
 
 const SITE_DIR = fileURLToPath(new URL('.', import.meta.url));
@@ -68,6 +69,7 @@ const TARGET_FILES = [
   '课程/电路原理/作业/2026-09-28-习题册第七章.md',
   '课程/电路原理/作业/2026-09-28-习题册第九章.md',
   '课程/电路原理/教材解析/index.md',
+  '课程/电路原理/教材解析/0.0-符号入门.md',
   '课程/电路原理/课堂笔记/index.md',
   '课程/电路原理/课堂笔记/2026-09-21-开课说明与电路的基本概念.md',
   '课程/电路原理/课堂笔记/2026-09-23-电压电位与电路名词.md',
@@ -139,26 +141,34 @@ const disclosureAnchorDist = path.join(DIST_DIR, 'assets', 'plugins', 'disclosur
 fs.mkdirSync(path.dirname(disclosureAnchorDist), { recursive: true });
 fs.writeFileSync(disclosureAnchorDist, DISCLOSURE_ANCHOR_JS);
 
-// 符号气泡词典：来源是**每门课自己的**符号入门页里的 :::glossary-dict 围栏（内容侧维护，
-// 改词条不碰代码）。构建期把各课的词典合并，词条记下它所属的页面（「详细 ↗」按词条解析，
-// 不跨课程串页）；同一 id 出现在两门课里直接报错——id 必须全局唯一。
-// 实现见 站点/plugins/math-glossary.mjs（独立可拆卸模块：
+// 符号包：构建期环境变量包络的「定义集」。每包 = 一页 :::glossary-dict / :::glossary-match
+// 围栏（内容侧维护），包注册表与课程环境表见 站点/符号环境.mjs。三层显式锚定
+// （符号级 > 段级 > 课程级）、零回退：页面解析永远只看被锚定的那个包，查不到的 id
+// 原样保留 + 构建期警告。实现见 站点/plugins/math-glossary.mjs（独立可拆卸模块：
 // 删掉本段、Step 2.6 与页面模板里对应 <script> 即回退，令牌恢复成字面文本）。
-const NOTATION_PAGES = TARGET_FILES.filter((p) => p.endsWith('0.0-符号入门.md'));
-const glossaryDict = {};
-for (const page of NOTATION_PAGES) {
-  const abs = path.join(ROOT, page);
-  if (!fs.existsSync(abs)) continue;
+const glossaryPacks = {};
+const glossaryWarn = new Set();
+for (const [packName, packPage] of Object.entries(SYMBOL_PACKS)) {
+  const abs = path.join(ROOT, packPage);
+  if (!fs.existsSync(abs)) {
+    glossaryWarn.add(`包「${packName}」的页面不在仓库里：${packPage}`);
+    continue;
+  }
   const source = fs.readFileSync(abs, 'utf-8');
   const entries = parseGlossaryDict(source);
   const matches = parseGlossaryMatch(source);
-  for (const [id, entry] of Object.entries(entries)) {
-    if (glossaryDict[id]) {
-      throw new Error(`符号词条 id 冲突：${id} 同时出现在 ${glossaryDict[id].page} 与 ${page}（词条 id 需全局唯一）`);
-    }
-    glossaryDict[id] = { ...entry, ...(matches[id] || {}), page };
+  const dict = {};
+  for (const [id, e] of Object.entries(entries)) dict[id] = { ...e, bubble: true };
+  // 形式声明（match）并入词条；只声明了形式、没有词条内容的（bubble=false）
+  // **不参与取词**——没有气泡内容的上色是骗人。旧版把这类声明静默丢弃，现在显式警告。
+  for (const [id, m] of Object.entries(matches)) {
+    if (dict[id]) dict[id] = { ...dict[id], prose: m.prose, tex: m.tex };
+    else glossaryWarn.add(`包「${packName}」的 ${id} 只声明了形式、没有词条内容——自动取词不生效`);
   }
+  glossaryPacks[packName] = { page: packPage, dict };
 }
+for (const w of glossaryWarn) console.warn(`[符号] ${w}`);
+console.log(`[符号] 包：${Object.entries(glossaryPacks).map(([n, p]) => `${n}(${Object.keys(p.dict).length} 条)`).join('、')}`);
 const mathGlossaryDist = path.join(DIST_DIR, 'assets', 'plugins', 'math-glossary.js');
 fs.mkdirSync(path.dirname(mathGlossaryDist), { recursive: true });
 fs.writeFileSync(mathGlossaryDist, GLOSSARY_JS);
@@ -322,7 +332,11 @@ const NAV_STRUCTURE = [
               { label: "习题册第九章（26 题）", path: "课程/电路原理/作业/2026-09-28-习题册第九章.md" }
             ]
           },
-          { label: "教材解析", path: "课程/电路原理/教材解析/index.md" },
+          { label: "教材解析", path: "课程/电路原理/教材解析/index.md",
+            children: [
+              { label: "符号入门", path: "课程/电路原理/教材解析/0.0-符号入门.md" }
+            ]
+          },
           { label: "课堂笔记", path: "课程/电路原理/课堂笔记/index.md",
             children: [
               { label: "09-21 开课说明与电路的基本概念", path: "课程/电路原理/课堂笔记/2026-09-21-开课说明与电路的基本概念.md" },
@@ -522,10 +536,6 @@ for (const relPath of TARGET_FILES) {
   let raw = fs.readFileSync(fullPath, 'utf-8');
   const pageMeta = pageMetaMap.get(relPath);
 
-  // 本页可用的符号词典：**按课程作用域**——一页只用自己的课程词典。跨课程合并会把
-  // 别的课的符号拿到这一页取词（工程数学的 A 是矩阵、电机学的 A 是 A 相，含义不同），
-  // 那既是语义错误也是一屏噪声。这一份要在 Step 2（公式渲染）之前备好。
-  // 词条的「详细 ↗」按词条所属课程解析成当页可用的相对链接。
   const courseOf = (p) => String(p).split('/')[1] || '';
   const notationHrefOf = (id, entry) => encodeURI(
     path.relative(path.dirname(fullPath), path.join(ROOT, entry.page))
@@ -559,18 +569,6 @@ for (const relPath of TARGET_FILES) {
   const plainBubbleText = (s) =>
     String(s).replace(/\$([^$\n]+)\$/g, (m, tex) => tex.replace(/\\/g, '').replace(/[{}]/g, ''));
 
-  // 两本词典：merged 管显式令牌（跨课程可用，链接按词条所属课程解析）；
-  // page 只管自动取词（只认本课程的声明）。
-  const mergedGlossaryDict = Object.fromEntries(
-    Object.entries(glossaryDict).map(([id, e]) => [
-      id,
-      { ...e, href: notationHrefOf(id, e), titleText: plainBubbleText(e.title) },
-    ])
-  );
-  const pageGlossaryDict = Object.fromEntries(
-    Object.entries(glossaryDict).filter(([, e]) => courseOf(e.page) === here)
-  );
-
   // Strip frontmatter
   let frontmatter = {};
   const fmMatch = raw.match(/^---\r?\n([\s\S]+?)\r?\n---/);
@@ -583,6 +581,42 @@ for (const relPath of TARGET_FILES) {
 
   // Strip HTML comments (like AUTO-CATALOG)
   raw = raw.replace(/<!--[\s\S]*?-->/g, '');
+
+  // 构建期符号环境解析（三层锚定，零回退）：段级（显式构建段）覆盖课程级（课程环境表），
+  // 符号级（frontmatter「符号强制」+ 令牌包限定）在渲染期最高优先。环境没设「符号」键
+  // = 本页零符号行为（围栏照剥）。
+  const envVars = {
+    ...(COURSE_ENV[here] || {}),
+    ...((BUILD_PHASES.find((ph) => (ph.pages || []).includes(relPath)) || {}).env || {}),
+  };
+  const envPackName = envVars['符号'] || null;
+  const envPack = envPackName ? glossaryPacks[envPackName] : null;
+  if (envPackName && !envPack) {
+    glossaryWarn.add(`页面 ${relPath} 锚定的符号包「${envPackName}」未注册——本页零符号行为`);
+  }
+  // 环境包词典（本页口径：词条带 href 与纯文本标题）；glossifyTex 与 autoWrapTerms 只看它。
+  const pageGlossaryDict = envPack
+    ? Object.fromEntries(Object.entries(envPack.dict).map(([id, e]) => [
+        id, { ...e, href: notationHrefOf(id, { page: envPack.page }), titleText: plainBubbleText(e.title) },
+      ]))
+    : {};
+  // 全部包的当页形态（符号级强制令牌用）：hrefBase 不带锚点，按词条补。
+  const glossaryPacksForPage = Object.fromEntries(
+    Object.entries(glossaryPacks).map(([name, pack]) => [
+      name,
+      {
+        hrefBase: encodeURI(
+          path.relative(path.dirname(fullPath), path.join(ROOT, pack.page))
+            .replace(/\\/g, '/').replace(/\.md$/, '.html')
+        ),
+        dict: Object.fromEntries(Object.entries(pack.dict).map(([id, e]) => [
+          id, { ...e, titleText: plainBubbleText(e.title) },
+        ])),
+      },
+    ])
+  );
+  const glossaryPins = frontmatter['符号强制'] || {};
+  const glossaryHits = new Map(); // key → {title, text, href}（按需烘焙气泡 JSON）
 
   // Step 1: Protect Code Fences
   const codeBlocks = [];
@@ -613,7 +647,7 @@ for (const relPath of TARGET_FILES) {
     // 教材排版惯例把句末标点写进显示公式（$$….$$），在网页上独立成块后
     // 看着像渲染出了一个多余的点（用户实测反馈）。渲染前剥掉**收尾的一个**
     // 标点——只剥一个：万一公式真以省略号收尾不至于被整串误删。
-    const safeTex = wrapBareCJK(glossifyTex(tex.trim().replace(/[.。，、；;][ \t]*$/, ''), pageGlossaryDict));
+    const safeTex = wrapBareCJK(glossifyTex(tex.trim().replace(/[.。，、；;][ \t]*$/, ''), pageGlossaryDict, (id) => glossaryHits.set(id, pageGlossaryDict[id])));
     let rendered = '';
     try {
       rendered = katex.renderToString(safeTex, {
@@ -636,7 +670,7 @@ for (const relPath of TARGET_FILES) {
   raw = raw.replace(/(?<!\$)\$(?!\$)((?:[^$\\\r\n]|\\.)+?)\$(?!\$)/g, (_, tex) => {
     const id = mathBlocks.length;
     totalFormulasRendered++;
-    const safeTex = wrapBareCJK(glossifyTex(tex.trim(), pageGlossaryDict));
+    const safeTex = wrapBareCJK(glossifyTex(tex.trim(), pageGlossaryDict, (id) => glossaryHits.set(id, pageGlossaryDict[id])));
     let rendered = '';
     try {
       rendered = katex.renderToString(safeTex, {
@@ -687,8 +721,12 @@ for (const relPath of TARGET_FILES) {
     ].join('\n');
 
   raw = renderGlossary(raw, {
-    dict: mergedGlossaryDict,
-    wrapDict: pageGlossaryDict,
+    dict: pageGlossaryDict,
+    packs: glossaryPacksForPage,
+    pins: glossaryPins,
+    envName: envPackName,
+    onWarn: (msg) => glossaryWarn.add(`${relPath}：${msg}`),
+    onHit: (key, entry) => glossaryHits.set(key, { title: entry.title, text: entry.text, href: entry.href }),
     // 总表的词条**按围栏给的顺序、但取模块级解析的原文**：围栏行里的 $…$ 在 Step 2 已经
     // 被换成 MATH 占位符，还原出来的是**正文口径**的渲染（带自动取词的 \htmlData），
     // 与气泡口径（renderBubbleText，不取词）不一致，而且会在 `\mathbf F` 这种
@@ -716,14 +754,17 @@ for (const relPath of TARGET_FILES) {
     // 链接一律走词条自带的 href（多课程词典）；这个回退参数只作兜底
     notationHref: '',
   });
-  // 气泡词典按页烘焙成 JSON（词条的 href 已是当页可用的相对链接），
+  // 气泡词典按页烘焙成 JSON——**只烘本页命中**的词条（令牌、自动取词、公式取词的
+  // 实际命中集），不再是全量词典：页面体积随使用增长，不随词典增长。
   // 客户端模块从 #sym-glossary-json 读，不发任何请求。
   const glossaryJsonPayload = {
     terms: Object.fromEntries(
-      Object.entries(mergedGlossaryDict).map(([id, e]) => [
-        id,
-        { title: renderBubbleText(e.title), text: renderBubbleText(e.text), href: e.href },
-      ])
+      [...glossaryHits.entries()]
+        .filter(([, e]) => e && e.title !== undefined)
+        .map(([key, e]) => [
+          key,
+          { title: renderBubbleText(e.title), text: renderBubbleText(e.text), href: e.href },
+        ])
     )
   };
 

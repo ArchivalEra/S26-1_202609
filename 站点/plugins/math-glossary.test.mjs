@@ -11,7 +11,7 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { parseGlossaryDict, parseGlossaryMatch, renderGlossary, glossifyTex, autoWrapTerms, GLOSSARY_JS } from "./math-glossary.mjs";
+import { parseGlossaryDict, parseGlossaryMatch, renderGlossary, glossifyTex, autoWrapTerms, peelNotationFences, GLOSSARY_JS } from "./math-glossary.mjs";
 
 /** 宿主注入的假 KaTeX 渲染回调：包一层标记便于断言。 */
 const fakeTex = (tex) => `<k>${tex}</k>`;
@@ -37,6 +37,7 @@ describe("自动取词：词典声明过的符号在正文与公式里自动可�
     for (const [id, e] of Object.entries(d)) Object.assign(e, m[id] || {});
     return d;
   };
+  const hits = [];
 
   it("parseGlossaryMatch 读出正文形式与 TeX 形式", () => {
     const m = parseGlossaryMatch(src);
@@ -77,19 +78,21 @@ describe("自动取词：词典声明过的符号在正文与公式里自动可�
     assert.ok(tex.includes("u=Ri"));
   });
 
-  it("显式令牌跨课程可用（详细链接按词条所属课程解析），自动取词只认本课程", () => {
-    const merged = {
-      ...dict(),
-      "sym-other": { title: "外课符号", text: "x", prose: ["Z"], href: "../外课/0.0-符号入门.html#sym-other" },
+  it("包限定令牌（符号级强制）解析到指定包，环境包查不到则原样保留并告警", () => {
+    const packs = {
+      "电机学": { hrefBase: "../电机学/0.0-符号入门.html", dict: { "sym-B": { title: "B：磁通密度", text: "x", titleText: "B：磁通密度" } } },
     };
-    // 本页不属于外课（wrapDict 为空）：手写令牌照样解析，且链接指向外课那一页
-    const token = renderGlossary("[Z]{#sym-other}", { dict: merged, wrapDict: {}, renderTex: fakeTex });
-    assert.ok(token.includes('data-term="sym-other"'));
-    assert.ok(token.includes('href="../外课/0.0-符号入门.html#sym-other"'));
-    // 但外课的符号不会在本页被自动取词
-    const plain = renderGlossary("这里出现了一个 Z。", { dict: merged, wrapDict: {}, renderTex: fakeTex });
-    assert.ok(!plain.includes("data-term"));
-    // 客户端脚本契约：详细链接不会拼成双锚点；词条文本走构建期渲染好的 HTML
+    const out = renderGlossary("[B]{#电机学:sym-B}", {
+      dict: {}, packs, renderTex: fakeTex, onHit: (k) => hits.push(k),
+    });
+    assert.ok(out.includes('data-term="电机学:sym-B"'));
+    assert.ok(out.includes('href="../电机学/0.0-符号入门.html#sym-B"'));
+    assert.deepEqual(hits, ["电机学:sym-B"]);
+    // 指向未注册的包：原样保留 + 警告（零回退）
+    const warns = [];
+    const bad = renderGlossary("[X]{#不存在的包:sym-X}", { dict: {}, packs, onWarn: (m) => warns.push(m) });
+    assert.equal(bad, "[X]{#不存在的包:sym-X}");
+    assert.ok(warns[0].includes("未注册的符号包"));
     assert.ok(GLOSSARY_JS.includes('indexOf("#")'), "客户端应识别 href 里已含锚点");
     assert.ok(GLOSSARY_JS.includes("p.innerHTML = entry.text"), "气泡文本按构建期 HTML 渲染（支持公式）");
   });
@@ -110,12 +113,14 @@ describe("自动取词：词典声明过的符号在正文与公式里自动可�
 });
 
 describe("glossifyTex：TeX 内自动取词", () => {
-  const fullDict = {    "sym-rowcol": { title: "t", text: "x" },
-    "sym-power": { title: "t", text: "x" },
+  // 模式原子：match 围栏里 /…/ 声明的正则（哪包声明哪包生效），取代旧版硬编码 sym-rowcol/sym-power
+  const fullDict = {
+    "sym-rowcol": { title: "t", text: "x", tex: ["/([rc])_\\{?[A-Za-z0-9]+\\}?/"] },
+    "sym-power": { title: "t", text: "x", tex: ["/\\(-1\\)\\^\\{?[^{}]*\\}?/"] },
     "sym-index": { title: "t", text: "x" },
   };
 
-  it("r_1 / c_4 / r_{12} 包成 \\htmlData{term=sym-rowcol}", () => {
+  it("模式原子：r_1 / c_4 / r_{12} 包成 \\htmlData{term=sym-rowcol}", () => {
     assert.equal(
       glossifyTex("r_1-3r_2", fullDict),
       "\\htmlData{term=sym-rowcol}{r_1}-3\\htmlData{term=sym-rowcol}{r_2}",
@@ -126,11 +131,17 @@ describe("glossifyTex：TeX 内自动取词", () => {
     );
   });
 
-  it("(-1)^{...} 包成 \\htmlData{term=sym-power}", () => {
+  it("模式原子：(-1)^{...} 包成 \\htmlData{term=sym-power}", () => {
     assert.equal(
       glossifyTex("(-1)^{i+j}", fullDict),
       "\\htmlData{term=sym-power}{(-1)^{i+j}}",
     );
+  });
+
+  it("命中回调把取词的词条 id 报给宿主（按需烘焙 JSON 用）", () => {
+    const hits = [];
+    glossifyTex("r_1+\\Phi", { ...fullDict, "sym-Phi": { title: "t", text: "x", tex: ["\\Phi"] } }, (id) => hits.push(id));
+    assert.deepEqual(hits, ["sym-Phi", "sym-rowcol"]); // 字面原子先于模式原子
   });
 
   it("裸字母与矩阵元素不取词（a、b、c 本身不是术语）", () => {
@@ -138,7 +149,7 @@ describe("glossifyTex：TeX 内自动取词", () => {
     assert.equal(glossifyTex(src, fullDict), src);
   });
 
-  it("词典里没有对应词条时不包（没有词条的上色是骗人）", () => {
+  it("词典里没有声明对应模式时不包（没有词条的上色是骗人）", () => {
     assert.equal(glossifyTex("r_1+(-1)^{i+j}", {}), "r_1+(-1)^{i+j}");
     assert.equal(glossifyTex("r_1", { "sym-power": { title: "t", text: "x" } }), "r_1");
   });
@@ -148,6 +159,11 @@ describe("glossifyTex：TeX 内自动取词", () => {
       glossifyTex("\\xrightarrow{c_4+2c_1}", fullDict),
       "\\xrightarrow{\\htmlData{term=sym-rowcol}{c_4}+2\\htmlData{term=sym-rowcol}{c_1}}",
     );
+  });
+
+  it("模式不会在已插入的 \\htmlData 里二次匹配", () => {
+    const out = glossifyTex("r_1-3r_2+c_{4}", fullDict);
+    assert.equal((out.match(/htmlData/g) || []).length, 3);
   });
 
   it("非法输入原样返回", () => {
@@ -207,6 +223,7 @@ describe("glossary：词典解析 parseGlossaryDict", () => {
 
 describe("glossary：令牌渲染 renderGlossary", () => {
   const dict = { "sym-index": { title: "下标", text: "前行后列" } };
+  const hits2 = [];
 
   it("令牌换成 <a class=sym-gloss>，tex 走宿主渲染回调，href 带锚点", () => {
     // notationHref 由宿主传入前已 encodeURI（模块只负责拼接锚点，不做编码）
@@ -225,6 +242,31 @@ describe("glossary：令牌渲染 renderGlossary", () => {
   it("没有 renderTex 时退化为纯文本符号（模块自身不懂 KaTeX）", () => {
     const out = renderGlossary("[a_{23}]{#sym-index}", { dict, notationHref: "x.html" });
     assert.ok(out.includes(">a_{23}</a>"));
+  });
+
+  it("环境包查不到的 term：原样保留 + onWarn（零回退，可见的坏令牌）", () => {
+    const warns = [];
+    const src = "[x]{#sym-nope}";
+    assert.equal(renderGlossary(src, { dict, renderTex: fakeTex, onWarn: (m) => warns.push(m) }), src);
+    assert.ok(warns[0].includes("sym-nope"));
+  });
+
+  it("符号级强制（frontmatter pins）：环境里没有的词条经 pin 解析到指定包", () => {
+    const packs = {
+      "工程数学": { hrefBase: "../gc/0.0.html", dict: { "sym-matrix": { title: "矩阵", text: "x", titleText: "矩阵" } } },
+    };
+    const out = renderGlossary("[a_{ij}]{#sym-matrix}", {
+      dict: {}, packs, pins: { "sym-matrix": "工程数学" }, renderTex: fakeTex, onHit: (k) => hits2.push(k),
+    });
+    assert.ok(out.includes('data-term="工程数学:sym-matrix"'));
+    assert.deepEqual(hits2, ["工程数学:sym-matrix"]);
+  });
+
+  it("可剥离：peelNotationFences 只剥围栏、不做任何符号行为", () => {
+    const src = [":::glossary-dict", "sym-a | A | 内容", ":::", "[A]{#sym-a} 与 [B]{#电机学:sym-B}。"].join("\n");
+    const out = peelNotationFences(src);
+    assert.ok(!out.includes(":::"));
+    assert.ok(out.includes("[A]{#sym-a}") && out.includes("[B]{#电机学:sym-B}"), "令牌原样保留");
   });
 
   it("词典里没有的 term 原样保留（坏令牌必须看得见）", () => {
@@ -294,8 +336,7 @@ describe("glossary：词典围栏可以长成一张表（:::glossary-dict table�
 
   it("表 HTML 在自动取词之后才插回：表内文字不会被套上令牌", () => {
     const out = renderGlossary(src, {
-      dict: {},
-      wrapDict: { "sym-B": { prose: ["B"], tex: ["B"] } },
+      dict: { "sym-B": { prose: ["B"], tex: ["B"] } },
       renderTex: fakeTex,
       dictTable: () => "<table><tr><td>B 与 μ</td></tr></table>",
     });
