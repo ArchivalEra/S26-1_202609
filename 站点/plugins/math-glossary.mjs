@@ -22,6 +22,16 @@
  * (-1)^{...} 正负号公式包成 \htmlData{term=...}{...}（需 KaTeX
  * trust 选项），渲染产物里的 <span data-term> 由同一个气泡脚本接管。
  *
+ * **环境包络（2026-09-28 重构）**：词条按**符号包**组织（每包 = 一页 :::glossary-dict/match
+ * 围栏，包注册表与课程环境表在 站点/符号环境.mjs）。解析只有三层**显式锚定、零回退**：
+ *
+ *   符号级  [tex]{#电机学:sym-B}   ← 包限定令牌，最高优先（跨包强制锚定单个符号）
+ *   段级    构建段 env 覆盖        ← 同一门课的不同板块可用不同的包（站点/符号环境.mjs）
+ *   课程级  课程环境表 {符号: 包名} ← 每门课各自赋值（如 高级工程数学 → 工程数学 的包）
+ *
+ * 环境里没有的 id **原样保留**并给构建期警告——没有任何自动回退/跨包兜底。
+ * 环境不设「符号」键 = 符号功能静默关闭（围栏照剥、零行为），这是「像插件一样可剥离」的验证点。
+ *
  * **自动取词**（2026-09-24 加）：符号入门页里再用一个围栏声明每个词条的写法，
  *
  *   :::glossary-match
@@ -71,27 +81,22 @@ const MATCH_OPEN_RE = /^[\t ]{0,3}:::glossary-match[\t ]*$/;
 const CLOSE_RE = /^[\t ]{0,3}:{3,}[\t ]*$/;
 const FENCE_RE = /^[\t ]{0,3}(`{3,}|~{3,})/;
 const TERM_ID_RE = /^[A-Za-z_][A-Za-z0-9_-]*$/;
-/** 行内令牌：[tex]{#id}。只认合法 id，防止误伤普通方括号文本。 */
-const TOKEN_RE = /\[([^\][\n]+)\]\{#([A-Za-z_][A-Za-z0-9_-]*)\}/g;
-
-/**
- * TeX 内自动取词的模式（按用户约定收窄）：
- *   [rc]_<数字/字母>          —— r_1、c_4 这类行列记号（sym-rowcol）
- *   (-1)^{...} 或 (-1)^n      —— 正负号公式（sym-power）
- * 刻意**不**匹配裸字母与 a_{ij} 一类矩阵元素——a、b、c 本身不是术语，
- * 矩阵里的 a_{11} 满屏都是，逐个上色是灾难。
- */
-const TEX_TERM_RE = /([rc])_(\{[A-Za-z0-9]+\}|[A-Za-z0-9]+)|\(-1\)\^(\{[^{}]*\}|[A-Za-z0-9]+)/g;
+/** 行内令牌：[tex]{#id} 或跨包强制 [tex]{#包名:id}（包名可中文，id 仍限 ASCII）。 */
+const TOKEN_RE = /\[([^\][\n]+)\]\{#(?:([^\][{}:\n]+):)?([A-Za-z_][A-Za-z0-9_-]*)\}/g;
 
 /**
  * 把 TeX 源里的行列记号与正负号公式包进 \htmlData{term=...}{...}，
  * 使它们在 KaTeX 渲染产物里带 data-term，可被气泡脚本点中。
  * 只在词典里确有对应词条时才包（没有词条的上色是骗人）；
  * 已在 \htmlData 内的内容不会重复匹配（替换结果里 term= 挡住了回扫）。
+ * 另支持**模式原子**：match 围栏的 TeX 形式写成 /…/（正则字面量）时按模式匹配——
+ * 行列记号 r_1、正负号 (-1)^{i+j} 这类「一族记号」由此声明（哪包声明哪包生效），
+ * 取代了旧版写死 sym-rowcol/sym-power 的做法。词条没有气泡内容（bubble=false）不参与。
  * @param {string} tex
- * @param {object} dict parseGlossaryDict 的产物
+ * @param {object} dict 环境包词典（parseGlossaryDict ∪ parseGlossaryMatch）
+ * @param {(id: string) => void} [onTerm] 取词命中回调（按需烘焙 JSON 用）
  */
-export function glossifyTex(tex, dict = {}) {
+export function glossifyTex(tex, dict = {}, onTerm = null) {
   if (typeof tex !== "string") return tex;
   let out = tex;
 
@@ -114,8 +119,20 @@ export function glossifyTex(tex, dict = {}) {
   //    _ 或 ^ 的跳过（B_m、H_c 另有词条，不拆开单个字母），而命令型与多字符符号
   //    （\oint_l、\Phi_{c1}、R_m 之类）放行——带下标的算子正是最需要解释的那些。
   const atoms = [];
+  const patterns = [];
   for (const [id, entry] of Object.entries(dict)) {
-    for (const atom of entry.tex || []) if (atom) atoms.push({ atom, id });
+    if (entry.bubble === false) continue; // 只有形式声明、没有气泡内容：不上色
+    for (const form of entry.tex || []) {
+      if (!form) continue;
+      const pat = form.match(/^\/(.+)\/([a-z]*)$/s);
+      if (pat) {
+        try {
+          patterns.push({ id, re: new RegExp(pat[1], pat[2] + "g") });
+        } catch (_) { /* 坏正则跳过，不猜 */ }
+      } else {
+        atoms.push({ atom: form, id });
+      }
+    }
   }
   if (atoms.length) {
     atoms.sort((a, b) => b.atom.length - a.atom.length);
@@ -136,30 +153,42 @@ export function glossifyTex(tex, dict = {}) {
         // 但当它本身就是上下标的参数时（\Phi_\sigma、B_m^n）要额外加花括号，
         // 否则 "命令不能直接当脚本参数" 会报错。
         const wrapped = `\\htmlData{term=${idOf.get(atom)}}{${atom}}`;
+        if (onTerm) onTerm(idOf.get(atom));
         return isScript ? `{${wrapped}}` : wrapped;
       }
       // 普通原子（单字母或字母串）
       if (/[A-Za-z0-9_]/.test(before)) return whole;
       if (isScript) return whole; // 单字母当下标参数：留给它自己的带下标词条
       if (/^[A-Za-z]$/.test(atom) && (next === "_" || next === "^")) return whole;
+      if (onTerm) onTerm(idOf.get(atom));
       return `\\htmlData{term=${idOf.get(atom)}}{${atom}}`;
     });
   }
 
-  // ② 行列记号与正负号公式（按用户约定收窄，与词典是否声明无关）
+  // ② 模式原子（match 围栏里 /…/ 声明的正则）：先把 ① 插入的 \htmlData 段保护起来，
+  //    否则模式会在已上色的记号里二次匹配（字面原子是单次 replace 没这个问题）。
   const restore = (s) => s.replace(/\u0001(\d+)\u0001/g, (m, i) => guarded[Number(i)] ?? m);
-  const hasRowcol = Object.prototype.hasOwnProperty.call(dict, "sym-rowcol");
-  const hasPower = Object.prototype.hasOwnProperty.call(dict, "sym-power");
-  if (!hasRowcol && !hasPower) return restore(out);
-  return restore(out.replace(TEX_TERM_RE, (match, rc, rcSub, powExp) => {
-    if (rc && hasRowcol) {
-      return `\\htmlData{term=sym-rowcol}{${rc}_${rcSub}}`;
-    }
-    if (powExp && hasPower) {
-      return `\\htmlData{term=sym-power}{(-1)^${powExp}}`;
-    }
-    return match;
-  }));
+  if (!patterns.length) return restore(out);
+  const pin = [];
+  out = out.replace(/\\htmlData\{[^{}]*\}\{[^{}]*\}/g, (m) => {
+    pin.push(m);
+    return `\u0002${pin.length - 1}\u0002`;
+  });
+  for (const { id, re } of patterns) {
+    out = out.replace(re, (match, ...rest) => {
+      const offset = rest[rest.length - 2];
+      const full = rest[rest.length - 1];
+      const before = offset > 0 ? full[offset - 1] : "";
+      if (before === "\\") return match;
+      if (ARG_COMMANDS.test(full.slice(0, offset))) return match;
+      const isScript = before === "_" || before === "^";
+      const wrapped = `\\htmlData{term=${id}}{${match}}`;
+      if (onTerm) onTerm(id);
+      return isScript ? `{${wrapped}}` : wrapped;
+    });
+  }
+  out = out.replace(/\u0002(\d+)\u0002/g, (m, i) => pin[Number(i)] ?? m);
+  return restore(out);
 }
 
 const esc = (s) =>
@@ -323,7 +352,7 @@ function stripDictFences(lines, onTable = null) {
  * （标题里插令牌会让右侧目录重复三遍，见 handoff §8.1）。
  * 另外跳过紧跟「图／表／级／相／极／端」的情况：「B 级绝缘」「B 图」里的 B 不是磁通密度。
  */
-const PROTECT_RE = /(`[^`\n]*`|\$[^$\n]*\$|\[[^\]\n]+\]\{#[A-Za-z_][A-Za-z0-9_-]*\}|\]\([^)\n]*\)|<[^>\n]+>)/;
+const PROTECT_RE = /(`[^`\n]*`|\$[^$\n]*\$|\[[^\]\n]+\]\{#(?:[^\]:{}\n]+:)?[A-Za-z_][A-Za-z0-9_-]*\}|\]\([^)\n]*\)|<[^>\n]+>)/;
 const SKIP_AFTER = "图表级相极端样附";
 /**
  * 会**吃参数**的命令：紧跟在 `\mathbf ` 后面的那个字母是它的参数，不是独立符号，
@@ -371,31 +400,91 @@ export function autoWrapTerms(source, dict = {}) {
 }
 
 /**
- * 主转换：剥词典围栏 + 把 [tex]{#id} 令牌换成可点击符号。
- * 词典里没有的 id **原样保留**（显式可见的坏令牌好过静默吞掉）。
+ * 可剥离：只剥词典围栏、不做任何符号行为（宿主在没有符号环境时调用）。
+ * `:::glossary-dict table` 且给了 dictTable 时照常出表——总表是内容资产，
+ * 与「本页有没有锚定符号环境」无关。
+ */
+export function peelNotationFences(source, dictTable = null) {
+  if (typeof source !== "string") return source;
+  const tables = [];
+  return stripDictFences(
+    source.split(/\r?\n/),
+    dictTable
+      ? (entries) => {
+          tables.push(dictTable(entries));
+          return `@@GLOSS_TABLE_${tables.length - 1}@@`;
+        }
+      : null,
+  )
+    .join("\n")
+    .replace(/@@GLOSS_TABLE_(\d+)@@/g, (m, i) => tables[Number(i)] ?? m);
+}
+
+/**
+ * 主转换：剥词典围栏 + 自动取词 + 把令牌换成可点击符号。**三层显式锚定、零回退**：
+ *
+ *   令牌 {#包名:id}（符号级强制）→ packs[包名]
+ *   令牌 {#id} + pins（frontmatter「符号强制」）→ packs[pins[id]]
+ *   令牌 {#id}（无强制）→ dict（**被锚定的环境包**，由宿主按段/课程环境解析好传入）
+ *
+ * 环境里没有的 id **原样保留**，并经 onWarn 报给宿主（构建期打印）——没有自动回退、
+ * 没有跨包兜底。dict 为空 = 符号功能关闭，此时宿主应改调 peelNotationFences。
  *
  * @param {string} source
- * @param {{dict: object, wrapDict?: object, renderTex?: (tex: string) => string,
- *          notationHref?: string, dictTable?: (entries: Array<{id: string, title: string, text: string}>) => string}} opts
- *   renderTex   宿主注入的 KaTeX 行内渲染回调；缺省时令牌用纯文本。
- *   notationHref 当页到符号入门页的链接（.html）；缺省落到 '#id' 纯锚点。
- *                多课程合并词典时，改在词条上带 href（优先级更高，见 build.mjs）。
- *   dictTable   `:::glossary-dict table` 围栏的渲染回调（宿主注入，本模块不懂 KaTeX）；
- *               缺省时该围栏与普通围栏一样被剥掉。
+ * @param {{dict?: object, packs?: object, pins?: object, envName?: string,
+ *          renderTex?: (tex: string) => string, notationHref?: string,
+ *          dictTable?: (entries: object[]) => string,
+ *          onWarn?: (msg: string) => void, onHit?: (key: string) => void}} opts
+ *   dict         环境包词典（本页口径：词条带 href/titleText）。
+ *   packs        全部符号包 {包名: {hrefBase, dict}}——包限定令牌与符号强制用。
+ *   pins         frontmatter「符号强制」：{词条id: 包名}。
+ *   envName      当前锚定的包名（警告消息里报给作者）。
+ *   onWarn       构建期警告收集（宿主去重打印）。
+ *   onHit        命中回调（key = JSON 里的词条键），宿主按需烘焙气泡 JSON。
  */
 export function renderGlossary(source, opts = {}) {
   if (typeof source !== "string") return source;
-  const { dict = {}, wrapDict = null, renderTex = null, notationHref = "", dictTable = null } = opts;
-  // 两本词典分工：
-  //   dict     —— **合并词典**，管显式令牌 [tex]{#id}。作者手写的令牌允许跨课程
-  //               （气泡里的「详细 ↗」按词条所属课程解析，链接不会串错页）。
-  //   wrapDict —— **本课程词典**，只管自动取词：别的课的符号拿到这一页取词会闹笑话
-  //               （工程数学的 A 是矩阵、电机学的 A 是 A 相）。
-  const wrapSource = wrapDict || dict;
-  // 先剥数据围栏（`table` 围栏换成总表，但只留占位符——总表 HTML 里全是 KaTeX 产物，
-  // 若此刻就插进来，自动取词会把手伸进标签之间的文字里，把 <td>B</td> 这类文本当裸符号
-  // 上色，甚至插进 MathML annotation 内部），再按词典声明自动取词，最后才判断
-  // 「这一页有没有活干」——短路必须在自动取词之后，否则裸写符号的页面会被当成没活干而原样返回。
+  const {
+    dict = {},
+    packs = null,
+    pins = null,
+    envName = "",
+    renderTex = null,
+    notationHref = "",
+    dictTable = null,
+    onWarn = null,
+    onHit = null,
+  } = opts;
+  const warn = (msg) => onWarn && onWarn(msg);
+  // 解析一个令牌：返回 {key, entry, href} 或 {miss}。**只查被锚定的地方，零回退**。
+  const resolveTerm = (pack, term) => {
+    if (pack !== undefined) {
+      const p = packs && packs[pack];
+      if (!p) return { miss: `令牌指向未注册的符号包「${pack}」` };
+      const e = p.dict[term];
+      if (!e || e.bubble === false) return { miss: `包「${pack}」没有词条 ${term}` };
+      return { key: `${pack}:${term}`, entry: e, href: `${p.hrefBase}#${term}` };
+    }
+    if (pins && Object.prototype.hasOwnProperty.call(pins, term)) {
+      const packName = pins[term];
+      const p = packs && packs[packName];
+      const e = p && p.dict[term];
+      if (!e || e.bubble === false) {
+        return { miss: `符号强制指向的包「${packName}」没有词条 ${term}` };
+      }
+      return { key: `${packName}:${term}`, entry: e, href: `${p.hrefBase}#${term}` };
+    }
+    if (Object.prototype.hasOwnProperty.call(dict, term)) {
+      const e = dict[term];
+      if (e.bubble === false) {
+        return { miss: `词条 ${term} 只声明了形式、没有气泡内容（补词典行才会生效）` };
+      }
+      return { key: term, entry: e, href: e.href || `${notationHref}#${term}` };
+    }
+    return { miss: `环境包「${envName}」没有词条 ${term}，令牌原样保留` };
+  };
+  // 先剥数据围栏（table 围栏换成占位符——总表 HTML 里全是 KaTeX 产物，若此刻插进来，
+  // 自动取词会把手伸进标签之间），再自动取词，最后才判断「有没有活干」。
   const tables = [];
   const stripped = stripDictFences(
     source.split(/\r?\n/),
@@ -406,7 +495,7 @@ export function renderGlossary(source, opts = {}) {
         }
       : null,
   ).join("\n");
-  const wrapped = autoWrapTerms(stripped, wrapSource);
+  const wrapped = autoWrapTerms(stripped, dict);
   const hasWork =
     source.includes(":::glossary-dict") ||
     source.includes(":::glossary-match") ||
@@ -415,18 +504,22 @@ export function renderGlossary(source, opts = {}) {
   if (!hasWork) return source;
 
   return wrapped
-    .replace(TOKEN_RE, (match, tex, term) => {
-      if (!Object.prototype.hasOwnProperty.call(dict, term)) return match;
-      const entry = dict[term];
+    .replace(TOKEN_RE, (match, tex, pack, term) => {
+      const r = resolveTerm(pack, term);
+      if (r.miss) {
+        warn(r.miss);
+        return match;
+      }
+      const { key, entry, href } = r;
       const inner =
         renderTex && tex.trim() !== ""
           ? renderTex(tex)
           : esc(tex);
-      const href = entry.href || `${notationHref}#${term}`;
       // aria-label 用**纯文本**标题（词条标题可为 $…$，读屏不该念出美元号与反斜杠）
       const label = entry.titleText || entry.title;
+      if (onHit) onHit(key, { title: entry.title, text: entry.text, href });
       return (
-        `<a class="sym-gloss" data-term="${esc(term)}" href="${esc(href)}"` +
+        `<a class="sym-gloss" data-term="${esc(key)}" href="${esc(href)}"` +
         ` aria-label="${esc(label)}">${inner}</a>`
       );
     })
