@@ -33,6 +33,22 @@ skill 的正文**不会自动加载**——上下文里只有它的名字和一�
   只有怀疑基础设施本身（比如部署步骤报密钥错）时才偶尔看一眼。
 - **入库保持一次过**（2026-09-23 定案）：转写用 `.githooks/extract-transcript.py` 提取，索引只做最小 diff（加行 + `last_updated`），收尾用 skill 里那条命令**一次跑完**；线上页面只在动过 `站点/` 或用户要看时抓。
 
+## 二·五、事实系统（Einfacht）
+
+本仓接入了 [Einfacht](https://github.com/ArchivalEra/Einfacht) 反幻觉事实系统的最小包：机制在 `zreflect/`（逐字节照抄上游，可原样升级），**本仓要量的东西**在 `zreflect/measure_edu.py`，配置在 `reflect-hooks/Einfacht.env`。它管的是**数字**：
+
+- **数字只生产一次**：课程/资料/习题/配图/词条/站点页数等计数住在 `FACTS.json`，文档里**引用写
+  `[[键名]]`**，不手抄。机器块（`STATE.md` 末尾的 `AUTO:FACTS` 与 `AUTO:GATES`）由
+  `python3 zreflect/facts.py --render-doc STATE.md` 渲染，**不要手改**（pre-commit 会重算并 `git add`）。
+- **改完数字要重测**：`python3 zreflect/facts.py`（掉条/改口会拒绝；改口逐条
+  `--accept-changes=k1,k2` 放行）。**改口的含义**是「这个数真的变了」，不是「让闸门闭嘴」。
+- **闸门**：`python3 zreflect/registry.py --run commit` 跑全部提交相位闸门（`off` 单列，**没查 ≠ 通过**）。
+  已接入 pre-commit / pre-push（内嵌在 `.githooks/` 既有钩子链里，不换 `core.hooksPath`）。
+- **旧值不许回来**：翻案进 `retractions.json`（`text` 片段出现在活状态文档里、该行又不带更正标记
+  就报）；已知的手抄旧值用 `invariants.json` 按片段拦。
+- **悬案**：`questions/*.md` 每条必须带 `**Status:**` 与可区分的 `**Settling:**`（`… rc=0 ⇒ A；rc≠0 ⇒ B`）。
+- 开工先看 `STATE.md`（活状态）——会话开始 ZCode 会通过 `.zcode/inject-state.py` 自动注入未结案悬案与台账规模。
+
 ## 三、写作口径
 
 - 中文优先、给人看；**平实陈述**，不写自辩或防范性说明。

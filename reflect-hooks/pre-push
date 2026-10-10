@@ -1,0 +1,63 @@
+#!/bin/sh
+# pre-push：机器块必须新鲜、闸门必须全绿 —— 从 Octave-Full-Wasm 的 pre-push 迁移。
+#
+# 为什么 pre-commit 已经查了 pre-push 还要查：pre-commit 会自动重算，但**产物可能在
+# 上次提交之后又变了** —— 那种情况下推出去的文档就已经是旧的了。pre-push **不自动改
+# 文件、不动历史**：不新鲜就直接拒推，强制先提交再推。
+set -e
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+# 可拔插件（issue #8）：repo-local REFLECT_* 载体 = Einfacht.env，
+# 由 einfacht-env.sh 加载（钩子目录优先、仓库根次之；形状见
+# Einfacht.env.example）。钩子虽继承调用 shell 的环境，但那份
+# 来源靠「谁记得 export」—— 换机器 / 换 CI / 换人就没了；
+# 文件才是钩子可复现的来源。删掉插件 ⇒ 本行守卫跳过，钩子
+# 什么都不改地回落纯环境变量 —— 机制能拔，钩子本体通用。
+[ -f "$HERE/einfacht-env.sh" ] && . "$HERE/einfacht-env.sh"
+REPO=$(CDPATH= cd -- "$HERE/.." && pwd)
+cd "$REPO"
+
+DOC=${REFLECT_DOC:-STATE.md}
+if [ -f "$DOC" ]; then
+  python3 zreflect/facts.py --check "$DOC"
+fi
+# ② 全部闸门：**执行面唯一产地**（C1）—— 同 pre-commit，跑 runs_at="commit"
+#    的闸门并聚合 ran/off/failed（别再 glob：谓词只有声明一处）。
+python3 zreflect/registry.py --run commit || exit 1
+
+# ③ 三语 README：**每次推送必须三份同批更新**（缺一份 ⇒ 拒推）。
+#    判据住在 check_readme_sync.py 的 --changed 模式（--selftest 齐全，名录发现得到它）；
+#    这里只做 git 的簿记：从 pre-push 的 stdin 协议逐 ref 算出「这次要推的改动文件集」。
+#    ⚠️ 诚实边界：`git push --no-verify` 能跳过本 hook —— git 的原生出口拦不住；
+#    所以 CI（.github/workflows/readme-sync.yml）跑**同一条判据**。本地先疼，CI 才是承诺的正面。
+ZERO=0000000000000000000000000000000000000000
+CHANGED=$(mktemp)
+trap 'rm -f "$CHANGED"' EXIT
+refs_checked=0
+while read -r lref lsha rref rsha; do
+  [ -n "${lref:-}" ] || continue
+  case "$lref" in refs/tags/*) continue ;; esac        # tag 推送不携带新内容
+  [ "$lsha" = "$ZERO" ] && continue                    # 删分支：没有新东西可要求
+  if [ "$rsha" = "$ZERO" ]; then
+    # 新分支：只要求「尚未发布到任何远端」的提交；全仓第一推没有 remote-tracking ⇒
+    # rev-list 自然返回全部历史（非空），落进下面的正常判定。
+    revs=$(git rev-list "$lsha" --not --remotes 2>/dev/null || true)
+  else
+    revs="$rsha..$lsha"
+    git rev-list $revs >/dev/null 2>&1 || revs="$lsha" # 非祖先（强推）⇒ 保守按整条历史
+  fi
+  if [ -z "$revs" ]; then
+    echo "pre-push：$lref 没有要发布的新内容（提交已在远端）⇒ 三语判据对此 ref 无事可查（明说，不假装查过）" >&2
+    refs_checked=$((refs_checked + 1))
+    continue
+  fi
+  git log --name-only --pretty=format: $revs 2>/dev/null | sed '/^[[:space:]]*$/d' > "$CHANGED" || true
+  if ! python3 zreflect/check_readme_sync.py --changed "$CHANGED"; then
+    echo "pre-push 拒绝：$lref 这批推送没把三语 README **同批**更新（CI 跑同一条判据，" >&2
+    echo "           --no-verify 只能躲过本地这一道）。名单可配：REFLECT_READMES。" >&2
+    exit 1
+  fi
+  refs_checked=$((refs_checked + 1))
+done
+if [ "$refs_checked" -eq 0 ]; then
+  echo "pre-push：没有携带内容的分支推送（tag/删除）⇒ 三语判据无事可查（明说，不假装查过）" >&2
+fi

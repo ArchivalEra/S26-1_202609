@@ -1,3 +1,28 @@
 #!/usr/bin/env bash
+# 本仓 pre-push：既有的待推送提交树校验 + Einfacht 事实新鲜度校验。
+#
+# 为什么 pre-commit 已经查了、pre-push 还要查：pre-commit 会自动重算机器块，
+# 但产物可能在上次提交之后又变了 —— 那样推出去的文档就已经是旧的。pre-push
+# **不自动改文件**：不新鲜就直接拒推，强制先提交再推。
+#
+# ⚠️ 两处守卫（与 pre-commit 同款，理由见那边）：`$PWD` 可能是别人的仓库
+#    （core.hooksPath 被继承），没有 zreflect/ 就跳过 Einfacht 段；
+#    env 直接加载 Einfacht.env 本体（einfacht-env.sh 插件在 .githooks 里加载不到）。
 set -euo pipefail
-python3 "$(git rev-parse --show-toplevel)/.githooks/hook_lib.py" pre-push
+REPO="$(git rev-parse --show-toplevel)"
+cd "$REPO"
+
+if [ -f zreflect/facts.py ]; then
+  # ── ① Einfacht：机器块必须新鲜（与台账现算一致）────────────────────────
+  [ -f reflect-hooks/Einfacht.env ] && . reflect-hooks/Einfacht.env
+  DOC="${REFLECT_DOC:-STATE.md}"
+  if [ -f "$DOC" ]; then
+    python3 zreflect/facts.py --check "$DOC"
+  fi
+
+  # ── ② Einfacht：全部 commit 相位闸门（含复跑：台账每条 cmd 真跑一遍）────
+  python3 zreflect/registry.py --run commit || exit 1
+fi
+
+# ── ③ 本仓既有检查：待推送提交树的白名单 / 索引 / 自动区块一致性 ───────────
+python3 "$REPO/.githooks/hook_lib.py" pre-push

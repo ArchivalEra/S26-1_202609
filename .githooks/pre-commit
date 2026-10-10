@@ -1,3 +1,34 @@
 #!/usr/bin/env bash
+# 本仓 pre-commit：既有的白名单/索引/自动区块检查 + Einfacht 事实系统段。
+#
+# Einfacht 段为什么内嵌在这里而不是换 core.hooksPath：本仓的 .githooks 是
+# 既有的主钩子链（白名单、索引同步、handoff 时效、自动区块），换 hooksPath
+# 会让那条链整个失效。所以照 Octave-Full-Wasm 的成熟做法：在同一个钩子里
+# 显式调用两套机制 —— 上游那套的钩子体（source env → 渲染机器块 → 跑闸门）
+# 逐行搬进来，机制本身留在 zreflect/。
+#
+# ⚠️ 两处守卫（都踩过）：
+#   · `$PWD` 可能是**别人的仓库**（core.hooksPath 被继承：测试夹具、外部克隆）；
+#     没有 zreflect/ 就跳过 Einfacht 段，本仓既有检查照跑 —— 钩子本体通用。
+#   · env 用小写 `.` 直接加载 Einfacht.env 本体：einfacht-env.sh 插件是给
+#     reflect-hooks/ 里的钩子用的（它从 $0 推目录），.githooks 里加载不到。
 set -euo pipefail
-python3 "$(git rev-parse --show-toplevel)/.githooks/update-readme.py"
+REPO="$(git rev-parse --show-toplevel)"
+cd "$REPO"
+
+# ── ① Einfacht：机器块重渲染（只渲染不重测；重测由人负责）────────────────────
+if [ -f zreflect/facts.py ]; then
+  [ -f reflect-hooks/Einfacht.env ] && . reflect-hooks/Einfacht.env
+  DOC="${REFLECT_DOC:-STATE.md}"
+  if [ -f "$DOC" ]; then
+    python3 zreflect/facts.py --render-doc "$DOC"
+    git add "$DOC"
+  fi
+
+  # ── ② Einfacht：全部 commit 相位闸门（执行面读声明，不读文件名）────────────
+  #    off 态单列（没查 ≠ 通过）。名录由 registry 从各闸门的声明行派生。
+  python3 zreflect/registry.py --run commit || exit 1
+fi
+
+# ── ③ 本仓既有检查：白名单 / 索引同步 / handoff 时效 / 两处自动区块 ─────────
+python3 "$REPO/.githooks/update-readme.py"
