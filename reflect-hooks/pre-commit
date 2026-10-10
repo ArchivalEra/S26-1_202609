@@ -1,0 +1,33 @@
+#!/bin/sh
+# pre-commit：重渲染事实块并跑全部闸门 —— 从 Octave-Full-Wasm 的 pre-commit 迁移泛化。
+#
+# 两个原则（那边踩出来的）：
+#   · 机器块是**机器维护**的：提交前重渲染并 `git add`，人不手改数字；
+#   · 提交时刻是**检查活状态断言**的最后一道闸（过了这一刻，过时断言就进了历史）。
+set -e
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+# 可拔插件（issue #8）：repo-local REFLECT_* 载体 = Einfacht.env，
+# 由 einfacht-env.sh 加载（钩子目录优先、仓库根次之；形状见
+# Einfacht.env.example）。钩子虽继承调用 shell 的环境，但那份
+# 来源靠「谁记得 export」—— 换机器 / 换 CI / 换人就没了；
+# 文件才是钩子可复现的来源。删掉插件 ⇒ 本行守卫跳过，钩子
+# 什么都不改地回落纯环境变量 —— 机制能拔，钩子本体通用。
+[ -f "$HERE/einfacht-env.sh" ] && . "$HERE/einfacht-env.sh"
+REPO=$(CDPATH= cd -- "$HERE/.." && pwd)
+cd "$REPO"
+
+# ① 机器块重渲染（REFLECT_DOC 名字跟随环境；默认 STATE.md）
+#    ⚠️ 这里**只渲染，不重测**（issue #4 ③）：重测由人负责 ——
+#    python3 zreflect/facts.py（改口逐条 --accept-changes=k1,k2 放行）。
+DOC=${REFLECT_DOC:-STATE.md}
+if [ -f "$DOC" ]; then
+  python3 zreflect/facts.py --render-doc "$DOC"
+  git add "$DOC"
+fi
+
+# ② 全部闸门：**执行面唯一产地**（C1）—— `registry --run commit` 跑所有
+#    runs_at="commit" 的闸门并聚合 ran/off/failed。别再 glob `check_*.py`：
+#    glob 与声明（GATE = meta(…, runs_at=…)）是两套谓词，会分叉（doctor 曾
+#    只能靠「不叫 check_」表达频率）。执行面只认声明 —— 名字不再承重。
+#    off 态被单列（C2）：`ran N / off M / failed K`，off 不是通过。
+python3 zreflect/registry.py --run commit || exit 1
