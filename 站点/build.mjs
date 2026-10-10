@@ -547,23 +547,30 @@ for (const relPath of TARGET_FILES) {
   // `\frac`，而不是拿斜杠或 unicode 上下标凑）；③ 文本里若出现 [tex]{#id} 令牌写法，
   // 保持字面——气泡里不套气泡。**标题与文本走同一条路**（气泡顶上的 `B_r：…` 也该是真公式）。
   // 客户端两者都用 innerHTML 插入（见 GLOSSARY_JS）。
+  // ⚠ 顺序神圣：**公式先渲染，其余文本后转义**。反过来（先转义再渲染公式）会把
+  // `$X>0$` 里的 > 先变成 `&gt;`，KaTeX 拿到 `X&gt;0` 直接 ParseError、红字原样
+  // 吐回页面（2026-10-10 实弹：符号入门页 4 处公式在气泡里字面显示）。
+  const escapeHtmlText = (t) =>
+    t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const renderBubbleText = (s) =>
     String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/\$([^$\n]+)\$/g, (m, tex) => {
-        try {
-          return katex.renderToString(wrapBareCJK(tex), {
-            displayMode: false,
-            throwOnError: false,
-            trust: true,
-            strict: false,
-          });
-        } catch (err) {
-          return m;
+      .split(/\$([^$\n]+)\$/g)
+      .map((part, i) => {
+        if (i % 2 === 1) {
+          try {
+            return katex.renderToString(wrapBareCJK(part), {
+              displayMode: false,
+              throwOnError: false,
+              trust: true,
+              strict: false,
+            });
+          } catch (err) {
+            return escapeHtmlText('$' + part + '$');
+          }
         }
-      });
+        return escapeHtmlText(part);
+      })
+      .join('');
   // 同一段文字的**纯文本**版（读屏用）：只脱掉 $ 与 TeX 的反斜杠花括号，够读即可——
   // 标题的 aria-label 不该念出「美元号、反斜杠、下划线」。
   const plainBubbleText = (s) =>
