@@ -3,7 +3,6 @@ id: okf.course.engineering_math.assignments.index
 name: 工程数学作业索引
 type: CatalogIndex
 spec_version: "0.2"
-status: active
 last_updated: "2026-10-10"
 stewards:
   - team: 工程数学课程学习记录

@@ -3,7 +3,6 @@ id: okf.course.electronics.textbook.index
 name: 电子技术教材解析索引
 type: CatalogIndex
 spec_version: "0.2"
-status: active
 last_updated: "2026-09-21"
 stewards:
   - team: 电子技术课程学习记录

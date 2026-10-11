@@ -3,7 +3,6 @@ id: okf.course.circuit_theory.textbook.index
 name: 电路原理教材解析索引
 type: CatalogIndex
 spec_version: "0.2"
-status: active
 last_updated: "2026-09-21"
 stewards:
   - team: 电路原理课程学习记录

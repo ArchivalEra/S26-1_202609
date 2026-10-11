@@ -3,7 +3,6 @@ id: okf.semester.catalog_index
 name: 本学期课程总索引
 type: CatalogIndex
 spec_version: "0.2"
-status: active
 last_updated: "2026-09-21"
 stewards:
   - team: 学期课程学习记录

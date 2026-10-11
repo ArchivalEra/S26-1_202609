@@ -3,7 +3,6 @@ id: okf.course.electronics.notes.index
 name: 电子技术课堂笔记索引
 type: CatalogIndex
 spec_version: "0.2"
-status: active
 last_updated: "2026-09-24"
 stewards:
   - team: 电子技术课程学习记录

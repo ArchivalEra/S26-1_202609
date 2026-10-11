@@ -410,6 +410,7 @@
 !/模板/教材章节解析.md
 !/模板/课堂笔记.md
 !/模板/音频记录.md
+!/模板/Walkthrough.md
 
 # 历史路径兼容入口，不计入本学期课程或资料数量
 !/knowledge/index.md
@@ -444,6 +445,12 @@
 !/zreflect/collect.py
 !/zreflect/facts.py
 !/zreflect/measure_edu.py
+!/课程/工程数学/Walkthrough.md
+!/课程/电路原理/Walkthrough.md
+!/课程/电子技术/Walkthrough.md
+!/课程/电机学/Walkthrough.md
+!/课程/电力大数据与人工智能/Walkthrough.md
+!/课程/形势与政策/Walkthrough.md
 !/zreflect/doctor.py
 !/zreflect/check_ab.py
 !/zreflect/check_envfile.py

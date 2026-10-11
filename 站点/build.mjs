@@ -22,6 +22,7 @@ const TARGET_FILES = [
   'README.md',
   '课程/index.md',
   '课程/工程数学/index.md',
+  '课程/工程数学/Walkthrough.md',
   '课程/工程数学/作业/index.md',
   '课程/工程数学/作业/2026-09-17-作业1.md',
   '课程/工程数学/教材解析/index.md',
@@ -45,6 +46,7 @@ const TARGET_FILES = [
   '课程/工程数学/原始资料/index.md',
   '课程/工程数学/音频/index.md',
   '课程/电力大数据与人工智能/index.md',
+  '课程/电力大数据与人工智能/Walkthrough.md',
   '课程/电力大数据与人工智能/作业/index.md',
   '课程/电力大数据与人工智能/教材解析/index.md',
   '课程/电力大数据与人工智能/课堂笔记/index.md',
@@ -53,12 +55,14 @@ const TARGET_FILES = [
   '课程/电力大数据与人工智能/原始资料/index.md',
   '课程/电力大数据与人工智能/音频/index.md',
   '课程/形势与政策/index.md',
+  '课程/形势与政策/Walkthrough.md',
   '课程/形势与政策/作业/index.md',
   '课程/形势与政策/课堂笔记/index.md',
   '课程/形势与政策/课堂笔记/2026-09-21-经济热点专题与考试安排.md',
   '课程/形势与政策/原始资料/index.md',
   '课程/形势与政策/音频/index.md',
   '课程/电路原理/index.md',
+  '课程/电路原理/Walkthrough.md',
   '课程/电路原理/作业/index.md',
   '课程/电路原理/作业/2026-09-28-习题册第一章.md',
   '课程/电路原理/作业/2026-09-28-习题册第二章.md',
@@ -76,6 +80,7 @@ const TARGET_FILES = [
   '课程/电路原理/原始资料/index.md',
   '课程/电路原理/音频/index.md',
   '课程/电子技术/index.md',
+  '课程/电子技术/Walkthrough.md',
   '课程/电子技术/作业/index.md',
   '课程/电子技术/作业/2026-09-23-第一章简答题.md',
   '课程/电子技术/作业/2026-09-28-第一章填空与简答.md',
@@ -86,6 +91,7 @@ const TARGET_FILES = [
   '课程/电子技术/原始资料/index.md',
   '课程/电子技术/音频/index.md',
   '课程/电机学/index.md',
+  '课程/电机学/Walkthrough.md',
   '课程/电机学/作业/index.md',
   '课程/电机学/作业/2026-09-22-第1章概述客观题.md',
   '课程/电机学/教材解析/index.md',
@@ -189,6 +195,33 @@ const searchDocs = [];
 // 2. Pre-read metadata of all files for navigation & paging
 const pageMetaMap = new Map();
 
+// 课程状态的**唯一产地** = README 的 COURSE-STATUS 块（2026-10-11 定案）：
+// 只允许「开课 / 结课」两档；课程页与各资料页顶端的状态都从这里继承，
+// 资料文件不再自己写 `status`。README 缺块 ⇒ 明确报错（不静默降级成空状态）。
+function loadCourseStatus() {
+  const p = path.join(ROOT, 'README.md');
+  const text = fs.readFileSync(p, 'utf-8');
+  const m = text.match(/<!-- COURSE-STATUS:START -->([\s\S]*?)<!-- COURSE-STATUS:END -->/);
+  if (!m) {
+    throw new Error('README.md 缺 COURSE-STATUS 块——课程状态的唯一产地，别删（见 README「课程状态」节）。');
+  }
+  const map = new Map();
+  for (const line of m[1].split('\n')) {
+    const row = line.match(/^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*$/);
+    if (!row) continue;
+    const [, name, status] = row;
+    // 跳过表头与分隔行（`| :--- | :--- |`）
+    if (name === '课程' || /^[-: ]+$/.test(name)) continue;
+    if (status !== '开课' && status !== '结课') {
+      throw new Error(`README 课程状态表：${name} 的状态「${status}」非法——只允许「开课」或「结课」。`);
+    }
+    map.set(name, status);
+  }
+  if (!map.size) throw new Error('README 的 COURSE-STATUS 块里一条课程都没有——空不是通过。');
+  return map;
+}
+const COURSE_STATUS = loadCourseStatus();
+
 for (const relPath of TARGET_FILES) {
   const fullPath = path.join(ROOT, relPath);
   if (!fs.existsSync(fullPath)) continue;
@@ -231,6 +264,23 @@ const NAV_STRUCTURE = [
         label: "工程数学",
         path: "课程/工程数学/index.md",
         children: [
+          { label: "Walkthrough", path: "课程/工程数学/Walkthrough.md" },
+          {
+            label: "作业",
+            path: "课程/工程数学/作业/index.md",
+            children: [
+              { label: "作业1", path: "课程/工程数学/作业/2026-09-17-作业1.md" }
+            ]
+          },
+          {
+            label: "课堂笔记",
+            path: "课程/工程数学/课堂笔记/index.md",
+            children: [
+              { label: "09-17 行列式与沙路法则", path: "课程/工程数学/课堂笔记/2026-09-17-determinants-order-2-3.md" },
+              { label: "09-17 课堂听课整理", path: "课程/工程数学/课堂笔记/2026-09-17-determinants-transcript-notes.md" },
+              { label: "09-24 降阶法与克拉默法则", path: "课程/工程数学/课堂笔记/2026-09-24-降阶法克拉默法则与齐次方程组.md" }
+            ]
+          },
           {
             label: "教材解析",
             path: "课程/工程数学/教材解析/index.md",
@@ -265,22 +315,6 @@ const NAV_STRUCTURE = [
               }
             ]
           },
-          {
-            label: "课堂笔记",
-            path: "课程/工程数学/课堂笔记/index.md",
-            children: [
-              { label: "09-17 行列式与沙路法则", path: "课程/工程数学/课堂笔记/2026-09-17-determinants-order-2-3.md" },
-              { label: "09-17 课堂听课整理", path: "课程/工程数学/课堂笔记/2026-09-17-determinants-transcript-notes.md" },
-              { label: "09-24 降阶法与克拉默法则", path: "课程/工程数学/课堂笔记/2026-09-24-降阶法克拉默法则与齐次方程组.md" }
-            ]
-          },
-          {
-            label: "作业",
-            path: "课程/工程数学/作业/index.md",
-            children: [
-              { label: "作业1", path: "课程/工程数学/作业/2026-09-17-作业1.md" }
-            ]
-          },
           { label: "原始资料", path: "课程/工程数学/原始资料/index.md" },
           { label: "音频", path: "课程/工程数学/音频/index.md" }
         ]
@@ -289,6 +323,7 @@ const NAV_STRUCTURE = [
         label: "电力大数据与人工智能",
         path: "课程/电力大数据与人工智能/index.md",
         children: [
+          { label: "Walkthrough", path: "课程/电力大数据与人工智能/Walkthrough.md" },
           { label: "作业", path: "课程/电力大数据与人工智能/作业/index.md" },
           { label: "教材解析", path: "课程/电力大数据与人工智能/教材解析/index.md" },
           { label: "课堂笔记", path: "课程/电力大数据与人工智能/课堂笔记/index.md",
@@ -307,6 +342,7 @@ const NAV_STRUCTURE = [
         label: "形势与政策",
         path: "课程/形势与政策/index.md",
         children: [
+          { label: "Walkthrough", path: "课程/形势与政策/Walkthrough.md" },
           { label: "作业", path: "课程/形势与政策/作业/index.md" },
           { label: "课堂笔记", path: "课程/形势与政策/课堂笔记/index.md",
             children: [
@@ -321,6 +357,7 @@ const NAV_STRUCTURE = [
         label: "电路原理",
         path: "课程/电路原理/index.md",
         children: [
+          { label: "Walkthrough", path: "课程/电路原理/Walkthrough.md" },
           { label: "作业", path: "课程/电路原理/作业/index.md",
             children: [
               { label: "习题册第一章（43 题）", path: "课程/电路原理/作业/2026-09-28-习题册第一章.md" },
@@ -352,6 +389,7 @@ const NAV_STRUCTURE = [
         label: "电子技术",
         path: "课程/电子技术/index.md",
         children: [
+          { label: "Walkthrough", path: "课程/电子技术/Walkthrough.md" },
           { label: "作业", path: "课程/电子技术/作业/index.md",
             children: [
               { label: "2026-9-23作业（习题 1.1、1.3、1.5）", path: "课程/电子技术/作业/2026-09-23-第一章简答题.md" },
@@ -373,6 +411,7 @@ const NAV_STRUCTURE = [
         label: "电机学",
         path: "课程/电机学/index.md",
         children: [
+          { label: "Walkthrough", path: "课程/电机学/Walkthrough.md" },
           { label: "作业", path: "课程/电机学/作业/index.md",
             children: [
               { label: "09-22 第1章概述客观题（25题）", path: "课程/电机学/作业/2026-09-22-第1章概述客观题.md" }
@@ -975,10 +1014,14 @@ for (const relPath of TARGET_FILES) {
   const drawerHtml = renderNav(NAV_STRUCTURE);
 
   // Render Frontmatter Meta Chips
+  // 状态**不读 frontmatter**（2026-10-11 定案）：从 README 的课程状态表继承。
+  // 资料页没有 course 字段时（如 README 自身）就不出状态 chip。
+  const courseName = frontmatter.course || (relPath.startsWith('课程/') ? relPath.split('/')[1] : '');
+  const inheritedStatus = courseName ? COURSE_STATUS.get(courseName) : undefined;
   let metaChipsHtml = '';
   if (frontmatter.course) metaChipsHtml += `<span class="meta-chip primary">📚 ${frontmatter.course}</span>`;
   if (frontmatter.category) metaChipsHtml += `<span class="meta-chip">🏷️ ${frontmatter.category}</span>`;
-  if (frontmatter.status) metaChipsHtml += `<span class="meta-chip">⚡ 状态: ${frontmatter.status}</span>`;
+  if (inheritedStatus) metaChipsHtml += `<span class="meta-chip">⚡ 状态: ${inheritedStatus}</span>`;
   if (frontmatter.last_updated) metaChipsHtml += `<span class="meta-chip">📅 更新: ${frontmatter.last_updated}</span>`;
   if (frontmatter.sources) metaChipsHtml += `<span class="meta-chip">📖 来源: ${Array.isArray(frontmatter.sources) ? frontmatter.sources.join(', ') : frontmatter.sources}</span>`;
 
@@ -1237,7 +1280,7 @@ for (const relPath of TARGET_FILES) {
                 许可发布 · <a href="https://github.com/ArchivalEra/S26-1_202609" target="_blank" rel="noopener">仓库源码</a>
               </p>
               <p class="site-footer__disclaimer">
-                教材《工程数学基础》的题目原文与章节结构版权归原书作者与出版社所有，本站解析为个人学习笔记；
+                本站涉及的教材题目原文与章节结构，版权归各原书作者与出版社所有，本站解析为个人学习笔记；
                 页面主题样式来自 Shirone Material 3 Reader（MIT）；KaTeX、marked 等第三方库依其自身许可证分发。
               </p>
             </footer>

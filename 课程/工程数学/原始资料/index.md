@@ -3,7 +3,6 @@ id: okf.course.engineering_math.originals.index
 name: 工程数学原始资料索引
 type: CatalogIndex
 spec_version: "0.2"
-status: active
 last_updated: "2026-09-18"
 stewards:
   - team: 工程数学课程学习记录

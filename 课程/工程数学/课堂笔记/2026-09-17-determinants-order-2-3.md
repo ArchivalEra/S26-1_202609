@@ -2,7 +2,6 @@
 id: okf.math.linear_algebra.2026_09_17_determinants_order_2_3
 name: 二阶与三阶行列式计算、沙路法则与手算书写规范
 type: Concept
-status: active
 spec_version: "0.2"
 last_updated: "2026-09-24"
 date: "2026-09-17"
