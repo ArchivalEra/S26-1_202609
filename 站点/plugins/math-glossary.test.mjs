@@ -392,3 +392,41 @@ describe("glossary：客户端气泡脚本契约", () => {
     assert.ok(!GLOSSARY_JS.includes("t.textContent = entry.title"));
   });
 });
+
+describe("v2 多义项：一个符号的多重含义（不按课程独占名字）", () => {
+  const src = [
+    ":::glossary-dict",
+    "sym-Z | Z | 阻抗；槽数 | 电路原理=阻抗 $Z=R+jX$；电机学=槽数",
+    "sym-U | U | 电压：两点间的电位差",
+    ":::",
+  ].join("\n");
+
+  it("义项解析成 senses（语境=含义），单义词条不受影响", () => {
+    const d = parseGlossaryDict(src);
+    assert.deepEqual(d["sym-Z"].senses, [
+      { ctx: "电路原理", text: "阻抗 $Z=R+jX$" },
+      { ctx: "电机学", text: "槽数" },
+    ]);
+    assert.equal(d["sym-U"].senses, undefined);
+    assert.equal(d["sym-U"].text, "电压：两点间的电位差");
+  });
+
+  it("不是「语境=含义」形状时不当多义（宁可不拆，也不误判普通释义）", () => {
+    const d = parseGlossaryDict([":::glossary-dict", "sym-x | x | 甲；乙；丙", ":::"].join("\n"));
+    assert.equal(d["sym-x"].senses, undefined);
+  });
+
+  it("命中时 senses 随 onHit 传出（气泡才列得出全部义项）", () => {
+    const d = parseGlossaryDict(src);
+    let hit = null;
+    renderGlossary("[Z]{#sym-Z}", { dict: d, renderTex: fakeTex, onHit: (k, e) => (hit = e) });
+    assert.equal(hit.senses.length, 2);
+    assert.equal(hit.senses[0].ctx, "电路原理");
+  });
+
+  it("客户端气泡按 senses 列义项，并认当前语境（is-here 标记）", () => {
+    assert.ok(GLOSSARY_JS.includes("sym-gloss-pop__senses"));
+    assert.ok(GLOSSARY_JS.includes("entry.ctx"));
+    assert.ok(GLOSSARY_JS.includes("is-here"));
+  });
+});

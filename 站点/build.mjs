@@ -638,16 +638,27 @@ for (const relPath of TARGET_FILES) {
     ...((BUILD_PHASES.find((ph) => (ph.pages || []).includes(relPath)) || {}).env || {}),
   };
   const envPackName = envVars['符号'] || null;
-  const envPack = envPackName ? glossaryPacks[envPackName] : null;
-  if (envPackName && !envPack) {
-    glossaryWarn.add(`页面 ${relPath} 锚定的符号包「${envPackName}」未注册——本页零符号行为`);
+  // 多包叠加（v2，2026-10-11）：值可以是 `通用+电路原理`——按 `+` 拆开、**后者覆盖前者**。
+  // 通用符号只维护一份（站点/符号包/通用.md），各课只写自己的增量。零回退不变：
+  // 环境里任何一段包名没注册 ⇒ 明确警告，本页零符号行为。
+  const envPackNames = envPackName ? envPackName.split('+').map((s) => s.trim()).filter(Boolean) : [];
+  const envPacks = envPackNames.map((n) => glossaryPacks[n]);
+  for (const [i, n] of envPackNames.entries()) {
+    if (!envPacks[i]) glossaryWarn.add(`页面 ${relPath} 锚定的符号包「${n}」未注册——本页零符号行为`);
   }
   // 环境包词典（本页口径：词条带 href 与纯文本标题）；glossifyTex 与 autoWrapTerms 只看它。
-  const pageGlossaryDict = envPack
-    ? Object.fromEntries(Object.entries(envPack.dict).map(([id, e]) => [
-        id, { ...e, href: notationHrefOf(id, { page: envPack.page }), titleText: plainBubbleText(e.title) },
-      ]))
-    : {};
+  // 叠加顺序 = 声明顺序，后面的包覆盖前面的同名词条。
+  const pageGlossaryDict = {};
+  for (const [i, pack] of envPacks.entries()) {
+    if (!pack) continue;
+    for (const [id, e] of Object.entries(pack.dict)) {
+      pageGlossaryDict[id] = {
+        ...e,
+        href: notationHrefOf(id, { page: pack.page }),
+        titleText: plainBubbleText(e.title),
+      };
+    }
+  }
   // 全部包的当页形态（符号级强制令牌用）：hrefBase 不带锚点，按词条补。
   const glossaryPacksForPage = Object.fromEntries(
     Object.entries(glossaryPacks).map(([name, pack]) => [
@@ -774,7 +785,11 @@ for (const relPath of TARGET_FILES) {
     pins: glossaryPins,
     envName: envPackName,
     onWarn: (msg) => glossaryWarn.add(`${relPath}：${msg}`),
-    onHit: (key, entry) => glossaryHits.set(key, { title: entry.title, text: entry.text, href: entry.href }),
+    onHit: (key, entry) => {
+      const hit = { title: entry.title, text: entry.text, href: entry.href };
+      if (entry.senses) hit.senses = entry.senses;   // v2 多义项：别在命中时丢掉
+      glossaryHits.set(key, hit);
+    },
     // 总表的词条**按围栏给的顺序、但取模块级解析的原文**：围栏行里的 $…$ 在 Step 2 已经
     // 被换成 MATH 占位符，还原出来的是**正文口径**的渲染（带自动取词的 \htmlData），
     // 与气泡口径（renderBubbleText，不取词）不一致，而且会在 `\mathbf F` 这种
@@ -805,14 +820,23 @@ for (const relPath of TARGET_FILES) {
   // 气泡词典按页烘焙成 JSON——**只烘本页命中**的词条（令牌、自动取词、公式取词的
   // 实际命中集），不再是全量词典：页面体积随使用增长，不随词典增长。
   // 客户端模块从 #sym-glossary-json 读，不发任何请求。
+  //
+  // v2 多义项（2026-10-11）：词条可声明多个**义项**（同一个符号在不同课程下含义不同，
+  // 如 $Z$ = 阻抗 or 槽数）。这里把义项一并烘进 JSON，并带上 `ctx` = **本页所属课程**——
+  // 气泡列出全部义项、把本页语境那一条排在最前并标记（「实时能查到」）。
+  const pageCtx = here || '';
   const glossaryJsonPayload = {
     terms: Object.fromEntries(
       [...glossaryHits.entries()]
         .filter(([, e]) => e && e.title !== undefined)
-        .map(([key, e]) => [
-          key,
-          { title: renderBubbleText(e.title), text: renderBubbleText(e.text), href: e.href },
-        ])
+        .map(([key, e]) => {
+          const item = { title: renderBubbleText(e.title), text: renderBubbleText(e.text), href: e.href };
+          if (e.senses && e.senses.length) {
+            item.senses = e.senses.map((s) => ({ ctx: s.ctx, text: renderBubbleText(s.text) }));
+            item.ctx = pageCtx;
+          }
+          return [key, item];
+        })
     )
   };
 

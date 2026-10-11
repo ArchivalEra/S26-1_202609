@@ -201,13 +201,46 @@ const esc = (s) =>
 /**
  * 解析一行词典词条：`id | 标题 | 文本`（文本里可再含 |，按前两根切分）。
  * 缺字段或 id 不合法返回 null——跳过，不猜。
+ *
+ * **v2 多义项**（2026-10-11）：文本里可写「语境：…」段声明**同一个符号的不同含义**——
+ * 一个符号不该被一门课独占名字（$Z$ 在电路原理是阻抗、在电机学是槽数；$\\varphi$ 在
+ * 电路原理是功率因数角、在电机学是磁通瞬时值）。义项写法：
+ *
+ *     sym-Z | Z | 阻抗；槽数 | 电路原理=阻抗 $Z=R+jX$；电机学=槽数
+ *
+ * 即：第 4 段起（或文本段内）用 `语境=含义`、多个义项用 `；` 分隔。
+ * 解析成 `senses: [{ctx, text}]`——渲染时**列出全部义项、标出语境**，
+ * 当前页面所属语境的义项排在最前。**单义词条不受影响**（没有 senses）。
  */
+const SENSE_SPLIT_RE = /[;；]/;
+const SENSE_RE = /^\s*([^=＝]{1,24})\s*[=＝]\s*(.+)$/;
+
+function parseSenses(text) {
+  // 义项段用「；」分隔，每段形如「语境=含义」；只要有一段不成形，就整条不当作多义
+  // （宁可不拆，也不把普通释义误判成义项）。
+  const parts = String(text || "").split(SENSE_SPLIT_RE).map((s) => s.trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+  const senses = [];
+  for (const p of parts) {
+    const m = p.match(SENSE_RE);
+    if (!m) return null;
+    senses.push({ ctx: m[1].trim(), text: m[2].trim() });
+  }
+  return senses;
+}
+
 function parseDictLine(line) {
   const parts = line.split("|");
   if (parts.length < 3) return null;
   const id = parts[0].trim();
   if (!TERM_ID_RE.test(id)) return null;
-  return { id, title: parts[1].trim(), text: parts.slice(2).join("|").trim() };
+  const title = parts[1].trim();
+  // v2：第 3 段是**总述**（单义词条的释义）；第 4 段起若形如「语境=含义；语境=含义」
+  // 则整体当**义项**（此时第 3 段仍是总述，气泡里先显示它、再列各义项）。
+  const head = parts[2].trim();
+  const tail = parts.slice(3).join("|").trim();
+  const senses = parseSenses(tail);
+  return { id, title, text: senses ? head : parts.slice(2).join("|").trim(), senses };
 }
 
 /**
@@ -239,7 +272,11 @@ export function parseGlossaryDict(source) {
     }
     if (line.trim() === "" || line.trim().startsWith("#")) continue;
     const entry = parseDictLine(line);
-    if (entry) dict[entry.id] = { title: entry.title, text: entry.text };
+    if (entry) {
+      const e = { title: entry.title, text: entry.text };
+      if (entry.senses) e.senses = entry.senses;
+      dict[entry.id] = e;
+    }
   }
   return dict;
 }
@@ -517,7 +554,11 @@ export function renderGlossary(source, opts = {}) {
           : esc(tex);
       // aria-label 用**纯文本**标题（词条标题可为 $…$，读屏不该念出美元号与反斜杠）
       const label = entry.titleText || entry.title;
-      if (onHit) onHit(key, { title: entry.title, text: entry.text, href });
+      if (onHit) {
+        const hit = { title: entry.title, text: entry.text, href };
+        if (entry.senses) hit.senses = entry.senses;   // v2 多义项（供气泡列出全部含义）
+        onHit(key, hit);
+      }
       return (
         `<a class="sym-gloss" data-term="${esc(key)}" href="${esc(href)}"` +
         ` aria-label="${esc(label)}">${inner}</a>`
@@ -570,6 +611,29 @@ function () {
     // 而文本里若出现 [tex]{#id} 这样的令牌写法，**保持字面**——气泡里不再套气泡。
     p.innerHTML = entry.text;
     pop.appendChild(p);
+    // v2 多义项：同一个符号在不同课程/语境下含义不同（$Z$ = 阻抗 or 槽数）。
+    // 列出**全部**义项并标出语境——「实时能查到」就是这里：点一个符号看到它的所有含义，
+    // 而 entry.ctx 是当前页面所属语境，那一条排在最前并加标记。
+    if (entry.senses && entry.senses.length) {
+      var ul = document.createElement("ul");
+      ul.className = "sym-gloss-pop__senses";
+      var list = entry.senses.slice().sort(function (a, b) {
+        var ac = a.ctx === entry.ctx ? 0 : 1, bc = b.ctx === entry.ctx ? 0 : 1;
+        return ac - bc;
+      });
+      for (var si = 0; si < list.length; si++) {
+        var li = document.createElement("li");
+        if (list[si].ctx === entry.ctx) li.className = "is-here";
+        var ctx = document.createElement("em");
+        ctx.textContent = list[si].ctx + "：";
+        li.appendChild(ctx);
+        var st = document.createElement("span");
+        st.innerHTML = list[si].text;
+        li.appendChild(st);
+        ul.appendChild(li);
+      }
+      pop.appendChild(ul);
+    }
     if (entry.href) {
       var a = document.createElement("a");
       a.className = "sym-gloss-pop__more";
