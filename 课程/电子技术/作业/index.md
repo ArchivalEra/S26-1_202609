@@ -3,7 +3,6 @@ id: okf.course.electronics.homework.index
 name: 电子技术作业索引
 type: CatalogIndex
 spec_version: "0.2"
-status: active
 last_updated: "2026-10-10"
 stewards:
   - team: 电子技术课程学习记录

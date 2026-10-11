@@ -26,7 +26,8 @@ class ReadmeHookTest(unittest.TestCase):
         self.git('config', 'commit.gpgsign', 'false')
         self.git('config', 'core.hooksPath', '.githooks')
         shutil.copytree(SOURCE, self.repo / '.githooks', ignore=shutil.ignore_patterns('__pycache__'))
-        self.readme = self.write('README.md', '# 学期\n\n<!-- AUTO-CATALOG:START -->\n<!-- AUTO-CATALOG:END -->\n')
+        self.readme = self.write('README.md', '# 学期\n\n' + self.status_block(['工程数学']) +
+                                 '\n<!-- AUTO-CATALOG:START -->\n<!-- AUTO-CATALOG:END -->\n')
         self.details = self.write('维护细则.md', '# 维护细则\n\n见[仓库维护条例](./维护条例.md)。\n\n<!-- AUTO-MAINTENANCE:START -->\n<!-- AUTO-MAINTENANCE:END -->\n')
         self.write('维护条例.md', '# 仓库维护条例\n\n原则性规定。\n')
         self.write('课程/index.md', '[工程数学](工程数学/index.md)\n')
@@ -43,6 +44,22 @@ class ReadmeHookTest(unittest.TestCase):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text)
         return target
+
+    @staticmethod
+    def status_block(courses, status='开课'):
+        """README 的 COURSE-STATUS 块（课程状态的唯一产地，钩子会校验）。"""
+        rows = ''.join(f'| {c} | {status} |\n' for c in courses)
+        return ('<!-- COURSE-STATUS:START -->\n| 课程 | 状态 |\n| :--- | :--- |\n'
+                + rows + '<!-- COURSE-STATUS:END -->\n')
+
+    def _refresh_status(self, extra=()):
+        """把 README 的 COURSE-STATUS 块重建为「工程数学 + extra」（新接入课程时用）。"""
+        import re as _re
+        text = self.readme.read_text()
+        block = self.status_block(['工程数学', *extra])
+        text = _re.sub(r'<!-- COURSE-STATUS:START -->.*?<!-- COURSE-STATUS:END -->\n?',
+                       block, text, flags=_re.S)
+        self.readme.write_text(text)
 
     def course(self, name):
         self.write(f'课程/{name}/index.md', ''.join(f'[{kind}]({kind}/index.md)\n' for kind in KINDS))
@@ -253,6 +270,7 @@ class ReadmeHookTest(unittest.TestCase):
 
     def test_multicourse_deep_chapter_and_audio(self):
         self.course('大学物理')
+        self._refresh_status(['大学物理'])
         self.write('课程/index.md', '[数学](工程数学/index.md)\n[物理](大学物理/index.md)\n')
         self.write('课程/大学物理/课堂笔记/2026-09-17-test.md', '# 同名不同课程\n')
         self.write('课程/大学物理/课堂笔记/index.md', '[笔记](2026-09-17-test.md)\n')
@@ -273,6 +291,7 @@ class ReadmeHookTest(unittest.TestCase):
         「教材解析」目录只会给课程入口、自动目录和站点侧边栏添噪音。
         """
         name = '形势与政策'  # hook_lib.COURSE_SKIPPED_KINDS 里已声明豁免教材解析
+        self._refresh_status([name])
         kinds = [k for k in KINDS if k != '教材解析']
         self.write(f'课程/{name}/index.md', ''.join(f'[{k}]({k}/index.md)\n' for k in kinds))
         for kind in kinds:
@@ -301,6 +320,7 @@ class ReadmeHookTest(unittest.TestCase):
     def test_undeclared_course_missing_kind_still_rejected(self):
         """未声明豁免的课程缺一类索引仍必须被拒——防止豁免机制被当成后门。"""
         name = '大学物理'
+        self._refresh_status([name])
         kinds = [k for k in KINDS if k != '音频']
         self.write(f'课程/{name}/index.md', ''.join(f'[{k}]({k}/index.md)\n' for k in kinds))
         for kind in kinds:
@@ -328,7 +348,8 @@ class ReadmeHookTest(unittest.TestCase):
                 + btn('theme-toggle') + '\n' + btn('search-toggle') + '\n')
         build = self.write('站点/build.mjs', full)
 
-        readme_missing = ('# 学期\n\n<!-- AUTO-CATALOG:START -->\n<!-- AUTO-CATALOG:END -->\n'
+        readme_missing = ('# 学期\n\n' + self.status_block(['工程数学']) +
+                          '\n<!-- AUTO-CATALOG:START -->\n<!-- AUTO-CATALOG:END -->\n'
                           '## 网页版怎么看\n导航 · 调色盘 · 昼夜主题\n')
         self.write('README.md', readme_missing)
         self.stage()
@@ -337,7 +358,8 @@ class ReadmeHookTest(unittest.TestCase):
         self.assertIn('search-toggle', result.stdout.decode())
 
         # 补上搜索说明后放行
-        self.write('README.md', ('# 学期\n\n<!-- AUTO-CATALOG:START -->\n<!-- AUTO-CATALOG:END -->\n'
+        self.write('README.md', ('# 学期\n\n' + self.status_block(['工程数学']) +
+                                 '\n<!-- AUTO-CATALOG:START -->\n<!-- AUTO-CATALOG:END -->\n'
                                  '## 网页版怎么看\n导航 · 调色盘 · 全站搜索 · 昼夜主题\n'))
         self.stage()
         self.git('commit', '-m', 'README 补上搜索按钮')

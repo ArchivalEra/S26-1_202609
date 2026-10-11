@@ -302,6 +302,41 @@ def validate(files):
     missing = set(files) - allowed
     if missing:
         raise ValueError('文件未列入精确白名单：' + ', '.join(sorted(missing)))
+    # 课程状态**唯一产地 = README 的 COURSE-STATUS 块**（2026-10-11 定案）：
+    # 只允许「开课 / 结课」两档（页面顶端的第一条信息，语义是「这门课还在不在上」）。
+    # 资料页**不再自己写 status**——它们由构建期从 README 继承（见 站点/build.mjs
+    # 的 loadCourseStatus）。这里校验产地：块在、课齐、值合法。
+    if 'README.md' in files:
+        readme = files['README.md'].decode()
+        m = re.search(r'<!-- COURSE-STATUS:START -->(.*?)<!-- COURSE-STATUS:END -->',
+                      readme, flags=re.S)
+        if not m:
+            raise ValueError('README.md 缺 COURSE-STATUS 块——课程状态的唯一产地，别删。')
+        status_rows = {}
+        for line in m.group(1).splitlines():
+            row = re.fullmatch(r'\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|', line.strip())
+            if not row:
+                continue
+            name, status = row.group(1), row.group(2)
+            if name == '课程' or set(name) <= set('-: '):
+                continue
+            if status not in ('开课', '结课'):
+                raise ValueError(
+                    f'README 课程状态表：{name} 的状态「{status}」非法——只允许「开课」或「结课」两档。')
+            status_rows[name] = status
+        if not status_rows:
+            raise ValueError('README 的 COURSE-STATUS 块里一条课程都没有——空不是通过。')
+        # 每门课都要在状态表里（漏一门 ⇒ 该课页面顶端就没有状态）
+        for course in courses(files):
+            if course not in status_rows:
+                raise ValueError(f'README 课程状态表漏了「{course}」——每门课都要有一行状态。')
+    for path, data in files.items():
+        if path.startswith('课程/') and path.endswith('.md'):
+            text = data.decode()
+            if re.search(r'(?m)^status:', text):
+                raise ValueError(
+                    f'{path} 写了 status —— 课程状态由 README 的 COURSE-STATUS 块统一给出，'
+                    '资料页不写（构建期自动继承）。')
     for path in files:
         category = classify(path)
         if not category:

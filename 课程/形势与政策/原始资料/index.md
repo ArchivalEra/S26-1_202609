@@ -3,7 +3,6 @@ id: okf.course.situation_policy.originals.index
 name: 形势与政策原始资料索引
 type: CatalogIndex
 spec_version: "0.2"
-status: active
 last_updated: "2026-09-21"
 stewards:
   - team: 形势与政策课程学习记录
