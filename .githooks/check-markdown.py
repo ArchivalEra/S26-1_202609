@@ -40,6 +40,17 @@ TEXT_WRAP_RE = re.compile(r'\\(?:text|textrm|textit|textbf|mathrm|mathbf|operato
 DISPLAY_MATH_RE = re.compile(r'\$\$(.+?)\$\$', re.S)
 INLINE_MATH_RE = re.compile(r'(?<!\$)\$(?!\$)((?:[^$\\]|\\.)+?)\$(?!\$)')
 
+# ── 折叠面板标题必须**裸词**（2026-10-10 用户定案）────────────────────────────
+# 收起状态只显示 `<summary>` 里的标题，标题行一旦写了内容，学生**不用点开**
+# 就看到了提示/解答——「先自己动笔」的前提被破坏。所以标题行只许是标签本身
+# （可带 `{#锚点}` 与 `:+`/`:-` 装饰），标签后不得跟任何描述文字。
+# 检测范围限定在 `:::collapse` 块内的顶格列表项，避免误伤正文里「提示：…」的句子。
+COLLAPSE_OPEN_RE = re.compile(r'^[\t ]{0,3}:{3,}[\t ]*collapse(?:[\t ]+(.*?))?[\t ]*$', re.I)
+COLLAPSE_CLOSE_RE = re.compile(r'^[\t ]{0,3}:{3,}[\t ]*$')
+PANEL_ITEM_RE = re.compile(r'^[-*+][\t ]+(.*)$')
+PANEL_LABELS = ('完整解答', '解答', '答案', '提示', '复盘')
+PANEL_DECOR_RE = re.compile(r'[\t ]*(?:[：:][+-]|\{#[A-Za-z_][A-Za-z0-9_-]*\})[\t ]*$')
+
 
 def masked_for_math(lines: list[str]) -> str:
     """屏蔽围栏代码块与行内代码（保留行数），只留下可能含数学的正文。"""
@@ -156,6 +167,7 @@ class Checker:
         display_open = False
         prev_kind = 'start'
         in_catalog = False
+        in_panel = False
         i = 0
         while i < len(self.lines):
             line = self.lines[i]
@@ -174,6 +186,39 @@ class Checker:
                     prev_kind = 'text'
                 i += 1
                 continue
+
+            # 折叠面板标题必须裸词（判据见文件头常量区的注释）。
+            if not in_fence and not display_open:
+                if COLLAPSE_OPEN_RE.match(line):
+                    in_panel = True
+                elif in_panel and COLLAPSE_CLOSE_RE.match(line):
+                    in_panel = False
+                elif in_panel:
+                    item = PANEL_ITEM_RE.match(line)
+                    if item:
+                        title = item.group(1).strip()
+                        # 循环剥掉行尾装饰（:+ / :- / {#id}），二者顺序任意
+                        while True:
+                            stripped_title = PANEL_DECOR_RE.sub('', title).strip()
+                            if stripped_title == title:
+                                break
+                            title = stripped_title
+                        for label in PANEL_LABELS:
+                            if title == label:
+                                break
+                            if title.startswith(label):
+                                rest = title[len(label):].strip()
+                                # 「提示 1」「提示 2」这类**纯序号**后缀不算内容泄露
+                                # （学生看到序号得不到任何信息，而多提示题需要编号区分）。
+                                if re.fullmatch(r'[0-9]+', rest):
+                                    break
+                                self.error(
+                                    line_no,
+                                    f'折叠面板标题必须裸词：`{title[:40]}` —— 标签「{label}」后'
+                                    f'不得跟描述文字（收起状态会直接显示，学生不用点开就看到内容）。'
+                                    f'把「{rest[:20]}」移到标题的下一行、作为面板正文'
+                                )
+                                break
 
             fence_match = FENCE_RE.match(line) if not display_open else None
             if not in_fence and fence_match:
