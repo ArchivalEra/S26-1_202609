@@ -40,6 +40,7 @@ const TARGET_FILES = [
   '课程/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.4-矩阵的秩.md',
   '课程/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.5-用MATLAB进行矩阵运算.md',
   '课程/工程数学/课堂笔记/index.md',
+  '课程/工程数学/课堂笔记/2026-10-08-矩阵的定义与运算及逆的引入.md',
   '课程/工程数学/课堂笔记/2026-09-17-determinants-order-2-3.md',
   '课程/工程数学/课堂笔记/2026-09-17-determinants-transcript-notes.md',
   '课程/工程数学/课堂笔记/2026-09-24-降阶法克拉默法则与齐次方程组.md',
@@ -50,6 +51,7 @@ const TARGET_FILES = [
   '课程/电力大数据与人工智能/作业/index.md',
   '课程/电力大数据与人工智能/教材解析/index.md',
   '课程/电力大数据与人工智能/课堂笔记/index.md',
+  '课程/电力大数据与人工智能/课堂笔记/2026-09-29-电力大数据特点与人工智能算法.md',
   '课程/电力大数据与人工智能/课堂笔记/2026-09-20-课程定位与考核要求.md',
   '课程/电力大数据与人工智能/课堂笔记/2026-09-22-暂态稳定评估方法与紧急控制.md',
   '课程/电力大数据与人工智能/原始资料/index.md',
@@ -58,6 +60,7 @@ const TARGET_FILES = [
   '课程/形势与政策/Walkthrough.md',
   '课程/形势与政策/作业/index.md',
   '课程/形势与政策/课堂笔记/index.md',
+  '课程/形势与政策/课堂笔记/2026-09-28-人工智能专题.md',
   '课程/形势与政策/课堂笔记/2026-09-21-经济热点专题与考试安排.md',
   '课程/形势与政策/原始资料/index.md',
   '课程/形势与政策/音频/index.md',
@@ -75,6 +78,9 @@ const TARGET_FILES = [
   '课程/电路原理/教材解析/index.md',
   '课程/电路原理/教材解析/0.0-符号入门.md',
   '课程/电路原理/课堂笔记/index.md',
+  '课程/电路原理/课堂笔记/2026-10-10-受控源与第一章综合例题.md',
+  '课程/电路原理/课堂笔记/2026-09-30-电容电感与独立电源.md',
+  '课程/电路原理/课堂笔记/2026-09-28-KCL与KVL及电阻元件.md',
   '课程/电路原理/课堂笔记/2026-09-21-开课说明与电路的基本概念.md',
   '课程/电路原理/课堂笔记/2026-09-23-电压电位与电路名词.md',
   '课程/电路原理/原始资料/index.md',
@@ -86,6 +92,8 @@ const TARGET_FILES = [
   '课程/电子技术/作业/2026-09-28-第一章填空与简答.md',
   '课程/电子技术/教材解析/index.md',
   '课程/电子技术/课堂笔记/index.md',
+  '课程/电子技术/课堂笔记/2026-10-10-逻辑代数与公式法化简.md',
+  '课程/电子技术/课堂笔记/2026-09-28-三极管与场效应管.md',
   '课程/电子技术/课堂笔记/2026-09-21-开课说明与半导体基础到PN结.md',
   '课程/电子技术/课堂笔记/2026-09-23-二极管与含二极管电路.md',
   '课程/电子技术/原始资料/index.md',
@@ -102,6 +110,8 @@ const TARGET_FILES = [
   '课程/电机学/教材解析/第01章-概述/1.4-电机的制造材料.md',
   '课程/电机学/教材解析/第01章-概述/第01章-小结与思考题习题.md',
   '课程/电机学/课堂笔记/index.md',
+  '课程/电机学/课堂笔记/2026-10-08-磁路例题与变压器概述.md',
+  '课程/电机学/课堂笔记/2026-09-24-绪论电机概述与磁路基础.md',
   '课程/电机学/原始资料/index.md',
   '课程/电机学/音频/index.md',
   '维护条例.md',
@@ -278,7 +288,8 @@ const NAV_STRUCTURE = [
             children: [
               { label: "09-17 行列式与沙路法则", path: "课程/工程数学/课堂笔记/2026-09-17-determinants-order-2-3.md" },
               { label: "09-17 课堂听课整理", path: "课程/工程数学/课堂笔记/2026-09-17-determinants-transcript-notes.md" },
-              { label: "09-24 降阶法与克拉默法则", path: "课程/工程数学/课堂笔记/2026-09-24-降阶法克拉默法则与齐次方程组.md" }
+              { label: "09-24 降阶法与克拉默法则", path: "课程/工程数学/课堂笔记/2026-09-24-降阶法克拉默法则与齐次方程组.md" },
+              { label: "10-08 矩阵的定义与运算及逆的引入", path: "课程/工程数学/课堂笔记/2026-10-08-矩阵的定义与运算及逆的引入.md" },
             ]
           },
           {
@@ -329,7 +340,8 @@ const NAV_STRUCTURE = [
           { label: "课堂笔记", path: "课程/电力大数据与人工智能/课堂笔记/index.md",
             children: [
               { label: "09-20 开课第一讲", path: "课程/电力大数据与人工智能/课堂笔记/2026-09-20-课程定位与考核要求.md" },
-              { label: "09-22 暂态稳定评估与紧急控制", path: "课程/电力大数据与人工智能/课堂笔记/2026-09-22-暂态稳定评估方法与紧急控制.md" }
+              { label: "09-22 暂态稳定评估与紧急控制", path: "课程/电力大数据与人工智能/课堂笔记/2026-09-22-暂态稳定评估方法与紧急控制.md" },
+              { label: "09-29 电力大数据特点与人工智能算法", path: "课程/电力大数据与人工智能/课堂笔记/2026-09-29-电力大数据特点与人工智能算法.md" },
             ]
           },
           { label: "原始资料", path: "课程/电力大数据与人工智能/原始资料/index.md" },
@@ -346,7 +358,8 @@ const NAV_STRUCTURE = [
           { label: "作业", path: "课程/形势与政策/作业/index.md" },
           { label: "课堂笔记", path: "课程/形势与政策/课堂笔记/index.md",
             children: [
-              { label: "09-21 经济热点专题与考试安排", path: "课程/形势与政策/课堂笔记/2026-09-21-经济热点专题与考试安排.md" }
+              { label: "09-21 经济热点专题与考试安排", path: "课程/形势与政策/课堂笔记/2026-09-21-经济热点专题与考试安排.md" },
+              { label: "09-28 人工智能专题", path: "课程/形势与政策/课堂笔记/2026-09-28-人工智能专题.md" },
             ]
           },
           { label: "原始资料", path: "课程/形势与政策/原始资料/index.md" },
@@ -378,7 +391,10 @@ const NAV_STRUCTURE = [
           { label: "课堂笔记", path: "课程/电路原理/课堂笔记/index.md",
             children: [
               { label: "09-21 开课说明与电路的基本概念", path: "课程/电路原理/课堂笔记/2026-09-21-开课说明与电路的基本概念.md" },
-              { label: "09-23 电压电位与电路名词", path: "课程/电路原理/课堂笔记/2026-09-23-电压电位与电路名词.md" }
+              { label: "09-23 电压电位与电路名词", path: "课程/电路原理/课堂笔记/2026-09-23-电压电位与电路名词.md" },
+              { label: "10-10 受控源与第一章综合例题", path: "课程/电路原理/课堂笔记/2026-10-10-受控源与第一章综合例题.md" },
+              { label: "09-30 电容电感与独立电源", path: "课程/电路原理/课堂笔记/2026-09-30-电容电感与独立电源.md" },
+              { label: "09-28 KCL 与 KVL 及电阻元件", path: "课程/电路原理/课堂笔记/2026-09-28-KCL与KVL及电阻元件.md" },
             ]
           },
           { label: "原始资料", path: "课程/电路原理/原始资料/index.md" },
@@ -400,7 +416,9 @@ const NAV_STRUCTURE = [
           { label: "课堂笔记", path: "课程/电子技术/课堂笔记/index.md",
             children: [
               { label: "09-21 开课说明与半导体基础到 PN 结", path: "课程/电子技术/课堂笔记/2026-09-21-开课说明与半导体基础到PN结.md" },
-              { label: "09-23 二极管与含二极管电路", path: "课程/电子技术/课堂笔记/2026-09-23-二极管与含二极管电路.md" }
+              { label: "09-23 二极管与含二极管电路", path: "课程/电子技术/课堂笔记/2026-09-23-二极管与含二极管电路.md" },
+              { label: "10-10 逻辑代数与公式法化简", path: "课程/电子技术/课堂笔记/2026-10-10-逻辑代数与公式法化简.md" },
+              { label: "09-28 三极管与场效应管", path: "课程/电子技术/课堂笔记/2026-09-28-三极管与场效应管.md" },
             ]
           },
           { label: "原始资料", path: "课程/电子技术/原始资料/index.md" },
@@ -431,7 +449,12 @@ const NAV_STRUCTURE = [
               }
             ]
           },
-          { label: "课堂笔记", path: "课程/电机学/课堂笔记/index.md" },
+          { label: "课堂笔记", path: "课程/电机学/课堂笔记/index.md",
+            children: [
+              { label: "09-24 绪论·电机概述与磁路基础", path: "课程/电机学/课堂笔记/2026-09-24-绪论电机概述与磁路基础.md" },
+              { label: "10-08 磁路例题与变压器概述", path: "课程/电机学/课堂笔记/2026-10-08-磁路例题与变压器概述.md" }
+            ]
+          },
           { label: "原始资料", path: "课程/电机学/原始资料/index.md" },
           { label: "音频", path: "课程/电机学/音频/index.md" }
         ]
@@ -935,11 +958,13 @@ for (const relPath of TARGET_FILES) {
   const depth = targetHtmlPath.split('/').length - 1;
   const rootRel = depth === 0 ? './' : '../'.repeat(depth);
 
-  // 配图（作业 figures/）以「页面目录相对路径」书写；encoded-alias 页面（整条路径压成
-  // 单个百分号段）下浏览器会把相对 src 挂到错误层级，这里统一改写成「站点根相对」。
-  const pageDir = targetHtmlPath.includes('/') ? targetHtmlPath.slice(0, targetHtmlPath.lastIndexOf('/') + 1) : '';
-  htmlContent = htmlContent.replace(/src="(?!https?:|data:|\.\.\/|\/)(figures\/[^"]*)"/g,
-    `src="${rootRel}${pageDir}$1"`);
+  // 配图（作业 figures/）**保持页面内写的那份纯相对路径**（`figures/xxx.png`）。
+  // 2026-10-11 修：此前统一改写成「站点根相对」（`../../../课程/…/figures/…`），
+  // 而浏览器会把含非 ASCII 的文档 URL 规范成百分号编码形式——从编码 URL 出发上溯、
+  // 再拼中文目录段，解析结果不稳定，实测习题册第一章 35 张图里 33 张加载失败。
+  // 图片是「作业/figures/」下的子目录，纯相对路径按文档 URL 解析，中文与编码两种
+  // 文档 URL 都指向同一份文件，因此不再改写。
+  // （页面到页面的 md 链接改写见 Step 4，那是另一回事，仍走站点根相对。）
 
   // Compute Breadcrumbs
   const breadcrumbs = [
@@ -1342,13 +1367,10 @@ for (const relPath of TARGET_FILES) {
   }
 
   console.log(`[build] Generated: ${targetHtmlPath}`);
-  const encodedTargetHtmlPath = targetHtmlPath.split('/').map(seg => encodeURIComponent(seg)).join('/');
-  if (encodedTargetHtmlPath !== targetHtmlPath) {
-    const encodedOutFilePath = path.join(DIST_DIR, encodedTargetHtmlPath);
-    fs.mkdirSync(path.dirname(encodedOutFilePath), { recursive: true });
-    fs.writeFileSync(encodedOutFilePath, finalHtml, 'utf-8');
-    console.log(`[build] Generated encoded alias: ${encodedTargetHtmlPath}`);
-  }
+  // **不再生成 encoded alias**（2026-10-11 用户定案「纯中文路径」）：
+  // 同页面在 dist 里双写（中文目录 + %-编码目录）会让浏览器把相对路径解析到编码那一份下——
+  // 图片/子资源在那份里不存在，从编码 URL 进入时整批图片挂掉（实测习题册第一章
+  // 35 张图里 33 张加载失败）。站点与 EdgeOne 都支持中文路径，站内链接也一律写中文。
 }
 
 console.log(`[build] Completed! Rendered ${totalFormulasRendered} math formulas with ${formulaErrors} errors.`);
