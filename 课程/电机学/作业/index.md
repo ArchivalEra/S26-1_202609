@@ -4,7 +4,7 @@ name: 电机学作业索引
 type: CatalogIndex
 spec_version: "0.2"
 status: active
-last_updated: "2026-09-22"
+last_updated: "2026-10-10"
 stewards:
   - team: 电机学课程学习记录
 course: 电机学

@@ -4,7 +4,7 @@ name: 电路原理作业索引
 type: CatalogIndex
 spec_version: "0.2"
 status: active
-last_updated: "2026-09-28"
+last_updated: "2026-10-10"
 stewards:
   - team: 电路原理课程学习记录
 course: 电路原理
