@@ -133,9 +133,21 @@ function copyDir(src, dest) {
     if (entry.isDirectory()) {
       copyDir(srcPath, destPath);
     } else {
-      fs.copyFileSync(srcPath, destPath);
+      copyFileAtomic(srcPath, destPath);
     }
   }
+}
+
+// 原子复制：先写临时文件再 rename，构建期间被预览服务器服务的请求永远读不到半截文件
+// （2026-10-11 实弹：复写 figures 的瞬间被请求的图以半截响应进了浏览器缓存，
+// Last-Modified 是秒级精度，之后 304 永远放行那份坏体）。内容没变就不落盘，
+// dest 的 mtime 保持稳定，配图 src 的 ?v= 才不会每次构建空转。
+function copyFileAtomic(srcPath, destPath) {
+  const buf = fs.readFileSync(srcPath);
+  if (fs.existsSync(destPath) && fs.readFileSync(destPath).equals(buf)) return;
+  const tmpPath = destPath + '.tmp';
+  fs.writeFileSync(tmpPath, buf);
+  fs.renameSync(tmpPath, destPath);
 }
 
 copyDir(path.join(SITE_DIR, 'assets'), path.join(DIST_DIR, 'assets'));
@@ -965,6 +977,17 @@ for (const relPath of TARGET_FILES) {
   // 图片是「作业/figures/」下的子目录，纯相对路径按文档 URL 解析，中文与编码两种
   // 文档 URL 都指向同一份文件，因此不再改写。
   // （页面到页面的 md 链接改写见 Step 4，那是另一回事，仍走站点根相对。）
+  // 配图 src 追加查询串 ?v=<源文件mtime>：源图变了 URL 才变（取源文件而非 dist 产物——
+  // dist 每轮重建、mtime 不稳定），浏览器/CDN 里残留的坏图缓存随 URL 更换自愈，
+  // 不依赖秒级 Last-Modified 校验。
+  htmlContent = htmlContent.replace(/src="(figures\/[^"?]+)"/g, (m, p1) => {
+    try {
+      const v = Math.floor(fs.statSync(path.join(ROOT, path.dirname(relPath), p1)).mtimeMs);
+      return `src="${p1}?v=${v}"`;
+    } catch (_) {
+      return m; // 引用的图不存在：保持原样，缺口归内容侧管
+    }
+  });
 
   // Compute Breadcrumbs
   const breadcrumbs = [
