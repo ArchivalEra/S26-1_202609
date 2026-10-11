@@ -360,6 +360,7 @@
 !/站点/plugins/math-glossary.mjs
 !/站点/plugins/math-glossary.test.mjs
 !/站点/符号环境.mjs
+!/站点/符号包/通用.md
 # 全站搜索（自持倒排索引，替代 Pagefind——它按单字索引中文）
 !/站点/plugins/site-search.mjs
 !/站点/plugins/site-search.test.mjs

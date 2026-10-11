@@ -38,8 +38,8 @@ PROBLEMS_CMD = (
 # 符号词条：三个符号包的 glossary-dict 围栏里 `sym-` 开头的行数合计。
 GLOSSARY_CMD = (
     "awk '/^:::glossary-dict/{f=1;next} /^:::/{f=0} f&&/^sym-/{n++} END{print n}' "
-    "课程/电机学/教材解析/0.0-符号入门.md 课程/工程数学/教材解析/0.0-符号入门.md "
-    "课程/电路原理/教材解析/0.0-符号入门.md"
+    "站点/符号包/通用.md 课程/电机学/教材解析/0.0-符号入门.md "
+    "课程/工程数学/教材解析/0.0-符号入门.md 课程/电路原理/教材解析/0.0-符号入门.md"
 )
 # 站点页数：构建脚本 TARGET_FILES 清单的条数（与钩子的 check_build_targets 同一份清单）。
 SITEPAGES_CMD = (
