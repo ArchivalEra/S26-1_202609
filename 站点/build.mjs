@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { marked, yaml } from './vendor.mjs';
 import katex from './assets/katex/katex.mjs';
@@ -217,6 +218,21 @@ const searchPluginDir = path.join(DIST_DIR, 'assets', 'plugins');
 fs.mkdirSync(searchPluginDir, { recursive: true });
 fs.writeFileSync(path.join(searchPluginDir, 'site-search.js'), SEARCH_JS);
 fs.writeFileSync(path.join(searchPluginDir, 'site-search.css'), SEARCH_CSS);
+
+// 资产版本戳（2026-10-12）：页面里的样式表与脚本引用一律追加 `?v=<内容哈希前 10 位>`。
+// 为什么必须做：这些资产不发指纹文件名、服务器按 mtime 走 304，**改完内容浏览器仍可能用旧副本**
+// （本仓已踩过「改了 JS/CSS 浏览器不见效」的负缓存坑）。内容哈希进 URL ⇒ 内容变、URL 才变，
+// 新旧副本共存无关紧要，且不变时 URL 稳定、缓存照常命中。
+// 只哈希**站点自己的**资产（主题/插件）：katex 是第三方 vendored，改它就该整份换版本。
+const assetVersion = (relFromDist) => {
+  try {
+    return createHash('sha256').update(fs.readFileSync(path.join(DIST_DIR, relFromDist))).digest('hex').slice(0, 10);
+  } catch (_) { return ''; }
+};
+const assetUrl = (relFromDist) => {
+  const v = assetVersion(relFromDist);
+  return v ? `${relFromDist}?v=${v}` : relFromDist;
+};
 
 // 检索语料：渲染循环里逐页填，循环结束后统一建索引。
 const searchDocs = [];
@@ -1232,8 +1248,8 @@ for (const relPath of TARGET_FILES) {
   })();
   </script>
   <link rel="stylesheet" href="${rootRel}assets/katex/katex.min.css">
-  <link rel="stylesheet" href="${rootRel}assets/theme/shirone-reader.css">
-  <link rel="stylesheet" href="${rootRel}assets/plugins/site-search.css">
+  <link rel="stylesheet" href="${rootRel}${assetUrl('assets/theme/shirone-reader.css')}">
+  <link rel="stylesheet" href="${rootRel}${assetUrl('assets/plugins/site-search.css')}">
   <!-- 站点图标：动画 GIF 为主（Chrome/Firefox/Edge 会动），静态 PNG 作不支持动画时的回退 -->
   <link rel="icon" type="image/gif" href="${rootRel}assets/favicon/favicon.gif">
   <link rel="alternate icon" type="image/png" href="${rootRel}assets/favicon/favicon.png">
@@ -1419,11 +1435,11 @@ for (const relPath of TARGET_FILES) {
     </div>
   </div>
 
-  <script src="${rootRel}assets/theme/shirone-reader.js" defer></script>
-  <script src="${rootRel}assets/plugins/disclosure-anchor.js" defer></script>
+  <script src="${rootRel}${assetUrl('assets/theme/shirone-reader.js')}" defer></script>
+  <script src="${rootRel}${assetUrl('assets/plugins/disclosure-anchor.js')}" defer></script>
   <script type="application/json" id="sym-glossary-json">${JSON.stringify(glossaryJsonPayload).replace(/<\//g, '<\\/')}</script>
-  <script src="${rootRel}assets/plugins/math-glossary.js" defer></script>
-  <script src="${rootRel}assets/plugins/site-search.js" defer></script>
+  <script src="${rootRel}${assetUrl('assets/plugins/math-glossary.js')}" defer></script>
+  <script src="${rootRel}${assetUrl('assets/plugins/site-search.js')}" defer></script>
 </body>
 </html>`;
 

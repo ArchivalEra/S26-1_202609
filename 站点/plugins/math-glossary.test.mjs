@@ -368,6 +368,16 @@ describe("glossary：客户端气泡脚本契约", () => {
     assert.ok(GLOSSARY_JS.includes('closest("a.sym-gloss, .katex [data-term]")'));
   });
 
+  it("公式内命中漂移有几何回退：点在 .katex 里就按元素栈重挑最小盒", () => {
+    // 根因（2026-10-12 实测）：KaTeX 透明堆叠结构盒抢走点击，closest 落空 →
+    // 公式里下标位符号点不动（14 个堆叠公式 104 个符号里 25 个失败）。
+    assert.ok(GLOSSARY_JS.includes('closest(".katex")'), "只在公式内启用回退，正文令牌不受影响");
+    assert.ok(GLOSSARY_JS.includes("elementsFromPoint"), "用该点的元素栈定位，不遍历全页符号");
+    assert.ok(GLOSSARY_JS.includes("bestArea"), "按面积最小挑最具体的目标（嵌套角标取最内层）");
+    assert.ok(/area <= 0|width <= 0/.test(GLOSSARY_JS), "零面积盒跳过，不拿结构盒当目标");
+    assert.ok(GLOSSARY_JS.includes("data-term"), "回退目标仍必须是带 data-term 的符号");
+  });
+
   it("从页面内 JSON 标签读词典，不发任何请求（离线硬约束）", () => {
     assert.ok(GLOSSARY_JS.includes('getElementById("sym-glossary-json")'));
     assert.ok(!/\bfetch\s*\(/.test(GLOSSARY_JS));

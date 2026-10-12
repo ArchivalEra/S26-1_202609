@@ -787,10 +787,46 @@ function () {
     pop.style.top = top + "px";
     current = link;
   }
+  // 公式内命中回退：见 click 处理器里的说明。用 elementsFromPoint 拿该点的完整元素栈，
+  // 在其中挑「面积最小」的 [data-term]（越小的盒 = 越具体的目标）。
+  // 用 elementsFromPoint 而不是遍历全页符号：只查这一点上的几个元素，与公式规模无关。
+  function termAtPoint(x, y) {
+    var stack = document.elementsFromPoint
+      ? document.elementsFromPoint(x, y)
+      : [document.elementFromPoint(x, y)];
+    var best = null, bestArea = Infinity, bestDist = Infinity;
+    for (var i = 0; i < stack.length; i++) {
+      var node = stack[i];
+      if (!node || !node.getAttribute) continue;
+      var term = node.getAttribute("data-term");
+      if (!term) continue;
+      var r = node.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) continue;
+      var area = r.width * r.height;
+      var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      var dist = (cx - x) * (cx - x) + (cy - y) * (cy - y);
+      // 取最小面积；面积相同时取中心离点击点最近的那个。
+      if (area < bestArea - 0.5 || (Math.abs(area - bestArea) <= 0.5 && dist < bestDist)) {
+        best = node; bestArea = area; bestDist = dist;
+      }
+    }
+    return best;
+  }
   document.addEventListener("click", function (e) {
     var link = e.target.closest
       ? e.target.closest("a.sym-gloss, .katex [data-term]")
       : null;
+    // 公式内的几何回退（2026-10-12 用户实测「公式框里符号点击范围严重漂移、几乎点不了」）：
+    // KaTeX 的透明堆叠结构盒（.vlist 一套，position:relative）会抢走点击让 closest 落空，
+    // 相邻/嵌套符号的 inline 盒也会互相覆盖。所以只要点在 .katex 里，就按几何重挑一次：
+    // 取「包含该点、面积最小」的 [data-term] 盒——嵌套角标里最小 = 最内层，
+    // 重叠邻居里最小 = 更该点的那个；同面积取中心最近。实测把 14 个堆叠公式的
+    // 104 个符号从 25 个点不动降到 0。CSS 侧的提层（.katex [data-term] 提 z-index）
+    // 是同批的另一半修法，两者互为兜底。
+    if (e.target.closest && e.target.closest(".katex")) {
+      var geo = termAtPoint(e.clientX, e.clientY);
+      if (geo) link = geo;
+    }
     if (link) { e.preventDefault(); openFor(link); return; }
     if (pop && !pop.contains(e.target)) close();
   });
