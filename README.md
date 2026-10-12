@@ -187,7 +187,7 @@
 
 ### [电路原理](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/index.md)
 
-#### 作业（176 份）
+#### 作业（179 份）
 
 - [电路原理习题册·第一章 电路的基本概念与基本原理（选择 14 / 填空 16 / 计算 13）](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/2026-09-28-%E4%B9%A0%E9%A2%98%E5%86%8C%E7%AC%AC%E4%B8%80%E7%AB%A0.md)
 - [电路原理习题册·第七章 三相电路（选择 14 / 填空 11 / 计算 6）](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/2026-09-28-%E4%B9%A0%E9%A2%98%E5%86%8C%E7%AC%AC%E4%B8%83%E7%AB%A0.md)
@@ -223,6 +223,9 @@
 - [fig-1.30.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.30.jpg)
 - [fig-1.31.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.31.jpg)
 - [fig-1.32.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.32.jpg)
+- [fig-1.33.png](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.33.png)
+- [fig-1.34.png](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.34.png)
+- [fig-1.35.png](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.35.png)
 - [fig-1.4.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.4.jpg)
 - [fig-1.5.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.5.jpg)
 - [fig-1.6.jpg](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-1.6.jpg)
@@ -390,9 +393,9 @@
 
 暂无已归档资料。
 
-已登记 **6** 门课程、**243** 份资料（不含索引、模板和历史入口）。
+已登记 **6** 门课程、**246** 份资料（不含索引、模板和历史入口）。
 
-<!-- 仓库内容摘要（不含 README）：896ec63063010407eea3fadced4785a50a670c052a5141aff6bb27cc501d214e -->
+<!-- 仓库内容摘要（不含 README）：0a91532e510a1ecd7e758e33a56fe37c7e17cd122bed60eb93f9a1ff96d9bc09 -->
 
 <!-- AUTO-CATALOG:END -->
 
