@@ -138,6 +138,25 @@ describe("glossifyTex：TeX 内自动取词", () => {
     );
   });
 
+  it("跨包：单字母模式不劈开更具体的原子（U 不咬 U_{ab} 的属性名）", () => {
+    // 2026-10-12 实弹：通用包的 /U(?!dot)/ 与电子技术包的 U_{ab} 分属两包，
+    // pin 保护的正则写死 [^{}]* 匹配不了含花括号的参数 ⇒ 模式咬进 term=sym-Uab
+    // 的属性名，产出畸形 term=sym-\htmlData{…}（全站 15 页 152 处，点不出气泡）。
+    const dict = {
+      "sym-U": { title: "t", text: "x", tex: ["/(?<![A-Za-z\\\\])U(?!dot)/"] },
+      "sym-Uab": { title: "t", text: "x", tex: ["U_{ab}"] },
+    };
+    const out = glossifyTex("U_{ab}=-6", dict);
+    assert.equal(out, "\\htmlData{term=sym-Uab}{U_{ab}}=-6");
+    assert.ok(!out.includes("term=sym-\\htmlData"), "不得产出畸形 term 属性");
+  });
+
+  it("跨包：已产出的令牌段也不再被模式咬（预置 \\htmlData 输入）", () => {
+    const dict = { "sym-U": { title: "t", text: "x", tex: ["/(?<![A-Za-z\\\\])U(?!dot)/"] } };
+    const out = glossifyTex("\\htmlData{term=sym-Uab}{U_{ab}}=-6", dict);
+    assert.equal(out, "\\htmlData{term=sym-Uab}{U_{ab}}=-6");
+  });
+
   it("命中回调把取词的词条 id 报给宿主（按需烘焙 JSON 用）", () => {
     const hits = [];
     glossifyTex("r_1+\\Phi", { ...fullDict, "sym-Phi": { title: "t", text: "x", tex: ["\\Phi"] } }, (id) => hits.push(id));

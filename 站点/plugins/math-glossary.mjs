@@ -248,11 +248,38 @@ export function glossifyTex(tex, dict = {}, onTerm = null) {
   const restore = (s) => s.replace(/\u0001(\d+)\u0001/g, (m, i) => guarded[Number(i)] ?? m);
   if (!patterns.length) return restore(out);
   const pin = [];
+  // 钉住已产出的 \htmlData{term=…}{…} 段，别让后续模式再咬进去。
+  // **参数可以含花括号**（`{U_{ab}}`、`{\Phi_{m_{1}}}`——放开嵌套角标后这是常态），
+  // 所以不能写死 `\{[^{}]*\}`：那样含嵌套花括号的段根本没被保护，模式正则就会咬进
+  // `term=sym-Uab` 的属性名，产出畸形的 `term=sym-\htmlData{…}`（2026-10-12 实弹：
+  // 电子技术/电路原理 15 页 152 处；这种符号点不出气泡——词典里查不到那个畸形 id）。
+  // 单遍扫描：遇到 \htmlData 就按**花括号配平**取两个组，跳过反斜杠转义。
   const pinAll = () => {
-    out = out.replace(/\\htmlData\{[^{}]*\}\{[^{}]*\}/g, (m) => {
-      pin.push(m);
-      return `\u0002${pin.length - 1}\u0002`;
-    });
+    let result = "", i = 0;
+    while (i < out.length) {
+      const start = out.indexOf("\\htmlData", i);
+      if (start < 0) { result += out.slice(i); break; }
+      result += out.slice(i, start);
+      let j = start + "\\htmlData".length;
+      // 依次配平两组：{term=…} 与 {内容…}
+      let ok = true;
+      for (let g = 0; g < 2; g++) {
+        while (j < out.length && /[ \t]/.test(out[j])) j++;
+        if (out[j] !== "{") { ok = false; break; }
+        let depth = 0;
+        for (; j < out.length; j++) {
+          if (out[j] === "\\") { j++; continue; }
+          if (out[j] === "{") depth++;
+          else if (out[j] === "}") { depth--; if (depth === 0) { j++; break; } }
+        }
+        if (depth !== 0) { ok = false; break; }
+      }
+      if (!ok) { result += out.slice(start, j); i = j; continue; }
+      pin.push(out.slice(start, j));
+      result += `\u0002${pin.length - 1}\u0002`;
+      i = j;
+    }
+    out = result;
   };
   pinAll();
   for (const { id, re } of patterns) {
