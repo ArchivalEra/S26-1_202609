@@ -1,0 +1,71 @@
+# S26 站点的 GitHub Pages 发布管线：构建 → 上传产物 → Pages 部署。
+#
+# 形态与 Octave-UI 的 pages.yml 同款（action pin 到 commit SHA；本站点零构建期
+# 依赖，只有 `node build.mjs` + `node --test`）。
+# 发布地址：https://archivalera.github.io/S26-1_202609/
+# isui.ren 侧由 heart 中间件反代（/repo/S26-1_202609/ → 上述地址），与 Octave 同款。
+# 旧的「推 heart@deploy 分支」发布仍在 deploy.yml 里，二者并存到反代验证通过后再拆。
+name: Publish to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "README.md"
+      - "课程/**"
+      - "站点/**"
+      - "维护条例.md"
+      - "维护细则.md"
+      - ".github/workflows/**"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build site & upload Pages artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Build static site (含自持搜索索引)
+        working-directory: 站点
+        run: |
+          set -euo pipefail
+          # 与 deploy.yml 同一条构建命令：产物落到 站点/dist，纯相对引用，
+          # 可直接挂任意子路径（Pages 子路径 /S26-1_202609/ 即一例）。
+          npm run build
+          npm test
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: 站点/dist
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
