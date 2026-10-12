@@ -1234,6 +1234,10 @@ for (const relPath of TARGET_FILES) {
   <link rel="stylesheet" href="${rootRel}assets/katex/katex.min.css">
   <link rel="stylesheet" href="${rootRel}assets/theme/shirone-reader.css">
   <link rel="stylesheet" href="${rootRel}assets/plugins/site-search.css">
+  <!-- 站点图标：动画 GIF 为主（Chrome/Firefox/Edge 会动），静态 PNG 作不支持动画时的回退 -->
+  <link rel="icon" type="image/gif" href="${rootRel}assets/favicon/favicon.gif">
+  <link rel="alternate icon" type="image/png" href="${rootRel}assets/favicon/favicon.png">
+  <link rel="apple-touch-icon" href="${rootRel}assets/favicon/apple-touch-icon.png">
 </head>
 <body>
   <div class="drawer-backdrop" id="drawer-backdrop"></div>

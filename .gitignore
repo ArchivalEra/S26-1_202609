@@ -387,6 +387,9 @@
 !/站点/assets/katex/katex.min.css
 !/站点/assets/katex/katex.min.js
 !/站点/assets/katex/katex.mjs
+!/站点/assets/favicon/favicon.gif
+!/站点/assets/favicon/favicon.png
+!/站点/assets/favicon/apple-touch-icon.png
 !/站点/assets/katex/fonts/KaTeX_AMS-Regular.woff2
 !/站点/assets/katex/fonts/KaTeX_Caligraphic-Bold.woff2
 !/站点/assets/katex/fonts/KaTeX_Caligraphic-Regular.woff2
