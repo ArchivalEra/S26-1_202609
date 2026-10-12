@@ -98,6 +98,7 @@ const TARGET_FILES = [
   '课程/电子技术/教材解析/0.0-符号入门.md',
   '课程/电子技术/课堂笔记/index.md',
   '课程/电子技术/课堂笔记/2026-10-10-逻辑代数与公式法化简.md',
+  '课程/电子技术/课堂笔记/2026-10-12-卡诺图化简法与无关项.md',
   '课程/电子技术/课堂笔记/2026-09-28-三极管与场效应管.md',
   '课程/电子技术/课堂笔记/2026-09-21-开课说明与半导体基础到PN结.md',
   '课程/电子技术/课堂笔记/2026-09-23-二极管与含二极管电路.md',
@@ -194,6 +195,21 @@ for (const [packName, packPage] of Object.entries(SYMBOL_PACKS)) {
   const source = fs.readFileSync(abs, 'utf-8');
   const entries = parseGlossaryDict(source);
   const matches = parseGlossaryMatch(source);
+  // 形式声明的**静默失效**防线（2026-10-12 实弹）：match 行按「、,，」切分列表，
+  // 所以 TeX 字段写成 /…/ 正则时**不能含这三个字面字符**——含了会被切成几段，
+  // 段首不成对斜杠 ⇒ 被当字面原子，规则**从未生效且无人报错**
+  // （实弹：通用包 sym-C 的 `(?![A-Za-z0-9.．、。，])` 被切碎，电容 C 全站零包裹）。
+  // 判据：段里既有 `/` 又不以 `/` 起头且含正则元字符 ⇒ 明确警告，要求改用 \uXXXX 转义。
+  for (const [id, m] of Object.entries(matches)) {
+    for (const form of [...(m.prose || []), ...(m.tex || [])]) {
+      if (!form.includes("/")) continue;
+      if (form.startsWith("/") && /^\/(.+)\/([a-z]*)$/s.test(form)) continue; // 规规矩矩的 /…/ 正则
+      glossaryWarn.add(
+        `包「${packName}」的 ${id} 声明「${form}」像被列表分隔符切碎的正则——若确要整条正则，`
+        + `请把「、。，」写成 \\u3001\\u3002\\uff0c 转义（否则该声明静默失效）`,
+      );
+    }
+  }
   const dict = {};
   for (const [id, e] of Object.entries(entries)) dict[id] = { ...e, bubble: true };
   // 形式声明（match）并入词条；只声明了形式、没有词条内容的（bubble=false）
@@ -461,6 +477,7 @@ const NAV_STRUCTURE = [
               { label: "09-23 二极管与含二极管电路", path: "课程/电子技术/课堂笔记/2026-09-23-二极管与含二极管电路.md" },
               { label: "10-10 逻辑代数与公式法化简", path: "课程/电子技术/课堂笔记/2026-10-10-逻辑代数与公式法化简.md" },
               { label: "09-28 三极管与场效应管", path: "课程/电子技术/课堂笔记/2026-09-28-三极管与场效应管.md" },
+              { label: "10-12 卡诺图化简法与无关项", path: "课程/电子技术/课堂笔记/2026-10-12-卡诺图化简法与无关项.md" },
             ]
           },
           { label: "原始资料", path: "课程/电子技术/原始资料/index.md" },
