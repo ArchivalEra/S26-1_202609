@@ -1214,7 +1214,7 @@ for (const relPath of TARGET_FILES) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${pageMeta.title} | S26-1 课程知识库 - isui.ren</title>
+  <title>${pageMeta.title} | S26-1 课程知识库</title>
   <script>
   /* 首帧前应用已保存的主题色与明暗，避免先用默认色渲染再变色（闪光弹 + 二次全量重绘） */
   (function () {
