@@ -27,6 +27,7 @@
 !/.githooks/extract-transcript.py
 !/.githooks/flip-photo.py
 !/.github/workflows/deploy.yml
+!/.github/workflows/pages.yml
 
 # 学期与课程索引
 !/课程/index.md
