@@ -1106,9 +1106,16 @@ a.sym-gloss:hover {
   border-bottom: none;
 }
 
+/* KaTeX 把公式画成「零高行 + position:relative 位移」的堆叠结构（.vlist/.vlist-t 那一套）：
+ * 这些结构盒是透明但**可命中**的，且按 CSS 绘制顺序压在本就静态定位的符号内容之上——
+ * 于是分式、积分、上下标堆叠的公式里，点在符号正中间会被上层结构盒接走（2026-10-12 用户实测
+ * 「公式框里符号点击范围严重漂移、几乎点不了」；量化：14 个堆叠公式 104 个符号里 25 个点不动）。
+ * 修法＝把带 data-term 的符号自己提一层：position:relative 脱离静态层，z-index 压过同层结构盒。 */
 .katex [data-term] {
   color: var(--md-sys-color-tertiary);
   cursor: pointer;
+  position: relative;
+  z-index: 1;
 }
 .katex [data-term]:hover {
   color: var(--md-sys-color-primary);
