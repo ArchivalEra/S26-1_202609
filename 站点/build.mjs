@@ -1247,7 +1247,7 @@ for (const relPath of TARGET_FILES) {
     <aside class="m3-drawer" id="m3-drawer">
       <div class="drawer-header-brand">
         <a href="${rootRel}index.html" class="sidebar-brand">
-          <span class="site-title-icon">📚</span>
+          <img class="site-title-icon" src="${rootRel}assets/favicon/brand.gif" alt="" width="24" height="24" aria-hidden="true">
           <span class="sidebar-brand-text">S26-1 课程知识库</span>
         </a>
         <button class="m3-icon-btn drawer-collapse-btn" id="drawer-collapse-btn" aria-label="收起侧边栏" title="收起侧边栏">
