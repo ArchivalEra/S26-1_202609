@@ -395,7 +395,7 @@
 
 已登记 **6** 门课程、**247** 份资料（不含索引、模板和历史入口）。
 
-<!-- 仓库内容摘要（不含 README）：ab674f22ec4a4d4a525aa776aae93945a598cec7da5986e50e0d426ebc2519e6 -->
+<!-- 仓库内容摘要（不含 README）：a6544aceac9e2e45df6e3a4f0144c6a42e96b2ff9c0406cc0b7091d986355ca4 -->
 
 <!-- AUTO-CATALOG:END -->
 
