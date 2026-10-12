@@ -480,6 +480,51 @@ const SKIP_AFTER = "图表级相极端样附";
  * 只列这类命令，别把 `\mu`、`\alpha` 这些不接参数的符号命令算进来——`\mu H` 里的 H 要取词。
  */
 const ARG_COMMANDS = /\\(?:math(?:bf|it|rm|sf|tt|cal|bb|frak)|vec|hat|bar|tilde|dot|ddot|overline|underline|sqrt|left|right|big|Big|bigg|Bigg|text|textnormal|operatorname|boldsymbol|pmb)\s*$/;
+/**
+ * 符号排除（页面 frontmatter）——「全部包起来」是默认，撞车处**显式**收窄。
+ *
+ * 宽覆盖的包（电机学给全部拉丁单字母声明了正文形式）会在少数页面撞上
+ * 选项标号（「答案：C」）、单位（`A/m`、`1 T`）、人名缩写（`H. C. Ørsted`）、
+ * 绝缘等级（Y/A/E/B/F/H/C 七级）这类同形不同义的场合。启发式判据必然误伤
+ * （同一页里 `B` 既是选项标号又是磁通密度），所以只有**显式指定**才是可靠的：
+ *
+ *   frontmatter:
+ *     符号排除: [sym-A, sym-B]        ← 这些词条在本页**正文**里不自动取词
+ *     符号排除公式: [sym-A]            ← 这些词条在本页**公式**里不自动取词
+ *
+ * 两个键都列 = 完全禁自动取词。**手写令牌永远照常**（`[B]{#sym-B}` 不受影响）——
+ * 显式优先于自动，与三层锚定同一哲学（符号级现在有两个动词：强制、排除）。
+ * id 不在本页符号环境里 ⇒ 经 onWarn 报出（零回退纪律：不猜、不静默）。
+ *
+ * @param {object} dict 本页环境包词典（未过滤）
+ * @param {{noProse?: string[], noTex?: string[]}} exclusions
+ * @param {(msg: string) => void} [onWarn]
+ * @returns {{proseDict: object, texDict: object}} 正文用 / 公式用 两份词典
+ */
+export function applySymbolExclusions(dict = {}, exclusions = {}, onWarn = null) {
+  const warn = (m) => onWarn && onWarn(m);
+  const noProse = exclusions.noProse || [];
+  const noTex = exclusions.noTex || [];
+  const proseDict = { ...dict };
+  const texDict = { ...dict };
+  for (const id of noProse) {
+    if (!Object.prototype.hasOwnProperty.call(dict, id)) {
+      warn(`符号排除指向本页环境里没有的词条 ${id}`);
+      continue;
+    }
+    const e = proseDict[id];
+    if (e && e.prose && e.prose.length) proseDict[id] = { ...e, prose: [] };
+  }
+  for (const id of noTex) {
+    if (!Object.prototype.hasOwnProperty.call(dict, id)) {
+      warn(`符号排除公式指向本页环境里没有的词条 ${id}`);
+      continue;
+    }
+    delete texDict[id];
+  }
+  return { proseDict, texDict };
+}
+
 export function autoWrapTerms(source, dict = {}) {
   const forms = [];
   for (const [id, entry] of Object.entries(dict)) {
@@ -550,11 +595,13 @@ export function peelNotationFences(source, dictTable = null) {
  * 没有跨包兜底。dict 为空 = 符号功能关闭，此时宿主应改调 peelNotationFences。
  *
  * @param {string} source
- * @param {{dict?: object, packs?: object, pins?: object, envName?: string,
+ * @param {{dict?: object, tokenDict?: object, packs?: object, pins?: object, envName?: string,
  *          renderTex?: (tex: string) => string, notationHref?: string,
  *          dictTable?: (entries: object[]) => string,
  *          onWarn?: (msg: string) => void, onHit?: (key: string) => void}} opts
- *   dict         环境包词典（本页口径：词条带 href/titleText）。
+ *   dict         环境包词典（本页口径：词条带 href/titleText）——自动取词用，可已被
+ *                「符号排除」过滤（见 applySymbolExclusions）。
+ *   tokenDict    手写令牌专用词典（默认同 dict）：排除只收窄自动取词，显式令牌永远照常。
  *   packs        全部符号包 {包名: {hrefBase, dict}}——包限定令牌与符号强制用。
  *   pins         frontmatter「符号强制」：{词条id: 包名}。
  *   envName      当前锚定的包名（警告消息里报给作者）。
@@ -565,6 +612,8 @@ export function renderGlossary(source, opts = {}) {
   if (typeof source !== "string") return source;
   const {
     dict = {},
+    tokenDict = null,   // 手写令牌专用词典（默认同 dict）——页面「符号排除」只收窄自动取词，
+                        // 显式令牌永远照常（显式优先于自动，与三层锚定同一哲学）
     packs = null,
     pins = null,
     envName = "",
@@ -574,6 +623,7 @@ export function renderGlossary(source, opts = {}) {
     onWarn = null,
     onHit = null,
   } = opts;
+  const tokens = tokenDict || dict;
   const warn = (msg) => onWarn && onWarn(msg);
   // 解析一个令牌：返回 {key, entry, href} 或 {miss}。**只查被锚定的地方，零回退**。
   const resolveTerm = (pack, term) => {
@@ -593,8 +643,8 @@ export function renderGlossary(source, opts = {}) {
       }
       return { key: `${packName}:${term}`, entry: e, href: `${p.hrefBase}#${term}` };
     }
-    if (Object.prototype.hasOwnProperty.call(dict, term)) {
-      const e = dict[term];
+    if (Object.prototype.hasOwnProperty.call(tokens, term)) {
+      const e = tokens[term];
       if (e.bubble === false) {
         return { miss: `词条 ${term} 只声明了形式、没有气泡内容（补词典行才会生效）` };
       }
