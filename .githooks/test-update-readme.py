@@ -331,6 +331,44 @@ class ReadmeHookTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('课程入口缺少分类链接', result.stdout.decode())
 
+    def test_exam_prep_three_layers(self):
+        """备考页三层闸门：结构对应 / 考点锚点 / 弱保真（数字必须有出处）。"""
+        # 建一个最小可过的备考页：笔记 + Walkthrough + 备考
+        note = self.write('课程/工程数学/课堂笔记/2026-10-01-预备课.md',
+                          '# 预备课\n\n考点一要点，贡献率 64.1%。\n')
+        self.index.write_text('[笔记](2026-09-17-test.md)\n[预备课](2026-10-01-预备课.md)\n')
+        self.write('课程/工程数学/Walkthrough.md',
+                   '# Walkthrough\n\n## 2026-10-01 ｜ 专题一：预备课\n\n考点一。\n')
+        prep = self.write('课程/工程数学/备考.md',
+                          '# 备考\n\n## 专题一：预备课（10-01）\n\n'
+                          '### 考点：考点一\n\n贡献率 64.1%。\n\n'
+                          '[笔记原文 ↗](./课堂笔记/2026-10-01-预备课.md#预备课)\n')
+        self.stage()
+        self.git('commit', '-m', '备考页三层：合规放行')
+
+        # ① 编造数字 → 拒
+        prep.write_text(prep.read_text().replace('64.1%', '88.8%'))
+        self.stage()
+        result = self.git('commit', '-m', '编造数字', success=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('找不到出处', result.stdout.decode())
+        prep.write_text(prep.read_text().replace('88.8%', '64.1%'))
+
+        # ② 凭空节（Walkthrough 里没有）→ 拒
+        prep.write_text(prep.read_text() + '\n## 专题九：航空航天\n\n### 考点：末节\n\n[挂 ↗](./课堂笔记/2026-10-01-预备课.md#预备课)\n')
+        self.stage()
+        result = self.git('commit', '-m', '凭空节', success=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('找不到对应条目', result.stdout.decode())
+        prep.write_text(prep.read_text().replace('\n## 专题九：航空航天\n\n### 考点：末节\n\n[挂 ↗](./课堂笔记/2026-10-01-预备课.md#预备课)\n', ''))
+
+        # ③ 考点节缺锚点 → 拒
+        prep.write_text(prep.read_text().replace('[笔记原文 ↗](./课堂笔记/2026-10-01-预备课.md#预备课)\n', ''))
+        self.stage()
+        result = self.git('commit', '-m', '孤岛考点', success=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('防孤岛', result.stdout.decode())
+
     def test_readme_must_document_all_header_buttons(self):
         """站点顶栏按钮必须在 README 手写区有说明。
 

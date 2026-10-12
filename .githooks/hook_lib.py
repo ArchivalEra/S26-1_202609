@@ -407,6 +407,7 @@ def validate(files):
                 raise ValueError(f'课程入口缺少分类链接：{index}')
     check_build_targets(files)
     check_readme_documents_ui(files)
+    check_exam_prep(files)
 
 
 def changed_paths(files, base):
@@ -551,6 +552,62 @@ def check_readme_documents_ui(files):
             '站点顶栏有这些按钮，但 README 的「网页版怎么看」没有介绍：'
             + '、'.join(missing)
             + '。请在 README.md 里补上（按钮表就在「网页版怎么看」那一段）。')
+
+
+# ── 备考页三层闸门（2026-10-12 用户定案，grilling 收敛）────────────────────────
+# 备考是「Walkthrough 的考点节选 + 详细展开」：Walkthrough 从笔记严格摘录考点，
+# 备考展开它们。三层判据都不做文风（文风判不了，靠 dense-human skill 与人眼）：
+#   ① 结构对应：备考页每个 ## 节都能在 Walkthrough 找到同名条目（命名约定：节名含考点关键词）
+#   ② 锚点：备考页每个考点 ### 节至少要有一条指向本课笔记或作业的深链接（防孤岛）
+#   ③ 弱保真：备考页里的百分比与「年份 + 数字/年」型事实，必须能在本课资料（笔记/作业）里找到
+#      （防「备考自己编数」——这是「Walkthrough 不严 → 后面全白搭」的信号）
+PREP_HEADING_RE = re.compile(r'^## (.+)$', re.M)
+PREP_POINT_RE = re.compile(r'^### (.+)$', re.M)
+# 弱保真只查「强特征数字」：百分比、四位年份、年份+年
+PREP_STRONG_NUM_RE = re.compile(r'\d+(?:\.\d+)?%|(?:19|20)\d{2}\s*年?')
+
+
+def check_exam_prep(files):
+    """备考页（课程/<课>/备考.md）的三层判据。文件不存在则跳过（可插拔）。"""
+    problems = []
+    for path in sorted(p for p in files if p.endswith('/备考.md') and p.startswith('课程/')):
+        course = PurePosixPath(path).parts[1]
+        text = files[path].decode()
+        wt = f'课程/{course}/Walkthrough.md'
+        # ① 结构对应：备考的每个 ## 节要在 Walkthrough 里能找到出处
+        if wt not in files:
+            problems.append(f'{path}：本课没有 {WALKTHROUGH_NAME}——备考是它的节选，先建 Walkthrough')
+        else:
+            wt_text = files[wt].decode()
+            for m in PREP_HEADING_RE.finditer(text):
+                title = m.group(1).strip()
+                if title in ('相关', '开卷怎么答'):  # 收尾节，非考点
+                    continue
+                # 节名形如「专题二：经济热点（09-21）」——取冒号前的主干做匹配
+                key = re.split(r'[：:]', title)[0].strip()
+                if key and key not in wt_text:
+                    problems.append(f'{path}：节「{title}」在 {wt} 里找不到对应条目'
+                                    f'（备考必须是 Walkthrough 的节选）')
+        # ② 锚点：每个考点节至少要有一条本地深链接
+        sections = list(PREP_POINT_RE.finditer(text))
+        for i, m in enumerate(sections):
+            end = sections[i + 1].start() if i + 1 < len(sections) else len(text)
+            body = text[m.start():end]
+            if not re.search(r'\]\([^)]*\.md#[^)]+\)', body):
+                problems.append(f'{path}：考点「{m.group(1).strip()}」没有回笔记/作业的深链接（防孤岛）')
+        # ③ 弱保真：强特征数字必须能在本课资料里找到
+        source_text = ''
+        prefix = f'课程/{course}/'
+        for p, data in files.items():
+            if p.startswith(prefix) and p.endswith('.md') and p != path:
+                source_text += data.decode()
+        for num in sorted(set(PREP_STRONG_NUM_RE.findall(text))):
+            token = num.replace(' ', '')
+            if token not in source_text.replace(' ', ''):
+                problems.append(f'{path}：数字「{num}」在本课笔记/作业里找不到出处'
+                                f'（备考不得自己编数）')
+    if problems:
+        raise ValueError('备考页三层检查未过 —— ' + '；'.join(problems))
 
 
 def check_worktree_sync(files):
