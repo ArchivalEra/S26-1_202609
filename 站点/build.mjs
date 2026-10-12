@@ -5,7 +5,7 @@ import { marked, yaml } from './vendor.mjs';
 import katex from './assets/katex/katex.mjs';
 import { renderCollapse } from './plugins/collapse.mjs';
 import { DISCLOSURE_ANCHOR_JS } from './plugins/disclosure-anchor.mjs';
-import { parseGlossaryDict, parseGlossaryMatch, renderGlossary, glossifyTex, peelNotationFences, GLOSSARY_JS } from './plugins/math-glossary.mjs';
+import { parseGlossaryDict, parseGlossaryMatch, renderGlossary, glossifyTex, applySymbolExclusions, peelNotationFences, GLOSSARY_JS } from './plugins/math-glossary.mjs';
 import { SYMBOL_PACKS, COURSE_ENV, BUILD_PHASES } from './符号环境.mjs';
 import { extractSearchDoc, buildSearchBundle, SEARCH_JS, SEARCH_CSS } from './plugins/site-search.mjs';
 
@@ -726,6 +726,19 @@ for (const relPath of TARGET_FILES) {
     ])
   );
   const glossaryPins = frontmatter['符号强制'] || {};
+  // 符号排除（2026-10-12）：页面级显式收窄「宽覆盖包」的自动取词——撞车场合
+  // （选项标号、单位、人名缩写、绝缘等级）用 frontmatter 指定禁包，手写令牌照常。
+  // 两个键分别管正文（符号排除）与公式（符号排除公式）；都写 = 完全禁自动取词。
+  const asIdList = (v) => (Array.isArray(v) ? v : v ? [v] : []).map((s) => String(s).trim()).filter(Boolean);
+  const symbolExclusions = {
+    noProse: asIdList(frontmatter['符号排除']),
+    noTex: asIdList(frontmatter['符号排除公式']),
+  };
+  const { proseDict: pageProseDict, texDict: pageTexDict } = applySymbolExclusions(
+    pageGlossaryDict,
+    symbolExclusions,
+    (msg) => glossaryWarn.add(`${relPath}：${msg}`),
+  );
   const glossaryHits = new Map(); // key → {title, text, href}（按需烘焙气泡 JSON）
 
   // Step 1: Protect Code Fences
@@ -757,7 +770,7 @@ for (const relPath of TARGET_FILES) {
     // 教材排版惯例把句末标点写进显示公式（$$….$$），在网页上独立成块后
     // 看着像渲染出了一个多余的点（用户实测反馈）。渲染前剥掉**收尾的一个**
     // 标点——只剥一个：万一公式真以省略号收尾不至于被整串误删。
-    const safeTex = wrapBareCJK(glossifyTex(tex.trim().replace(/[.。，、；;][ \t]*$/, ''), pageGlossaryDict, (id) => glossaryHits.set(id, pageGlossaryDict[id])));
+    const safeTex = wrapBareCJK(glossifyTex(tex.trim().replace(/[.。，、；;][ \t]*$/, ''), pageTexDict, (id) => glossaryHits.set(id, pageGlossaryDict[id])));
     let rendered = '';
     try {
       rendered = katex.renderToString(safeTex, {
@@ -786,7 +799,7 @@ for (const relPath of TARGET_FILES) {
   raw = raw.replace(/(?<!\$)\$(?!\$)((?:[^$\\\r\n]|\\.)+?)\$(?!\$)/g, (_, tex) => {
     const id = mathBlocks.length;
     totalFormulasRendered++;
-    const safeTex = wrapBareCJK(glossifyTex(tex.trim(), pageGlossaryDict, (id) => glossaryHits.set(id, pageGlossaryDict[id])));
+    const safeTex = wrapBareCJK(glossifyTex(tex.trim(), pageTexDict, (id) => glossaryHits.set(id, pageGlossaryDict[id])));
     let rendered = '';
     try {
       rendered = katex.renderToString(safeTex, {
@@ -840,7 +853,10 @@ for (const relPath of TARGET_FILES) {
     ].join('\n');
 
   raw = renderGlossary(raw, {
-    dict: pageGlossaryDict,
+    // 正文用**排除后**的词典（被禁 id 的 prose 已清空）；手写令牌走同一份——
+    // 令牌要「显式优先于自动」，所以这里传全量 dict 作 tokenDict，正文取词只认 proseDict。
+    dict: pageProseDict,
+    tokenDict: pageGlossaryDict,
     packs: glossaryPacksForPage,
     pins: glossaryPins,
     envName: envPackName,

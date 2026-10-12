@@ -11,7 +11,7 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { parseGlossaryDict, parseGlossaryMatch, renderGlossary, glossifyTex, autoWrapTerms, peelNotationFences, GLOSSARY_JS } from "./math-glossary.mjs";
+import { parseGlossaryDict, parseGlossaryMatch, renderGlossary, glossifyTex, autoWrapTerms, applySymbolExclusions, peelNotationFences, GLOSSARY_JS } from "./math-glossary.mjs";
 
 /** 宿主注入的假 KaTeX 渲染回调：包一层标记便于断言。 */
 const fakeTex = (tex) => `<k>${tex}</k>`;
@@ -428,5 +428,65 @@ describe("v2 多义项：一个符号的多重含义（不按课程独占名字�
     assert.ok(GLOSSARY_JS.includes("sym-gloss-pop__senses"));
     assert.ok(GLOSSARY_JS.includes("entry.ctx"));
     assert.ok(GLOSSARY_JS.includes("is-here"));
+  });
+});
+
+describe("符号排除：页面级显式禁自动取词（显式优先于自动）", () => {
+  // 宽覆盖包的典型：给全部单字母声明了正文与公式形式
+  const wide = () => ({
+    "sym-A": { title: "A", text: "A 相", prose: ["A"], tex: ["A"] },
+    "sym-B": { title: "B", text: "磁通密度", prose: ["B"], tex: ["B"] },
+    "sym-H": { title: "H", text: "磁场强度", prose: ["H"], tex: ["H"] },
+  });
+
+  it("正文排除：被禁 id 的 prose 清空、其余照常；公式词典不受影响", () => {
+    const { proseDict, texDict } = applySymbolExclusions(wide(), { noProse: ["sym-A", "sym-B"] });
+    assert.deepEqual(proseDict["sym-A"].prose, []);
+    assert.deepEqual(proseDict["sym-B"].prose, []);
+    assert.deepEqual(proseDict["sym-H"].prose, ["H"]);
+    // tex 词典是独立副本：正文排除不动公式
+    assert.deepEqual(texDict["sym-A"].tex, ["A"]);
+  });
+
+  it("公式排除：被禁 id 从 tex 词典整体剔除，其余照常", () => {
+    const { texDict, proseDict } = applySymbolExclusions(wide(), { noTex: ["sym-A"] });
+    assert.equal(texDict["sym-A"], undefined);
+    assert.deepEqual(texDict["sym-B"].tex, ["B"]);
+    assert.deepEqual(proseDict["sym-A"].prose, ["A"]); // 正文不受影响
+  });
+
+  it("两个键都列 = 完全禁自动取词；未列的词条照常出泡", () => {
+    const { proseDict, texDict } = applySymbolExclusions(wide(), { noProse: ["sym-A"], noTex: ["sym-A"] });
+    assert.deepEqual(proseDict["sym-A"].prose, []);
+    assert.equal(texDict["sym-A"], undefined);
+    // 端到端：正文与公式都不再包 sym-A，sym-H 照常
+    const out = renderGlossary("答案 A 与 H", { dict: proseDict, tokenDict: wide(), renderTex: fakeTex });
+    assert.ok(!out.includes('data-term="sym-A"'));
+    assert.ok(out.includes('data-term="sym-H"'));
+    const tex = glossifyTex("A=\\mu H", texDict);
+    assert.ok(!tex.includes("sym-A"));
+    assert.ok(tex.includes("\\htmlData{term=sym-H}{H}"));
+  });
+
+  it("显式令牌不受排除影响（tokenDict 全量）：[A]{#sym-A} 照常出泡", () => {
+    const { proseDict, texDict } = applySymbolExclusions(wide(), { noProse: ["sym-A"], noTex: ["sym-A"] });
+    const out = renderGlossary("[A]{#sym-A}", {
+      dict: proseDict, tokenDict: wide(), renderTex: fakeTex, onHit: () => {},
+    });
+    assert.ok(out.includes('data-term="sym-A"'));
+  });
+
+  it("排除的 id 不在本页环境里 ⇒ 警告（不静默、不猜）", () => {
+    const warns = [];
+    applySymbolExclusions(wide(), { noProse: ["sym-Zzz"] }, (m) => warns.push(m));
+    assert.equal(warns.length, 1);
+    assert.ok(warns[0].includes("sym-Zzz"));
+  });
+
+  it("没有排除时两份词典都等于原词典（零行为）", () => {
+    const d = wide();
+    const { proseDict, texDict } = applySymbolExclusions(d, {});
+    assert.deepEqual(Object.keys(proseDict), Object.keys(d));
+    assert.deepEqual(Object.keys(texDict), Object.keys(d));
   });
 });
