@@ -604,6 +604,8 @@ marked.use({ renderer });
 // 4. Build each page
 let totalFormulasRendered = 0;
 let formulaErrors = 0;
+/** 引用了但磁盘上没有的配图（多半是白名单漏了 → 从未入库，CI 上缺图）。 */
+const missingFigureRefs = new Set();
 
 for (const relPath of TARGET_FILES) {
   const fullPath = path.join(ROOT, relPath);
@@ -980,12 +982,15 @@ for (const relPath of TARGET_FILES) {
   // 配图 src 追加查询串 ?v=<源文件mtime>：源图变了 URL 才变（取源文件而非 dist 产物——
   // dist 每轮重建、mtime 不稳定），浏览器/CDN 里残留的坏图缓存随 URL 更换自愈，
   // 不依赖秒级 Last-Modified 校验。
+  // 源文件不存在 = 这张图**从未入库**（2026-10-12 实弹：白名单后缀写成 .jpg，实际是 .png，
+  // git add 被静默挡下，本地有文件所以看不出来，CI 上就是缺图）——显式警告，别静默。
   htmlContent = htmlContent.replace(/src="(figures\/[^"?]+)"/g, (m, p1) => {
     try {
       const v = Math.floor(fs.statSync(path.join(ROOT, path.dirname(relPath), p1)).mtimeMs);
       return `src="${p1}?v=${v}"`;
     } catch (_) {
-      return m; // 引用的图不存在：保持原样，缺口归内容侧管
+      missingFigureRefs.add(`${path.dirname(relPath)}/${p1}`);
+      return m;
     }
   });
 
