@@ -3,7 +3,7 @@ id: okf.course.engineering_math.textbook.index
 name: 工程数学教材解析索引
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-10"
+last_updated: "2026-10-12"
 stewards:
   - team: 工程数学课程学习记录
 course: 工程数学

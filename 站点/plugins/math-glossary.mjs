@@ -85,6 +85,64 @@ const TERM_ID_RE = /^[A-Za-z_][A-Za-z0-9_-]*$/;
 const TOKEN_RE = /\[([^\][\n]+)\]\{#(?:([^\][{}:\n]+):)?([A-Za-z_][A-Za-z0-9_-]*)\}/g;
 
 /**
+ * 吃参数的命令的**裸参数**补花括号组——`\frac1\lambda` → `\frac{1}{\lambda}`。
+ * 恒等变换（只改写法）：取词会往这类参数位置插 `\htmlData`，而 KaTeX 解析不了
+ * 「宏紧跟在另一个宏的裸参数位置」（报 "Unexpected end of input in a macro argument"）。
+ * 只处理「单个字符 / 单个命令 / 花括号组」三种参数形态，其余（可选参数等）原样不动。
+ */
+function braceBareArgs(tex) {
+  const TWO_ARG = /^\\(?:d?frac|tfrac|cfrac|binom)$/;
+  const ONE_ARG = /^\\(?:sqrt|overline|underline|hat|vec|bar|tilde|dot|ddot|widehat|widetilde|boxed|overbrace|underbrace)$/;
+  let out = "";
+  let i = 0;
+  while (i < tex.length) {
+    const cmdMatch = /^\\([A-Za-z]+)/.exec(tex.slice(i));
+    if (!cmdMatch) { out += tex[i++]; continue; }
+    const name = "\\" + cmdMatch[1];
+    const twoArg = TWO_ARG.test(name);
+    if (!twoArg && !ONE_ARG.test(name)) { out += cmdMatch[0]; i += cmdMatch[0].length; continue; }
+    let j = i + cmdMatch[0].length;
+    const pieces = [];
+    let ok = true;
+    for (let n = 0; n < (twoArg ? 2 : 1); n++) {
+      // 跳过空白（照原样保留）
+      let ws = "";
+      while (j < tex.length && /[ \t]/.test(tex[j])) ws += tex[j++];
+      if (tex[j] === "{") {
+        let depth = 0, k = j;
+        while (k < tex.length) {
+          if (tex[k] === "{") depth++;
+          else if (tex[k] === "}") { depth--; if (!depth) { k++; break; } }
+          k++;
+        }
+        if (depth !== 0) { ok = false; break; }
+        pieces.push(ws + tex.slice(j, k));
+        j = k;
+        continue;
+      }
+      if (tex[j] === "\\") {
+        const m2 = /^\\([A-Za-z]+|.)/.exec(tex.slice(j));
+        if (!m2) { ok = false; break; }
+        pieces.push(ws + "{" + m2[0] + "}");
+        j += m2[0].length;
+        continue;
+      }
+      if (j < tex.length && !/[\s{}]/.test(tex[j])) {
+        pieces.push(ws + "{" + tex[j] + "}");
+        j++;
+        continue;
+      }
+      ok = false;
+      break;
+    }
+    if (!ok) { out += cmdMatch[0]; i += cmdMatch[0].length; continue; }
+    out += name + pieces.join("");
+    i = j;
+  }
+  return out;
+}
+
+/**
  * 把 TeX 源里的行列记号与正负号公式包进 \htmlData{term=...}{...}，
  * 使它们在 KaTeX 渲染产物里带 data-term，可被气泡脚本点中。
  * 只在词典里确有对应词条时才包（没有词条的上色是骗人）；
@@ -114,10 +172,19 @@ export function glossifyTex(tex, dict = {}, onTerm = null) {
     },
   );
 
-  // ① 词典声明过的 TeX 原子（entry.tex）：整原子取词，长的优先。
-  //    前后不挨字母/数字/下划线（B 不会被 \Big 之类命令吃掉）；**单字母**后面紧跟
-  //    _ 或 ^ 的跳过（B_m、H_c 另有词条，不拆开单个字母），而命令型与多字符符号
-  //    （\oint_l、\Phi_{c1}、R_m 之类）放行——带下标的算子正是最需要解释的那些。
+  // ⓪′ 吃参数的命令的**裸参数**补成花括号组：`\frac1\lambda` → `\frac{1}{\lambda}`、
+  //     `\sqrt2` → `\sqrt{2}`。取词会在这类参数位置插 `\htmlData`，而 KaTeX 解析不了
+  //     「宏直接当另一个宏的裸参数」（2026-10-12 实弹：`\frac1\lambda` 包完后渲染成
+  //     `\frac1\htmlData{…}{\lambda}` → "Unexpected end of input in a macro argument"）。
+  //     补括号是**恒等变换**（改的是写法、不改含义），同时让插入点变安全。
+  //     全花括号的写法原样放行（不动 tex 原貌）；认不出的参数形态（如 `\sqrt[3]{x}` 的可选参数）也不动。
+  out = braceBareArgs(out);
+
+  // ① 词典声明过的 TeX 原子（entry.tex）：整原子取词，长的优先。判据是「独立记号」：
+  //    紧邻字母/数字的不取（不劈开更长标识符、不碰 \Big 这类命令名），
+  //    但 _ ^ 两侧放行——大符号、角标、角标的角标各自成泡（\Phi_{m_{1}} 三层全包，
+  //    见 2026-10-12「放开嵌套角标」）。命令型与多字符符号（\oint_l、\Phi_{c1}、R_m
+  //    之类）同样带下标的正是最需要解释的那些。
   const atoms = [];
   const patterns = [];
   for (const [id, entry] of Object.entries(dict)) {
@@ -156,24 +223,38 @@ export function glossifyTex(tex, dict = {}, onTerm = null) {
         if (onTerm) onTerm(idOf.get(atom));
         return isScript ? `{${wrapped}}` : wrapped;
       }
-      // 普通原子（单字母或字母串）
-      if (/[A-Za-z0-9_]/.test(before)) return whole;
-      if (isScript) return whole; // 单字母当下标参数：留给它自己的带下标词条
-      if (/^[A-Za-z]$/.test(atom) && (next === "_" || next === "^")) return whole;
+      // 普通原子（单字母或字母串）——2026-10-12 放开嵌套角标：判据从「不在上下标旁」
+      // 改成「这个原子前面没粘着更长的标识符」：
+      //   前面紧邻字母、数字 ⇒ 是更长名字的一部分，不取（xab 里不拆 a、b）；
+      //   前/后是 _ ^ ⇒ **照取**：大符号与它的角标、角标的角标各自成泡
+      //   （B_m → B 与 m 各一泡；\Phi_{m_{1_{2}}} 逐层全包）。
+      //   相邻字母照取（BS 是 B·S 两个独立记号，都该有泡；词典里若有更长的
+      //   整原子 B_r、H_c，长的优先已先匹掉，这里不会拆）。
+      //   脚本位置的原子补一层花括号，否则 \htmlData 会被当不定参数的命令吞掉
+      //   （与命令型符号同一条处理，KaTeX 实测 {\htmlData{…}{m}} 合法）。
+      if (/[A-Za-z0-9]/.test(before)) return whole;
+      const wrapped = `\\htmlData{term=${idOf.get(atom)}}{${atom}}`;
       if (onTerm) onTerm(idOf.get(atom));
-      return `\\htmlData{term=${idOf.get(atom)}}{${atom}}`;
+      return isScript ? `{${wrapped}}` : wrapped;
     });
   }
 
   // ② 模式原子（match 围栏里 /…/ 声明的正则）：先把 ① 插入的 \htmlData 段保护起来，
   //    否则模式会在已上色的记号里二次匹配（字面原子是单次 replace 没这个问题）。
+  //    **每种模式落地后立刻再钉一遍**：模式 A 的输出（如 `\htmlData{term=sym-i}{i}`）
+  //    若暴露在字符串里，模式 B 的 `[^{}]*` 会在它的花括号上**部分匹配**、把命令劈开
+  //    （2026-10-12 实弹：`(-1)^{i+j}` 里 i 先被包，sym-power 模式随后匹配成
+  //    `(-1)^{\htmlData` → KaTeX 报错）。增量钉住从根上断掉模式间互相干扰。
   const restore = (s) => s.replace(/\u0001(\d+)\u0001/g, (m, i) => guarded[Number(i)] ?? m);
   if (!patterns.length) return restore(out);
   const pin = [];
-  out = out.replace(/\\htmlData\{[^{}]*\}\{[^{}]*\}/g, (m) => {
-    pin.push(m);
-    return `\u0002${pin.length - 1}\u0002`;
-  });
+  const pinAll = () => {
+    out = out.replace(/\\htmlData\{[^{}]*\}\{[^{}]*\}/g, (m) => {
+      pin.push(m);
+      return `\u0002${pin.length - 1}\u0002`;
+    });
+  };
+  pinAll();
   for (const { id, re } of patterns) {
     out = out.replace(re, (match, ...rest) => {
       const offset = rest[rest.length - 2];
@@ -186,6 +267,7 @@ export function glossifyTex(tex, dict = {}, onTerm = null) {
       if (onTerm) onTerm(id);
       return isScript ? `{${wrapped}}` : wrapped;
     });
+    pinAll();
   }
   out = out.replace(/\u0002(\d+)\u0002/g, (m, i) => pin[Number(i)] ?? m);
   return restore(out);

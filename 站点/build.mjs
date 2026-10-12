@@ -91,6 +91,7 @@ const TARGET_FILES = [
   '课程/电子技术/作业/2026-09-23-第一章简答题.md',
   '课程/电子技术/作业/2026-09-28-第一章填空与简答.md',
   '课程/电子技术/教材解析/index.md',
+  '课程/电子技术/教材解析/0.0-符号入门.md',
   '课程/电子技术/课堂笔记/index.md',
   '课程/电子技术/课堂笔记/2026-10-10-逻辑代数与公式法化简.md',
   '课程/电子技术/课堂笔记/2026-09-28-三极管与场效应管.md',
@@ -115,7 +116,10 @@ const TARGET_FILES = [
   '课程/电机学/原始资料/index.md',
   '课程/电机学/音频/index.md',
   '维护条例.md',
-  '维护细则.md'
+  '维护细则.md',
+  // 通用符号包：跨课程共用符号（U/I/P/Q/S/Z/φ/τ/R/L/C/M…）的定义页。
+  // 必须渲染——气泡的「详细 ↗」要落到它的逐符号锚点上（与各课符号入门页同构）。
+  '站点/符号包/通用.md'
 ];
 
 // Clean and recreate dist
@@ -424,7 +428,11 @@ const NAV_STRUCTURE = [
               { label: "2026-9-28作业（习题 1.6、1.7）", path: "课程/电子技术/作业/2026-09-28-第一章填空与简答.md" }
             ]
           },
-          { label: "教材解析", path: "课程/电子技术/教材解析/index.md" },
+          { label: "教材解析", path: "课程/电子技术/教材解析/index.md",
+            children: [
+              { label: "符号入门", path: "课程/电子技术/教材解析/0.0-符号入门.md" }
+            ]
+          },
           { label: "课堂笔记", path: "课程/电子技术/课堂笔记/index.md",
             children: [
               { label: "09-21 开课说明与半导体基础到 PN 结", path: "课程/电子技术/课堂笔记/2026-09-21-开课说明与半导体基础到PN结.md" },
@@ -636,12 +644,18 @@ for (const relPath of TARGET_FILES) {
       .map((part, i) => {
         if (i % 2 === 1) {
           try {
-            return katex.renderToString(wrapBareCJK(part), {
+            const html = katex.renderToString(wrapBareCJK(part), {
               displayMode: false,
               throwOnError: false,
               trust: true,
               strict: false,
             });
+            // 同 Step 2：throwOnError:false 不抛异常，错误在产物里——这里也要计入
+            if (html.includes('katex-error')) {
+              formulaErrors++;
+              console.warn(`[build] ⚠ 气泡公式渲染失败 ${relPath}：${part.slice(0, 60)}`);
+            }
+            return html;
           } catch (err) {
             return escapeHtmlText('$' + part + '$');
           }
@@ -753,8 +767,14 @@ for (const relPath of TARGET_FILES) {
         strict: false
       });
     } catch (e) {
-      formulaErrors++;
       rendered = `<span class="katex-error">${e.message}</span>`;
+    }
+    // throwOnError:false ⇒ KaTeX 不抛异常、把错误写进产物（红色 span），catch 永不触发。
+    // 所以判据是**产物里有没有 katex-error**，不是有没有抛异常（2026-10-12 实弹：
+    // 第五章一条 unicode 组合字符公式渲染成红字，汇总却报 0 errors）。
+    if (rendered.includes('katex-error')) {
+      formulaErrors++;
+      console.warn(`[build] ⚠ 公式渲染失败 ${relPath}：${safeTex.slice(0, 70)}`);
     }
     const plain = mathPlain(safeTex);
     mathBlocks.push({ display: true, html: rendered, plain });
@@ -776,8 +796,11 @@ for (const relPath of TARGET_FILES) {
         strict: false
       });
     } catch (e) {
-      formulaErrors++;
       rendered = `<span class="katex-error">${e.message}</span>`;
+    }
+    if (rendered.includes('katex-error')) {
+      formulaErrors++;
+      console.warn(`[build] ⚠ 公式渲染失败 ${relPath}：${safeTex.slice(0, 70)}`);
     }
     const plain = mathPlain(safeTex);
     mathBlocks.push({ display: false, html: rendered, plain });
