@@ -16,6 +16,7 @@
 !/.agents/skills/repo-maintenance/读图提示词.md
 !/.agents/skills/human-first-solution/SKILL.md
 !/.agents/skills/double-sign/SKILL.md
+!/.agents/skills/dense-human/SKILL.md
 !/.githooks/pre-commit
 !/.githooks/pre-push
 !/.githooks/update-readme.py
