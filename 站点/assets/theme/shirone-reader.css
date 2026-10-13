@@ -1085,6 +1085,16 @@ pre code {
   outline-offset: 2px;
 }
 
+/* 锚点落点：右侧目录与深链接跳转时，目标不要钻到固定顶栏底下。
+ * 2026-10-13 用户报「跟着算一遍相关锚点会漂移」——那些标题在**收起面板**里，
+ * 原生锚点滚动按「面板收起」的位置算落点（等于顶栏正下方 y≈0，被 60px 顶栏盖住），
+ * 展开后整页回流又偏一截。scroll-margin-top 让落点稳定留出顶栏高度；
+ * 展开后的重滚由 disclosure-anchor.js 负责（见该文件注释）。 */
+.article-content [id],
+.m3-disclosure[id] {
+  scroll-margin-top: calc(var(--header-height) + 0.75rem);
+}
+
 /* 符号气泡（math-glossary.mjs）：术语符号上**强调色**，无下划线、无链接框——
  * 是「术语高亮」的样子，不是「链接」的样子。正文令牌（a.sym-gloss）与
  * KaTeX 公式内部的取词符号（[data-term]，由 glossifyTex 写入）同一套配色。
