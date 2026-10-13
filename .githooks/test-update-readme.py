@@ -331,22 +331,25 @@ class ReadmeHookTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('课程入口缺少分类链接', result.stdout.decode())
 
-    def test_exam_prep_three_layers(self):
-        """备考页三层闸门：结构对应 / 考点锚点 / 弱保真（数字必须有出处）。"""
-        # 建一个最小可过的备考页：笔记 + Walkthrough + 备考
-        note = self.write('课程/工程数学/课堂笔记/2026-10-01-预备课.md',
-                          '# 预备课\n\n考点一要点，贡献率 64.1%。\n')
+    def test_exam_prep_light_checks(self):
+        """备考页检查（2026-10-13 改轻）：①考点覆盖（只提示）②弱保真（拦）。
+
+        **备考页没有固定形态**——钩子不规定骨架、不要求节名与 Walkthrough 同名。
+        """
+        # 笔记 + Walkthrough（含一条考点）+ 备考（**自己起节名**，结构故意不同）
+        self.write('课程/工程数学/课堂笔记/2026-10-01-预备课.md',
+                   '# 预备课\n\n考点一要点，贡献率 64.1%。\n')
         self.index.write_text('[笔记](2026-09-17-test.md)\n[预备课](2026-10-01-预备课.md)\n')
         self.write('课程/工程数学/Walkthrough.md',
-                   '# Walkthrough\n\n## 2026-10-01 ｜ 专题一：预备课\n\n考点一。\n')
+                   '# Walkthrough\n\n## 2026-10-01 ｜ 专题一：预备课\n\n- **考点一**：要点。\n')
         prep = self.write('课程/工程数学/备考.md',
-                          '# 备考\n\n## 专题一：预备课（10-01）\n\n'
+                          '# 备考\n\n## 我自己的小标题\n\n'
                           '### 考点：考点一\n\n贡献率 64.1%。\n\n'
                           '[笔记原文 ↗](./课堂笔记/2026-10-01-预备课.md#预备课)\n')
         self.stage()
-        self.git('commit', '-m', '备考页三层：合规放行')
+        self.git('commit', '-m', '备考页结构自定：合规放行')
 
-        # ① 编造数字 → 拒
+        # ① 编造数字 → 拒（弱保真仍然拦）
         prep.write_text(prep.read_text().replace('64.1%', '88.8%'))
         self.stage()
         result = self.git('commit', '-m', '编造数字', success=False)
@@ -354,20 +357,22 @@ class ReadmeHookTest(unittest.TestCase):
         self.assertIn('找不到出处', result.stdout.decode())
         prep.write_text(prep.read_text().replace('88.8%', '64.1%'))
 
-        # ② 凭空节（Walkthrough 里没有）→ 拒
-        prep.write_text(prep.read_text() + '\n## 专题九：航空航天\n\n### 考点：末节\n\n[挂 ↗](./课堂笔记/2026-10-01-预备课.md#预备课)\n')
+        # ② Walkthrough 加了新考点、备考没跟 → 放行，但给出提示
+        self.write('课程/工程数学/Walkthrough.md',
+                   '# Walkthrough\n\n## 2026-10-01 ｜ 专题一：预备课\n\n'
+                   '- **考点一**：要点。\n- **考点二**：新加的考点。\n')
         self.stage()
-        result = self.git('commit', '-m', '凭空节', success=False)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('找不到对应条目', result.stdout.decode())
-        prep.write_text(prep.read_text().replace('\n## 专题九：航空航天\n\n### 考点：末节\n\n[挂 ↗](./课堂笔记/2026-10-01-预备课.md#预备课)\n', ''))
+        result = self.git('commit', '-m', 'Walkthrough 加考点、备考未跟')
+        self.assertEqual(result.returncode, 0)
+        self.assertIn('没找到', result.stdout.decode())  # 有提示
 
-        # ③ 考点节缺锚点 → 拒
-        prep.write_text(prep.read_text().replace('[笔记原文 ↗](./课堂笔记/2026-10-01-预备课.md#预备课)\n', ''))
+        # ③ 备考补上考点二 → 提示消失
+        prep.write_text(prep.read_text().replace(
+            '### 考点：考点一\n', '### 考点：考点一\n\n考点二：补上了。\n'))
         self.stage()
-        result = self.git('commit', '-m', '孤岛考点', success=False)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('防孤岛', result.stdout.decode())
+        result = self.git('commit', '-m', '备考补上考点二')
+        self.assertEqual(result.returncode, 0)
+        self.assertNotIn('没找到', result.stdout.decode())
 
     def test_readme_must_document_all_header_buttons(self):
         """站点顶栏按钮必须在 README 手写区有说明。

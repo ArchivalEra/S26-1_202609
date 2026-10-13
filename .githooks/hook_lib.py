@@ -554,48 +554,50 @@ def check_readme_documents_ui(files):
             + '。请在 README.md 里补上（按钮表就在「网页版怎么看」那一段）。')
 
 
-# ── 备考页三层闸门（2026-10-12 用户定案，grilling 收敛）────────────────────────
-# 备考是「Walkthrough 的考点节选 + 详细展开」：Walkthrough 从笔记严格摘录考点，
-# 备考展开它们。三层判据都不做文风（文风判不了，靠 dense-human skill 与人眼）：
-#   ① 结构对应：备考页每个 ## 节都能在 Walkthrough 找到同名条目（命名约定：节名含考点关键词）
-#   ② 锚点：备考页每个考点 ### 节至少要有一条指向本课笔记或作业的深链接（防孤岛）
-#   ③ 弱保真：备考页里的百分比与「年份 + 数字/年」型事实，必须能在本课资料（笔记/作业）里找到
-#      （防「备考自己编数」——这是「Walkthrough 不严 → 后面全白搭」的信号）
-PREP_HEADING_RE = re.compile(r'^## (.+)$', re.M)
-PREP_POINT_RE = re.compile(r'^### (.+)$', re.M)
-# 弱保真只查「强特征数字」：百分比、四位年份、年份+年
+# ── 备考页检查（2026-10-13 用户改定：轻检查，不定形态）────────────────────────
+# **备考页没有固定形态**——各课结构本就不同（水课与工程数学不可能一样），钩子不规定骨架。
+# 钩子只做两件「事实性」的事，都不涉及文风与结构：
+#   ① 考点覆盖：**Walkthrough 里的考点条目，备考页应当都有**——即「Walkthrough 更新后，
+#      备考有没有漏掉新考点」。判据取 Walkthrough 的条目关键词，在备考页正文里找。
+#      （只提示不拦截见下方 warning 通道；漏考点的信号是「备考过期」，不是「格式错」。）
+#   ② 弱保真：备考页里的百分比与「四位年份」型事实，必须能在本课资料（笔记/作业）里找到
+#      （防「备考自己编数」——这是「Walkthrough 不严 → 后面全白搭」的信号）。
 PREP_STRONG_NUM_RE = re.compile(r'\d+(?:\.\d+)?%|(?:19|20)\d{2}\s*年?')
+# Walkthrough 里「一条考点」的形态：以 `- **关键词**：` 或 `- **关键词**（` 开头的列表项
+WT_POINT_RE = re.compile(r'^-\s+\*\*(.+?)\*\*', re.M)
 
 
 def check_exam_prep(files):
-    """备考页（课程/<课>/备考.md）的三层判据。文件不存在则跳过（可插拔）。"""
+    """备考页检查（轻）。文件不存在则跳过（备考是可插拔栏目）。"""
     problems = []
+    warnings = []
     for path in sorted(p for p in files if p.endswith('/备考.md') and p.startswith('课程/')):
         course = PurePosixPath(path).parts[1]
         text = files[path].decode()
         wt = f'课程/{course}/Walkthrough.md'
-        # ① 结构对应：备考的每个 ## 节要在 Walkthrough 里能找到出处
         if wt not in files:
-            problems.append(f'{path}：本课没有 {WALKTHROUGH_NAME}——备考是它的节选，先建 Walkthrough')
-        else:
-            wt_text = files[wt].decode()
-            for m in PREP_HEADING_RE.finditer(text):
-                title = m.group(1).strip()
-                if title in ('相关', '开卷怎么答'):  # 收尾节，非考点
-                    continue
-                # 节名形如「专题二：经济热点（09-21）」——取冒号前的主干做匹配
-                key = re.split(r'[：:]', title)[0].strip()
-                if key and key not in wt_text:
-                    problems.append(f'{path}：节「{title}」在 {wt} 里找不到对应条目'
-                                    f'（备考必须是 Walkthrough 的节选）')
-        # ② 锚点：每个考点节至少要有一条本地深链接
-        sections = list(PREP_POINT_RE.finditer(text))
-        for i, m in enumerate(sections):
-            end = sections[i + 1].start() if i + 1 < len(sections) else len(text)
-            body = text[m.start():end]
-            if not re.search(r'\]\([^)]*\.md#[^)]+\)', body):
-                problems.append(f'{path}：考点「{m.group(1).strip()}」没有回笔记/作业的深链接（防孤岛）')
-        # ③ 弱保真：强特征数字必须能在本课资料里找到
+            problems.append(f'{path}：本课没有 {WALKTHROUGH_NAME}——备考以它为底，先建 Walkthrough')
+            continue
+        wt_text = files[wt].decode()
+        # ① 考点覆盖：Walkthrough 的每条考点关键词，备考正文里应能找到（找不到 → 提示，不拦）
+        missing = []
+        # 比对时去掉标点/空格（「两类数据来源」与「数据来源分两类」这类同义改写不该误报）
+        def _norm(t):
+            return re.sub(r'[\s（）()：:，,。.、·—\-]', '', t)
+        norm_text = _norm(text)
+        for m in WT_POINT_RE.finditer(wt_text):
+            kw = m.group(1).strip().rstrip('：:')
+            key = re.split(r'[（(]', kw)[0].strip()
+            if len(key) < 2:
+                continue
+            if _norm(key) not in norm_text:
+                missing.append(key)
+        if missing:
+            head = '、'.join(missing[:6])
+            tail = '…' if len(missing) > 6 else ''
+            warnings.append(f'{path}：Walkthrough 有 {len(missing)} 条考点在备考页里没找到'
+                            f'（{head}{tail}）——检查备考是否漏了新考点')
+        # ② 弱保真：强特征数字必须能在本课资料里找到
         source_text = ''
         prefix = f'课程/{course}/'
         for p, data in files.items():
@@ -606,8 +608,10 @@ def check_exam_prep(files):
             if token not in source_text.replace(' ', ''):
                 problems.append(f'{path}：数字「{num}」在本课笔记/作业里找不到出处'
                                 f'（备考不得自己编数）')
+    for w in warnings:
+        print(f'[备考] {w}')
     if problems:
-        raise ValueError('备考页三层检查未过 —— ' + '；'.join(problems))
+        raise ValueError('备考页检查未过 —— ' + '；'.join(problems))
 
 
 def check_worktree_sync(files):
