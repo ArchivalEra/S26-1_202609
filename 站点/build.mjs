@@ -50,6 +50,7 @@ const TARGET_FILES = [
   '课程/工程数学/音频/index.md',
   '课程/电力大数据与人工智能/index.md',
   '课程/电力大数据与人工智能/Walkthrough.md',
+  '课程/电力大数据与人工智能/备考.md',
   '课程/电力大数据与人工智能/作业/index.md',
   '课程/电力大数据与人工智能/作业/2026-09-29-大数据特点与AI算法.md',
   '课程/电力大数据与人工智能/教材解析/index.md',
@@ -392,6 +393,7 @@ const NAV_STRUCTURE = [
         path: "课程/电力大数据与人工智能/index.md",
         children: [
           { label: "Walkthrough", path: "课程/电力大数据与人工智能/Walkthrough.md" },
+          { label: "备考", path: "课程/电力大数据与人工智能/备考.md" },
           { label: "作业", path: "课程/电力大数据与人工智能/作业/index.md",
             children: [
               { label: "2026-09-29作业（大数据特点、AI 算法、运行状态）", path: "课程/电力大数据与人工智能/作业/2026-09-29-大数据特点与AI算法.md" }
