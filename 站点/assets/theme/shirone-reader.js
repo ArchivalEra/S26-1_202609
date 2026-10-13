@@ -307,6 +307,12 @@
       });
     }
 
+    // 高亮除了滚动，还要在**导航发生时**重算：点目录/深链接会让
+    // disclosure-anchor.mjs 展开折叠面板并重滚，页面位置由脚本改变，
+    // 只靠 scroll 事件可能漏掉（且 hashchange 先于展开后的重滚）。
+    window.addEventListener("hashchange", onScroll);
+    // 用户手动开合面板同样改变布局，重算一次。
+    document.addEventListener("toggle", onScroll, true);
     window.addEventListener("scroll", onScroll, { passive: true });
     onScroll();
   }
