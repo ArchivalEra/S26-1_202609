@@ -273,17 +273,26 @@
   if (tocLinks.length > 0) {
     const headings = Array.from(document.querySelectorAll(".article-content h2, .article-content h3"))
       .filter((h) => h.id);
-    
+
     function onScroll() {
       const scrollY = window.scrollY || window.pageYOffset;
       let currentHeadingId = "";
+      let currentTop = -Infinity;
 
+      // 取「已越过视口顶线、且文档位置最靠下」的那个标题 = 当前所在。
+      // 不能像以前那样遇到第一个未越过的就 break：折叠面板（:::collapse）里的标题
+      // 是**收起面板中的 h3**，原生 <details> 收起时其内容仍占布局位、位置与展开后
+      // 不一致，DOM 顺序与纵向顺序就此错开——一 break 就永远停在错的那一项
+      // （2026-10-13 用户报「跟着算一遍相关锚点会漂移」）。
+      // 同时跳过收起面板里的标题：它此刻并不可见，不该被高亮。
       for (let i = 0; i < headings.length; i++) {
-        const top = headings[i].getBoundingClientRect().top + scrollY - 90;
-        if (scrollY >= top) {
-          currentHeadingId = headings[i].id;
-        } else {
-          break;
+        const h = headings[i];
+        const det = h.closest("details");
+        if (det && !det.open) continue;
+        const top = h.getBoundingClientRect().top + scrollY - 90;
+        if (scrollY >= top && top > currentTop) {
+          currentTop = top;
+          currentHeadingId = h.id;
         }
       }
 

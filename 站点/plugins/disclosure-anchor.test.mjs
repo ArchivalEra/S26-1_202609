@@ -39,4 +39,17 @@ describe("disclosure-anchor：客户端脚本契约", () => {
     assert.ok(DISCLOSURE_ANCHOR_JS.includes("if (!raw) return;"));
     assert.ok(DISCLOSURE_ANCHOR_JS.includes("if (!el) return;"));
   });
+
+  it("展开面板后重滚一次（修「跟着算一遍」锚点漂移，2026-10-13）", () => {
+    // 展开 <details> 会改变目标自身的文档位置：原生锚点滚动按「展开前」几何算的
+    // 落点已经不准，必须在布局稳定后补一次 scrollIntoView。
+    assert.ok(DISCLOSURE_ANCHOR_JS.includes("opened = true"));
+    assert.ok(DISCLOSURE_ANCHOR_JS.includes("requestAnimationFrame"));
+    assert.ok(DISCLOSURE_ANCHOR_JS.includes("scrollIntoView"));
+  });
+
+  it("只有真的展开过面板才重滚（面板本就开着时不抢用户的滚动）", () => {
+    // 条件必须挂在 opened 上；无条件重滚会在每次 hashchange 时粗暴抢走滚动位置
+    assert.ok(/if\s*\(\s*opened\s*\)/.test(DISCLOSURE_ANCHOR_JS));
+  });
 });
