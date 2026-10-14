@@ -195,7 +195,7 @@
 
 ### [电路原理](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/index.md)
 
-#### 作业（179 份）
+#### 作业（182 份）
 
 - [电路原理习题册·第一章 电路的基本概念与基本原理（选择 14 / 填空 16 / 计算 13）](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/2026-09-28-%E4%B9%A0%E9%A2%98%E5%86%8C%E7%AC%AC%E4%B8%80%E7%AB%A0.md)
 - [电路原理习题册·第七章 三相电路（选择 14 / 填空 11 / 计算 6）](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/2026-09-28-%E4%B9%A0%E9%A2%98%E5%86%8C%E7%AC%AC%E4%B8%83%E7%AB%A0.md)
@@ -251,6 +251,7 @@
 - [fig-2.17.webp](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-2.17.webp)
 - [fig-2.18.webp](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-2.18.webp)
 - [fig-2.19.webp](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-2.19.webp)
+- [fig-2.2-opts.webp](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-2.2-opts.webp)
 - [fig-2.2.webp](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-2.2.webp)
 - [fig-2.20.webp](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-2.20.webp)
 - [fig-2.21.webp](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-2.21.webp)
@@ -260,9 +261,11 @@
 - [fig-2.25.webp](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-2.25.webp)
 - [fig-2.26.webp](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-2.26.webp)
 - [fig-2.3.webp](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-2.3.webp)
+- [fig-2.4-opts.webp](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-2.4-opts.webp)
 - [fig-2.4.webp](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-2.4.webp)
 - [fig-2.5.webp](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-2.5.webp)
 - [fig-2.6.webp](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-2.6.webp)
+- [fig-2.7-opts.webp](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-2.7-opts.webp)
 - [fig-2.7.webp](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-2.7.webp)
 - [fig-2.8.webp](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-2.8.webp)
 - [fig-2.9.webp](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/%E4%BD%9C%E4%B8%9A/figures/fig-2.9.webp)
@@ -403,9 +406,9 @@
 
 暂无已归档资料。
 
-已登记 **6** 门课程、**258** 份资料（不含索引、模板和历史入口）。
+已登记 **6** 门课程、**261** 份资料（不含索引、模板和历史入口）。
 
-<!-- 仓库内容摘要（不含 README）：c288842973fa2bcac2691ba53324af9e0b032a5eded3be2bba9c4f7abfaf6e2d -->
+<!-- 仓库内容摘要（不含 README）：fd825796055548b8c3cede8d5bd839107f3d47c0c3a2587aa3b179520c2e3368 -->
 
 <!-- AUTO-CATALOG:END -->
 
