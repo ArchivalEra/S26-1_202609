@@ -9,6 +9,9 @@ import { DISCLOSURE_ANCHOR_JS } from './plugins/disclosure-anchor.mjs';
 import { parseGlossaryDict, parseGlossaryMatch, renderGlossary, glossifyTex, applySymbolExclusions, peelNotationFences, GLOSSARY_JS } from './plugins/math-glossary.mjs';
 import { SYMBOL_PACKS, COURSE_ENV, BUILD_PHASES } from './符号环境.mjs';
 import { extractSearchDoc, buildSearchBundle, SEARCH_JS, SEARCH_CSS } from './plugins/site-search.mjs';
+import { WEBMCP_LOADER_JS, WEBMCP_RELAY_JS } from './plugins/webmcp-loader.mjs';
+import { WEBMCP_SHIM_JS } from './plugins/webmcp-shim.mjs';
+import { WEBMCP_TOOLS_JS } from './plugins/webmcp-tools.mjs';
 import { TARGET_FILES } from './页面清单.mjs';
 
 const SITE_DIR = fileURLToPath(new URL('.', import.meta.url));
@@ -128,6 +131,21 @@ const searchPluginDir = path.join(DIST_DIR, 'assets', 'plugins');
 fs.mkdirSync(searchPluginDir, { recursive: true });
 fs.writeFileSync(path.join(searchPluginDir, 'site-search.js'), SEARCH_JS);
 fs.writeFileSync(path.join(searchPluginDir, 'site-search.css'), SEARCH_CSS);
+
+// WebMCP（浏览器内置 AI 与页面交互）：**零依赖、可整体拆卸**。
+//   页面只注入两个脚本：webmcp-loader.js（编排器）+ webmcp-relay.js（本机 relay 连接器）。
+//   loader 按形态决定是否加载 polyfill，再**按顺序**注入 shim 与 tools——
+//   顺序神圣：shim 必须在任何工具注册之前包好两个注册表，否则抓不到已注册的工具。
+//   polyfill（281 KB）**绝不无条件加载**：没有 WebMCP 环境的浏览器一个字节都不拉。
+const webmcpDir = path.join(DIST_DIR, 'assets', 'plugins');
+fs.mkdirSync(webmcpDir, { recursive: true });
+fs.writeFileSync(path.join(webmcpDir, 'webmcp-loader.js'), WEBMCP_LOADER_JS);
+fs.writeFileSync(path.join(webmcpDir, 'webmcp-shim.js'), WEBMCP_SHIM_JS);
+fs.writeFileSync(path.join(webmcpDir, 'webmcp-tools.js'), WEBMCP_TOOLS_JS);
+fs.writeFileSync(path.join(webmcpDir, 'webmcp-relay.js'), WEBMCP_RELAY_JS);
+// vendor 第三方资产（polyfill + relay embed/widget）逐字节拷贝。
+copyDir(path.join(SITE_DIR, 'assets', 'vendor', 'webmcp'), path.join(DIST_DIR, 'assets', 'vendor', 'webmcp'));
+console.log('[build] Wrote WebMCP plugins + copied vendor assets (polyfill + relay embed)');
 
 // 资产版本戳（2026-10-12）：页面里的样式表与脚本引用一律追加 `?v=<内容哈希前 10 位>`。
 // 为什么必须做：这些资产不发指纹文件名、服务器按 mtime 走 304，**改完内容浏览器仍可能用旧副本**
@@ -1369,6 +1387,11 @@ for (const relPath of TARGET_FILES) {
   <script type="application/json" id="sym-glossary-json">${JSON.stringify(glossaryJsonPayload).replace(/<\//g, '<\\/')}</script>
   <script src="${rootRel}${assetUrl('assets/plugins/math-glossary.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/site-search.js')}" defer></script>
+  <script src="${rootRel}${assetUrl('assets/plugins/webmcp-loader.js')}" defer></script>
+  <!-- relay 连接器**不带 defer**：它要在解析期用 document.write 插入 vendor 的 embed.js，
+       而 embed.js 靠 document.currentScript.src 定位同目录的 widget.html——
+       defer 脚本执行时 readyState 已是 interactive，document.write 会毁掉文档。 -->
+  <script src="${rootRel}${assetUrl('assets/plugins/webmcp-relay.js')}"></script>
 </body>
 </html>`;
 

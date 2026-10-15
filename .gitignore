@@ -338,6 +338,15 @@
 # 全站搜索（自持倒排索引，替代 Pagefind——它按单字索引中文）
 !/站点/plugins/site-search.mjs
 !/站点/plugins/site-search.test.mjs
+!/站点/plugins/webmcp-loader.mjs
+!/站点/plugins/webmcp-shim.mjs
+!/站点/plugins/webmcp-shim.test.mjs
+!/站点/plugins/webmcp-tools.mjs
+!/站点/assets/vendor/webmcp/README.md
+!/站点/assets/vendor/webmcp/polyfill.iife.js
+!/站点/assets/vendor/webmcp/relay-embed.js
+!/站点/assets/vendor/webmcp/widget.html
+!/站点/README-WebMCP.md
 # 收件口（把手机上的文件传进本机；收到的东西按类型归位，不进这个目录的白名单）
 !/工具/收件口/README.md
 !/工具/收件口/recv_server.py
