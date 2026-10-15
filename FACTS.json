@@ -1,13 +1,13 @@
 {
  "schema": 1,
- "generated": "2026-10-15T12:18:46+0800",
+ "generated": "2026-10-15T12:31:25+0800",
  "_why": "事实台账：每条 = 一个**测出来**的值 + 复跑命令 + 出处。别手改，跑 zreflect/facts.py。",
  "facts": {
   "courses": {
    "value": 6,
    "cmd": "ls -d 课程/*/ | wc -l",
    "source": "课程/",
-   "measured_at": "2026-10-15T12:18:38+0800",
+   "measured_at": "2026-10-15T12:31:18+0800",
    "first_seen": "2026-10-10",
    "note": "课程门数"
   },
@@ -15,7 +15,7 @@
    "value": 25,
    "cmd": "find 课程 -path '*/课堂笔记/*.md' ! -name 'index.md' | wc -l",
    "source": "课程/",
-   "measured_at": "2026-10-15T12:18:38+0800",
+   "measured_at": "2026-10-15T12:31:18+0800",
    "first_seen": "2026-10-14",
    "note": "课堂笔记篇数（不含索引）"
   },
@@ -23,7 +23,7 @@
    "value": 19,
    "cmd": "find 课程 -path '*/作业/*.md' ! -name 'index.md' | wc -l",
    "source": "课程/",
-   "measured_at": "2026-10-15T12:18:38+0800",
+   "measured_at": "2026-10-15T12:31:18+0800",
    "first_seen": "2026-10-15",
    "note": "作业页数（不含索引）"
   },
@@ -31,7 +31,7 @@
    "value": 21,
    "cmd": "find 课程 -path '*/教材解析/*.md' ! -name 'index.md' | wc -l",
    "source": "课程/",
-   "measured_at": "2026-10-15T12:18:38+0800",
+   "measured_at": "2026-10-15T12:31:18+0800",
    "first_seen": "2026-10-15",
    "note": "教材解析篇数（不含索引）"
   },
@@ -39,7 +39,7 @@
    "value": 278,
    "cmd": "python3 -c \"import re,glob;print(sum(len(re.findall(r'[0-9]+',s)) for f in glob.glob('课程/电路原理/作业/2026-09-28-习题册第*.md') for ln in open(f,encoding='utf-8') if ln.startswith('### ') for s in re.findall(r'(?:选|填|计|判|画图)\\s*([0-9][0-9、,\\s]*)', re.sub(r'（[^）]*）','',ln[4:]))))\"",
    "source": "课程/电路原理/作业/",
-   "measured_at": "2026-10-15T12:18:38+0800",
+   "measured_at": "2026-10-15T12:31:18+0800",
    "first_seen": "2026-10-10",
    "note": "习题册题数（合并题号的标题按题号展开计数）"
   },
@@ -47,7 +47,7 @@
    "value": 174,
    "cmd": "ls 课程/电路原理/作业/figures/ | wc -l",
    "source": "课程/电路原理/作业/figures/",
-   "measured_at": "2026-10-15T12:18:38+0800",
+   "measured_at": "2026-10-15T12:31:18+0800",
    "first_seen": "2026-10-14",
    "note": "习题册配图张数"
   },
@@ -55,7 +55,7 @@
    "value": 179,
    "cmd": "awk '/^:::glossary-dict/{f=1;next} /^:::/{f=0} f&&/^sym-/{n++} END{print n}' 站点/符号包/通用.md 课程/电机学/教材解析/0.0-符号入门.md 课程/工程数学/教材解析/0.0-符号入门.md 课程/电路原理/教材解析/0.0-符号入门.md",
    "source": "课程/*/教材解析/0.0-符号入门.md",
-   "measured_at": "2026-10-15T12:18:38+0800",
+   "measured_at": "2026-10-15T12:31:18+0800",
    "first_seen": "2026-10-12",
    "note": "三个符号包的词条合计（电机学 / 电路原理 / 工程数学）"
   },
@@ -63,7 +63,7 @@
    "value": 114,
    "cmd": "sed -n '/^const TARGET_FILES = \\[/,/^\\];/p' 站点/build.mjs | grep -c \"^  '\"",
    "source": "站点/build.mjs",
-   "measured_at": "2026-10-15T12:18:38+0800",
+   "measured_at": "2026-10-15T12:31:18+0800",
    "first_seen": "2026-10-15",
    "note": "站点页数（TARGET_FILES 条数）"
   },
@@ -71,7 +71,7 @@
    "value": 144,
    "cmd": "git ls-files '*.md' | wc -l",
    "source": "repo",
-   "measured_at": "2026-10-15T12:18:38+0800",
+   "measured_at": "2026-10-15T12:31:18+0800",
    "first_seen": "2026-10-15",
    "note": "受管 Markdown 篇数"
   },
@@ -79,7 +79,7 @@
    "value": 24,
    "cmd": "python3 .githooks/test-update-readme.py 2>&1 | grep -oE 'Ran [0-9]+ tests' | awk '{print $2}'",
    "source": ".githooks/test-update-readme.py",
-   "measured_at": "2026-10-15T12:18:46+0800",
+   "measured_at": "2026-10-15T12:31:25+0800",
    "first_seen": "2026-10-12",
    "note": "钩子集成测试项数"
   },
@@ -87,7 +87,7 @@
    "value": 106,
    "cmd": "cd 站点 && node --test plugins/*.test.mjs 2>&1 | grep -oE 'tests [0-9]+' | head -1 | grep -oE '[0-9]+'",
    "source": "站点/plugins/",
-   "measured_at": "2026-10-15T12:18:46+0800",
+   "measured_at": "2026-10-15T12:31:25+0800",
    "first_seen": "2026-10-13",
    "note": "站点插件测试项数"
   }
