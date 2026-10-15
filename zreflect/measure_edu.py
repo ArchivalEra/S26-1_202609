@@ -41,9 +41,11 @@ GLOSSARY_CMD = (
     "站点/符号包/通用.md 课程/电机学/教材解析/0.0-符号入门.md "
     "课程/工程数学/教材解析/0.0-符号入门.md 课程/电路原理/教材解析/0.0-符号入门.md"
 )
-# 站点页数：构建脚本 TARGET_FILES 清单的条数（与钩子的 check_build_targets 同一份清单）。
+# 站点页数：待渲染清单的条数（与钩子的 check_build_targets 同一份清单）。
+# 2026-10-15：清单从 站点/build.mjs 搬到 站点/页面清单.mjs（build 与 MCP 读层共用同一份），
+# 复跑命令随之改指新家——坏 cmd 印在活状态文档里就是每行都绿着的假断言。
 SITEPAGES_CMD = (
-    "sed -n '/^const TARGET_FILES = \\[/,/^\\];/p' 站点/build.mjs | grep -c \"^  '\""
+    "sed -n '/^export const TARGET_FILES = \\[/,/^\\];/p' 站点/页面清单.mjs | grep -c \"^  '\""
 )
 HOOKTESTS_CMD = (
     "python3 .githooks/test-update-readme.py 2>&1 | grep -oE 'Ran [0-9]+ tests' | awk '{print $2}'"

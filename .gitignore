@@ -333,6 +333,7 @@
 !/站点/plugins/math-glossary.mjs
 !/站点/plugins/math-glossary.test.mjs
 !/站点/符号环境.mjs
+!/站点/页面清单.mjs
 !/站点/符号包/通用.md
 # 全站搜索（自持倒排索引，替代 Pagefind——它按单字索引中文）
 !/站点/plugins/site-search.mjs
@@ -409,6 +410,24 @@
 !/工具/数学动画/归档-动画路/build.sh
 !/工具/数学动画/归档-动画路/t1_probe.m
 !/工具/数学动画/给网页GPT的咨询提纲.md
+!/工具/mcp-端点/README.md
+!/工具/mcp-端点/server.mjs
+!/工具/mcp-端点/lib/检索核心.mjs
+!/工具/mcp-端点/lib/切块.mjs
+!/工具/mcp-端点/lib/catalog-source.mjs
+!/工具/mcp-端点/lib/corpus-dist.mjs
+!/工具/mcp-端点/lib/endpoint-direct.mjs
+!/工具/mcp-端点/lib/endpoint-stdio.mjs
+!/工具/mcp-端点/lib/packs-source.mjs
+!/工具/mcp-端点/lib/read-core.mjs
+!/工具/mcp-端点/test/检索核心.test.mjs
+!/工具/mcp-端点/test/锚点反推.test.mjs
+!/工具/mcp-端点/test/切块.test.mjs
+!/工具/mcp-端点/test/endpoint.test.mjs
+!/工具/mcp-端点/test/read-core.test.mjs
+!/工具/mcp-端点/test/parity.mjs
+!/工具/mcp-端点/test/parity-assert.mjs
+!/工具/mcp-端点/test/parity-browser.snapshot.json
 
 # 事实系统（Einfacht 机制层 + 本仓数据层 + 钩子 + 规格）
 !/zreflect/__init__.py
