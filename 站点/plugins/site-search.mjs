@@ -445,12 +445,17 @@ export function buildSearchBundle(docs, options) {
     files[`search/g/${i}.json`] = JSON.stringify({ grams, uni });
   });
 
-  files['search/index.json'] = JSON.stringify({
+  // sourceHash：源树内容 hash（构建期算好传入）。读层靠它判「产物是否落后于源」（stale）——
+  // 用**内容 hash 而非 mtime**（git checkout 会改 mtime，内容没变也会误判）。不传则不带该字段
+  // （浏览器端只读 v/buckets/docs，多一个字段无影响）。
+  const index = {
     v: 1,
     buckets: bucketCount,
     pages: indexDocs.length,
     docs: indexDocs
-  });
+  };
+  if (opts.sourceHash) index.sourceHash = opts.sourceHash;
+  files['search/index.json'] = JSON.stringify(index);
 
   return {
     files,

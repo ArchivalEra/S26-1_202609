@@ -468,19 +468,29 @@ def check_handoff_freshness(files, base):
             '按维护约定「实施完一步就回来更新」：改 §1 当前状态 / §6 下一步 / §7 速查，'
             '把新踩的坑追加进 §8 坑清单。'
             '（确认本次改动无需更新 handoff 时：touch .zcode/handoff.md）')
-# 静态站构建脚本里硬编码的待渲染清单。它与 .gitignore 白名单一样是显式枚举，
-# 但漏填不会报错、只会静默不上线，故在此校验二者一致。
-TARGET_FILES_RE = re.compile(r'^const TARGET_FILES = \[(.*?)^\];', re.M | re.S)
+# 待渲染清单。**2026-10-15 起搬到独立模块** `站点/页面清单.mjs`（构建期与 MCP 读层共用同一份，
+# 避免读层 import build.mjs 触发整站重建、或抄一份清单制造第二个真相源）。
+# 清单仍是显式枚举，漏填不会报错、只会静默不上线，故在此校验它与仓库实况一致。
+PAGE_MANIFEST = '站点/页面清单.mjs'
+TARGET_FILES_RE = re.compile(r'^export const TARGET_FILES = \[(.*?)^\];', re.M | re.S)
+# 兼容旧位置（build.mjs 内联）——两者都找不到才算错。
+TARGET_FILES_RE_LEGACY = re.compile(r'^const TARGET_FILES = \[(.*?)^\];', re.M | re.S)
 
 
 def build_targets(files):
-    """从 build.mjs 读出的 TARGET_FILES 清单；脚本不存在时返回 None。"""
-    if BUILD_SCRIPT not in files:
-        return None
-    match = TARGET_FILES_RE.search(files[BUILD_SCRIPT].decode())
-    if not match:
-        raise ValueError(f'{BUILD_SCRIPT} 中找不到 TARGET_FILES 清单，无法校验站点渲染范围。')
-    return re.findall(r"'([^']+)'", match.group(1))
+    """读出待渲染清单；清单模块与构建脚本都不在变更集里时返回 None。"""
+    if PAGE_MANIFEST in files:
+        match = TARGET_FILES_RE.search(files[PAGE_MANIFEST].decode())
+        if match:
+            return re.findall(r"'([^']+)'", match.group(1))
+        raise ValueError(f'{PAGE_MANIFEST} 中找不到 TARGET_FILES 清单，无法校验站点渲染范围。')
+    if BUILD_SCRIPT in files:
+        match = TARGET_FILES_RE_LEGACY.search(files[BUILD_SCRIPT].decode())
+        if match:
+            return re.findall(r"'([^']+)'", match.group(1))
+        raise ValueError(
+            f'{BUILD_SCRIPT} 与 {PAGE_MANIFEST} 中都没有 TARGET_FILES 清单，无法校验站点渲染范围。')
+    return None
 
 
 def check_build_targets(files):
