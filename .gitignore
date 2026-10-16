@@ -334,6 +334,7 @@
 !/站点/plugins/math-glossary.test.mjs
 !/站点/符号环境.mjs
 !/站点/页面清单.mjs
+!/站点/源树hash.mjs
 !/站点/符号包/通用.md
 # 全站搜索（自持倒排索引，替代 Pagefind——它按单字索引中文）
 !/站点/plugins/site-search.mjs
@@ -342,6 +343,7 @@
 !/站点/plugins/webmcp-shim.mjs
 !/站点/plugins/webmcp-shim.test.mjs
 !/站点/plugins/webmcp-tools.mjs
+!/站点/plugins/webmcp-tools.test.mjs
 !/站点/assets/vendor/webmcp/README.md
 !/站点/assets/vendor/webmcp/polyfill.iife.js
 !/站点/assets/vendor/webmcp/relay-embed.js
@@ -429,6 +431,8 @@
 !/工具/mcp-端点/lib/endpoint-stdio.mjs
 !/工具/mcp-端点/lib/packs-source.mjs
 !/工具/mcp-端点/lib/read-core.mjs
+!/工具/mcp-端点/lib/tool-catalog.mjs
+!/工具/mcp-端点/tools-prompt.mjs
 !/工具/mcp-端点/test/检索核心.test.mjs
 !/工具/mcp-端点/test/锚点反推.test.mjs
 !/工具/mcp-端点/test/切块.test.mjs

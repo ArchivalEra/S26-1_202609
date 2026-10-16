@@ -16,26 +16,15 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
+// 源树 hash 的算法在 站点/源树hash.mjs（构建期与读层共用同一份实现）。
+// 从前本文件自己抄了一份、靠注释「必须与 build.mjs 逐字一致」维系——
+// 那种约定会静默失效（一边改分隔符，stale 判定永远说不 stale）。现在不可能再漂。
+import { computeSourceHash } from '../../../站点/源树hash.mjs';
+
+// 再导出，供测试与调用方从本 adapter 取（不改变它们的 import 路径）。
+export { computeSourceHash };
 
 const INDEX_REL = 'search/index.json';
-
-/**
- * 算源树内容 hash——**必须与 build.mjs 里的算法逐字一致**（同一顺序、同样的分隔符）。
- * @param {string} root 仓库根
- * @param {string[]} targetFiles 页面清单（`站点/页面清单.mjs` 的 TARGET_FILES）
- */
-export function computeSourceHash(root, targetFiles) {
-  const h = createHash('sha256');
-  for (const relPath of targetFiles) {
-    const full = path.join(root, relPath);
-    h.update(relPath);
-    h.update('\0');
-    if (fs.existsSync(full)) h.update(fs.readFileSync(full));
-    h.update('\0');
-  }
-  return h.digest('hex').slice(0, 16);
-}
 
 /**
  * 建 dist adapter。

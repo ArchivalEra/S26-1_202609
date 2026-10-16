@@ -9,7 +9,8 @@ import { createReadCore } from '../lib/read-core.mjs';
 import { createDistCorpus } from '../lib/corpus-dist.mjs';
 import { createCatalog } from '../lib/catalog-source.mjs';
 import { createSourcePacks } from '../lib/packs-source.mjs';
-import { createDirectEndpoint, TOOL_DEFS, TOOL_PREFIX, RELAY_RESERVED } from '../lib/endpoint-direct.mjs';
+import { createDirectEndpoint, TOOL_PREFIX, RELAY_RESERVED } from '../lib/endpoint-direct.mjs';
+import { COURSE_TOOLS, SITE_TOOLS_COURSE, ALL_TOOL_NAMES, renderToolCatalogForPrompt } from '../lib/tool-catalog.mjs';
 import { createStdioEndpoint } from '../lib/endpoint-stdio.mjs';
 import { TARGET_FILES } from '../../../站点/页面清单.mjs';
 
@@ -25,7 +26,7 @@ function core() {
 }
 
 test('工具名带 course_ 前缀，且与 relay 保留名不相交', () => {
-  const names = TOOL_DEFS.map((d) => TOOL_PREFIX + d.name);
+  const names = COURSE_TOOLS.map((d) => TOOL_PREFIX + d.name);
   for (const n of names) {
     assert.ok(!RELAY_RESERVED.includes(n), `${n} 与 relay 保留名相撞`);
   }
@@ -33,7 +34,7 @@ test('工具名带 course_ 前缀，且与 relay 保留名不相交', () => {
 });
 
 test('每个工具都有 description（给模型的选择依据）与 inputSchema', () => {
-  for (const d of TOOL_DEFS) {
+  for (const d of COURSE_TOOLS) {
     assert.ok(d.description && d.description.length > 20, `${d.name} 缺 description`);
     assert.ok(d.inputSchema && d.inputSchema.type === 'object');
   }
@@ -103,4 +104,55 @@ test('stdio：工具错走 result.isError（不升级成协议错）', async () 
   const call = msgs.find((m) => m.id === 2);
   assert.equal(call.result.isError, true);
   assert.equal(call.error, undefined, '工具错不该是协议错');
+});
+
+// ── 候选 1：工具目录是单一真相源 ──────────────────────────────
+
+test('目录：每条都有 name / title / description / inputSchema / coreMethod', () => {
+  for (const d of COURSE_TOOLS) {
+    assert.ok(d.name, '缺 name');
+    assert.ok(d.title, `${d.name} 缺 title`);
+    assert.ok(d.description && d.description.length > 15, `${d.name} 缺 description`);
+    assert.equal(d.inputSchema.type, 'object');
+    assert.ok(d.coreMethod, `${d.name} 缺 coreMethod（改名表该住在目录里）`);
+  }
+});
+
+test('目录：coreMethod 都是 ReadCore 上真有的方法', () => {
+  const c = core();
+  for (const d of COURSE_TOOLS) {
+    assert.equal(typeof c[d.coreMethod], 'function', `${d.coreMethod} 不是 ReadCore 方法`);
+  }
+});
+
+test('目录：两套工具名与 relay 保留名都不相交', () => {
+  for (const n of ALL_TOOL_NAMES) {
+    assert.ok(!RELAY_RESERVED.includes(n), `${n} 撞了 relay 保留名`);
+  }
+  // course_ 与 site_ 两套互不相撞
+  const course = COURSE_TOOLS.map((d) => TOOL_PREFIX + d.name);
+  const site = SITE_TOOLS_COURSE.map((d) => d.name);
+  for (const n of course) assert.ok(!site.includes(n), `${n} 两套重名`);
+});
+
+test('目录：list() 的条目与目录逐项一致（含 title，不再被 stdio 丢掉）', () => {
+  const ep = createDirectEndpoint(core());
+  const listed = ep.list();
+  assert.equal(listed.length, COURSE_TOOLS.length);
+  listed.forEach((t, i) => {
+    assert.equal(t.name, TOOL_PREFIX + COURSE_TOOLS[i].name);
+    assert.equal(t.title, COURSE_TOOLS[i].title);
+    assert.equal(t.description, COURSE_TOOLS[i].description);
+  });
+});
+
+test('目录：renderToolCatalogForPrompt 产出课程语义（破甲话术的唯一来源）', () => {
+  const txt = renderToolCatalogForPrompt();
+  for (const d of COURSE_TOOLS) {
+    assert.ok(txt.includes(d.course.label), `话术清单缺「${d.course.label}」`);
+    assert.ok(txt.includes(`<invoke name="${TOOL_PREFIX}${d.name}">`), `缺 ${d.name} 的标记写法`);
+  }
+  // 站点侧也能生成
+  const siteTxt = renderToolCatalogForPrompt(SITE_TOOLS_COURSE, '');
+  assert.ok(siteTxt.includes('页面信息登记标记'));
 });
