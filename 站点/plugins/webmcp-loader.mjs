@@ -5,19 +5,27 @@
  * `@mcp-b/global` 的 polyfill 有 **281 KB**；本站是离线阅读站、一直在控体积
  * （全站配图加起来才 738 KB）。**无条件每页加载不可接受**。
  *
+ * ## 谁来付这 281 KB（2026-10-15 修正的判断）
+ * **只有「要用 AI 交互」的人才付**——即 URL 带 `?relay=1`（连本机中继）
+ * 或 `?webmcp=1`（显式启用）的人。**不看浏览器的原生能力**：
+ * 零 pref 的普通 Firefox **既没有 `navigator.modelContext` 也没有 `document.modelContext`**，
+ * 而那正是 polyfill 要造出来的东西——按「有没有原生 API」判断会漏掉最大的那批用户
+ * （实测踩到：零设置 Firefox 下形态被判成 `absent`、polyfill 不载、工具全无）。
+ *
  * ## 为什么由本模块**统管序列**（而不是三个并列 `<script>`）
- * 有个真实的顺序陷阱：polyfill 是**动态加载**的，`document.modelContext` 要等它到位才存在；
+ * 顺序陷阱：polyfill 是**动态加载**的，`document.modelContext` 要等它到位才存在；
  * 而 shim 必须在「任何工具注册之前」包好两个注册表，否则抓不到已注册的工具。
- * 三个并列的 `defer` 脚本会踩这个坑（shim 跑时 polyfill 还没到）。
- * 所以这里按顺序编排：**决定形态 → （必要时）载 polyfill → 注入 shim → 注入 tools**。
+ * 所以这里按顺序编排：**判断要不要 → 载 polyfill → 注入 shim → 注入 tools**。
  *
  * ## 四种形态
  * | 形态 | 触发 | 做什么 |
  * | :--- | :--- | :--- |
- * | `native-document` | 已有 `document.modelContext`（Chrome 预览版） | 直接注入 shim + tools，不载 polyfill |
- * | `polyfill+shim` | 有 `navigator.modelContext`（Firefox 开了 pref） | 载 polyfill → 注入 shim + tools |
- * | `polyfill-forced` | URL `?webmcp=1` 或 `localStorage.webmcp='on'` | 同上（调试/显式启用） |
- * | `absent` | 都没有且没强制 | **什么都不做**（页面与不带本模块时完全一致） |
+ * | `native-document` | 已有 `document.modelContext`（Chrome 预览版） | 直接注入 shim + tools，**不载 polyfill** |
+ * | `polyfill+wanted` | `?relay=1` / `?webmcp=1` / `localStorage` 开关（**典型场景**） | 载 polyfill → 注入 shim + tools |
+ * | `absent` | 没要（普通读者） | **什么都不做**（与不带本模块时完全一致，零请求） |
+ *
+ * 注：`navigator.modelContext`（Firefox 开了 pref）**不单独触发加载**——
+ * 那种环境下用户同样会因为要用而带 `?relay=1`；不带就说明他不需要页面工具。
  *
  * ## 可拆卸
  * 删掉本文件、build.mjs 的注入段、页面模板里的一行 `<script>` 即回退。
@@ -30,11 +38,17 @@ if (typeof navigator === "undefined" || typeof document === "undefined") return;
 
 var qs = null;
 try { qs = new URLSearchParams(location.search); } catch (e) {}
-var forced = false;
-try { forced = (qs && qs.get("webmcp") === "1") || localStorage.getItem("webmcp") === "on"; } catch (e) {}
+// 「要不要页面工具」由用户**显式表达**：?relay=1（连中继）或 ?webmcp=1（启用），
+// 或 localStorage 里的持久开关。**不看浏览器原生能力**——零 pref 的普通 Firefox
+// 两者都没有，而那正是 polyfill 要造出来的东西（按原生判断会漏掉这批用户）。
+var wanted = false;
+try {
+  wanted = (qs && (qs.get("relay") === "1" || qs.get("webmcp") === "1"))
+    || localStorage.getItem("webmcp") === "on"
+    || localStorage.getItem("webmcp_relay") === "on";
+} catch (e) {}
 
 var hasDoc = !!document.modelContext;
-var hasNav = !!navigator.modelContext;
 
 function baseDir() {
   var s = document.currentScript;
@@ -58,15 +72,15 @@ function injectPlugins() {
   inject("webmcp-tools.js");
 }
 
-if (hasDoc) {                       // 形态 1：原生 document 已就绪
+if (hasDoc) {                       // 形态 1：原生已有 document 注册表 → 直接用
   window.__webmcpMode = "native-document";
   injectPlugins();
-} else if (hasNav || forced) {      // 形态 2/3：需要 polyfill
-  window.__webmcpMode = hasNav ? "polyfill+shim" : "polyfill-forced";
+} else if (wanted) {                // 形态 2：用户要 → 载 polyfill 造出 document 注册表
+  window.__webmcpMode = "polyfill+wanted";
   var p = inject("../vendor/webmcp/polyfill.iife.js");
   p.onload = function () { injectPlugins(); };
   p.onerror = function () { window.__webmcpMode = "polyfill-failed"; };
-} else {                            // 形态 4：都没有
+} else {                            // 形态 3：普通读者没要 → 一个字节都不拉
   window.__webmcpMode = "absent";
 }
 })();`;
