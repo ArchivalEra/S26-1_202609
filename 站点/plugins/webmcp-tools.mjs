@@ -23,8 +23,15 @@
 /** 站点工具的源码（构建期内联；浏览器端执行）。 */
 export const WEBMCP_TOOLS_JS = `(function () {
 "use strict";
-if (typeof navigator === "undefined") return;
-var mc = navigator.modelContext;
+if (typeof document === "undefined") return;
+// **两个注册表都要探测**（2026-10-16 修）：
+//   Firefox 原生只有 navigator.modelContext；Chromium 走 polyfill 只有 document.modelContext。
+//   之前只认 navigator ⇒ **Chromium 下脚本第一行就 return，工具一个都没注册**（实测踩到：
+//   页面 mode=polyfill+wanted、iframe 建了、relay 连了，但 getTools() 为空）。
+//   优先级：document 在前（polyfill/规范形态），navigator 兜底（Firefox 原生）。
+var mc = (typeof document !== "undefined" && document.modelContext)
+  || (typeof navigator !== "undefined" && navigator.modelContext)
+  || null;
 if (!mc || typeof mc.registerTool !== "function") return;   // 没有 WebMCP 就什么都不做
 
 function text(el) { return el ? (el.textContent || "").trim() : ""; }
