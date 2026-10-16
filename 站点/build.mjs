@@ -13,6 +13,7 @@ import { WEBMCP_LOADER_JS, WEBMCP_RELAY_JS } from './plugins/webmcp-loader.mjs';
 import { WEBMCP_SHIM_JS } from './plugins/webmcp-shim.mjs';
 import { WEBMCP_TOOLS_JS } from './plugins/webmcp-tools.mjs';
 import { TARGET_FILES } from './页面清单.mjs';
+import { computeSourceHash } from './源树hash.mjs';
 
 const SITE_DIR = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = path.resolve(SITE_DIR, '..');
@@ -1424,19 +1425,9 @@ console.log(`[build] Completed! Rendered ${totalFormulasRendered} math formulas 
 // 产物落在 dist/search/：index.json（页面清单 + 小节锚点 + **源树 hash**）、g/<n>.json（二元组倒排分桶）、
 // t/<id>.json（单页正文，供摘要按需拉取）。
 {
-  // 源树内容 hash：对清单里每个源文件的内容取 sha256，再整体取一次——**与 mtime 无关**
-  // （git checkout / 换机器都不影响），供 MCP 读层判断「产物是否落后于源」（stale）。
-  const sourceHash = (() => {
-    const h = createHash('sha256');
-    for (const relPath of TARGET_FILES) {
-      const full = path.join(ROOT, relPath);
-      h.update(relPath);
-      h.update('\0');
-      if (fs.existsSync(full)) h.update(fs.readFileSync(full));
-      h.update('\0');
-    }
-    return h.digest('hex').slice(0, 16);
-  })();
+  // 源树内容 hash：**算法在 站点/源树hash.mjs**（与 MCP 读层共用同一份实现——
+  // 从前这里与 corpus-dist.mjs 各有一份拷贝，靠注释维系，改一边就静默失效）。
+  const sourceHash = computeSourceHash(ROOT, TARGET_FILES);
   const { files, stats } = buildSearchBundle(searchDocs, { sourceHash });
   for (const [relPath, content] of Object.entries(files)) {
     const filePath = path.join(DIST_DIR, relPath);

@@ -31,7 +31,7 @@ const CODE_FENCE = /^\s*(```+|~~~+)/;
  * 把源 markdown 切成**安全切点数组**。切点恒在行首，每个切点记「此刻仍未闭合的围栏栈」。
  *
  * @param {string} source 源 markdown
- * @returns {{ cuts: {offset:number, openStack:string[]}[], lineStarts:number[], lineOfOffset:(o:number)=>number }}
+ * @returns {{ cuts: {offset:number, openStack:string[]}[], lineStarts:number[], endsWithNewline:boolean, trueEnd:number }}
  */
 export function buildCutIndex(source) {
   const cuts = [];
@@ -93,12 +93,6 @@ export function buildCutIndex(source) {
     lineStarts,
     endsWithNewline,
     trueEnd: source.length,
-    lineOfOffset(o) {
-      // 二分找最后一个 <= o 的行号
-      let lo = 0, hi = lineStarts.length - 1;
-      while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (lineStarts[mid] <= o) lo = mid; else hi = mid - 1; }
-      return lo;
-    },
   };
 }
 
@@ -165,22 +159,8 @@ export function planExcerpt(input) {
   const chosen = pickWindow(segs, budget, cuts);
   if (!chosen) return { ok: false, reason: 'bad-budget' };
 
-  const text = source.slice(chosen.start, chosen.end);
-  const secText = source.slice(secStart, secEnd);
-  const truncated = !(chosen.start === secStart && chosen.end >= secEnd);
-  const insideCollapse = segs.filter((s) => s.start >= chosen.start && s.start < chosen.end)
-    .every((s) => s.inCollapse) && segs.some((s) => s.start >= chosen.start && s.start < chosen.end && s.inCollapse);
-
-  return {
-    ok: true,
-    text,
-    range: { start: chosen.start, end: chosen.end },
-    truncated,
-    oversize: text.length > budget,
-    insideCollapse,
-    hits: chosen.hits,
-    ref: { anchor: sectionId },
-  };
+  // 值类型由 makeWindow 统一构造（与 planExcerptRange 同一份，标志与正文必然同源）。
+  return makeWindow(source, segs, chosen, secStart, secEnd, budget, sectionId);
 }
 
 /** 折叠：只用于段内打分（与站内搜索同一套规则，但这里只做最小实现避免耦合坐标）。 */
@@ -197,11 +177,14 @@ function countOcc(hay, needle) {
 /**
  * 按**显式范围**切一段正文（供「父节 + 全部子节」的扩展用）。
  * 同样守两条硬约束：切点对齐、**两端栈相等**。
- * @returns {string|null} 切出的正文；范围内没有合法切点时返回 null。
+ *
+ * 返回与 `planExcerpt` **同一个值类型**（2026-10-16 候选 3 修）——
+ * 从前它只回字符串，调用点拿不到 `truncated` / `oversize` / `insideCollapse`，
+ * 只好 `{ ...旧窗口, text: 新正文 }` 手工拼：**标志说父节、正文是子节，不同源**。
  */
-export function planExcerptRange(source, index, from, to, grams, budget) {
+export function planExcerptRange(source, index, from, to, grams, budget, sectionId) {
   const cuts = index.cuts.filter((c) => c.offset >= from && c.offset <= to);
-  if (cuts.length < 2) return null;
+  if (cuts.length < 2) return { ok: false, reason: 'bad-range' };
   const segs = [];
   for (let i = 0; i + 1 < cuts.length; i++) {
     const start = cuts[i].offset;
@@ -213,8 +196,46 @@ export function planExcerptRange(source, index, from, to, grams, budget) {
     segs.push({ start, end, score, inCollapse: cuts[i].openStack.includes('collapse'), len: end - start });
   }
   const chosen = pickWindow(segs, budget, cuts);
-  if (!chosen) return null;
-  return source.slice(chosen.start, chosen.end);
+  if (!chosen) return { ok: false, reason: 'bad-range' };
+  return makeWindow(source, segs, chosen, from, to, budget, sectionId);
+}
+
+/**
+ * 「命中落在父标题、正文却短得可怜」时，把窗口扩到**它的全部子节**。
+ * 2026-10-16（候选 3）从 `read-core` 的调用点收进本模块——
+ * 那里原来手工重找 index、数 level、算范围、拼结果，标志与正文还不同源。
+ *
+ * @returns 值类型同 `planExcerpt`（扩不动时原样返回 `first`）。
+ */
+export function widenToChildren(source, index, first, headings, sectionId, grams, budget) {
+  if (!first || !first.ok) return first;
+  if (first.text.length >= Math.min(200, budget)) return first; // 已经够长，不必扩
+  const i = headings.findIndex((h) => (h.a || h.id) === sectionId);
+  if (i < 0) return first;
+  const parentLevel = headings[i].level;
+  let j = i + 1;
+  while (j < headings.length && headings[j].level > parentLevel) j++;
+  if (j <= i + 1) return first; // 没有子节
+  const to = j < headings.length ? headings[j].offset : index.trueEnd;
+  const wider = planExcerptRange(source, index, headings[i].offset, to, grams, budget, sectionId);
+  if (!wider.ok) return first;
+  return wider.text.length > first.text.length ? wider : first;
+}
+
+/** 把「选中的段区间」变成值类型（`planExcerpt` 与 `planExcerptRange` 共用，保证标志同源）。 */
+function makeWindow(source, segs, chosen, secStart, secEnd, budget, sectionId) {
+  const text = source.slice(chosen.start, chosen.end);
+  const inWindow = segs.filter((s) => s.start >= chosen.start && s.start < chosen.end);
+  return {
+    ok: true,
+    text,
+    range: { start: chosen.start, end: chosen.end },
+    truncated: !(chosen.start === secStart && chosen.end >= secEnd),
+    oversize: text.length > budget,
+    insideCollapse: inWindow.length > 0 && inWindow.every((s) => s.inCollapse),
+    hits: chosen.hits,
+    ref: { anchor: sectionId },
+  };
 }
 
 /**

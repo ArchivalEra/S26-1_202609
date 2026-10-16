@@ -9,8 +9,8 @@
  * 只用来定位小节；小节内选段一律交给 `planExcerpt` 在**源 markdown** 上按块切。
  */
 
-import { collectHits, fillSingleCharCounts } from './检索核心.mjs';
-import { buildCutIndex, planExcerpt, planExcerptRange } from './切块.mjs';
+import { collectHits, fillSingleCharCounts, fillSnippets } from './检索核心.mjs';
+import { buildCutIndex, planExcerpt, widenToChildren } from './切块.mjs';
 import { foldSearchText, queryGrams } from '../../../站点/plugins/site-search.mjs';
 
 const DEFAULT_BUDGET = 4000;
@@ -60,6 +60,8 @@ export function createReadCore(deps) {
 
       let { hits, grams } = collectHits(data, (n) => corpus.bucket(n), query);
       hits = fillSingleCharCounts(hits, grams, (id) => corpus.text(id));
+      // 补摘要（与浏览器端同一套：makeSnippet，radius 44）——候选 6 前这里是恒空字段。
+      hits = fillSnippets(hits, foldSearchText(query), (id) => corpus.text(id));
 
       // 课程过滤（按 url 前缀 `课程/<课>/`）
       if (input.course) {
@@ -79,23 +81,11 @@ export function createReadCore(deps) {
           const hs = headingsOf(relPath, (data.docs[hit.id] && data.docs[hit.id].headings) || []);
           if (!secId) secId = (hs[0] && hs[0].a) || '';
           if (secId) {
-            let r = planExcerpt({ source: src, index: idx, sectionId: secId, headings: hs, grams: qgrams, budget });
-            // 命中落在**父标题**上时（如「题号条目」），它到下一个标题之间可能只有标题行本身，
-            // 切出的正文极短——而真正含内容的是它的**子节**。此时把窗口扩到子节范围。
-            if (r.ok && r.text.length < Math.min(200, budget)) {
-              const i = hs.findIndex((h) => h.a === secId);
-              if (i >= 0) {
-                const parentLevel = hs[i].level;
-                let j = i + 1;
-                while (j < hs.length && hs[j].level > parentLevel) j++;
-                if (j > i + 1) {
-                  // 用「本父节 + 其全部子节」的范围重切
-                  const wider = planExcerptRange(src, idx, hs[i].offset, j < hs.length ? hs[j].offset : src.length, qgrams, budget);
-                  if (wider && wider.length > r.text.length) r = { ...r, text: wider, truncated: true };
-                }
-              }
-            }
-            excerpt = r;
+            const r = planExcerpt({ source: src, index: idx, sectionId: secId, headings: hs, grams: qgrams, budget });
+            // 「命中落在父标题、正文短得可怜」时扩到子节——**逻辑在切块模块内**
+            // （2026-10-16 候选 3：从前这里手工重找 index、数 level、拼结果，
+            //   标志来自旧窗口、正文来自新窗口，不同源；现在返回同一个值类型）。
+            excerpt = widenToChildren(src, idx, r, hs, secId, qgrams, budget);
           }
         } catch (e) {
           if (e.code !== 'unknown_page') throw e;
@@ -119,14 +109,12 @@ export function createReadCore(deps) {
         });
       }
 
-      // 顺带查符号（只在查询命中词典术语时返回）
-      let symbols = [];
-      if (input.course || true) {
-        const found = packs.lookup({ q: query, course: input.course });
-        symbols = found.matches.slice(0, 5).map((m) => ({
-          id: m.id, pack: m.pack, title: m.title, text: m.text, senses: m.senses,
-        }));
-      }
+      // 顺带查符号：**无条件查**——`packs.lookup` 自己按查询词过滤，查不到就回空数组。
+      // 2026-10-16 候选 6：原先是 `if (input.course || true)`，条件永真，
+      // 让「按课程过滤才查符号」看起来像可选行为（读者会误判分支意图）。
+      const symbols = packs.lookup({ q: query, course: input.course }).matches.slice(0, 5).map((m) => ({
+        id: m.id, pack: m.pack, title: m.title, text: m.text, senses: m.senses,
+      }));
 
       return {
         query: folded,
@@ -145,6 +133,8 @@ export function createReadCore(deps) {
       const data = corpus.manifest();
       let { hits, grams } = collectHits(data, (n) => corpus.bucket(n), query);
       hits = fillSingleCharCounts(hits, grams, (id) => corpus.text(id));
+      // 补摘要（与浏览器端同一套：makeSnippet，radius 44）——候选 6 前这里是恒空字段。
+      hits = fillSnippets(hits, foldSearchText(query), (id) => corpus.text(id));
 
       if (input.course) {
         const prefix = `课程/${input.course}/`;
@@ -267,16 +257,20 @@ function parseFrontmatter(src) {
   return out;
 }
 
-/** 解析 read_page 的 ref：完整路径 / (course,category,file) / 唯一文件名后缀。 */
+/**
+ * 解析 read_page 的 ref：**完整路径**（推荐）或 **(course, category, file) 三元组**。
+ *
+ * 2026-10-16 候选 6：删掉一个从未使用的形参（`arguments[1]`，注释谎称「保留签名兼容」——
+ * 没有任何调用方传第二个参数，那是假契约）。
+ * 三元组的判据也改成**显式三项**（原为 `parts.length >= 3`，而 `parts` 恰好由这三个可选字段拼出，
+ * 读不出「三个都要给」这个要求）。
+ */
 function resolveRef(ref) {
   if (ref.path) return ref.path;
-  const pages = arguments[1]; // 未用；保留签名兼容
-  const parts = [];
-  if (ref.course) parts.push('课程', ref.course);
-  if (ref.category) parts.push(ref.category);
-  if (ref.file) parts.push(ref.file);
-  if (parts.length >= 3) return parts.join('/');
-  const err = new Error('read_page 需要 path，或 (course, category, file) 三元组');
+  if (ref.course && ref.category && ref.file) {
+    return ['课程', ref.course, ref.category, ref.file].join('/');
+  }
+  const err = new Error('read_page 需要 path，或 (course, category, file) 三元组（三者都要给）');
   err.code = 'ambiguous_ref';
   throw err;
 }

@@ -50,7 +50,9 @@ export function createStdioEndpoint(opts) {
     if (!initialized) { fail(id, -32002, '未握手：先发 initialize'); return; }
 
     if (method === 'tools/list') {
-      reply(id, { tools: direct.list().map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema })) });
+      // 直接把目录条目透出去（含 title）——从前这里手工 map 掉了 title，
+      // 于是 TOOL_DEFS 里的 title 在生产路径上「被生产又丢弃」（2026-10-16 候选 1）。
+      reply(id, { tools: direct.list().map(({ coreMethod, ...rest }) => rest) });
       return;
     }
     if (method === 'tools/call') {

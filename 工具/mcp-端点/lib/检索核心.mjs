@@ -122,4 +122,32 @@ export function fillSingleCharCounts(hits, grams, getText) {
   });
 }
 
+/**
+ * 给命中补摘要（`snippet`）——**与浏览器端逐字同一套逻辑**
+ * （`site-search.mjs` 的 `runSearch`：`makeSnippet(text, query, { radius: 44 })`，
+ *   短语搜不到时退化为「命中位置附近开窗」，都没有就只数次数）。
+ *
+ * 2026-10-16 候选 6：从前读层的 `snippet` 恒为 `''`（字段白带、`makeSnippet` 只是死转发）。
+ * 那不是「该删的字段」而是「缺的实现」——浏览器端有现成的，搬过来即可。
+ *
+ * @param {object[]} hits  `collectHits` 的产物
+ * @param {string} query   已折叠的查询串
+ * @param {(id:number)=>string} getText 取某页折叠正文
+ * @param {number} [limit] 只给前 N 条补（浏览器端也是「只给前 8 条拉正文」，避免全量读盘）
+ */
+export function fillSnippets(hits, query, getText, limit = 8) {
+  return hits.map((hit, i) => {
+    if (i >= limit || !query) return hit;
+    const text = getText(hit.id);
+    if (!text) return hit;
+    const snippet = makeSnippet(text, query, { radius: 44 });
+    if (snippet.html) return { ...hit, snippet: snippet.html, total: snippet.total };
+    if (hit.positions && hit.positions.length) {
+      const around = makeSnippet(text, text.slice(hit.positions[0], hit.positions[0] + query.length) || query, { radius: 44 });
+      return { ...hit, snippet: around.html || '' };
+    }
+    return { ...hit, total: countOccurrences(text, query) };
+  });
+}
+
 export { makeSnippet, sectionForPosition, foldSearchText };
