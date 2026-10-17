@@ -57,8 +57,13 @@ function navigate(rawUrl, hash, push) {
   var ctl = ("AbortController" in window) ? new AbortController() : null;
   inflight = ctl;
   var opts = ctl ? { signal: ctl.signal, credentials: "same-origin" } : { credentials: "same-origin" };
-  return fetch(url, opts).then(function (res) {
-    if (!res.ok) throw new Error("HTTP " + res.status);
+  var doFetch = function (extra) { return fetch(url, Object.assign({}, opts, extra || {})); };
+  return doFetch().catch(function (err) {
+    // 网络/缓存竞态先绕过 SW 重试一次（cache:reload 直连网络），移动端整页跳代价最大
+    if (err && err.name === "AbortError") throw err;
+    return doFetch({ cache: "reload" });
+  }).then(function (res) {
+    if (!res || !res.ok) throw new Error("HTTP " + (res ? res.status : "unknown"));
     return res.text();
   }).then(function (html) {
     if (inflight !== ctl) return; // 已被更新的一次导航取代
@@ -98,10 +103,31 @@ function navigate(rawUrl, hash, push) {
     // 侧栏 active 重算（用户实弹报「页面变了侧边栏强调没变」）：构建期按页烘焙
     // active 类，SPA 不换侧栏 DOM 就必须手动刷。侧栏容器是 .m3-drawer，
     // 链接 .drawer-nav-link；分组头是 div.nav-group-header（无 li 包裹）。
+    // ⚠️「无证据时不动」（2026-10-17 移动端强调泡消失的教训）：旧 SW 缓存页
+    // 没有 data-path（那是后来才埋的），重算若退化为 href 相对解析会全部无匹配
+    // → active 被清空 → 用户看到没有任何高亮。防御：侧栏里只要有任何一个链接
+    // 缺 data-path，就判定这是旧资产——跳过重算，保留构建期烘焙态。
     try {
       var navLinks = document.querySelectorAll(".m3-drawer a.drawer-nav-link[href]");
-      var herePath = decodeURIComponent(location.pathname);
-      navLinks.forEach(function (a) {
+      var legacySidebar = false;
+      for (var ci = 0; ci < navLinks.length; ci++) {
+        if (!navLinks[ci].getAttribute("data-path")) { legacySidebar = true; break; }
+      }
+      if (legacySidebar) {
+        // 旧页：不动 active。但如果当前页的链接能按 href 解析精确命中，也刷一下展开态。
+        var herePathLegacy = decodeURIComponent(location.pathname);
+        navLinks.forEach(function (a) {
+          var ap;
+          try { ap = new URL(a.getAttribute("href"), location.href).pathname; } catch (e) { return; }
+          if (decodeURIComponent(ap) === herePathLegacy) {
+            for (var g = a.closest("li") || a; g; g = g.parentElement) {
+              if (g.classList && g.classList.contains("drawer-nav-group")) g.classList.add("expanded");
+            }
+          }
+        });
+      } else {
+        var herePath = decodeURIComponent(location.pathname);
+        navLinks.forEach(function (a) {
         var dp = a.getAttribute("data-path");
         var ap = dp ? "/" + decodeURIComponent(dp)
           : (function () { try { return new URL(a.getAttribute("href"), location.href).pathname; } catch (e) { return null; } })();
@@ -116,6 +142,7 @@ function navigate(rawUrl, hash, push) {
           }
         }
       });
+      }
     } catch (e) { /* 侧栏结构变化不致命 */ }
 
     // reset 钩子（全部可选存在）
