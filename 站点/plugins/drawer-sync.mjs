@@ -15,7 +15,7 @@
 //
 // 可拆卸：删掉本文件、build.mjs 的写盘行、spa-router 里的一行调用即回退。
 
-export const DRAWER_SYNC_JS = `(function () {
+export const DRAWER_SYNC_JS = String.raw`(function () {
 "use strict";
 if (typeof window === "undefined" || window.__drawerSync) return;
 
@@ -29,10 +29,19 @@ function recompute() {
   for (var i = 0; i < links.length; i++) {
     if (!links[i].getAttribute("data-path")) return undefined;
   }
-  var here = decodeURIComponent(location.pathname);
+  // ⭐ 部署前缀无关比较（线上子路径 /repo/S26-1_202609/ 下 pathname 带前缀，
+  // 绝对相等永不命中 → 强调栏被清空——2026-10-17 线上强调栏失效的根因）：
+  // data-path 是仓库相对路径，只要 pathname 以 "/"+data-path 结尾即视为命中。
+  // ⭐ 终版判定（三报三修后的定稿）：纯字符串比较，零 pathname 解析。
+  // body[data-site-path]（构建期每页埋，SPA 换页同步）=== 链接[data-path]。
+  // 之前两版（绝对相等→子路径全灭；endsWith/段匹配→'index.html' 与任何
+  // '…/index.html' 碰撞）都输在【从 pathname 反推仓库路径】——部署前缀不可知。
+  // 两边都是构建期已知的仓库相对路径，直接比就行。
+  var here = document.body.getAttribute("data-site-path") || decodeURIComponent(location.pathname).replace(/^\/+/, "");
   var hit = null;
   links.forEach(function (a) {
-    var isOn = "/" + decodeURIComponent(a.getAttribute("data-path")) === here;
+    var dp = decodeURIComponent(a.getAttribute("data-path"));
+    var isOn = here === dp;
     a.classList.toggle("active", isOn);
     var li = a.closest("li");
     if (li) li.classList.toggle("active", isOn);

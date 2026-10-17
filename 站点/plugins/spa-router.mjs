@@ -84,6 +84,15 @@ function navigate(rawUrl, hash, push) {
     // ③ 标题
     if (doc.title) document.title = doc.title;
 
+    // ③b data-root 同步：html[data-root] 是每页的回根前缀，SPA 不换 <html> 就
+    // 要把新页的值搬过来——否则后续侧栏点击用旧页前缀拼 URL（子路径/深层页下错位）。
+    var nr = doc.documentElement && doc.documentElement.getAttribute("data-root");
+    if (nr) document.documentElement.setAttribute("data-root", nr);
+    // ③c data-site-path 同步：body[data-site-path] 是本页的仓库相对路径，
+    // drawer-sync 用它做【纯字符串】 active 判定——零 pathname 解析、部署前缀无关。
+    var sp = doc.body && doc.body.getAttribute("data-site-path");
+    if (sp) document.body.setAttribute("data-site-path", sp);
+
     // ④ 侧栏 active 态（drawer 里当前页高亮由 theme 脚本管；这里触发它的重扫）
     // （shirone-reader 的 active 类基于 URL data 属性——换页后由 __readerRescan 处理）
 
@@ -120,7 +129,19 @@ document.addEventListener("click", function (ev) {
   if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
   var a = ev.target.closest ? ev.target.closest("a") : null;
   if (!isPageLink(a)) return;
-  var u = new URL(a.href, location.href);
+  // ⭐ 部署根无关导航（2026-10-17 线上 404 的根因修复）：
+  // 侧栏 DOM 是首次加载页的，其相对 href 在换页后的 location 下解析会层级错位
+  // （首页的 ./课程/x 在 /课程/工程数学/ 下解析 = 双拼 404）。侧栏链接都带
+  // data-path（仓库相对路径），用 <html data-root>（构建期每页埋的回根前缀）
+  // 拼出与"侧栏来自哪页"和"部署在哪个子路径"都无关的 URL。
+  var dp = a.getAttribute("data-path");
+  if (dp) {
+    var root = document.documentElement.getAttribute("data-root") || "./";
+    var u2 = new URL(root + dp, location.href);
+    var u = u2;
+  } else {
+    var u = new URL(a.href, location.href);
+  }
   var hash = u.hash ? u.hash.slice(1) : "";
   var target = u.pathname + u.search;
   if (target === location.pathname + location.search) {
