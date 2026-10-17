@@ -37,17 +37,17 @@ sh gates-selftest.sh                             # 每道闸门先证明自己�
 
 | 键 | 值 | 测于 | 复跑命令 |
 |---|---|---|---|
-| `courses` | **6** | 2026-10-16T16:36:38+0800 | `ls -d 课程/*/ | wc -l` |
-| `figures` | **174** | 2026-10-16T16:36:38+0800 | `ls 课程/电路原理/作业/figures/ | wc -l` |
-| `glossary_entries` | **179** | 2026-10-16T16:36:38+0800 | `awk '/^:::glossary-dict/{f=1;next} /^:::/{f=0} f&&/^sym-/{n++} END{print n}' 站点/符号包/通用.md 课程/电机学/教材解析/0.0-符号入门.md 课程/工程数学/教材解析/0.0-符号入门.md 课程/电路原理/教材解析/0.0-符号入门.md` |
-| `homework` | **19** | 2026-10-16T16:36:38+0800 | `find 课程 -path '*/作业/*.md' ! -name 'index.md' | wc -l` |
-| `hooktests` | **24** | 2026-10-16T16:36:46+0800 | `python3 .githooks/test-update-readme.py 2>&1 | grep -oE 'Ran [0-9]+ tests' | awk '{print $2}'` |
-| `md_files` | **147** | 2026-10-16T16:36:38+0800 | `git ls-files '*.md' | wc -l` |
-| `notes` | **25** | 2026-10-16T16:36:38+0800 | `find 课程 -path '*/课堂笔记/*.md' ! -name 'index.md' | wc -l` |
-| `plugin_tests` | **134** | 2026-10-16T16:36:46+0800 | `cd 站点 && node --test plugins/*.test.mjs 2>&1 | grep -oE 'tests [0-9]+' | head -1 | grep -oE '[0-9]+'` |
-| `problems` | **278** | 2026-10-16T16:36:38+0800 | `python3 -c "import re,glob;print(sum(len(re.findall(r'[0-9]+',s)) for f in glob.glob('课程/电路原理/作业/2026-09-28-习题册第*.md') for ln in open(f,encoding='utf-8') if ln.startswith('### ') for s in re.findall(r'(?:选|填|计|判|画图)\s*([0-9][0-9、,\s]*)', re.sub(r'（[^）]*）','',ln[4:]))))"` |
-| `sitepages` | **114** | 2026-10-16T16:36:38+0800 | `sed -n '/^export const TARGET_FILES = \[/,/^\];/p' 站点/页面清单.mjs | grep -c "^  '"` |
-| `textbook` | **21** | 2026-10-16T16:36:38+0800 | `find 课程 -path '*/教材解析/*.md' ! -name 'index.md' | wc -l` |
+| `courses` | **6** | 2026-10-17T11:46:38+0800 | `ls -d 课程/*/ | wc -l` |
+| `figures` | **174** | 2026-10-17T11:46:38+0800 | `ls 课程/电路原理/作业/figures/ | wc -l` |
+| `glossary_entries` | **179** | 2026-10-17T11:46:38+0800 | `awk '/^:::glossary-dict/{f=1;next} /^:::/{f=0} f&&/^sym-/{n++} END{print n}' 站点/符号包/通用.md 课程/电机学/教材解析/0.0-符号入门.md 课程/工程数学/教材解析/0.0-符号入门.md 课程/电路原理/教材解析/0.0-符号入门.md` |
+| `homework` | **19** | 2026-10-17T11:46:38+0800 | `find 课程 -path '*/作业/*.md' ! -name 'index.md' | wc -l` |
+| `hooktests` | **24** | 2026-10-17T11:46:45+0800 | `python3 .githooks/test-update-readme.py 2>&1 | grep -oE 'Ran [0-9]+ tests' | awk '{print $2}'` |
+| `md_files` | **148** | 2026-10-17T11:46:38+0800 | `git ls-files '*.md' | wc -l` |
+| `notes` | **25** | 2026-10-17T11:46:38+0800 | `find 课程 -path '*/课堂笔记/*.md' ! -name 'index.md' | wc -l` |
+| `plugin_tests` | **134** | 2026-10-17T11:46:45+0800 | `cd 站点 && node --test plugins/*.test.mjs 2>&1 | grep -oE 'tests [0-9]+' | head -1 | grep -oE '[0-9]+'` |
+| `problems` | **278** | 2026-10-17T11:46:38+0800 | `python3 -c "import re,glob;print(sum(len(re.findall(r'[0-9]+',s)) for f in glob.glob('课程/电路原理/作业/2026-09-28-习题册第*.md') for ln in open(f,encoding='utf-8') if ln.startswith('### ') for s in re.findall(r'(?:选|填|计|判|画图)\s*([0-9][0-9、,\s]*)', re.sub(r'（[^）]*）','',ln[4:]))))"` |
+| `sitepages` | **114** | 2026-10-17T11:46:38+0800 | `sed -n '/^export const TARGET_FILES = \[/,/^\];/p' 站点/页面清单.mjs | grep -c "^  '"` |
+| `textbook` | **21** | 2026-10-17T11:46:38+0800 | `find 课程 -path '*/教材解析/*.md' ! -name 'index.md' | wc -l` |
 
 11 条事实。
 <!-- /AUTO:FACTS -->
@@ -71,7 +71,8 @@ sh gates-selftest.sh                             # 每道闸门先证明自己�
 | `check_retractions.py`（翻案重现检测） | commit | 被推翻的断言不许悄悄回来当现状 | `REFLECT_RETRACTIONS`, `REFLECT_DOCS`, `REFLECT_HISTORY_SECS` |
 | `check_stale.py`（陈旧断言检测） | commit | sha 出处 / 退役名 / 测龄 | `REFLECT_DOCS`, `REFLECT_FACTS`, `REFLECT_HISTORY_SECS`, `REFLECT_RETIRED`, `REFLECT_STALE_DAYS` |
 | `check_world.py`（world 闸门） | commit | 声明式验证对象：多线仓库共享验证环境的世界对账 | `REFLECT_WORLD`, `REFLECT_WORLD_LINE` |
+| `check_lab_integrity.py`（实验空完整性闸门） | lab | 活文件白名单 + 配方回归测试（lab 相位，手动 --run lab） | — |
 | `doctor.py`（开工预检 doctor） | start-of-work | 进程 / 端口活性（查会死的东西 ⇒ runs_at=start-of-work，不进 pre-commit） | `REFLECT_DOCTOR`, `REFLECT_DOCTOR_TIMEOUT` |
 
-14 道闸门（发现式名录派生 —— 手写清单会漂，加闸门 = 落一个声明行，这里自动长出来）。
+15 道闸门（发现式名录派生 —— 手写清单会漂，加闸门 = 落一个声明行，这里自动长出来）。
 <!-- /AUTO:GATES -->

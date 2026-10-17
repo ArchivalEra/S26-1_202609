@@ -71,7 +71,9 @@ RENAMED_DEFAULTS = tuple(FIXTURE_RENAMES)
 # 已知相位（C1）：闸门声明自己的运行频率。执行面（gate.run_phase）按它过滤。
 #   commit        每次提交跑（pre-commit / pre-push / CI）
 #   start-of-work 开工前手动跑（doctor —— 查会死的东西，挂提交频率错）
-PHASES = ("commit", "start-of-work")
+#   lab           实验空改造后手动跑（.zcode/ 不入库 ⇒ 不产生 commit，
+#                 挂 commit 频率形同虚设；questions/02 悬案的 Settling 引用它）
+PHASES = ("commit", "start-of-work", "lab")
 
 def modules(zdir=None):
     """平台模块名录（C5）：ast 解析 `MODULE = module_meta(…)` 声明行。
