@@ -1081,7 +1081,7 @@ for (const relPath of TARGET_FILES) {
         out += `<li class="drawer-nav-group ${isExpanded ? 'expanded' : 'collapsed'}">
           <div class="nav-group-header ${!node.path ? 'nav-header-clickable' : ''}">
             ${node.path ? `
-              <a href="${itemHref}" class="drawer-nav-link ${isActive ? 'active' : ''}">
+              <a href="${itemHref}" data-path="${itemMeta ? itemMeta.htmlRelPath : node.path}" class="drawer-nav-link ${isActive ? 'active' : ''}">
                 <span>${node.label}</span>
               </a>
             ` : `
@@ -1102,7 +1102,7 @@ for (const relPath of TARGET_FILES) {
           const itemMeta = pageMetaMap.get(node.path);
           const itemHref = `${rootRel}${itemMeta ? itemMeta.htmlRelPath : node.path}`;
           out += `<li class="drawer-nav-item ${isActive ? 'active' : ''}">
-            <a href="${itemHref}" class="drawer-nav-link">
+            <a href="${itemHref}" data-path="${itemMeta ? itemMeta.htmlRelPath : node.path}" class="drawer-nav-link">
               <span>${node.label}</span>
             </a>
           </li>`;

@@ -95,6 +95,29 @@ function navigate(rawUrl, hash, push) {
       window.scrollTo(0, 0);
     }
 
+    // 侧栏 active 重算（用户实弹报「页面变了侧边栏强调没变」）：构建期按页烘焙
+    // active 类，SPA 不换侧栏 DOM 就必须手动刷。侧栏容器是 .m3-drawer，
+    // 链接 .drawer-nav-link；分组头是 div.nav-group-header（无 li 包裹）。
+    try {
+      var navLinks = document.querySelectorAll(".m3-drawer a.drawer-nav-link[href]");
+      var herePath = decodeURIComponent(location.pathname);
+      navLinks.forEach(function (a) {
+        var dp = a.getAttribute("data-path");
+        var ap = dp ? "/" + decodeURIComponent(dp)
+          : (function () { try { return new URL(a.getAttribute("href"), location.href).pathname; } catch (e) { return null; } })();
+        if (ap === null) return;
+        var isOn = ap === herePath;
+        a.classList.toggle("active", isOn);
+        var li = a.closest("li");
+        if (li) li.classList.toggle("active", isOn);
+        if (isOn) {
+          for (var g = li || a; g; g = g.parentElement) {
+            if (g.classList && g.classList.contains("drawer-nav-group")) g.classList.add("expanded");
+          }
+        }
+      });
+    } catch (e) { /* 侧栏结构变化不致命 */ }
+
     // reset 钩子（全部可选存在）
     try { if (window.__glossaryReset) window.__glossaryReset(); } catch (e) {}
     try { if (window.__readerRescan) window.__readerRescan(); } catch (e) {}
