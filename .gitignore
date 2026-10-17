@@ -469,6 +469,7 @@
 !/zreflect/check_facts.py
 !/zreflect/check_facts_replay.py
 !/zreflect/check_instruments.py
+!/zreflect/check_lab_integrity.py
 !/zreflect/check_invariants.py
 !/zreflect/check_locks.py
 !/zreflect/check_pins.py
@@ -488,6 +489,7 @@
 !/retractions.json
 !/invariants.json
 !/questions/01-frontmatter-silent-failure.md
+!/questions/02-实验空三件套改造.md
 
 # 课堂笔记（2026-10-11 批次）
 !/课程/电路原理/课堂笔记/2026-09-28-KCL与KVL及电阻元件.md
