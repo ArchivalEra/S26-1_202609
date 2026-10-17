@@ -269,10 +269,17 @@
   }
 
   // Table of Contents ScrollSpy
-  const tocLinks = document.querySelectorAll(".toc-item a");
-  if (tocLinks.length > 0) {
-    const headings = Array.from(document.querySelectorAll(".article-content h2, .article-content h3"))
+  // SPA 换页钩子（2026-10-17）：tocLinks/headings 换页后要重扫。
+  let tocLinks = document.querySelectorAll(".toc-item a");
+  let headings = Array.from(document.querySelectorAll(".article-content h2, .article-content h3"))
+    .filter((h) => h.id);
+  window.__readerRescan = function () {
+    tocLinks = document.querySelectorAll(".toc-item a");
+    headings = Array.from(document.querySelectorAll(".article-content h2, .article-content h3"))
       .filter((h) => h.id);
+    onScroll();
+  };
+  if (tocLinks.length > 0) {
 
     function onScroll() {
       const scrollY = window.scrollY || window.pageYOffset;

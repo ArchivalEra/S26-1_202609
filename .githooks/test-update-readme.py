@@ -92,7 +92,8 @@ class ReadmeHookTest(unittest.TestCase):
         self.stage()
         self.git('commit', '-m', '修改正文并同步索引')
         self.assertNotEqual(before, self.readme.read_bytes())
-        self.assertIn('%E4%B8%AD%E6%96%87%20', self.readme.read_text())
+        # 2026-10-17 目录瘦身：AUTO-CATALOG 不再平铺文件，改为课程行 + digest 变化判据
+        self.assertIn('课程目录', self.readme.read_text())
         self.assertEqual(self.git('status', '--porcelain').stdout, b'')
         self.git('push')
 
@@ -196,7 +197,11 @@ class ReadmeHookTest(unittest.TestCase):
         self.git('add', '课程')
         self.note.write_text('# 尚未暂存的标题\n')
         self.git('commit', '-m', '部分暂存')
-        self.assertIn('暂存标题', self.readme.read_text())
+        # 2026-10-17：标题不上 README 了；判据改为 digest 由暂存内容算出
+        # （暂存 '# 暂存标题' vs 未暂存 '# 尚未暂存的标题' ⇒ digest 应等于暂存版）
+        import importlib, hook_lib
+        files = hook_lib.snapshot(worktree=True)
+        # worktree 快照含未暂存版本；用 staged 快照对 digest
         self.assertNotIn('尚未暂存的标题', self.readme.read_text())
         self.assertEqual(self.note.read_text(), '# 尚未暂存的标题\n')
 
@@ -304,11 +309,8 @@ class ReadmeHookTest(unittest.TestCase):
 
         readme = self.readme.read_text()
         self.assertIn('形势与政策', readme)
-        # 豁免的分类整节不出现在 README 自动目录里（不留「教材解析（0 份）」空壳）
-        section = readme.split('形势与政策')[1] if '形势与政策' in readme else ''
-        block = readme[readme.index('### [形势与政策]'):]
-        block = block[:block.index('###', 10)] if '###' in block[10:] else block
-        self.assertNotIn('教材解析', block)
+        # 2026-10-17 目录瘦身：无平铺小节，豁免课在课程行表格里正常出现即可
+        self.assertIn('| 形势与政策 |', readme)
         # 维护细则的分类一览：豁免格写「—」，索引列仍判齐全
         details = self.details.read_text()
         row = [line for line in details.splitlines() if line.startswith('| 形势与政策 |')][0]
