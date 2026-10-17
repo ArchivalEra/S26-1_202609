@@ -1267,7 +1267,7 @@ for (const relPath of TARGET_FILES) {
 
   // Final HTML Document
   const finalHtml = `<!DOCTYPE html>
-<html lang="zh-CN" data-depth="${rootRel === './' ? 0 : rootRel.split('../').length - 1}">
+<html lang="zh-CN" data-depth="${rootRel === './' ? 0 : rootRel.split('../').length - 1}" data-root="${rootRel}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1296,7 +1296,7 @@ for (const relPath of TARGET_FILES) {
   <link rel="alternate icon" type="image/png" href="${rootRel}assets/favicon/favicon.png">
   <link rel="apple-touch-icon" href="${rootRel}assets/favicon/apple-touch-icon.png">
 </head>
-<body>
+<body data-site-path="${relPath.replace(/\.md$/, '.html')}">
   <div class="drawer-backdrop" id="drawer-backdrop"></div>
 
   <div class="site-shell">
