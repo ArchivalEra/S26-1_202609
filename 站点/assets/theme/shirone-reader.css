@@ -948,6 +948,89 @@ tr:target td {
   background-color: var(--md-sys-color-secondary-container);
 }
 
+/* ── 响应式表格三态（2026-10-17 外审定案：Claude 评审版）──────────────────
+ * 构建期 renderer.table 按内容分级：t-compact（窄屏缩放可放下）/
+ * t-cards（句子型转卡片，容器查询触发）/ t-matrix（数字型横滚+sticky 首列）。
+ * 滚动阴影用 background-attachment: local（Lea Verou）——scroll-state() 只有
+ * Chromium 133+，iOS 读者不可弃。sticky 用 border-collapse: separate（Firefox
+ * 的 collapse+sticky 丢边框，separate 全引擎一致）。thead 永不 display:none
+ * （Safari 17 起改 display 不再破坏表格语义，但视觉隐藏更稳，读屏器保留表头）。
+ */
+
+/* 全局：滚动容器出血到屏幕边缘（346→390px，负 margin 只在窄屏） */
+@media (max-width: 860px) {
+  .table-scroll-container {
+    margin-inline: -0.85rem;
+    padding-inline: 0.25rem;
+  }
+  /* 长代码/链接压低 min-content，缩小自然宽度 */
+  .table-scroll-container :is(td, th) :is(code, a) {
+    overflow-wrap: anywhere;
+  }
+}
+
+/* 滚动阴影（local：滚动时内容从边缘淡出，两端渐隐提示可横滚） */
+.table-scroll-container {
+  background:
+    linear-gradient(to right, var(--md-sys-color-surface-container-lowest) 30%, transparent) left center / 24px 100% no-repeat,
+    linear-gradient(to left, var(--md-sys-color-surface-container-lowest) 30%, transparent) right center / 24px 100% no-repeat,
+    linear-gradient(to right, rgba(0,0,0,.12), transparent 24px) left center / 24px 100% no-repeat,
+    linear-gradient(to left, rgba(0,0,0,.12), transparent 24px) right center / 24px 100% no-repeat;
+  background-attachment: local, local, scroll, scroll;
+}
+
+/* compact：窄屏字号/padding 收紧（5–6 列的 364–376px 表，收紧后 ≤316px 可放） */
+@media (max-width: 860px) {
+  .t-compact table { font-size: 0.8rem; }
+  .t-compact :is(th, td) { padding: 0.4rem 0.5rem; }
+}
+
+/* matrix：separate 边框 + sticky 首列 + 整表横滚 */
+.t-matrix table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: max-content;
+  min-width: 100%;
+}
+.t-matrix :is(th, td) {
+  border-right: 1px solid var(--md-sys-color-outline-variant);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+.t-matrix :is(th, td):first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--md-sys-color-surface-container-lowest);
+  box-shadow: 1px 0 0 var(--md-sys-color-outline-variant);
+}
+.t-matrix thead th { z-index: 2; background: var(--md-sys-color-surface-container); }
+
+/* cards：容器宽度触发（不绑 860px 视口）；thead 视觉隐藏保留语义 */
+.table-scroll-container.t-cards { container-type: inline-size; }
+@container (max-width: 480px) {
+  .t-cards thead {
+    position: absolute;
+    width: 1px; height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .t-cards :is(table, tbody, tr, td) { display: block; }
+  .t-cards tr {
+    margin-block: 0.75rem;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: 12px;
+    padding: 0.5rem;
+  }
+  .t-cards td:first-child { font-weight: 600; }
+  .t-cards td:not(:first-child)::before { content: attr(data-label) "："; color: var(--md-sys-color-on-surface-variant); }
+}
+
+/* 键盘焦点可见（容器 tabindex=0） */
+.table-scroll-container:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+}
+
 /* Code Blocks */
 .code-fence-wrapper {
   margin: 1.25rem 0;

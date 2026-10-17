@@ -547,6 +547,55 @@ function mathPlain(tex) {
 // Custom renderer for Marked
 const renderer = new marked.Renderer();
 
+/* ── 响应式表格分级（2026-10-17，外审定案：Claude 评审版方案）──────────────
+ * 判定顺序：<!-- table:xxx --> 显式覆盖 > 按内容分级。
+ *   t-compact：W_min ≤ 400（窄屏缩字号/减 padding 即可放下；实测 6 列 364、5 列 376）
+ *   t-cards  ：放不下且句子型（平均单元格 >6 字）→ data-label 转卡片（窄容器查询触发）
+ *   t-matrix ：放不下且短格/数字型 → 横滚 + sticky 首列（真值表/参数矩阵）
+ * W_min = Σ(每列最长不可断片段) + 列数×padding；句子判据 = 表体平均字符数。
+ * 注释标记通过 processAllTokens 挂到紧随其后的 table token（html token 不进 renderer）。
+ */
+const tableModeOf = (token) => {
+  const cols = token.header.length;
+  const padPx = cols * 32;                       // 两侧 padding 1rem×2×0.9 字号缩放后 ~32px/列
+  let wMin = padPx;
+  let charSum = 0, cells = 0;
+  const longest = new Array(cols).fill(0);
+  const cellPlain = (c) => c.text.replace(/\s+/g, ' ').trim();
+  token.header.forEach((h, i) => { const t = cellPlain(h); longest[i] = Math.max(longest[i], t.length); });
+  for (const row of token.rows) {
+    row.forEach((c, i) => {
+      const t = cellPlain(c);
+      longest[i] = Math.max(longest[i], t.length);
+      charSum += t.length; cells++;
+    });
+  }
+  for (const L of longest) wMin += Math.min(L, 20) * 9;   // 0.8rem 中文 ≈9px/字，长列封顶 20
+  // 阈值标定（Playwright 360px 实测）：compact 收紧后可容 ~420px；出血 +22px。
+  // 420~520 是灰带——句子型给 cards（窄容器才转卡，宽屏无感）、短格给 matrix 横滚。
+  if (wMin <= 420) return 't-compact';
+  const avg = cells ? charSum / cells : 0;
+  return avg > 6 ? 't-cards' : 't-matrix';
+};
+
+renderer.table = function (token) {
+  const mode = token.__tableMode || tableModeOf(token);
+  // data-label：cards 需要表头文本进每个 td（attr() 只能读自身属性——外审确认）
+  const headerText = token.header.map((h) => h.text.replace(/\s+/g, ' ').trim());
+  let body = '';
+  for (const row of token.rows) {
+    body += '<tr>' + row.map((c, i) => `<td data-label="${headerText[i] ?? ''}">${this.parser.parseInline(c.tokens)}</td>`).join('') + '</tr>\n';
+  }
+  const thead = '<thead><tr>' + token.header.map((h, i) => {
+    const al = token.align[i] ? ` align="${token.align[i]}"` : '';
+    return `<th${al}>${this.parser.parseInline(h.tokens)}</th>`;
+  }).join('') + '</tr></thead>\n';
+  // ARIA：滚动容器独立包裹层（不覆盖 table 语义）；aria-label 取前一个标题（processAllTokens 里挂）
+  const label = (token.__tableLabel || '数据表').replace(/"/g, '&quot;');
+  return `<div class="table-scroll-container ${mode}" role="region" aria-label="${label}" tabindex="0">\n<table>\n${thead}${body}</table>\n</div>\n`;
+};
+
+
 /**
  * 标题锚点用的公式纯文本中转表（下标与 mathBlocks **完全同构**）。
  *
@@ -597,7 +646,33 @@ renderer.heading = function ({ depth, text, tokens }) {
   return `<h${depth} id="${id}">${inner}</h${depth}>`;
 };
 
-marked.use({ renderer });
+marked.use({
+  renderer,
+  hooks: {
+    // <!-- table:matrix|cards|compact --> 显式覆盖：挂到紧随其后的 table token；
+    // 同时记最近一个 heading 文本，作滚动容器的 aria-label（外审建议的取法）。
+    processAllTokens(tokens) {
+      let pendingMode = null, lastHeading = '';
+      const walk = (ts) => {
+        for (const t of ts) {
+          if (t.type === 'heading') lastHeading = t.text.replace(/\s+/g, ' ').trim();
+          if (t.type === 'html') {
+            const m = /<!--\s*table:(compact|cards|matrix)\s*-->/.exec(t.text || '');
+            if (m) { pendingMode = 't-' + m[1]; continue; }
+          }
+          if (t.type === 'table') {
+            if (pendingMode) { t.__tableMode = pendingMode; pendingMode = null; }
+            t.__tableLabel = lastHeading;
+          }
+          if (t.tokens) walk(t.tokens);
+          if (t.items) walk(t.items);
+        }
+      };
+      walk(tokens);
+      return tokens;
+    },
+  },
+});
 
 // 4. Build each page
 let totalFormulasRendered = 0;
@@ -936,10 +1011,8 @@ for (const relPath of TARGET_FILES) {
   //
   // 标题里的公式锚点问题在 renderer.heading 里解决（只对 id 降级、不影响排版），
   // 详见上面 renderer.heading 的注释。
+  // 表格的滚动容器/分级类/ARIA 全部在 renderer.table 里产出（不再正则后处理）
   let htmlContent = marked.parse(raw);
-  htmlContent = htmlContent
-    .replace(/<table>/g, '<div class="table-scroll-container"><table>')
-    .replace(/<\/table>/g, '</table></div>');
 
   // Step 6: Restore Code Fences
   htmlContent = htmlContent.replace(/@@CODE_FENCE_(\d+)@@/g, (_, id) => {

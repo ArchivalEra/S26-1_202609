@@ -339,7 +339,9 @@
 # 全站搜索（自持倒排索引，替代 Pagefind——它按单字索引中文）
 !/站点/plugins/site-search.mjs
 !/站点/plugins/spa-router.mjs
+!/站点/plugins/drawer-sync.mjs
 !/站点/plugins/spa-router.test.mjs
+!/站点/plugins/table-responsive.test.mjs
 !/站点/plugins/sw-template.js
 !/站点/plugins/site-search.test.mjs
 !/站点/plugins/webmcp-loader.mjs
