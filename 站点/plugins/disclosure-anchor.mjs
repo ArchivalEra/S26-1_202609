@@ -59,6 +59,12 @@ function () {
       });
     }
   }
+
+  // SPA 换页钩子：手动触发深链接展开（spa-router 调用；hash 可选）
+  window.__disclosureOpen = function (hash) {
+    if (hash) { try { location.hash = hash; } catch (e) {} }
+    openTarget();
+  };
   window.addEventListener("DOMContentLoaded", openTarget);
   window.addEventListener("hashchange", openTarget);
 }());`;

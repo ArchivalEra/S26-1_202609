@@ -86,35 +86,29 @@ def count_kind(files, course, kind):
 
 
 def render(readme, files):
+    """README 的 AUTO-CATALOG 区块（2026-10-17 瘦身：不再平铺资料清单）。
+
+    平铺目录与「课程首页 → 分类 index」两层完全重复（三层登记），483 行的 README
+    79% 是它。现在只生成**课程一行摘要**——门数与每课资料计数；细节看各课 index。
+    digest 保留（内容摘要仍是「仓库变了没」的硬判据）。
+    """
     if readme.count(START) != 1 or readme.count(END) != 1 or readme.index(START) > readme.index(END):
         raise ValueError('README.md 必须包含唯一且顺序正确的 AUTO-CATALOG 起止标记。')
     before, rest = readme.split(START)
     _, after = rest.split(END)
     digest = hashlib.sha256()
     names = courses(files)
-    lines = ['## 按课程浏览', '']
-    total = 0
     for path, data in sorted(files.items()):
         if path != 'README.md':
             digest.update(path.encode() + b'\0' + hashlib.sha256(data).digest())
+    total = sum(1 for p in files if classify(p))
+    lines = ['## 课程目录', '',
+             '| 课程 | 资料数 | 入口 |',
+             '| :--- | ---: | :--- |']
     for course in names:
-        lines.extend([f'### [{course}](./{quote("课程/" + course + "/index.md")})', ''])
-        for kind in kinds_of(course):
-            paths = sorted(p for p in files if classify(p) == (course, kind))
-            total += len(paths)
-            lines.extend([f'#### {kind}（{len(paths)} 份）', ''])
-            for path in paths:
-                title = PurePosixPath(path).name
-                if path.endswith('.md'):
-                    heading = re.search(r'^# (.+)$', files[path].decode(), re.M)
-                    if heading:
-                        title = heading.group(1)
-                title = title.replace('[', '\\[').replace(']', '\\]')
-                lines.append(f'- [{title}](./{quote(path)})')
-            if not paths:
-                lines.append('暂无已归档资料。')
-            lines.append('')
-    lines.extend([f'已登记 **{len(names)}** 门课程、**{total}** 份资料（不含索引、模板和历史入口）。', '',
+        n = sum(1 for p in files if classify(p) and classify(p)[0] == course)
+        lines.append(f'| {course} | {n} | [进入](./{quote("课程/" + course + "/index.md")}) |')
+    lines.extend(['', f'共 **{len(names)}** 门课程、**{total}** 份资料。',
                   f'<!-- 仓库内容摘要（不含 README）：{digest.hexdigest()} -->'])
     return before + START + '\n\n' + '\n'.join(lines) + '\n\n' + END + after
 
@@ -126,6 +120,12 @@ def whitelist_rules(files):
 
 
 def render_maintenance(text, files):
+    """维护细则的 AUTO-MAINTENANCE 区块（2026-10-17 同步瘦身）。
+
+    保留：仓库状态三行摘要 + 课程分类一览表 + 验证基线。
+    删除：教材解析进度、原始资料构成、待补提示（与各课 index 重复；
+    「待补」按 2026-10-12 定案归 GitHub issue，不在仓库正文里列）。
+    """
     if text.count(MAINT_START) != 1 or text.count(MAINT_END) != 1 or text.index(MAINT_START) > text.index(MAINT_END):
         raise ValueError(f'{MAINT_PATH} 必须包含唯一且顺序正确的 AUTO-MAINTENANCE 起止标记。')
     before, rest = text.split(MAINT_START)
@@ -149,52 +149,10 @@ def render_maintenance(text, files):
     lines.extend([header, '| :--- | ' + ' | '.join(['---:'] * len(KINDS)) + ' | :--- |'])
     for course in names:
         required = kinds_of(course)
-        # 豁免的分类在表里留列（全仓一张表），格子写「—」以示本课不设该类目录。
         cells = ['—' if kind not in required else str(count_kind(files, course, kind))
                  for kind in KINDS]
         missing = [kind for kind in required if f'课程/{course}/{kind}/index.md' not in files]
         lines.append(f'| {course} | ' + ' | '.join(cells) + ' | ' + ('齐全' if not missing else '缺 ' + '、'.join(missing)) + ' |')
-    lines.append('')
-    lines.extend(['### 教材解析进度', ''])
-    for course in names:
-        if '教材解析' not in kinds_of(course):
-            lines.extend([f'**{course}**（本课声明不设教材解析）', ''])
-            continue
-        paths = sorted(p for p in files if classify(p) == (course, '教材解析'))
-        lines.append(f'**{course}**（{len(paths)} 个文件）')
-        lines.append('')
-        if not paths:
-            lines.append('- 尚未建立章节解析。')
-        for path in paths:
-            heading = re.search(r'^# (.+)$', files[path].decode(), re.M)
-            title = heading.group(1) if heading else PurePosixPath(path).name
-            lines.append(f'- `{path}` — {title}')
-        lines.append('')
-    lines.extend(['### 原始资料构成', ''])
-    exts = {}
-    for course in names:
-        counter = {}
-        for path in files:
-            if classify(path) == (course, '原始资料'):
-                suffix = PurePosixPath(path).suffix.lower() or '（无扩展名）'
-                counter[suffix] = counter.get(suffix, 0) + 1
-        exts[course] = counter
-    lines.extend(['| 课程 | ' + ' | '.join('`' + e + '`' for e in sorted({e for c in exts.values() for e in c})) + ' |',
-                  '| :--- | ' + ' | '.join('---:' for _ in sorted({e for c in exts.values() for e in c})) + ' |'])
-    for course in names:
-        columns = sorted({e for c in exts.values() for e in c})
-        lines.append(f'| {course} | ' + ' | '.join(str(exts[course].get(e, 0)) for e in columns) + ' |')
-    lines.append('')
-    lines.extend(['### 待补提示（自动列出，非错误）', ''])
-    hints = []
-    for course in names:
-        for kind in ('作业', '音频'):
-            if kind in kinds_of(course) and count_kind(files, course, kind) == 0:
-                hints.append(f'- {course}：{kind}目录尚无记录，待正式通知或链接，登记前不得编造。')
-    if hints:
-        lines.extend(hints)
-    else:
-        lines.append('- 各课程应建的分类资料均已有记录。')
     lines.append('')
     lines.extend(['### 验证基线', '',
                   '- `python3 .githooks/update-readme.py --worktree`：同步 README 与维护细则自动区块。',

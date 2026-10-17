@@ -751,6 +751,9 @@ function () {
     pop = null;
     current = null;
   }
+
+  // SPA 换页钩子：dict 按页烘焙，换页必须清缓存（spa-router 调用）
+  window.__glossaryReset = function () { dict = null; close(); };
   function openFor(link) {
     var d = ensureDict();
     if (!d) return;

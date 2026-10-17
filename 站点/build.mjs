@@ -10,6 +10,7 @@ import { parseGlossaryDict, parseGlossaryMatch, renderGlossary, glossifyTex, app
 import { SYMBOL_PACKS, COURSE_ENV, BUILD_PHASES } from './符号环境.mjs';
 import { extractSearchDoc, buildSearchBundle, SEARCH_JS, SEARCH_CSS } from './plugins/site-search.mjs';
 import { WEBMCP_LOADER_JS, WEBMCP_RELAY_JS } from './plugins/webmcp-loader.mjs';
+import { SPA_ROUTER_JS } from './plugins/spa-router.mjs';
 import { WEBMCP_SHIM_JS } from './plugins/webmcp-shim.mjs';
 import { WEBMCP_TOOLS_JS } from './plugins/webmcp-tools.mjs';
 import { TARGET_FILES } from './页面清单.mjs';
@@ -147,6 +148,23 @@ fs.writeFileSync(path.join(webmcpDir, 'webmcp-relay.js'), WEBMCP_RELAY_JS);
 // vendor 第三方资产（polyfill + relay embed/widget）逐字节拷贝。
 copyDir(path.join(SITE_DIR, 'assets', 'vendor', 'webmcp'), path.join(DIST_DIR, 'assets', 'vendor', 'webmcp'));
 console.log('[build] Wrote WebMCP plugins + copied vendor assets (polyfill + relay embed)');
+
+// SPA 路由 + Service Worker（2026-10-17 大重构）：站内点击不重载（fetch → 换正文/TOC/标题），
+//   document 不销毁 ⇒ WebMCP 工具注册一次永久有效。SW 双策略：资产 cache-first、页面 SWR。
+//   可拆卸：删掉本段与模板里 spa-router 一行 + dist/sw.js 即回退。
+fs.writeFileSync(path.join(webmcpDir, 'spa-router.js'), SPA_ROUTER_JS);
+
+// SW：模板 + 本版资产清单（预缓存）注入，写到 dist 根（注册 scope ./ 覆盖全站）
+const swAssets = fs.readdirSync(path.join(DIST_DIR, 'assets', 'plugins'))
+  .map((f) => 'assets/plugins/' + f)
+  .concat(['assets/theme/shirone-reader.js', 'assets/theme/shirone-reader.css',
+           'assets/katex/katex.min.css', 'assets/katex/katex.min.js']);
+const swSrc = fs.readFileSync(path.join(SITE_DIR, 'plugins', 'sw-template.js'), 'utf8')
+  .replace("const VERSION = 'v1';", `const VERSION = 'v${Date.now().toString(36)}';`)
+  .replace('// 预缓存：本版静态资产清单由构建期注入到 SW_ASSETS', '// 预缓存清单（构建期注入）\nconst SW_ASSETS = ' + JSON.stringify(swAssets) + ';')
+  .replace('ASSETS_LIST', JSON.stringify(swAssets));
+fs.writeFileSync(path.join(DIST_DIR, 'sw.js'), swSrc);
+console.log('[build] Wrote spa-router.js + sw.js (assets: ' + swAssets.length + ')');
 
 // 资产版本戳（2026-10-12）：页面里的样式表与脚本引用一律追加 `?v=<内容哈希前 10 位>`。
 // 为什么必须做：这些资产不发指纹文件名、服务器按 mtime 走 304，**改完内容浏览器仍可能用旧副本**
@@ -1393,6 +1411,8 @@ for (const relPath of TARGET_FILES) {
        而 embed.js 靠 document.currentScript.src 定位同目录的 widget.html——
        defer 脚本执行时 readyState 已是 interactive，document.write 会毁掉文档。 -->
   <script src="${rootRel}${assetUrl('assets/plugins/webmcp-relay.js')}"></script>
+  <script src="${rootRel}${assetUrl('assets/plugins/spa-router.js')}" defer></script>
+  <script>if ('serviceWorker' in navigator) { addEventListener('load', function () { navigator.serviceWorker.register('${rootRel}sw.js'); }); }</script>
 </body>
 </html>`;
 
