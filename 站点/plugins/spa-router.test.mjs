@@ -74,3 +74,22 @@ test('sw 预缓存清单来自实际产物', () => {
     assert.ok(fs.existsSync(path.join(HERE, '../dist', rel)), `预缓存文件存在: ${rel}`);
   }
 });
+
+
+test('① 旧缓存页防御：无 data-path 的侧栏导航后 active 不被清空（移动端强调泡消失的回归）', () => {
+  const src = fs.readFileSync(path.join(HERE, 'spa-router.mjs'), 'utf8');
+  assert.ok(src.includes('legacySidebar'), '旧侧栏判定存在');
+  assert.ok(src.includes('无证据时不动') || src.includes('「无证据时不动」'), '设计原则注释在');
+  // 判定语义：发现任一链接缺 data-path ⇒ 跳过重算（保留烘焙态）
+  assert.ok(src.includes('!navLinks[ci].getAttribute("data-path")'), '按缺失判定旧资产');
+});
+
+test('② SW 版本握手：activate 清空 pages 缓存（含本版），杜绝新旧页面组合', () => {
+  const sw = fs.readFileSync(path.join(HERE, 'sw-template.js'), 'utf8');
+  assert.ok(sw.includes("k.startsWith('pages-')"), 'activate 清 pages- 前缀缓存');
+});
+
+test('③ 兜底分级：网络失败先 cache:reload 重试再整页跳', () => {
+  const src = fs.readFileSync(path.join(HERE, 'spa-router.mjs'), 'utf8');
+  assert.ok(src.includes('cache: "reload"'), 'reload 重试存在');
+});
