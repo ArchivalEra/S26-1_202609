@@ -11,6 +11,7 @@ import { SYMBOL_PACKS, COURSE_ENV, BUILD_PHASES } from './符号环境.mjs';
 import { extractSearchDoc, buildSearchBundle, SEARCH_JS, SEARCH_CSS } from './plugins/site-search.mjs';
 import { WEBMCP_LOADER_JS, WEBMCP_RELAY_JS } from './plugins/webmcp-loader.mjs';
 import { SPA_ROUTER_JS } from './plugins/spa-router.mjs';
+import { DRAWER_SYNC_JS } from './plugins/drawer-sync.mjs';
 import { WEBMCP_SHIM_JS } from './plugins/webmcp-shim.mjs';
 import { WEBMCP_TOOLS_JS } from './plugins/webmcp-tools.mjs';
 import { TARGET_FILES } from './页面清单.mjs';
@@ -153,6 +154,7 @@ console.log('[build] Wrote WebMCP plugins + copied vendor assets (polyfill + rel
 //   document 不销毁 ⇒ WebMCP 工具注册一次永久有效。SW 双策略：资产 cache-first、页面 SWR。
 //   可拆卸：删掉本段与模板里 spa-router 一行 + dist/sw.js 即回退。
 fs.writeFileSync(path.join(webmcpDir, 'spa-router.js'), SPA_ROUTER_JS);
+fs.writeFileSync(path.join(webmcpDir, 'drawer-sync.js'), DRAWER_SYNC_JS);
 
 // SW：模板 + 本版资产清单（预缓存）注入，写到 dist 根（注册 scope ./ 覆盖全站）
 const swAssets = fs.readdirSync(path.join(DIST_DIR, 'assets', 'plugins'))
@@ -1411,6 +1413,7 @@ for (const relPath of TARGET_FILES) {
        而 embed.js 靠 document.currentScript.src 定位同目录的 widget.html——
        defer 脚本执行时 readyState 已是 interactive，document.write 会毁掉文档。 -->
   <script src="${rootRel}${assetUrl('assets/plugins/webmcp-relay.js')}"></script>
+  <script src="${rootRel}${assetUrl('assets/plugins/drawer-sync.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/spa-router.js')}" defer></script>
   <script>if ('serviceWorker' in navigator) { addEventListener('load', function () { navigator.serviceWorker.register('${rootRel}sw.js'); }); }</script>
 </body>
