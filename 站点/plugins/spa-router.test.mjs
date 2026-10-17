@@ -40,13 +40,6 @@ test('SPA_ROUTER_JS 源码形状：三个 reset 钩子调用与兜底都在', ()
   assert.ok(src.includes('location.href = url'), '失败兜底整页跳转');
 });
 
-test('SPA 换页重算左侧栏 active（用户报「页面变了侧边栏强调位置没变」）', () => {
-  const src = fs.readFileSync(path.join(HERE, 'spa-router.mjs'), 'utf8');
-  assert.ok(src.includes('drawer-nav'), '侧栏重算逻辑存在');
-  assert.ok(src.includes('classList.toggle("active"'), 'active 类切换');
-  assert.ok(src.includes('expanded'), 'active 链分组展开');
-});
-
 test('三个插件真的暴露了 reset 钩子（构建产物检查）', () => {
   const g = fs.readFileSync(path.join(HERE, '../dist/assets/plugins/math-glossary.js'), 'utf8');
   assert.ok(g.includes('__glossaryReset'), 'math-glossary 暴露 __glossaryReset');
@@ -76,12 +69,10 @@ test('sw 预缓存清单来自实际产物', () => {
 });
 
 
-test('① 旧缓存页防御：无 data-path 的侧栏导航后 active 不被清空（移动端强调泡消失的回归）', () => {
-  const src = fs.readFileSync(path.join(HERE, 'spa-router.mjs'), 'utf8');
-  assert.ok(src.includes('legacySidebar'), '旧侧栏判定存在');
-  assert.ok(src.includes('无证据时不动') || src.includes('「无证据时不动」'), '设计原则注释在');
-  // 判定语义：发现任一链接缺 data-path ⇒ 跳过重算（保留烘焙态）
-  assert.ok(src.includes('!navLinks[ci].getAttribute("data-path")'), '按缺失判定旧资产');
+test('① 旧缓存页防御：无 data-path 的侧栏 active 不被清空（守卫已迁 drawer-sync）', () => {
+  const src = fs.readFileSync(path.join(HERE, 'drawer-sync.mjs'), 'utf8');
+  assert.ok(src.includes('无证据时不动'), '设计原则注释在');
+  assert.ok(src.includes('return undefined'), '旧资产返回 undefined（不动）');
 });
 
 test('② SW 版本握手：activate 清空 pages 缓存（含本版），杜绝新旧页面组合', () => {
