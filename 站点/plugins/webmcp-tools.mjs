@@ -30,6 +30,7 @@
  *   site_search         用页面自带的搜索面板搜（返回命中标题与链接）
  *   site_show_symbol    查页面上某个符号（点开它的气泡）
  *   site_toggle_panels  展开/收起全部折叠面板
+ *   site_capture_view   把当前页截成 JPEG（**宿主注入能力**：页面自身无权截图）
  */
 
 // ════════════════════════════════════════════════════════════════
@@ -143,7 +144,64 @@ export function createPageView(doc, loc) {
     return { panel: doc.getElementById(S.searchPanel), input: doc.getElementById(S.searchInput) };
   }
 
-  return { headings, pageInfo, openSection, togglePanels, findSymbol, searchResults, searchUi };
+  /**
+   * 把当前视口截成 JPEG（**能力由宿主注入**，页面自身无权截图）。
+   *
+   * 页面只能提供「截什么」的元信息（标题、URL、视口尺寸、滚动位置），真正的像素
+   * 由宿主拿——扩展用 `chrome.tabs.captureVisibleTab`，无头环境用 CDP
+   * `Page.captureScreenshot`。两条路都返回同一形状，产品侧不必分叉。
+   *
+   * @param {object} [opts]
+   * @param {string} [opts.format] 'jpeg'（默认）| 'png'
+   * @param {number} [opts.quality] 1-100，JPEG 有效，默认 80
+   * @param {boolean} [opts.fullPage] true = 整页（需宿主支持），默认 false（视口）
+   * @param {string} [opts.reason] 截图理由（宿主日志/审计用）
+   * @returns {Promise<{ok:boolean, mimeType?:string, dataUrl?:string, width?:number,
+   *   height?:number, bytes?:number, title?:string, url?:string, reason?:string,
+   *   scrollY?:number, docHeight?:number, viewport?:{w:number,h:number}>}>}
+   */
+  function captureView(opts, win) {
+    const o = opts || {};
+    const w = win || (doc && doc.defaultView) || null;
+    const viewport = w ? { w: w.innerWidth || 0, h: w.innerHeight || 0 } : { w: 0, h: 0 };
+    const meta = {
+      title: (doc && doc.title) || '',
+      url: (location && location.href) || '',
+      scrollY: w ? Math.round(w.scrollY || 0) : 0,
+      docHeight: doc && doc.documentElement ? doc.documentElement.scrollHeight : 0,
+      viewport,
+      reason: String(o.reason || ''),
+    };
+    // 宿主能力：页面里唯一合法的来源。**不在这里做任何 canvas 截图**——
+    // 页面截不到浏览器 chrome，也拿不到跨域资源，硬做只会得到一张半白图。
+    const provider = (w && typeof w.__siteCapture === 'function') ? w.__siteCapture : null;
+    if (!provider) {
+      return Promise.resolve({
+        ...meta, ok: false, reason: 'capture_unavailable',
+        hint: '宿主未注入截图能力：扩展侧需提供 window.__siteCapture（chrome.tabs.captureVisibleTab 等）',
+      });
+    }
+    const format = (o.format === 'png') ? 'png' : 'jpeg';
+    const quality = Math.max(1, Math.min(100, Number(o.quality) || 80));
+    return Promise.resolve()
+      .then(() => provider({ format, quality, fullPage: !!o.fullPage, meta }))
+      .then((res) => {
+        if (!res || !res.dataUrl) {
+          return { ...meta, ok: false, reason: 'capture_failed', detail: res && res.error ? String(res.error) : '' };
+        }
+        // 粗估字节数（base64 长度 × 3/4）——产品侧据此决定要不要降质量重截。
+        const b64 = String(res.dataUrl).split(',')[1] || '';
+        return {
+          ...meta,
+          ok: true, mimeType: res.mimeType || `image/${format}`, dataUrl: res.dataUrl,
+          width: res.width || viewport.w, height: res.height || viewport.h,
+          bytes: Math.round(b64.length * 3 / 4),
+        };
+      })
+      .catch((e) => ({ ...meta, ok: false, reason: 'capture_error', detail: String((e && e.message) || e) }));
+  }
+
+  return { headings, pageInfo, openSection, togglePanels, findSymbol, searchResults, searchUi, captureView };
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -235,6 +293,20 @@ export function buildToolDefs(doc, win) {
       description: '展开或收起本页全部折叠面板（不传 open 则切换）。',
       inputSchema: { type: 'object', properties: { open: { type: 'boolean' } } },
       execute: (a) => view.togglePanels(a && a.open),
+    },
+    {
+      name: 'site_capture_view',
+      description: '把当前页面截成 JPEG 图片（宿主注入能力），供看不见页面的模型查看版面与图表。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          format: { type: 'string', enum: ['jpeg', 'png'] },
+          quality: { type: 'number' },
+          fullPage: { type: 'boolean' },
+          reason: { type: 'string' },
+        },
+      },
+      execute: (a) => view.captureView(a, w),
     },
   ];
 }
