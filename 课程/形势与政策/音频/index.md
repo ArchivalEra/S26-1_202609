@@ -3,7 +3,7 @@ id: okf.course.situation_policy.audio.index
 name: 形势与政策音频索引
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-09-21"
+last_updated: "2026-10-11"
 stewards:
   - team: 形势与政策课程学习记录
 course: 形势与政策

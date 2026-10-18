@@ -3,7 +3,7 @@ id: okf.course.engineering_math.textbook.part1_index
 name: 第一部分 线性代数 · 章节索引
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-09-19"
+last_updated: "2026-10-11"
 stewards:
   - team: 工程数学课程学习记录
 course: 工程数学

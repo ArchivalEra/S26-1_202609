@@ -3,7 +3,7 @@ id: okf.course.electric_machinery.audio.index
 name: 电机学音频索引
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-09-22"
+last_updated: "2026-10-12"
 stewards:
   - team: 电机学课程学习记录
 course: 电机学

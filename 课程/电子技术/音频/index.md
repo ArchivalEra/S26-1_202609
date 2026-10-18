@@ -3,7 +3,7 @@ id: okf.course.electronics.audio.index
 name: 电子技术音频索引
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-09-21"
+last_updated: "2026-10-11"
 stewards:
   - team: 电子技术课程学习记录
 course: 电子技术

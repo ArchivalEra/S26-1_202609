@@ -3,7 +3,7 @@ id: okf.course.engineering_math.audio.index
 name: 工程数学音频索引
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-09-17"
+last_updated: "2026-10-11"
 stewards:
   - team: 工程数学课程学习记录
 course: 工程数学
