@@ -60,7 +60,7 @@ self.addEventListener('fetch', (ev) => {
     return;
   }
 
-  // 页面 HTML：stale-while-revalidate
+  // 页面 HTML：stale-while-revalidate + 导航 404 兜底（2026-10-18）
   if (/(\/|\.html)$/.test(url.pathname)) {
     ev.respondWith((async () => {
       const cache = await caches.open(PAGE_CACHE);
@@ -71,7 +71,36 @@ self.addEventListener('fetch', (ev) => {
         return res;
       }).catch(() => null);
       if (hit) return hit;          // 秒开旧版，后台刷新下次生效
-      const fresh = await refresh;  // 未命中：等网络
+      // 未命中：等网络。老缓存页（SWR 秒开的那版）里可能还是修复前的**相对错位链接**
+      // ——从新 location 解析出的双拼路径（/课程/A/课程/A/…）。剥部署前缀解决不了它
+      // （双拼在中段），要做的是**把重复段折叠回去**：定位路径里第二次出现的顶层段
+      // 起点（/课程/），截取其后部分再拼回 scope，即得正确 URL。重试一次，命中就回正确页。
+      const fresh = await refresh;
+      if (fresh && fresh.status === 404 && req.mode === 'navigate' && /\.html$/.test(url.pathname)) {
+        // ⚠️ url.pathname 是 percent-encoded 形态（中文变成 %E8%AF%BE…），
+        // '/课程/' 的 indexOf 必须在 **decode 之后**做；拼回 URL 再交给 fetch 编码。
+        const scope = new URL(self.registration.scope);
+        const scopePath = decodeURIComponent(scope.pathname).replace(/\/+$/, '') + '/';
+        // 统一为「以 / 开头的仓库相对路径」再找双拼，根部署与子路径部署同一算法：
+        // 根部署 tail='课程/A/课程/A/X'；子路径部署 tail 同为 '课程/A/…'（scope 已剥）。
+        const decoded = decodeURIComponent(url.pathname);
+        const tail = decoded.startsWith(scopePath) ? '/' + decoded.slice(scopePath.length) : decoded;
+        // 双拼折叠：tail 里第二次出现 '/课程/' ⇒ 从那里截断（/课程/A/课程/A/X → 课程/A/X）。
+        // 返回 **308 重定向**到正确 URL——不能直接回 retry 的 HTML：地址栏会停在错位
+        // URL，页面里的相对资源（../assets/…）从错位位置解析照样 404，整页 JS 全挂。
+        // 重定向让浏览器把地址栏换成正确 URL，资源解析全部归位。
+        const dupe = tail.indexOf('/课程/', 1);
+        if (dupe > 0) {
+          const folded = tail.slice(dupe + 1);  // 无开头 /，挂在 scope 尾部
+          if (/\.html$/.test(folded)) {
+            const fixed = scope.origin + scope.pathname.replace(/\/+$/, '') + '/' + folded.split('/').map(encodeURIComponent).join('/');
+            if (fixed !== url.href) {
+              console.warn('[sw] 导航 404 兜底（双拼折叠重定向）:', decoded, '→', fixed);
+              return Response.redirect(fixed, 308);
+            }
+          }
+        }
+      }
       return fresh || new Response('离线且无缓存', { status: 504, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
     })());
     return;

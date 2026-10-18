@@ -1149,19 +1149,13 @@ for (const relPath of TARGET_FILES) {
       // Default expanded if active, or any descendant is active, or top-level "课程总览"
       const isExpanded = isDescendantActive || (depth === 0 && node.label === "课程总览");
 
+      // 有子节点的组节点：一律纯标题（可点开折叠，不跳页）。它的 path 不再出链接——
+      // 若组节点链接指向「下级第一页」（电机学章节点就是这种写法），URL 与子项相同，
+      // 强调判定会父子一起亮；组节点自身没有独立页面内容，链接是空转（2026-10-18 定案）。
       if (hasChildren) {
-        const itemMeta = node.path ? pageMetaMap.get(node.path) : null;
-        const itemHref = node.path ? `${rootRel}${itemMeta ? itemMeta.htmlRelPath : node.path}` : '';
-
         out += `<li class="drawer-nav-group ${isExpanded ? 'expanded' : 'collapsed'}">
-          <div class="nav-group-header ${!node.path ? 'nav-header-clickable' : ''}">
-            ${node.path ? `
-              <a href="${itemHref}" data-path="${itemMeta ? itemMeta.htmlRelPath : node.path}" class="drawer-nav-link ${isActive ? 'active' : ''}">
-                <span>${node.label}</span>
-              </a>
-            ` : `
-              <span class="drawer-section-title-text">${node.label}</span>
-            `}
+          <div class="nav-group-header nav-header-clickable">
+            <span class="drawer-section-title-text">${node.label}</span>
             <button class="nav-collapse-btn" aria-label="折叠或展开 ${node.label}" title="折叠/展开">
               <svg class="chevron-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
             </button>
