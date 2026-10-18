@@ -3,7 +3,7 @@ id: okf.course.circuit_theory.walkthrough
 name: 电路原理 Walkthrough
 type: Guide
 spec_version: "0.2"
-last_updated: "2026-10-12"
+last_updated: "2026-10-14"
 stewards:
   - team: 电路原理课程学习记录
 course: 电路原理

@@ -3,7 +3,7 @@ id: okf.course.circuit_theory.homework.index
 name: 电路原理作业索引
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-15"
+last_updated: "2026-10-14"
 stewards:
   - team: 电路原理课程学习记录
 course: 电路原理

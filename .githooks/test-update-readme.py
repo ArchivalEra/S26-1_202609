@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise commits and pushes exclusively in temporary local repositories."""
 from pathlib import Path
+import datetime
 import os
 import shutil
 import subprocess
@@ -123,6 +124,37 @@ class ReadmeHookTest(unittest.TestCase):
         self.readme.write_text(self.readme.read_text().replace('# 学期', '# 学期总览'))
         self.stage()
         self.git('commit', '-m', '只改 README 不受限')
+
+    def test_last_updated_is_derived_not_handwritten(self):
+        """last_updated 是推导字段（2026-10-17 定案）：钩子按各文件自己的提交日期写，手抄无效。"""
+        note = self.write('课程/工程数学/课堂笔记/2026-09-18-日期.md',
+                          '---\nlast_updated: "2000-01-01"\n---\n\n# 日期测试\n')
+        self.index.write_text('[笔记](2026-09-17-test.md)\n[日期](2026-09-18-日期.md)\n')
+        self.stage()
+        self.git('commit', '-m', '新资料：手抄日期被提交日覆盖')
+        today = datetime.date.today().isoformat()
+        self.assertIn(f'last_updated: "{today}"', note.read_text())
+
+        # 回溯提交日期后，未再改动的文件日期对齐为**它自己的**提交日
+        back = self.write('课程/工程数学/课堂笔记/2026-09-19-回溯.md',
+                          '---\nlast_updated: "2000-01-01"\n---\n\n# 回溯测试\n')
+        self.index.write_text('[笔记](2026-09-17-test.md)\n[日期](2026-09-18-日期.md)\n'
+                              '[回溯](2026-09-19-回溯.md)\n')
+        self.stage()
+        self.git('commit', '--date=2026-09-01', '-m', '回溯日期提交')
+        self.note.write_text(self.note.read_text() + '\n补充。\n')
+        self.index.write_text('[笔记](2026-09-17-test.md)\n[日期](2026-09-18-日期.md)\n'
+                              '[回溯](2026-09-19-回溯.md)\n\n更新。\n')
+        self.stage()
+        self.git('commit', '-m', '无关改动：回溯文件日期对齐回 2026-09-01')
+        self.assertIn('last_updated: "2026-09-01"', back.read_text())
+
+        # 手改日期行：不算内容变化（不要求同步索引），且提交时被钩子改回正确值
+        back.write_text(back.read_text().replace('last_updated: "2026-09-01"',
+                                                 'last_updated: "1999-12-31"'))
+        self.stage()
+        self.git('commit', '--allow-empty', '-m', '手改日期被纠正')
+        self.assertIn('last_updated: "2026-09-01"', back.read_text())
 
     def test_deep_link_anchor_validation(self):
         """深链接的锚点在目标文件里必须真实存在，否则提交被拒。"""

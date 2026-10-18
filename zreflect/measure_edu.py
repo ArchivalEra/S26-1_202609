@@ -54,7 +54,11 @@ PLUGIN_TESTS_CMD = (
     "cd 站点 && node --test plugins/*.test.mjs 2>&1 | grep -oE 'tests [0-9]+' | head -1 | grep -oE '[0-9]+'"
 )
 
-# (键, 复跑命令, 出处, 备注)
+# (键, 复跑命令, 出处, 备注) —— 可选第五列：dict，透传 ledger.fact() 的贵事实参数
+# （replay=False / witness / calibrate，见 ledger.py 的三档设计）。
+HOOKTESTS_WITNESS = (
+    "grep -c 'def test_' .githooks/test-update-readme.py"
+)
 TABLE = [
     ("courses", "ls -d 课程/*/ | wc -l", "课程/", "课程门数"),
     ("notes", "find 课程 -path '*/课堂笔记/*.md' ! -name 'index.md' | wc -l",
@@ -71,7 +75,11 @@ TABLE = [
      "三个符号包的词条合计（电机学 / 电路原理 / 工程数学）"),
     ("sitepages", SITEPAGES_CMD, "站点/build.mjs", "站点页数（TARGET_FILES 条数）"),
     ("md_files", "git ls-files '*.md' | wc -l", "repo", "受管 Markdown 篇数"),
-    ("hooktests", HOOKTESTS_CMD, ".githooks/test-update-readme.py", "钩子集成测试项数"),
+    ("hooktests", HOOKTESTS_CMD, ".githooks/test-update-readme.py", "钩子集成测试项数",
+     # 贵事实：值 = 完整跑一遍测试套件（>10s，超复跑闸门超时）。按三档设计挂便宜
+     # 见证——来源是「测试文件里声明了多少项」，命令活着、数量对了才算数。
+     {"replay": False, "witness": HOOKTESTS_WITNESS,
+      "witness_expect": "25"}),
     ("plugin_tests", PLUGIN_TESTS_CMD, "站点/plugins/", "站点插件测试项数"),
 ]
 
@@ -89,14 +97,15 @@ def _sh(cmd):
 def measure():
     """量一遍全部事实。值 = 复跑命令的 stdout —— 两者同源，不可能漂。"""
     facts = {}
-    for key, cmd, source, note in TABLE:
+    for row in TABLE:
+        key, cmd, source, note, *extra = row
         out = _sh(cmd)
         try:
             value = int(out)
         except ValueError:
             raise SystemExit("FATAL: `%s` 的度量命令输出不是整数：%r（cmd=%s）"
                              % (key, out, cmd))
-        facts[key] = fact(value, cmd, source, note)
+        facts[key] = fact(value, cmd, source, note, **(extra[0] if extra else {}))
     return facts
 
 

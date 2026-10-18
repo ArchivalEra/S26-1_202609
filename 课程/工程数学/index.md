@@ -3,7 +3,7 @@ id: okf.course.engineering_math.index
 name: 工程数学课程索引
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-11"
+last_updated: "2026-10-18"
 stewards:
   - team: 工程数学课程学习记录
 course: 工程数学
@@ -16,6 +16,10 @@ sources:
 
 [返回课程总索引](../index.md)
 
+## 分类
+
+[作业](./作业/index.md) · [教材解析](./教材解析/index.md) · [课堂笔记](./课堂笔记/index.md) · [原始资料](./原始资料/index.md) · [音频](./音频/index.md)
+
 ## 材料清单
 
 | 文件名 | 日期 | 类别 | 内容 | SHA-256（前 12 位） |
@@ -24,7 +28,3 @@ sources:
 | `20260924_14101540-原文.doc` | 2026-09-24 | 原始资料 | 课堂转写原件 | `b5e26ef9d8d4` |
 | `20261008_13301523-原文.txt` | 2026-10-08 | 原始资料 | 课堂转写原件 | `4d24080b05e3` |
 | `20261008_15231545-原文.txt` | 2026-10-08 | 原始资料 | 课堂转写原件 | `645edd3ff9be` |
-
-## 分类
-
-[作业](./作业/index.md) · [教材解析](./教材解析/index.md) · [课堂笔记](./课堂笔记/index.md) · [原始资料](./原始资料/index.md) · [音频](./音频/index.md)

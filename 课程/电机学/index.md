@@ -3,7 +3,7 @@ id: okf.course.electric_machinery.index
 name: 电机学课程索引
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-11"
+last_updated: "2026-10-18"
 stewards:
   - team: 电机学课程学习记录
 course: 电机学
@@ -15,6 +15,10 @@ sources:
 # 电机学
 
 [返回课程总索引](../index.md)
+
+## 分类
+
+[作业](./作业/index.md) · [教材解析](./教材解析/index.md) · [课堂笔记](./课堂笔记/index.md) · [原始资料](./原始资料/index.md) · [音频](./音频/index.md)
 
 ## 材料清单
 
@@ -73,7 +77,3 @@ sources:
 | `IMG20261015114917.heic` | — | 原始资料 | 习题 2-4(2)~2-8；图 2-25 习题 2-6 图；表 2- | `6fb637b03fac` |
 | `IMG20261015114925.heic` | — | 原始资料 | 习题 2-8(2)、2-9（125000 kVA、YNd）；本页下半 | `24f023be209d` |
 | `Screenshot_2026-10-15-10-33-15-41_a935a6faaffa07c582f2c3acde62ae6b.jpg` | — | 原始资料 | 1. 计算题：三相变压器 $S_N=500$ kVA、$f_N=50 | `c2003a12a0e8` |
-
-## 分类
-
-[作业](./作业/index.md) · [教材解析](./教材解析/index.md) · [课堂笔记](./课堂笔记/index.md) · [原始资料](./原始资料/index.md) · [音频](./音频/index.md)

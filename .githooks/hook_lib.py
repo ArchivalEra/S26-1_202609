@@ -4,6 +4,8 @@
 每次提交时从暂存内容重新生成两处自动区块：
 - README.md 的 AUTO-CATALOG：课程目录。
 - 维护细则.md 的 AUTO-MAINTENANCE：仓库状态、解析进度与验证基线。
+- 各 md frontmatter 的 last_updated：按「该文件自己的最后一次实质修改」推导
+  （实质变更 ⇒ 提交当日；未变 ⇒ 最后一次实质修改该文件的提交日期），自动改写入库。
 
 推送前校验待推送提交里的两处区块都已同步。
 """
@@ -368,17 +370,146 @@ def validate(files):
     check_exam_prep(files)
 
 
+# ── last_updated：推导字段（2026-10-17 定案）────────────────────────────────────
+# 「last_updated 需要手动更新」是个假事实：日期本来就映射「该文件自己的最后一次
+# 实质修改」，直接由 git 推导——实质变更（剥掉日期行后内容仍不同）⇒ 提交当日；
+# 未变 ⇒ 最后一次**实质**修改该文件的提交日期（纯改日期行的提交不算修改——
+# 否则钩子自己的纠正会让日期永漂不居）。钩子每次提交自动改写并 git add，手抄作废；
+# 只改日期行不算内容变化——既不能充当「索引已更新」，也不触发 handoff 时效。
+# （开课/结课的 status 不同：那是上位事实，仍由 README 课程状态表统一传导。）
+LAST_UPDATED_LINE_RE = re.compile(r'(?m)^(last_updated:[ \t]*"?)[^"\n]*("?[ \t]*)$')
+
+
+def _frontmatter_date_match(path, data):
+    """md 带 frontmatter 且含 last_updated 键 ⇒ (全文文本, 行匹配)；否则 None。"""
+    if not path.endswith('.md'):
+        return None
+    try:
+        text = data.decode('utf-8')
+    except UnicodeDecodeError:
+        return None
+    if not text.startswith('---\n'):
+        return None
+    end = text.find('\n---', 4)
+    if end < 0:
+        return None
+    m = LAST_UPDATED_LINE_RE.search(text[:end])
+    return (text, m) if m else None
+
+
+def normalized_for_compare(path, data):
+    """比较用的规范化内容：md 的 last_updated 行值抹平（日期是推导字段，不算内容）。"""
+    if not path.endswith('.md'):
+        return data
+    try:
+        text = data.decode('utf-8')
+    except UnicodeDecodeError:
+        return data
+    if not text.startswith('---\n'):
+        return data
+    end = text.find('\n---', 4)
+    if end < 0:
+        return data
+    head = LAST_UPDATED_LINE_RE.sub(lambda m: m.group(1) + '@' + m.group(2), text[:end], count=1)
+    return (head + text[end:]).encode('utf-8')
+
+
+def last_commit_dates(paths):
+    """每个路径最后一次**实质**修改的提交日期（YYYY-MM-DD）。
+
+    git log 新→旧拿候选提交（core.quotePath=off——中文路径不转义成八进制，
+    否则永远查不到、全部回退成「今天」）；每个路径从最新候选往回走，
+    剥掉 last_updated 行比较前后 blob——只有实质变更的提交才算数，
+    钩子自己改写日期产生的提交被跳过，日期因此收敛不漂。
+    """
+    if not paths:
+        return {}
+    candidates = {}
+    current = None
+    out = git('-c', 'core.quotePath=off', 'log', '--date=short',
+              '--format=@%H %ad', '--name-only', '--no-renames').decode('utf-8')
+    for line in out.splitlines():
+        if line.startswith('@'):
+            current = tuple(line[1:].split(' ', 1))
+        elif line and current is not None:
+            candidates.setdefault(line, []).append(current)
+    dates = {}
+    for path in paths:
+        for commit, date in candidates.get(path, ()):
+            # 父提交没有该路径 ⇒ 本次为新增；本提交没有 ⇒ 该提交删除了它，都不算修改。
+            # cat-file 的 stderr 静音：这两种情况是正常分支，不该往钩子输出里喷 git 报错。
+            def blob(ref):
+                result = subprocess.run(['git', 'cat-file', 'blob', f'{ref}:{path}'],
+                                        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                return result.stdout if result.returncode == 0 else None
+            new = blob(commit)
+            old = blob(commit + '^')
+            if new is not None and (old is None
+                                    or normalized_for_compare(path, new) != normalized_for_compare(path, old)):
+                dates[path] = date
+                break
+    return dates
+
+
+def sync_last_updated(files, base, worktree=False):
+    """把 md frontmatter 的 last_updated 对齐为该文件自己的最后一次实质修改日期。
+
+    实质变更（相对基线，剥掉日期行后内容仍不同）⇒ 提交当日；新文件 ⇒ 提交当日；
+    未变 ⇒ 最后一次实质修改它的提交日期。改写工作区、更新 files 快照；提交模式
+    下 git add（与两处自动区块同一模式）。模板/ 保留占位值不碰；工作区与暂存
+    不一致的文件跳过（不把未暂存编辑带入提交）。
+    """
+    base = base or {}
+    today = datetime.date.today().isoformat()
+    entries = []
+    for path, data in sorted(files.items()):
+        if path.startswith('模板/'):
+            continue
+        hit = _frontmatter_date_match(path, data)
+        if hit:
+            entries.append((path, *hit))
+    unchanged, targets = [], {}
+    for path, text, m in entries:
+        if path not in base or normalized_for_compare(path, files[path]) != normalized_for_compare(path, base[path]):
+            targets[path] = today
+        else:
+            unchanged.append(path)
+    targets.update(last_commit_dates(unchanged))
+    changed = []
+    for path, text, m in entries:
+        target = targets.get(path, today)
+        if m.group(0) == m.group(1) + target + m.group(2):
+            continue
+        p = Path(path)
+        if not worktree and (not p.is_file() or p.read_bytes() != files[path]):
+            print(f'[last_updated] {path}：工作区与暂存不一致，跳过日期对齐')
+            continue
+        new = (text[:m.start()] + m.group(1) + target + m.group(2) + text[m.end():]).encode('utf-8')
+        p.write_bytes(new)
+        files[path] = new
+        changed.append(path)
+    if changed and not worktree:
+        git('add', '--', *changed)
+        print(f'last_updated 已按各文件自己的提交日期自动对齐：{len(changed)} 个文件。')
+    return changed
+
+
 def changed_paths(files, base):
-    """相对基线有变化的路径：新增、修改、删除都算。"""
-    return {p for p in set(files) | set(base) if files.get(p) != base.get(p)}
+    """相对基线有变化的路径：新增、删除、修改都算（md 只改 last_updated 行不算）。"""
+    def differs(p):
+        if p in files and p in base:
+            return normalized_for_compare(p, files[p]) != normalized_for_compare(p, base[p])
+        return files.get(p) != base.get(p)
+    return {p for p in set(files) | set(base) if differs(p)}
 
 
 def check_index_sync(files, base):
     """课程资料有变动，对应分类索引必须在同一次提交更新。
 
-    规则：`课程/<课程>/<类别>/` 下任何文件（不含 index.md）内容变化——
-    新增、删除、修改都算——则 `课程/<课程>/<类别>/index.md` 必须同时变化。
-    索引是该类资料的登记处（含 `last_updated`），资料动了索引不动即为过期。
+    规则：`课程/<课程>/<类别>/` 下任何文件（不含 index.md）实质变化——
+    新增、删除、修改都算；只改 last_updated 不算（那是推导字段，钩子自动写）——
+    则 `课程/<课程>/<类别>/index.md` 必须同时变化。
+    索引是该类资料的登记处，资料动了索引不动即为过期。
     """
     if base is None:
         return
@@ -393,8 +524,7 @@ def check_index_sync(files, base):
     problems = [f'{index}：' + '、'.join(items)
                 for index, items in sorted(stale.items()) if index not in changed]
     if problems:
-        raise ValueError('课程资料有变动，必须在同一次提交更新对应分类索引（并更新其中的 '
-                         'last_updated）—— ' + '；'.join(problems))
+        raise ValueError('课程资料有变动，必须在同一次提交更新对应分类索引—— ' + '；'.join(problems))
 
 
 BUILD_SCRIPT = '站点/build.mjs'
@@ -607,6 +737,8 @@ def sync(worktree=False):
         check_worktree_sync(files)
     if MAINT_PATH not in files:
         raise ValueError(f'缺少 {MAINT_PATH}，无法生成自动状态区块。')
+    # last_updated 是推导字段：先对齐日期再算自动区块——摘要里看到的是最终内容。
+    sync_last_updated(files, head_snapshot(), worktree)
     # 维护细则的内容摘要不包含 README 与本文件，先算；README 的摘要包含维护细则，
     # 必须基于“已更新的维护细则”计算，否则推送时两处区块会互相判定为未同步。
     maintenance = render_maintenance(files[MAINT_PATH].decode(), files).encode()

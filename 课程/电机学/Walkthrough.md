@@ -3,7 +3,7 @@ id: okf.course.electrical_machines.walkthrough
 name: 电机学 Walkthrough
 type: Guide
 spec_version: "0.2"
-last_updated: "2026-10-12"
+last_updated: "2026-10-15"
 stewards:
   - team: 电机学课程学习记录
 course: 电机学
