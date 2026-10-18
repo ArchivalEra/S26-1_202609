@@ -186,10 +186,11 @@ test('searchResults：读 DOM 的命中与总数（认「共 N 页命中」文�
   assert.equal(r.hits[0].title, '电机学 2026-10-08');
 });
 
-test('buildToolDefs：五个工具、名字与 schema 齐备', () => {
+test('buildToolDefs：六个工具、名字与 schema 齐备', () => {
   const defs = buildToolDefs(fakeDoc());
   assert.deepEqual(defs.map((d) => d.name), [
     'site_get_page_info', 'site_open_section', 'site_search', 'site_show_symbol', 'site_toggle_panels',
+    'site_capture_view',
   ]);
   for (const d of defs) {
     assert.ok(d.description && d.description.length > 10, `${d.name} 缺 description`);
@@ -211,6 +212,57 @@ test('site_toggle_panels.execute：传 open 后生效', async () => {
   const r = await defs[4].execute({ open: true });
   assert.equal(r.open, true);
   assert.equal(doc.querySelector('details').open, true);
+});
+
+test('site_capture_view：宿主未注入能力时明确报错（不静默、不假成功）', async () => {
+  const defs = buildToolDefs(fakeDoc());
+  const r = await defs[5].execute({});
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'capture_unavailable');
+  assert.ok(r.hint && r.hint.includes('__siteCapture'), '要告诉宿主该注入什么');
+  assert.ok(r.url && r.title, '即使失败也回页面元信息，宿主日志能定位');
+});
+
+test('site_capture_view：有宿主能力时透传参数并回 JPEG dataUrl', async () => {
+  const doc = fakeDoc();
+  const seen = [];
+  const win = {
+    innerWidth: 390, innerHeight: 844, scrollY: 120,
+    __siteCapture: (opts) => {
+      seen.push(opts);
+      return Promise.resolve({
+        dataUrl: 'data:image/jpeg;base64,' + 'A'.repeat(400),
+        mimeType: 'image/jpeg', width: 390, height: 844,
+      });
+    },
+  };
+  const defs = buildToolDefs(doc, win);
+  const r = await defs[5].execute({ format: 'jpeg', quality: 70, reason: '看版面' });
+  assert.equal(r.ok, true);
+  assert.equal(r.mimeType, 'image/jpeg');
+  assert.ok(r.dataUrl.startsWith('data:image/jpeg;base64,'));
+  assert.equal(r.width, 390);
+  assert.equal(r.height, 844);
+  assert.equal(r.bytes, 300, 'base64 长度 400 ⇒ 约 300 字节');
+  assert.equal(r.reason, '看版面');
+  assert.equal(r.viewport.w, 390);
+  assert.equal(seen[0].format, 'jpeg');
+  assert.equal(seen[0].quality, 70);
+  assert.equal(seen[0].meta.scrollY, 120);
+});
+
+test('site_capture_view：宿主抛错/回空都收敛成 ok:false（不把异常漏给模型）', async () => {
+  const doc = fakeDoc();
+  const boom = buildToolDefs(doc, { innerWidth: 1, innerHeight: 1, __siteCapture: () => { throw new Error('quota'); } });
+  const r1 = await boom[5].execute({});
+  assert.equal(r1.ok, false);
+  assert.equal(r1.reason, 'capture_error');
+  assert.ok(r1.detail.includes('quota'));
+
+  const empty = buildToolDefs(doc, { innerWidth: 1, innerHeight: 1, __siteCapture: () => Promise.resolve({}) });
+  const r2 = await empty[5].execute({});
+  assert.equal(r2.ok, false);
+  assert.equal(r2.reason, 'capture_failed');
 });
 
 test('site_open_section.execute：按锚点跳', async () => {
@@ -263,21 +315,22 @@ test('registerTools：探测两个注册表；都没有时返回 0 且不抛', (
   assert.equal(registerTools(null, {}), 0);
 });
 
-test('registerTools：document 侧注册表可用时注册 5 个（Chromium 形态）', () => {
+test('registerTools：document 侧注册表可用时注册 6 个（Chromium 形态）', () => {
   const registered = [];
   const doc = fakeDoc();
   doc.modelContext = { registerTool: (t) => { registered.push(t.name); return Promise.resolve(); } };
-  assert.equal(registerTools(doc, null), 5);
+  assert.equal(registerTools(doc, null), 6);
   assert.deepEqual(registered, [
     'site_get_page_info', 'site_open_section', 'site_search', 'site_show_symbol', 'site_toggle_panels',
+    'site_capture_view',
   ]);
 });
 
 test('registerTools：只有 navigator 侧时也注册（Firefox 原生形态）', () => {
   const registered = [];
   const nav = { modelContext: { registerTool: (t) => { registered.push(t.name); return Promise.resolve(); } } };
-  assert.equal(registerTools(fakeDoc(), nav), 5);
-  assert.equal(registered.length, 5);
+  assert.equal(registerTools(fakeDoc(), nav), 6);
+  assert.equal(registered.length, 6);
 });
 
 test('registerTools：单个工具注册失败不影响其余', () => {
@@ -286,7 +339,7 @@ test('registerTools：单个工具注册失败不影响其余', () => {
   doc.modelContext = {
     registerTool: () => { n += 1; if (n === 2) throw new Error('boom'); return Promise.resolve(); },
   };
-  assert.equal(registerTools(doc, null), 5, '仍应尝试注册全部 5 个');
+  assert.equal(registerTools(doc, null), 6, '仍应尝试注册全部 6 个');
 });
 
 test('textOf：空/缺元素都给空串（永不 undefined）', () => {
@@ -326,5 +379,5 @@ test('WEBMCP_TOOLS_JS：在假环境里能真的注册上（端到端，不靠�
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(WEBMCP_TOOLS_JS, sandbox);
-  assert.equal(registered.length, 5, '内联源码应注册 5 个工具');
+  assert.equal(registered.length, 6, '内联源码应注册 6 个工具');
 });
