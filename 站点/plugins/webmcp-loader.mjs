@@ -70,6 +70,20 @@ function inject(rel) {
 function injectPlugins() {
   inject("webmcp-shim.js");
   inject("webmcp-tools.js");
+  // ⭐ 2026-10-19：页面桥植入站点（用户定案「每次搭桥太傻逼」）。
+  // 工具注册是异步的（registerTool 返回 Promise），桥要等它们进注册表再报到，
+  // 所以延后一拍注入。守卫见 shouldBridge()。
+  if (shouldBridge()) setTimeout(function () { inject("webmcp-bridge.js"); }, 300);
+}
+
+// 只在「本机 / 显式开启」时连桥。线上访客一个请求都不会打到 127.0.0.1。
+function shouldBridge() {
+  try {
+    if (qs && qs.get("bridge") === "1") return true;
+    if (localStorage.getItem("webmcp_bridge") === "on") return true;
+    // 本机环境默认开（开发/实验）
+    return /^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname);
+  } catch (e) { return false; }
 }
 
 if (hasDoc) {                       // 形态 1：原生已有 document 注册表 → 直接用

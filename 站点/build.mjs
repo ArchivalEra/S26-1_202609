@@ -10,6 +10,7 @@ import { parseGlossaryDict, parseGlossaryMatch, renderGlossary, glossifyTex, app
 import { SYMBOL_PACKS, COURSE_ENV, BUILD_PHASES } from './符号环境.mjs';
 import { extractSearchDoc, buildSearchBundle, SEARCH_JS, SEARCH_CSS } from './plugins/site-search.mjs';
 import { WEBMCP_LOADER_JS, WEBMCP_RELAY_JS } from './plugins/webmcp-loader.mjs';
+import { PAGE_BRIDGE_JS } from './plugins/page-bridge.mjs';
 import { SPA_ROUTER_JS } from './plugins/spa-router.mjs';
 import { DRAWER_SYNC_JS } from './plugins/drawer-sync.mjs';
 import { WEBMCP_SHIM_JS } from './plugins/webmcp-shim.mjs';
@@ -146,6 +147,8 @@ fs.writeFileSync(path.join(webmcpDir, 'webmcp-loader.js'), WEBMCP_LOADER_JS);
 fs.writeFileSync(path.join(webmcpDir, 'webmcp-shim.js'), WEBMCP_SHIM_JS);
 fs.writeFileSync(path.join(webmcpDir, 'webmcp-tools.js'), WEBMCP_TOOLS_JS);
 fs.writeFileSync(path.join(webmcpDir, 'webmcp-relay.js'), WEBMCP_RELAY_JS);
+// 页面桥（2026-10-19 植入）：打开页面自动连本机桥，不再手工注入
+fs.writeFileSync(path.join(webmcpDir, 'webmcp-bridge.js'), PAGE_BRIDGE_JS);
 // vendor 第三方资产（polyfill + relay embed/widget）逐字节拷贝。
 copyDir(path.join(SITE_DIR, 'assets', 'vendor', 'webmcp'), path.join(DIST_DIR, 'assets', 'vendor', 'webmcp'));
 console.log('[build] Wrote WebMCP plugins + copied vendor assets (polyfill + relay embed)');
