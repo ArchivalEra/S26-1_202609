@@ -285,6 +285,33 @@ export const CHAT_CSS = `
 }
 @keyframes chat-blink { 50% { opacity: 0; } }
 
+/* ── 过程提示（思考 ↔ 输出的分界，2026-10-19）─────────────────
+   模型检索期间显示的一行灰字：小号、无气泡、不在正文流里。
+   与助手正文（黑字通栏、0.82rem）刻意拉开差别，一眼能看出
+   「这不是答案，它在干活」。答案第一个字到达时由 JS 移除。 */
+.chat-status {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.74rem;
+  line-height: 1.5;
+  font-style: italic;
+  opacity: .85;
+  margin: 0 0 .2rem;
+}
+.chat-status::before {
+  content: '';
+  display: inline-block;
+  width: 6px; height: 6px;
+  margin-right: .4rem;
+  border-radius: 50%;
+  background-color: var(--md-sys-color-primary);
+  animation: chat-pulse 1.4s ease-in-out infinite;
+  vertical-align: middle;
+}
+@keyframes chat-pulse {
+  0%, 100% { opacity: .25; }
+  50% { opacity: 1; }
+}
+
 /* 空状态 */
 .chat-empty {
   color: var(--md-sys-color-on-surface-variant);
@@ -551,11 +578,39 @@ var stuck = true;           // 是否贴底
 var msgEls = [];            // 消息 DOM 引用（用于流式更新最后一条）
 
 // ── 工具函数 ────────────────────────────────────────────────
-function token() {
-  try { return localStorage.getItem("webmcp_bridge_token") || ""; } catch (e) { return ""; }
+
+/**
+ * 桥 token 的三级来源（2026-10-19 修「永远是连不上助手」）。
+ *
+ * 面板与页面桥各自独立，**不能假设对方先跑过**：用户可能直接把面板叫起来
+ * 而页面桥还没注入完成。所以这里自己解析，顺序与 loader 一致：
+ * window.__bridgeToken → localStorage → GET /bootstrap（桥对本机 Origin 回 token）。
+ */
+var tokenPromise = null;
+function tokenAsync(force) {
+  if (!force && tokenPromise) return tokenPromise;
+  tokenPromise = new Promise(function (resolve) {
+    var t = "";
+    try { t = window.__bridgeToken || localStorage.getItem("webmcp_bridge_token") || ""; } catch (e) {}
+    if (t) { window.__bridgeToken = t; return resolve(t); }
+    var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+    var timer = setTimeout(function () { try { ctrl && ctrl.abort(); } catch (e) {} }, 3000);
+    fetch(BRIDGE + "/bootstrap", { cache: "no-store", signal: ctrl ? ctrl.signal : undefined })
+      .then(function (r) { clearTimeout(timer); return r.ok ? r.json() : null; })
+      .then(function (j) {
+        var v = (j && j.token) ? String(j.token) : "";
+        if (v) {
+          window.__bridgeToken = v;
+          try { localStorage.setItem("webmcp_bridge_token", v); } catch (e) {}
+        }
+        resolve(v);
+      })
+      .catch(function () { clearTimeout(timer); resolve(""); });
+  });
+  return tokenPromise;
 }
-function withToken(u) {
-  var t = token();
+
+function withToken(u, t) {
   return t ? (u + (u.indexOf("?") >= 0 ? "&" : "?") + "token=" + encodeURIComponent(t)) : u;
 }
 
@@ -601,6 +656,31 @@ function addMsg(role) {
   msgEls.push({ role: role, body: body, raw: "", restStart: 0 });
   if (stuck) scrollToBottom();
   return msgEls[msgEls.length - 1];
+}
+
+/** 给一条消息配一个过程提示槽（**正文之外**，见 chat-status 的注释）。 */
+function attachStatusSlot(msg) {
+  var el = document.createElement("div");
+  el.className = "chat-status";
+  el.textContent = "正在思考…";
+  // 插在 .chat-body 之前：过程提示在视觉与语义上都不属于答案正文，
+  // 放进 body 里会被 renderMessage 当内容、也会被当答案读屏。
+  msg.body.parentNode.insertBefore(el, msg.body);
+  msg.statusEl = el;
+  msg.statusBase = "正在思考…";
+  msg.queryStartedAt = Date.now();
+  // 本地秒表（2026-10-19 实测）：服务端只在**阶段切换**时推 status，
+  // 一次工具调用可能等 60 秒不推帧——秒数会冻在旧值上，看起来又像卡死。
+  // 秒数从**本次提问开始**算：用户关心的是「等了多久」。
+  if (!msg.statusTick) {
+    msg.statusTick = setInterval(function () {
+      if (!msg.statusEl || !msg.queryStartedAt) return;
+      var secs = Math.round((Date.now() - msg.queryStartedAt) / 1000);
+      if (secs < 2) return;
+      msg.statusEl.textContent = msg.statusBase + "（" + secs + " 秒）";
+    }, 1000);
+  }
+  return el;
 }
 
 /** 把累积的原文重新渲染进消息体（增量解析 + 只追加新块）。
@@ -655,6 +735,55 @@ function flushRender(msg) {
   renderMessage(msg, true);
 }
 
+// ── 思考 ↔ 输出 的区分（2026-10-19 用户要求）───────────────
+//
+// 面板在模型检索的整段时间里原本完全空白（实测最长 384 秒），用户分不清
+// 是卡死还是在干活。这里给每条机器人消息配一行**过程提示**：
+//   · 灰色、小号、无气泡，与正文（黑字通栏）在视觉上明确分开
+//   · 只在等待期间存在；第一个 delta 到达即移除
+//   · 文案说明「在做什么」，而不是只转圈
+var TOOL_LABEL = {
+  site_search: "检索资料库",
+  site_read: "读取页面正文",
+  site_index: "查看站点目录",
+  site_navigate: "翻到目标页面",
+  site_get_page_info: "确认当前页面",
+  site_list_images: "查找页面配图",
+  site_image: "查看图片",
+  site_view: "截图查看版面",
+  site_show_symbol: "查符号释义",
+  site_panels: "展开折叠内容",
+  site_capture_view: "截图查看版面",
+};
+
+function setStatus(msg, text) {
+  if (!msg.statusEl) return;
+  // 秒数一律由本地秒表负责：把服务端可能带的所有「（N 秒）」全剥掉，
+  // 否则会出现「…（15 秒）（16 秒）」这种叠字。
+  msg.statusBase = String(text).replace(/（\s*\d+\s*秒\s*）/g, "").trim();
+  if (!msg.queryStartedAt) msg.queryStartedAt = Date.now();
+  msg.statusEl.textContent = msg.statusBase;
+}
+
+function clearStatus(msg) {
+  if (msg.statusTick) { clearInterval(msg.statusTick); msg.statusTick = null; }
+  msg.queryStartedAt = 0;
+  if (msg.statusEl && msg.statusEl.parentNode) msg.statusEl.parentNode.removeChild(msg.statusEl);
+  msg.statusEl = null;
+}
+
+/** 把服务端 status 事件翻成一句人话。**不带秒数**——秒数由本地秒表统一追加。 */
+function statusText(ev) {
+  var phase = ev && ev.phase;
+  var what = ev && ev.tool ? (TOOL_LABEL[ev.tool] || ev.tool) : "";
+  if (phase === "thinking") return "正在理解问题…";
+  if (phase === "generating") return "正在检索资料并组织回答…";
+  if (phase === "tool") return "正在" + (what || "查询") + "…";
+  if (phase === "tool-ok") return (what || "查询") + "完成，继续整理…";
+  if (phase === "tool-fail") return (what || "查询") + "失败，换一种方式…";
+  return null;
+}
+
 function showJump() {
   if (!jumpBtn || !panel) return;
   jumpBtn = document.createElement("button");
@@ -675,17 +804,29 @@ function askChat(text) {
   userMsg.body.textContent = text;
 
   var botMsg = addMsg("bot");
+  attachStatusSlot(botMsg);
   busy = true;
   if (sendBtn) { sendBtn.classList.add("stop"); sendBtn.disabled = false; }
   stream = (typeof AbortController !== "undefined") ? new AbortController() : null;
 
   var body = JSON.stringify({ text: text, sessionId: sessionKey });
-  fetch(withToken(BRIDGE + "/chat"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: body,
-    signal: stream ? stream.signal : undefined,
-  }).then(function (res) {
+
+  /** 发一次 /chat。401/403 时刷新一次 token 再试——桥可能重装过（新 token）。 */
+  function attempt(n) {
+    return tokenAsync(n > 1).then(function (tk) {
+      return fetch(withToken(BRIDGE + "/chat", tk), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: body,
+        signal: stream ? stream.signal : undefined,
+      });
+    }).then(function (res) {
+      if ((res.status === 401 || res.status === 403) && n === 1) return attempt(2);
+      return res;
+    });
+  }
+
+  attempt(1).then(function (res) {
     if (!res.ok || !res.body) throw new Error("HTTP " + res.status);
     var reader = res.body.getReader();
     var dec = new TextDecoder();
@@ -706,19 +847,27 @@ function askChat(text) {
       var ev;
       try { ev = JSON.parse(line.slice(5).trim()); } catch (e) { return; }
       if (ev.type === "delta") {
+        // 答案已开始：过程提示该退了（思考与输出的分界就在这里）
+        clearStatus(botMsg);
         botMsg.raw += String(ev.text || "");
         if (botMsg.raw.length > MAX_MESSAGE_CHARS) botMsg.raw = botMsg.raw.slice(0, MAX_MESSAGE_CHARS);
         scheduleRender(botMsg);
+      } else if (ev.type === "status") {
+        var s = statusText(ev);
+        if (s) setStatus(botMsg, s);
       } else if (ev.type === "done") {
+        clearStatus(botMsg);
         if (ev.text && !botMsg.raw) botMsg.raw = String(ev.text);
         flushRender(botMsg);
       } else if (ev.type === "error") {
-        botMsg.raw = botMsg.raw || ("（连接失败：" + (ev.reason || "未知") + "）");
+        clearStatus(botMsg);
+        botMsg.raw = botMsg.raw || ("（" + describeFailure(new Error(ev.reason || "未知")) + "）");
         flushRender(botMsg);
       }
       // ev.type === "tool" 不显示
     }
     function finish() {
+      clearStatus(botMsg);
       if (!botMsg.raw) {
         botMsg.body.textContent = "（没有收到回答）";
         botMsg.done = true;
@@ -731,15 +880,39 @@ function askChat(text) {
     }
     return pump();
   }).catch(function (e) {
+    clearStatus(botMsg);
     if (e && e.name === "AbortError") {
       flushRender(botMsg);
     } else {
-      botMsg.body.textContent = "连不上助手（" + String((e && e.message) || e) + "）";
+      botMsg.raw = "";
+      botMsg.done = true;
+      botMsg.body.textContent = "连不上助手（" + describeFailure(e) + "）";
     }
     busy = false;
     if (sendBtn) { sendBtn.classList.remove("stop"); sendBtn.disabled = false; }
     stream = null;
   });
+}
+
+/**
+ * 把请求失败翻译成人能照着做的句子。
+ *
+ * HTTP 401 这种原文对用户毫无信息量——它其实意味着「桥在跑但 token 对不上」
+ * （桥重装过 / 换了 BRIDGE_TOKEN），处理动作是刷新页面让面板重新握手。
+ */
+function describeFailure(e) {
+  var msg = String((e && e.message) || e);
+  var m = msg.match(/^HTTP (\d{3})$/);
+  if (m) {
+    var code = Number(m[1]);
+    if (code === 401 || code === 403) return "本地桥拒绝了这次请求，刷新页面再试（token 可能已更换）";
+    if (code === 404) return "本地桥没有 /chat 端点，先更新桥脚本";
+    if (code === 413) return "这条消息太长";
+  }
+  if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) {
+    return "本地桥没在运行（先在电脑上跑 node bridge.mjs）";
+  }
+  return msg;
 }
 
 // ── 面板开关 ────────────────────────────────────────────────

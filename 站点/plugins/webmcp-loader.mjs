@@ -41,9 +41,19 @@ try { qs = new URLSearchParams(location.search); } catch (e) {}
 // 「要不要页面工具」由用户**显式表达**：?relay=1（连中继）或 ?webmcp=1（启用），
 // 或 localStorage 里的持久开关。**不看浏览器原生能力**——零 pref 的普通 Firefox
 // 两者都没有，而那正是 polyfill 要造出来的东西（按原生判断会漏掉这批用户）。
-var wanted = false;
+//
+// ⚠️ 2026-10-19 补：**本机（loopback）默认开**。
+// 旧实现只在 shouldBridge() 里放行了本机，但那是 injectPlugins 内部——
+// 而 injectPlugins 只有 wanted 为真才会被调用。于是「本机默认开」这句注释
+// 从来没有生效过：直接打开 127.0.0.1:8899（不带任何 query）时形态判成
+// absent，工具一个都不注册，助手面板拿到的是一张空工具表。
+// 站长的本机就是这套助手的唯一使用场景，这里必须默认开。
+var loopback = false;
+try { loopback = /^(127\\.0\\.0\\.1|localhost|\\[::1\\])$/.test(location.hostname); } catch (e) {}
+var wanted = loopback;
 try {
-  wanted = (qs && (qs.get("relay") === "1" || qs.get("webmcp") === "1"))
+  wanted = wanted
+    || (qs && (qs.get("relay") === "1" || qs.get("webmcp") === "1"))
     || localStorage.getItem("webmcp") === "on"
     || localStorage.getItem("webmcp_relay") === "on";
 } catch (e) {}
@@ -119,32 +129,86 @@ function injectPlugins() {
  * 这样断线看门狗有源码可 eval 重建——旧实现靠 arguments.callee（箭头函数里没有），
  * 源码恒为 null，看门狗自杀后永不重连。
  *
- * 顺带把 token 也塞进 window.__bridgeToken（bridge 启动时写 .bridge-token）。
+ * 顺带把 token 也塞进 window.__bridgeToken。
+ *
+ * ## token 谁给（2026-10-19 修「永远是连不上助手」）
+ *
+ * 原来只从 localStorage.webmcp_bridge_token 读，而**没有任何东西往那里写**——
+ * 于是面板和页面桥都拿到空 token，/chat 与 /events 永远 401。
+ * 现在三级来源，按可靠性降序：
+ *   ① localStorage —— 用户显式配置的（也缓存上一次握手结果）
+ *   ② URL query ?token= —— 调试/临时用
+ *   ③ **问桥要**：GET /bootstrap（桥只对**本机 Origin** 回它自己的 token）。
+ *      这是常规路径：本机页面对本机桥，本来就该零手工。
+ * 拿到后写进 localStorage，刷新后 ① 直接命中，不再每次握手。
  */
 function injectBridge() {
   var url = baseDir() + "webmcp-bridge.js";
   window.__mcpBridgeReload = url;
-  // token：优先 localStorage（用户可手配），否则空（本机开发桥可能未开鉴权）
-  try {
-    var t = localStorage.getItem("webmcp_bridge_token");
-    if (t) window.__bridgeToken = t;
-  } catch (e) {}
-  fetch(url, { cache: "force-cache" })
+  // 先取 token（可能要问桥要，是一次网络请求），**拿到再注入**——
+  // 页面桥在 IIFE 里一次性读 TOKEN，注入之后再塞就晚了（读到空串）。
+  resolveToken().then(function () {
+    return fetch(url, { cache: "force-cache" });
+  })
     .then(function (r) { return r.text(); })
     .then(function (src) {
       window.__mcpBridgeSource = src;
-      var el = document.createElement("script");
-      el.src = url;
-      el.async = false;
-      document.head.appendChild(el);
+      injectBridgeTag(url);
     })
     .catch(function () {
       // 取源码失败也别放弃：直接插标签，桥本身能跑，只是重建能力退化到 reinjectTag
-      var el = document.createElement("script");
-      el.src = url;
-      el.async = false;
-      document.head.appendChild(el);
+      injectBridgeTag(url);
     });
+}
+
+/** 插 <script> 跑页面桥。 */
+function injectBridgeTag(url) {
+  var el = document.createElement("script");
+  el.src = url;
+  el.async = false;
+  document.head.appendChild(el);
+}
+
+/**
+ * 取桥 token（三级来源），拿到就写 localStorage 并返回。
+ *
+ * 失败一律 resolve('')，绝不 reject——拿不到 token 只是回到「401」的旧行为，
+ * 不该阻塞页面桥注入（否则连报错都看不到）。
+ */
+function resolveToken() {
+  try {
+    if (window.__bridgeToken) return Promise.resolve(window.__bridgeToken);
+  } catch (e) {}
+  var fromLs = '';
+  try { fromLs = localStorage.getItem("webmcp_bridge_token") || ""; } catch (e) {}
+  if (fromLs) { window.__bridgeToken = fromLs; return Promise.resolve(fromLs); }
+
+  var fromQs = "";
+  try { fromQs = (qs && qs.get("token")) || ""; } catch (e) {}
+  if (fromQs) {
+    window.__bridgeToken = fromQs;
+    try { localStorage.setItem("webmcp_bridge_token", fromQs); } catch (e) {}
+    return Promise.resolve(fromQs);
+  }
+
+  // 问桥要。本机页面对本机桥，这是常规路径。
+  var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+  var timer = setTimeout(function () { try { ctrl && ctrl.abort(); } catch (e) {} }, 3000);
+  return fetch("http://127.0.0.1:9345/bootstrap", {
+    method: "GET",
+    signal: ctrl ? ctrl.signal : undefined,
+    cache: "no-store",
+  })
+    .then(function (r) { clearTimeout(timer); return r.ok ? r.json() : null; })
+    .then(function (j) {
+      var t = j && j.token ? String(j.token) : "";
+      if (t) {
+        window.__bridgeToken = t;
+        try { localStorage.setItem("webmcp_bridge_token", t); } catch (e) {}
+      }
+      return t;
+    })
+    .catch(function () { clearTimeout(timer); return ""; });
 }
 
 // 只在「本机 / 显式开启」时连桥。线上访客一个请求都不会打到 127.0.0.1。
@@ -153,7 +217,7 @@ function shouldBridge() {
     if (qs && qs.get("bridge") === "1") return true;
     if (localStorage.getItem("webmcp_bridge") === "on") return true;
     // 本机环境默认开（开发/实验）
-    return /^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname);
+    return /^(127\\.0\\.0\\.1|localhost|\\[::1\\])$/.test(location.hostname);
   } catch (e) { return false; }
 }
 

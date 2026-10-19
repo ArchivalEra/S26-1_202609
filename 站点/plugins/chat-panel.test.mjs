@@ -257,3 +257,42 @@ test('CHAT_JS：面板自称学习助手，不出现豆姐', () => {
   assert.doesNotMatch(CHAT_JS, /豆姐/);
   assert.doesNotMatch(CHAT_JS, /豆包/);
 });
+
+// ── 思考 ↔ 输出 的区分（2026-10-19 用户要求）───────────────
+
+test('CHAT_JS：有 status 事件通道，且与 delta 分开处理', () => {
+  // 用户原话：「做成思考与输出有区分的」。模型检索期间面板原本完全空白
+  // （实测最长 384 秒），用户分不清卡死还是在干活。
+  assert.match(CHAT_JS, /ev\.type === "status"/, '要处理 status 事件');
+  assert.match(CHAT_JS, /function attachStatusSlot/, '要能插入过程提示');
+  assert.match(CHAT_JS, /function clearStatus/, '答案到达要能清掉过程提示');
+});
+
+test('CHAT_JS：过程提示不能混进最终答案文本', () => {
+  // status 只写 statusEl，绝不写 msg.raw —— 否则会被当成答案渲染/持久化。
+  const setStatus = CHAT_JS.slice(
+    CHAT_JS.indexOf('function setStatus'),
+    CHAT_JS.indexOf('function clearStatus'),
+  );
+  assert.ok(setStatus.length > 0);
+  assert.doesNotMatch(setStatus, /\.raw/, 'status 不许碰 msg.raw');
+});
+
+test('CHAT_JS：delta 到达先清过程提示（思考与输出的分界）', () => {
+  const delta = CHAT_JS.slice(
+    CHAT_JS.indexOf('ev.type === "delta"'),
+    CHAT_JS.indexOf('ev.type === "status"'),
+  );
+  assert.match(delta, /clearStatus\(botMsg\)/, '第一个 delta 就该清掉过程提示');
+});
+
+test('CHAT_CSS：过程提示在视觉上与正文分开', () => {
+  assert.match(CHAT_CSS, /\.chat-status[\s\S]*?font-style:\s*italic/, '过程提示要斜体');
+  assert.match(CHAT_CSS, /\.chat-status[\s\S]*?on-surface-variant/, '过程提示要用弱化色');
+});
+
+test('CHAT_JS：失败原因翻译成人话', () => {
+  assert.match(CHAT_JS, /function describeFailure/);
+  assert.match(CHAT_JS, /本地桥没在运行/, '连不上要说清是桥没起');
+  assert.match(CHAT_JS, /刷新页面再试/, '401/403 要给出可执行动作');
+});
