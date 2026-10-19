@@ -344,6 +344,7 @@
 !/站点/plugins/table-responsive.test.mjs
 !/站点/plugins/sw-template.js
 !/站点/plugins/site-search.test.mjs
+!/站点/plugins/page-bridge.mjs
 !/站点/plugins/webmcp-loader.mjs
 !/站点/plugins/webmcp-shim.mjs
 !/站点/plugins/webmcp-shim.test.mjs
