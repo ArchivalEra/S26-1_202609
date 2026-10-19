@@ -110,6 +110,29 @@ export function isTextNode(n) {
 export function renderMarkdown(root, opts) {
   const o = opts || {};
   const includeCollapsed = o.includeCollapsed !== false;
+  // links（2026-10-19 grill Q15 定案）：默认**关**。开了之后站内相对链接渲染成
+  // `[文字](路径)`，外链渲染成 `[文字](http://…)`（前缀 ⧉ 标记，提示 site_navigate 跳不了），
+  // 页内锚点渲染成 `[文字](#id)`。
+  // 为什么默认关：整页读取时链接会显著增加字数（正文里「见第 2 章」这类引用很多），
+  // 而导航已经由 site_index 承担；只在需要「顺着正文引用走」时才开。
+  const withLinks = o.links === true;
+
+  /** 把 <a> 的 href 归成模型能用的形态；返回 null 表示这个链接不该渲染成链接。
+   *
+   *  ⚠️ 2026-10-19 实测：构建产物里的站内链接是**百分号编码**的
+   *  （`./%E5%B7%A5%E7%A8%8B%E6%95%B0%E5%AD%A6/index.html`），模型拿这串去
+   *  site_navigate 很难受。这里解码成可读中文路径；跳转时 site_navigate 会重新编码。
+   */
+  function linkTarget(href) {
+    const h = String(href || '').trim();
+    if (!h) return null;
+    if (h.startsWith('#')) return { kind: 'anchor', href: h };
+    if (/^(https?:|mailto:)/i.test(h)) return { kind: 'external', href: h };
+    if (/^javascript:/i.test(h)) return null;
+    let decoded = h;
+    try { decoded = decodeURI(h); } catch (e) { /* 保留原样 */ }
+    return { kind: 'internal', href: decoded };
+  }
   const SKIP = { SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, TEMPLATE: 1, SVG: 1 };
   const out = [];
 
@@ -216,6 +239,15 @@ export function renderMarkdown(root, opts) {
       const k = childrenOf(node).find((c) => hasClass(c, 'katex'));
       return k ? katexText(k) : (node.textContent || '');
     }
+    if (tag === 'A' && withLinks) {
+      const t = linkTarget(node.getAttribute && node.getAttribute('href'));
+      const label = walkInlineAll(node).trim();
+      if (!t || !label) return label;
+      // 外链加 ⧉ 前缀：模型据此知道 site_navigate 处理不了
+      return t.kind === 'external'
+        ? '⧉[' + label + '](' + t.href + ')'
+        : '[' + label + '](' + t.href + ')';
+    }
     if (tag === 'CODE') return '`' + (node.textContent || '') + '`';
     if (tag === 'STRONG' || tag === 'B') return '**' + walkInlineAll(node) + '**';
     if (tag === 'EM' || tag === 'I') return '*' + walkInlineAll(node) + '*';
@@ -242,7 +274,7 @@ export function renderMarkdown(root, opts) {
 
     if (hasClass(node, 'katex')) { push(katexText(node)); return; }
     if (hasClass(node, 'katex-html') || hasClass(node, 'katex-mathml')) return;
-    if (tag === 'A' && hasClass(node, 'sym-gloss')) { push(walkInline(node)); return; }
+    if (tag === 'A') { push(walkInline(node)); return; }
 
     // 公式块容器：整块出一个独立段落（display 公式本来就是块级）
     if (hasClass(node, 'katex-scroll-container') || hasClass(node, 'katex-display')) {
@@ -629,7 +661,7 @@ export function createPageView(doc, loc, winOverride) {
           if (el === target) { top.push(el); continue; }
           if (!isAncestor(target, el) && !top.some((t) => isAncestor(t, el))) top.push(el);
         }
-        const md = renderMarkdown({ children: top, tagName: 'DIV' }, { includeCollapsed: opt.includeCollapsed });
+        const md = renderMarkdown({ children: top, tagName: 'DIV' }, { includeCollapsed: opt.includeCollapsed, links: opt.links });
         const c = clip(md);
         return { ok: true, what, title: hit.title, anchor: hit.anchor, level: hit.level, ...c };
       }
@@ -647,12 +679,12 @@ export function createPageView(doc, loc, winOverride) {
           }).slice(0, 30),
         };
       }
-      const md = ds.map((d) => renderMarkdown(d, { includeCollapsed: true })).join('\n\n');
+      const md = ds.map((d) => renderMarkdown(d, { includeCollapsed: true, links: opt.links })).join('\n\n');
       const c = clip(md);
       return { ok: true, what, count: ds.length, ...c };
     }
     // page
-    const md = renderMarkdown(article, { includeCollapsed: opt.includeCollapsed });
+    const md = renderMarkdown(article, { includeCollapsed: opt.includeCollapsed, links: opt.links });
     const c = clip(md);
     return { ok: true, what: 'page', title: pageInfo().title, sections: headings().length, ...c };
   }
@@ -805,13 +837,41 @@ export function createPageView(doc, loc, winOverride) {
       const path = String(opt.path || '').trim();
       const hash = String(opt.hash || '').trim();
       if (!path) return { ok: false, reason: 'empty_path' };
+
+      // 侧栏校验（2026-10-19 grill Q16）：90 个 data-path 是「确定存在」的集合；
+      // 不在其中不一定是错——23 个索引页本来就没有侧栏链接（build.mjs:1152-1154）。
+      // 所以：命中 ⇒ 放行；未命中 ⇒ 也放行，但把同课程的合法路径一并返回，
+      // 让模型一次看对，不用瞎试三轮。
+      const navPaths = all(S.navLink)
+        .map((a) => (a.getAttribute ? String(a.getAttribute('data-path') || '') : ''))
+        .filter(Boolean);
+      const normalized = path.replace(/^\.\//, '').replace(/^\//, '');
+      if (!navPaths.includes(normalized)) {
+        // 索引页（…/index.html）本来就没有侧栏链接（build.mjs:1152-1154 定案），
+        // 所以**不拦**——只在返回值里标记 via:'unverified'，让调用方知道这是未经校验的跳转。
+        // 真正的拼错由跳转后的 404/标题变化暴露，比在这里猜更可靠。
+        const isIndexPage = /\/index\.html$/.test(normalized);
+        if (!isIndexPage) {
+          const bodyEl = (doc && doc.body) || null;
+          const curPath = bodyEl && bodyEl.getAttribute ? (bodyEl.getAttribute('data-site-path') || '') : '';
+          const curCourse = curPath.split('/')[1] || '';
+          const sameCourse = navPaths.filter((x) => curCourse && x.startsWith('课程/' + curCourse + '/'));
+          return {
+            ok: false, reason: 'not_in_nav', path: normalized,
+            hint: '这个路径不在侧栏导航里，也不像索引页。从候选里挑一个，或先用 site_index 看地图。',
+            candidates: (sameCourse.length ? sameCourse : navPaths).slice(0, 20),
+          };
+        }
+      }
+
       // 优先走 SPA（不整页刷新，且保留侧栏）
       try {
         if (w.__spaRouter && typeof w.__spaRouter.navigate === 'function') {
           const rootAttr = (doc.documentElement && doc.documentElement.getAttribute('data-root')) || './';
           const url = new URL(rootAttr + path, location.href).pathname;
           w.__spaRouter.navigate(url, hash, true);
-          return { ok: true, to, path, hash, via: 'spa' };
+          const verified = navPaths.includes(normalized);
+          return { ok: true, to, path: normalized, hash, via: 'spa', verified };
         }
       } catch (e) { /* 退化到整页跳转 */ }
       try {
@@ -1036,6 +1096,133 @@ export function createPageView(doc, loc, winOverride) {
   }
 
   /**
+   * 站点索引：从**侧栏导航树**重建层级（2026-10-19 grill Q13 定案）。
+   *
+   * 为什么不读目录页：实测侧栏能重建出 **118 个节点**，与构建期 NAV_STRUCTURE 逐字一致；
+   * 而目录页只有三层、每层几十条，且要先跳过去（每次往返 40-90 秒）。
+   * 侧栏每页都有、零网络、结构完整——它才是导航的真相源。
+   *
+   * 默认只给**当前课程**（按 body[data-site-path] 判），`scope='all'` 才给全站。
+   * 当前课程最多 28 节点，安全；全站 118 节点约 1500 字，贴着上游单条上限。
+   *
+   * @param {object} [o]
+   * @param {'course'|'all'} [o.scope='course']
+   * @param {number} [o.max] 节点上限（默认 course=60 / all=140）
+   */
+  function siteIndex(o) {
+    const opt = o || {};
+    const scope = opt.scope === 'all' ? 'all' : 'course';
+    const max = Math.max(1, Number(opt.max) || (scope === 'all' ? 140 : 60));
+
+    // 侧栏根 ul（每页都渲染同一份）
+    let rootUl = null;
+    try {
+      rootUl = doc.querySelector('.drawer-nav-scroll-area > ul')
+        || doc.querySelector('#m3-drawer ul.drawer-nav-list')
+        || first('ul.drawer-nav-list');
+    } catch (e) { /* 无侧栏 */ }
+    if (!rootUl) {
+      return { ok: false, reason: 'no_sidebar', hint: '本页没有侧栏导航树' };
+    }
+
+    // 递归重建：group 节点取标题文字，叶子节点取 data-path
+    const nodes = [];
+    (function walk(nodes_ul, depth, out) {
+      const kids = childrenOf(nodes_ul).filter((c) => !isTextNode(c));
+      for (const li of kids) {
+        if (out.length >= max) return;
+        const tag = String(li.tagName || '').toUpperCase();
+        if (tag !== 'LI') continue;
+        // group：header 里有 .drawer-section-title-text
+        let head = null, nested = null, link = null;
+        for (const c of childrenOf(li)) {
+          if (isTextNode(c)) continue;
+          const ct = String(c.tagName || '').toUpperCase();
+          if (hasClass(c, 'nav-group-header') || hasClass(c, 'nav-header-clickable')) head = c;
+          else if (hasClass(c, 'nav-nested-wrapper')) nested = c;
+          else if (ct === 'A') link = c;
+        }
+        if (!head && !nested) {
+          // 再试一层：有些结构把 header 包在 div 里
+          head = li.querySelector ? li.querySelector('.nav-group-header') : null;
+          nested = li.querySelector ? li.querySelector('.nav-nested-wrapper') : null;
+        }
+        if (head) {
+          const titleEl = head.querySelector ? head.querySelector('.drawer-section-title-text') : null;
+          const name = textOf(titleEl) || textOf(head);
+          if (!name) continue;
+          const node = { name, depth };
+          out.push(node);
+          const innerUl = nested && nested.querySelector ? nested.querySelector('ul') : null;
+          if (innerUl) {
+            node.children = [];
+            walk(innerUl, depth + 1, node.children);
+            if (!node.children.length) delete node.children;
+          }
+        } else if (link) {
+          const a = link;
+          out.push({
+            name: textOf(a),
+            depth,
+            path: a.getAttribute ? a.getAttribute('data-path') : '',
+          });
+        }
+      }
+    })(rootUl, 0, nodes);
+
+    // 当前课程：从 body[data-site-path] 取第二段
+    const body = (doc && doc.body) || null;
+    const curPath = body && body.getAttribute ? (body.getAttribute('data-site-path') || '') : '';
+    const curCourse = curPath.split('/')[1] || '';
+
+    // 找「课程总览」子树，再按课程名筛选
+    const coursesNode = nodes.find((n) => n.name === '课程总览');
+    let picked = nodes;
+    if (scope === 'course' && coursesNode && coursesNode.children) {
+      const only = coursesNode.children.find((n) => n.name === curCourse);
+      picked = only ? [only] : nodes;
+    }
+
+    // 同时把「其余课程入口」告诉模型（一行提示，不展开）
+    const allCourses = (coursesNode && coursesNode.children ? coursesNode.children : [])
+      .map((n) => n.name);
+
+    // 渲染成人能读也机器能读的缩进文本
+    const lines = [];
+    const flatten = (arr, indent) => {
+      for (const n of arr) {
+        if (lines.length >= max) { lines.push(indent + '…（已达上限）'); return; }
+        if (n.children && n.children.length) {
+          lines.push(indent + n.name);
+          flatten(n.children, indent + '  ');
+        } else {
+          lines.push(indent + '- ' + n.name + (n.path ? '  `' + n.path + '`' : ''));
+        }
+      }
+    };
+    flatten(picked, '');
+
+    return {
+      ok: true,
+      scope,
+      current: { path: curPath, course: curCourse },
+      courses: allCourses,
+      totalNodes: countNodes(nodes),
+      shown: lines.length,
+      text: lines.join('\n'),
+      hint: scope === 'course'
+        ? '这是当前课程的全部页面。要看别的课：site_index(scope="all")，或 site_navigate(to="page", path="课程/<课名>/index.html")'
+        : '全站导航树。跳页用 site_navigate(to="page", path=…)',
+    };
+  }
+
+  function countNodes(arr) {
+    let n = 0;
+    for (const x of arr) { n += 1; if (x.children) n += countNodes(x.children); }
+    return n;
+  }
+
+  /**
    * 列出本页图片（正文内的，不含站点头像）。
    * 学习通只收 jpg/png，而本站配图是 webp——模型必须知道「这页有哪些图、是什么格式」。
    */
@@ -1192,7 +1379,7 @@ export function createPageView(doc, loc, winOverride) {
     headings, pageInfo, openSection, togglePanels, findSymbol, listSymbols, glossaryDict,
     searchResults, searchUi, captureView,
     readContent, findInPage, navigate, setView, viewState, panelState,
-    listImages, imageToDataUrl,
+    listImages, imageToDataUrl, siteIndex,
   };
 }
 
@@ -1222,9 +1409,22 @@ export function buildToolDefs(doc, win) {
           query: { type: 'string' },
           maxChars: { type: 'number' },
           includeCollapsed: { type: 'boolean' },
+          links: { type: 'boolean' },
         },
       },
       execute: (a) => view.readContent(a || {}),
+    },
+    {
+      name: 'site_index',
+      description: '站点地图：从侧栏导航树返回层级结构（课程 → 分类 → 页面，带路径）。默认给当前课程的全部页面；scope="all" 给全站 118 节点。先看地图，再决定读哪页。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          scope: { type: 'string', enum: ['course', 'all'] },
+          max: { type: 'number' },
+        },
+      },
+      execute: (a) => view.siteIndex(a || {}),
     },
     {
       name: 'site_navigate',

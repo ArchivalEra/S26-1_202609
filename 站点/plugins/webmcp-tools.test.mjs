@@ -153,6 +153,40 @@ function fakeDoc({ title = '测试页', url = 'http://x/y.html', withSearch = tr
 
   // 侧栏
   const navLink = el('a', '第二章 变压器', { className: 'drawer-nav-link', attrs: { 'data-path': '课程/电机学/第二章.html', href: '第二章.html' } });
+  // 侧栏树（site_index 的数据源）：课程总览 → 电机学 → 分类 → 页面
+  const mkLeaf = (label, path) => {
+    const li = el('li', '', { className: 'drawer-nav-item' });
+    const a = el('a', label, { className: 'drawer-nav-link', attrs: { 'data-path': path } });
+    li.children = [a]; a.parentElement = li;
+    return li;
+  };
+  const mkGroup = (label, children) => {
+    const li = el('li', '', { className: 'drawer-nav-group expanded' });
+    const head = el('div', '', { className: 'nav-group-header nav-header-clickable' });
+    const title = el('span', label, { className: 'drawer-section-title-text' });
+    head.children = [title]; title.parentElement = head;
+    const wrap = el('div', '', { className: 'nav-nested-wrapper' });
+    const ul = el('ul', '', { className: 'drawer-nav-list' });
+    ul.children = children;
+    children.forEach((c) => { c.parentElement = ul; });
+    wrap.children = [ul]; ul.parentElement = wrap;
+    li.children = [head, wrap]; head.parentElement = li; wrap.parentElement = li;
+    return li;
+  };
+  const notesGroup = mkGroup('课堂笔记', [
+    mkLeaf('10-08 磁路', '课程/电机学/课堂笔记/2026-10-08-磁路.html'),
+  ]);
+  const assignGroup = mkGroup('作业', [
+    mkLeaf('作业1', '课程/电机学/作业/2026-09-28-作业1.html'),
+  ]);
+  const motorGroup = mkGroup('电机学', [notesGroup, assignGroup]);
+  const otherCourse = mkGroup('电路原理', [mkLeaf('习题册第一章', '课程/电路原理/作业/x.html')]);
+  const overviewGroup = mkGroup('课程总览', [motorGroup, otherCourse]);
+  const drawerRootUl = el('ul', '', { className: 'drawer-nav-list' });
+  drawerRootUl.children = [overviewGroup];
+  overviewGroup.parentElement = drawerRootUl;
+  const drawerArea = el('div', '', { className: 'drawer-nav-scroll-area' });
+  drawerArea.children = [drawerRootUl]; drawerRootUl.parentElement = drawerArea;
   const brand = el('a', 'S26', { className: 'sidebar-brand', attrs: { href: '../index.html' } });
 
   // 上一节/下一节
@@ -176,7 +210,7 @@ function fakeDoc({ title = '测试页', url = 'http://x/y.html', withSearch = tr
   article.children = [h1, chip, chip2, h2a, p1, h3, p2, h2b, p3, details1, katex, proseTerm, bubble];
   for (const c of article.children) c.parentElement = article;
   // 让 p2 与 h3 的祖先关系成立（h3 在 h2a 后）
-  const all = [article, prev, next, navLink, brand, tocActive, glossJson];
+  const all = [article, prev, next, navLink, brand, tocActive, glossJson, drawerArea];
   if (withSearch) all.push(panel, input, results, hit);
   if (withPaging) all.push(prev, next);
   // 建父子链（details 里放一个标题，测「开面板」）
@@ -538,10 +572,31 @@ test('site_navigate：page 走 SPA 路由（若页面暴露 __spaRouter）', () 
   const doc = fakeDoc();
   const seen = [];
   doc.defaultView.__spaRouter = { navigate: (...a) => seen.push(a) };
-  const r = createPageView(doc).navigate({ to: 'page', path: '课程/x.html', hash: 'sec-1' });
+  // 2026-10-19 起 page 分支会做侧栏校验：路径必须在该页的 data-path 里。
+  // 夹具里那条侧栏链接就是合法目标。
+  const r = createPageView(doc).navigate({ to: 'page', path: '课程/电机学/第二章.html', hash: 'sec-1' });
   assert.equal(r.ok, true);
   assert.equal(r.via, 'spa');
   assert.equal(seen.length, 1);
+});
+
+test('site_navigate：索引页即使不在侧栏也放行（build.mjs 定案：group 无链接）', () => {
+  const doc = fakeDoc();
+  const seen = [];
+  doc.defaultView.__spaRouter = { navigate: (...a) => seen.push(a) };
+  const r = createPageView(doc).navigate({ to: 'page', path: '课程/电机学/index.html' });
+  assert.equal(r.ok, true, '索引页应放行');
+  assert.equal(r.verified, false, '但要标出未经侧栏校验');
+});
+
+test('site_navigate：page 路径不在侧栏时报 not_in_nav 并给同课程候选', () => {
+  const doc = fakeDoc();
+  doc.defaultView.__spaRouter = { navigate: () => {} };
+  doc.body._attrs['data-site-path'] = '课程/电机学/教材解析/x.html';
+  const r = createPageView(doc).navigate({ to: 'page', path: '课程/电机学/不存在.html' });
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'not_in_nav');
+  assert.ok(r.candidates.includes('课程/电机学/第二章.html'), '要给同课程的合法路径');
 });
 
 // ---------------------------------------------------------------- setView
@@ -582,10 +637,10 @@ test('searchResults：读 DOM 的命中与总数（认「共 N 页命中」文�
 
 // ---------------------------------------------------------------- 工具清单
 
-test('buildToolDefs：十个工具、名字与 schema 齐备', () => {
+test('buildToolDefs：十一个工具、名字与 schema 齐备', () => {
   const defs = buildToolDefs(fakeDoc());
   assert.deepEqual(defs.map((d) => d.name), [
-    'site_get_page_info', 'site_read', 'site_navigate', 'site_search',
+    'site_get_page_info', 'site_read', 'site_index', 'site_navigate', 'site_search',
     'site_show_symbol', 'site_panels', 'site_view',
     'site_list_images', 'site_image', 'site_capture_view',
   ]);
@@ -612,7 +667,7 @@ test('site_read.execute：默认 what=page', async () => {
 
 test('site_navigate.execute：默认 to=section', async () => {
   const defs = buildToolDefs(fakeDoc());
-  const r = await defs[2].execute({ query: '第二' });
+  const r = await defs[3].execute({ query: '第二' });
   assert.equal(r.ok, true);
   assert.equal(r.anchor, 'sec-2');
 });
@@ -620,7 +675,7 @@ test('site_navigate.execute：默认 to=section', async () => {
 test('site_panels.execute：action=open 生效', async () => {
   const doc = fakeDoc();
   const defs = buildToolDefs(doc);
-  const r = await defs[5].execute({ action: 'open' });
+  const r = await defs[6].execute({ action: 'open' });
   assert.equal(r.open, true);
   assert.equal(doc.querySelector('details').open, true);
 });
@@ -628,7 +683,7 @@ test('site_panels.execute：action=open 生效', async () => {
 test('site_view.execute：只给 theme 也能改', async () => {
   const doc = fakeDoc();
   const defs = buildToolDefs(doc);
-  const r = await defs[6].execute({ theme: 'dark' });
+  const r = await defs[7].execute({ theme: 'dark' });
   assert.equal(r.ok, true);
   assert.equal(r.state.theme, 'dark');
 });
@@ -654,7 +709,7 @@ test('site_list_images：列出正文图，标出哪些要转码（webp 不可�
   const doc = fakeDoc();
   withImages(doc);
   const defs = buildToolDefs(doc);
-  const r = await defs[7].execute({});
+  const r = await defs[8].execute({});
   assert.equal(r.ok, true);
   assert.equal(r.total, 2, '站点头像不算正文图');
   assert.equal(r.needConvert, 1, 'webp 那张要转');
@@ -670,14 +725,14 @@ test('site_list_images：列出正文图，标出哪些要转码（webp 不可�
 test('site_list_images：includeIcons 时把站点头像也列上', async () => {
   const doc = fakeDoc();
   withImages(doc);
-  const r = await buildToolDefs(doc)[7].execute({ includeIcons: true });
+  const r = await buildToolDefs(doc)[8].execute({ includeIcons: true });
   assert.equal(r.total, 3);
 });
 
 test('site_image：环境无 canvas 时明确报 canvas_unavailable（不假装成功）', async () => {
   const doc = fakeDoc();
   withImages(doc);
-  const r = await buildToolDefs(doc)[8].execute({ index: 0 });
+  const r = await buildToolDefs(doc)[9].execute({ index: 0 });
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'canvas_unavailable');
 });
@@ -685,7 +740,7 @@ test('site_image：环境无 canvas 时明确报 canvas_unavailable（不假装�
 test('site_image：index 越界时报 index_out_of_range 并给总数', async () => {
   const doc = fakeDoc();
   withImages(doc);
-  const r = await buildToolDefs(doc)[8].execute({ index: 99 });
+  const r = await buildToolDefs(doc)[9].execute({ index: 99 });
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'index_out_of_range');
   assert.equal(r.total, 2);
@@ -693,7 +748,7 @@ test('site_image：index 越界时报 index_out_of_range 并给总数', async ()
 
 test('site_image：不给 index/src 时报 empty_src 并提示先用 site_list_images', async () => {
   const doc = fakeDoc();
-  const r = await buildToolDefs(doc)[8].execute({});
+  const r = await buildToolDefs(doc)[9].execute({});
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'empty_src');
   assert.match(r.hint, /site_list_images/);
@@ -726,7 +781,7 @@ test('site_image：真 canvas 路径——webp 解码后出 JPEG dataUrl，超�
       get src() { return this._src; }
     },
   };
-  const r = await buildToolDefs(doc, w)[8].execute({ index: 0, maxWidth: 1000, quality: 82 });
+  const r = await buildToolDefs(doc, w)[9].execute({ index: 0, maxWidth: 1000, quality: 82 });
   assert.equal(r.ok, true);
   assert.equal(r.mimeType, 'image/jpeg');
   assert.equal(r.width, 1000, '2000 宽 → 限到 1000');
@@ -758,7 +813,7 @@ test('site_image：体积超 maxBytes 时逐档降质量', async () => {
       set src(v) { this.naturalWidth = 400; this.naturalHeight = 300; this.onload(); }
     },
   };
-  const r = await buildToolDefs(doc, w)[8].execute({ index: 0, maxBytes: 1000 });
+  const r = await buildToolDefs(doc, w)[9].execute({ index: 0, maxBytes: 1000 });
   assert.equal(r.ok, true);
   assert.ok(qs.length > 1, '应重编多次');
   assert.ok(r.quality < 82, '质量应降过');
@@ -776,7 +831,7 @@ test('site_image：图片加载失败时报 image_load_failed（不返回空图�
       set src(v) { this.onerror(); }
     },
   };
-  const r = await buildToolDefs(doc, w)[8].execute({ index: 0 });
+  const r = await buildToolDefs(doc, w)[9].execute({ index: 0 });
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'image_load_failed');
 });
@@ -796,7 +851,7 @@ test('site_capture_view：给 selector 时走区域截图（不依赖宿主整�
     document: { createElement: () => fakeCanvas },
     Image: class { set src(v) { this.onload(); } },
   };
-  const r = await buildToolDefs(doc, w)[9].execute({ selector: '.article-content' });
+  const r = await buildToolDefs(doc, w)[10].execute({ selector: '.article-content' });
   assert.equal(r.ok, true);
   assert.equal(r.mode, 'region');
   assert.equal(r.selector, '.article-content');
@@ -805,14 +860,106 @@ test('site_capture_view：给 selector 时走区域截图（不依赖宿主整�
 
 test('site_capture_view：selector 不存在时报 selector_not_found', async () => {
   const doc = fakeDoc();
-  const r = await buildToolDefs(doc)[9].execute({ selector: '.不存在' });
+  const r = await buildToolDefs(doc)[10].execute({ selector: '.不存在' });
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'selector_not_found');
 });
 
+// ---------------------------------------------------------------- site_index
+
+test('site_index：默认给当前课程（从 body[data-site-path] 判）', async () => {
+  const doc = fakeDoc();
+  doc.body._attrs['data-site-path'] = '课程/电机学/课堂笔记/x.html';
+  const r = await buildToolDefs(doc)[2].execute({});
+  assert.equal(r.ok, true);
+  assert.equal(r.scope, 'course');
+  assert.equal(r.current.course, '电机学');
+  assert.match(r.text, /电机学/);
+  assert.match(r.text, /课堂笔记/);
+  assert.match(r.text, /课程\/电机学\/课堂笔记\/2026-10-08-磁路\.html/);
+  assert.doesNotMatch(r.text, /习题册第一章/, '不该混进别的课');
+});
+
+test('site_index：scope=all 给全站树（含其他课程）', async () => {
+  const doc = fakeDoc();
+  doc.body._attrs['data-site-path'] = '课程/电机学/x.html';
+  const r = await buildToolDefs(doc)[2].execute({ scope: 'all' });
+  assert.equal(r.scope, 'all');
+  assert.match(r.text, /电机学/);
+  assert.match(r.text, /电路原理/, '全站应含别的课');
+});
+
+test('site_index：列出全部课程名（供跨课程发现）', async () => {
+  const r = await buildToolDefs(fakeDoc())[2].execute({});
+  assert.deepEqual(r.courses, ['电机学', '电路原理']);
+});
+
+test('site_index：没有侧栏时报 no_sidebar（不返回空树假装成功）', async () => {
+  const doc = fakeDoc();
+  doc.children = doc.children.filter((c) => c !== doc._all.find((x) => x.className === 'drawer-nav-scroll-area'));
+  const r = await buildToolDefs(doc)[2].execute({});
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'no_sidebar');
+});
+
+// ---------------------------------------------------------------- links 开关
+
+test('renderMarkdown：links 默认关，链接只留文字', () => {
+  const root = el('div', '');
+  const p = el('p', '');
+  const a = el('a', '第二章', { attrs: { href: '课程/电机学/第二章.html' } });
+  p.children = [a]; a.parentElement = p;
+  root.children = [p];
+  assert.equal(renderMarkdown(root), '第二章');
+});
+
+test('renderMarkdown：links=true 时站内链接出 [文字](路径)', () => {
+  const root = el('div', '');
+  const p = el('p', '');
+  const a = el('a', '第二章', { attrs: { href: '课程/电机学/第二章.html' } });
+  p.children = [a]; a.parentElement = p;
+  root.children = [p];
+  assert.equal(renderMarkdown(root, { links: true }), '[第二章](课程/电机学/第二章.html)');
+});
+
+test('renderMarkdown：百分号编码的站内链接解码成可读中文（2026-10-19 实测）', () => {
+  const root = el('div', '');
+  const p = el('p', '');
+  const a = el('a', '课程索引', { attrs: { href: './%E5%B7%A5%E7%A8%8B%E6%95%B0%E5%AD%A6/index.html' } });
+  p.children = [a]; a.parentElement = p;
+  root.children = [p];
+  const md = renderMarkdown(root, { links: true });
+  assert.match(md, /\[课程索引\]\(\.\/工程数学\/index\.html\)/);
+});
+
+test('renderMarkdown：links=true 时外链加 ⧉ 标记、锚点保留 #', () => {
+  const root = el('div', '');
+  const p1 = el('p', '');
+  const ext = el('a', '官网', { attrs: { href: 'https://example.com' } });
+  p1.children = [ext]; ext.parentElement = p1;
+  const p2 = el('p', '');
+  const anc = el('a', '见本节', { attrs: { href: '#sec-1' } });
+  p2.children = [anc]; anc.parentElement = p2;
+  root.children = [p1, p2];
+  const md = renderMarkdown(root, { links: true });
+  assert.match(md, /⧉\[官网\]\(https:\/\/example\.com\)/);
+  assert.match(md, /\[见本节\]\(#sec-1\)/);
+});
+
+test('site_read：links 参数透传到 renderMarkdown', async () => {
+  const doc = fakeDoc();
+  const article = doc.children[0];
+  const p = el('p', '');
+  const a = el('a', '第二章', { attrs: { href: '课程/电机学/第二章.html' } });
+  p.children = [a]; a.parentElement = p;
+  article.children.push(p); p.parentElement = article;
+  const r = await buildToolDefs(doc)[1].execute({ what: 'page', links: true });
+  assert.match(r.text, /\[第二章\]\(课程\/电机学\/第二章\.html\)/);
+});
+
 test('site_capture_view：宿主未注入能力时明确报错（不静默、不假成功）', async () => {
   const defs = buildToolDefs(fakeDoc());
-  const r = await defs[9].execute({});
+  const r = await defs[10].execute({});
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'capture_unavailable');
   assert.ok(r.hint && r.hint.length > 10, '要告诉宿主该注入什么');
@@ -834,7 +981,7 @@ test('site_capture_view：有宿主能力时透传参数并回 JPEG dataUrl', as
     },
   };
   const defs = buildToolDefs(doc, win);
-  const r = await defs[9].execute({ format: 'jpeg', quality: 70, reason: '看版面' });
+  const r = await defs[10].execute({ format: 'jpeg', quality: 70, reason: '看版面' });
   assert.equal(r.ok, true);
   assert.equal(r.mimeType, 'image/jpeg');
   assert.ok(r.dataUrl.startsWith('data:image/jpeg;base64,'));
@@ -851,35 +998,35 @@ test('site_capture_view：有宿主能力时透传参数并回 JPEG dataUrl', as
 test('site_capture_view：宿主抛错/回空都收敛成 ok:false（不把异常漏给模型）', async () => {
   const doc = fakeDoc();
   const boom = buildToolDefs(doc, { innerWidth: 1, innerHeight: 1, __siteCapture: () => { throw new Error('quota'); } });
-  const r1 = await boom[9].execute({});
+  const r1 = await boom[10].execute({});
   assert.equal(r1.ok, false);
   assert.equal(r1.reason, 'capture_error');
   assert.ok(r1.detail.includes('quota'));
 
   const empty = buildToolDefs(doc, { innerWidth: 1, innerHeight: 1, __siteCapture: () => Promise.resolve({}) });
-  const r2 = await empty[9].execute({});
+  const r2 = await empty[10].execute({});
   assert.equal(r2.ok, false);
   assert.equal(r2.reason, 'capture_failed');
 });
 
 test('site_navigate.execute：按锚点跳', async () => {
   const defs = buildToolDefs(fakeDoc());
-  const r = await defs[2].execute({ to: 'section', anchor: 'sec-1' });
+  const r = await defs[3].execute({ to: 'section', anchor: 'sec-1' });
   assert.equal(r.ok, true);
   assert.equal(r.anchor, 'sec-1');
 });
 
 test('site_search.execute：空查询报 empty_query；无面板报 search_ui_missing', async () => {
-  const a = await buildToolDefs(fakeDoc())[3].execute({ query: '  ' });
+  const a = await buildToolDefs(fakeDoc())[4].execute({ query: '  ' });
   assert.deepEqual(a, { ok: false, reason: 'empty_query' });
-  const b = await buildToolDefs(fakeDoc({ withSearch: false }))[3].execute({ query: '变压器' });
+  const b = await buildToolDefs(fakeDoc({ withSearch: false }))[4].execute({ query: '变压器' });
   assert.equal(b.reason, 'search_ui_missing');
 });
 
 test('site_search.execute：填输入框、开面板、加滚动锁、派发 input 事件（与真人同路径）', async () => {
   const doc = fakeDoc();
   const defs = buildToolDefs(doc);
-  const p = defs[3].execute({ query: '变压器' });
+  const p = defs[4].execute({ query: '变压器' });
   const input = doc.getElementById('search-input');
   const panel = doc.getElementById('search-panel');
   assert.equal(input.value, '变压器');
@@ -894,7 +1041,7 @@ test('site_search.execute：填输入框、开面板、加滚动锁、派发 inp
 
 test('site_search.execute：scope=page 走页内查找', async () => {
   const defs = buildToolDefs(fakeDoc());
-  const r = await defs[3].execute({ query: '铁芯损耗', scope: 'page' });
+  const r = await defs[4].execute({ query: '铁芯损耗', scope: 'page' });
   assert.equal(r.ok, true);
   assert.equal(r.scope, undefined);
   assert.ok(r.total >= 1);
@@ -904,7 +1051,7 @@ test('site_search.execute：scope=page 走页内查找', async () => {
 test('site_show_symbol.execute：找到符号则派发点击并回读气泡', async () => {
   const doc = fakeDoc();
   const defs = buildToolDefs(doc);
-  const r = await defs[4].execute({ term: 'sym-U' });
+  const r = await defs[5].execute({ term: 'sym-U' });
   assert.equal(r.ok, true);
   assert.equal(r.term, 'sym-U');
   assert.ok(r.bubble.includes('电压'), '应回读气泡文字');
@@ -912,14 +1059,14 @@ test('site_show_symbol.execute：找到符号则派发点击并回读气泡', as
 
 test('site_show_symbol.execute：正文里的符号也能查（2026-10-19 修）', async () => {
   const doc = fakeDoc();
-  const r = await buildToolDefs(doc)[4].execute({ term: 'sym-I' });
+  const r = await buildToolDefs(doc)[5].execute({ term: 'sym-I' });
   assert.equal(r.ok, true);
   assert.equal(r.term, 'sym-I');
 });
 
 test('site_show_symbol.execute：页面上没有该符号时报 symbol_not_on_page 并给候选', async () => {
   const defs = buildToolDefs(fakeDoc());
-  const r = await defs[4].execute({ term: 'sym-NOPE' });
+  const r = await defs[5].execute({ term: 'sym-NOPE' });
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'symbol_not_on_page');
   assert.ok(Array.isArray(r.available) && r.available.length >= 2, '要给可查清单');
@@ -935,13 +1082,13 @@ test('registerTools：探测两个注册表；都没有时返回 0 且不抛', (
   assert.equal(registerTools(null, {}), 0);
 });
 
-test('registerTools：document 侧注册表可用时注册 10 个（Chromium 形态）', () => {
+test('registerTools：document 侧注册表可用时注册 11 个（Chromium 形态）', () => {
   const registered = [];
   const doc = fakeDoc();
   doc.modelContext = { registerTool: (t) => { registered.push(t.name); return Promise.resolve(); } };
-  assert.equal(registerTools(doc, null), 10);
+  assert.equal(registerTools(doc, null), 11);
   assert.deepEqual(registered, [
-    'site_get_page_info', 'site_read', 'site_navigate', 'site_search',
+    'site_get_page_info', 'site_read', 'site_index', 'site_navigate', 'site_search',
     'site_show_symbol', 'site_panels', 'site_view',
     'site_list_images', 'site_image', 'site_capture_view',
   ]);
@@ -950,8 +1097,8 @@ test('registerTools：document 侧注册表可用时注册 10 个（Chromium 形
 test('registerTools：只有 navigator 侧时也注册（Firefox 原生形态）', () => {
   const registered = [];
   const nav = { modelContext: { registerTool: (t) => { registered.push(t.name); return Promise.resolve(); } } };
-  assert.equal(registerTools(fakeDoc(), nav), 10);
-  assert.equal(registered.length, 10);
+  assert.equal(registerTools(fakeDoc(), nav), 11);
+  assert.equal(registered.length, 11);
 });
 
 test('registerTools：单个工具注册失败不影响其余', () => {
@@ -960,7 +1107,7 @@ test('registerTools：单个工具注册失败不影响其余', () => {
   doc.modelContext = {
     registerTool: () => { n += 1; if (n === 2) throw new Error('boom'); return Promise.resolve(); },
   };
-  assert.equal(registerTools(doc, null), 10, '仍应尝试注册全部 10 个');
+  assert.equal(registerTools(doc, null), 11, '仍应尝试注册全部 11 个');
 });
 
 test('textOf：空/缺元素都给空串（永不 undefined）', () => {
@@ -1040,5 +1187,5 @@ test('WEBMCP_TOOLS_JS：在假环境里能真的注册上（端到端，不靠�
   sandbox.window = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(WEBMCP_TOOLS_JS, sandbox);
-  assert.equal(registered.length, 10, '内联源码应注册 10 个工具');
+  assert.equal(registered.length, 11, '内联源码应注册 11 个工具');
 });
