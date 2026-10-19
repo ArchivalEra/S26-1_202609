@@ -69,11 +69,47 @@ function inject(rel) {
 
 function injectPlugins() {
   inject("webmcp-shim.js");
-  inject("webmcp-tools.js");
-  // ⭐ 2026-10-19：页面桥植入站点（用户定案「每次搭桥太傻逼」）。
-  // 工具注册是异步的（registerTool 返回 Promise），桥要等它们进注册表再报到，
-  // 所以延后一拍注入。守卫见 shouldBridge()。
-  if (shouldBridge()) setTimeout(function () { injectBridge(); }, 300);
+  var toolsScript = inject("webmcp-tools.js");
+  if (!shouldBridge()) return;
+
+  // ⭐ 2026-10-19 修 P2-20：300ms 魔法延迟改**就绪握手**。
+  //
+  // 旧实现：setTimeout(300) 猜「工具应该注册完了」——慢机器上工具还没进注册表，
+  // 桥报到时就拿到空清单（然后永远不重报，除非 toolchange 恰好触发）。
+  //
+  // 新实现：等 tools 脚本 load 完 + 轮询 getTools() 直到非空（最多 3s），
+  // 再注入桥。任何一步失败都退回一个短延迟，保证桥总会注入。
+  var injected = false;
+  function ready() {
+    if (injected) return;
+    injected = true;
+    injectBridge();
+  }
+  function poll(n) {
+    var mc = document.modelContext || (typeof navigator !== "undefined" && navigator.modelContext) || null;
+    if (!mc || typeof mc.getTools !== "function") {
+      if (n <= 0) return ready();
+      return setTimeout(function () { poll(n - 1); }, 100);
+    }
+    Promise.resolve()
+      .then(function () { return mc.getTools(); })
+      .then(function (list) {
+        if (Array.isArray(list) && list.length) return ready();
+        if (n <= 0) return ready();
+        setTimeout(function () { poll(n - 1); }, 100);
+      })
+      .catch(function () {
+        if (n <= 0) return ready();
+        setTimeout(function () { poll(n - 1); }, 100);
+      });
+  }
+  // tools 脚本 onload 后再等注册表（最多 30 次 × 100ms = 3s）
+  if (toolsScript && typeof toolsScript.addEventListener === "function") {
+    toolsScript.addEventListener("load", function () { poll(30); });
+    toolsScript.addEventListener("error", function () { setTimeout(ready, 300); });
+  } else {
+    setTimeout(function () { poll(30); }, 50);
+  }
 }
 
 /**
