@@ -122,7 +122,10 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
       inputSchema: t.inputSchema || { type: 'object', properties: {} },
     }));
     // 2026-10-19：报到去重——实测同一页会报 4 次（onopen + toolchange + 重试链）。
-    // 内容没变就不重复 POST（桥那边也不该被重复 hello 刷屏）。
+    //
+    // ⚠️ 去重必须**按连接**而不是按页面：桥重启后页面重连，桥那边工具表是空的，
+    // 若指纹相同就跳过报到，桥会永远以为没有工具（实测 tools: 0）。
+    // 所以每次 EventSource 重新 open 都清掉指纹。
     const fingerprint = tools.map((t) => t.name).join(',') + '|' + location.href;
     if (window.__bridgeLastHello === fingerprint) return;
     window.__bridgeLastHello = fingerprint;
@@ -266,8 +269,9 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
   const es = new EventSource(withToken(BRIDGE + '/events'));
   es.onopen = () => {
     console.log('[bridge] 已连上本地桥');
+    // 每次新连接都清指纹——桥可能是刚重启的，它那边工具表为空，必须重报。
+    window.__bridgeLastHello = null;
     // 桥会立刻推一帧 hello{clientId}；等 200ms 让那帧先到，再报到。
-    // 拿不到 clientId 也照常报到（桥会退回「首个连接即活动页」）。
     setTimeout(() => { report().catch(() => {}); }, 200);
   };
   es.onerror = () => console.warn('[bridge] SSE 错误（看门狗会处理重连）');
