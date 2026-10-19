@@ -692,6 +692,36 @@ var renderMathInto = ${renderMathInto.toString()};
 
 var BRIDGE = "http://127.0.0.1:9345";
 
+/**
+ * 本机守卫（2026-10-19 补，审计发现）。
+ *
+ * 助手面板要与**用户自己电脑上**的桥进程通信。线上访客的浏览器里没有那个进程，
+ * 发请求只会失败；更重要的是，**代码不该让公网页面去敲 localhost**——
+ * 那在语义上是「网站探测访问者的本机服务」。
+ *
+ * 页面桥早有这道判断（webmcp-loader 的 shouldBridge），但面板漏了：
+ * BRIDGE 是硬编码常量，文件里没有任何 hostname 检查。
+ *
+ * 判据与页面桥对齐：loopback hostname，或用户显式要（?assistant=1 /
+ * localStorage.webmcp_bridge=on）。
+ * 非本机时**不拦截按钮，只在点开时给一句说明**——按钮本身不构成风险，
+ * 真问题是那些出站请求；而站长在线上域名自测时也需要能看见入口。
+ */
+var LOCAL_ONLY = (function () {
+  try {
+    var h = location.hostname;
+    if (h === "127.0.0.1" || h === "localhost" || h === "[::1]" || h === "::1") return true;
+  } catch (e) { /* 无 location */ }
+  try {
+    var qs = new URLSearchParams(location.search);
+    if (qs.get("assistant") === "1") return true;
+  } catch (e) { /* 无 search */ }
+  try {
+    if (localStorage.getItem("webmcp_bridge") === "on") return true;
+  } catch (e) { /* 无存储 */ }
+  return false;
+})();
+
 // ── 状态 ────────────────────────────────────────────────────
 var panel = null, logEl = null, inputEl = null, sendBtn = null, jumpBtn = null, backdrop = null;
 var attachBtn = null, attachBar = null, fileInput = null;
@@ -718,6 +748,9 @@ var tokenPromise = null;
 function tokenAsync(force) {
   if (!force && tokenPromise) return tokenPromise;
   tokenPromise = new Promise(function (resolve) {
+    // 非本机：不向 127.0.0.1 发任何请求（2026-10-19 审计修复）。
+    // 返回空 token，让调用方按「未授权」处理，而不是真的去打本机端口。
+    if (!LOCAL_ONLY) return resolve("");
     var t = "";
     try { t = window.__bridgeToken || localStorage.getItem("webmcp_bridge_token") || ""; } catch (e) {}
     if (t) { window.__bridgeToken = t; return resolve(t); }
@@ -863,6 +896,8 @@ function prepareImage(file) {
 
 /** 把一张图 POST 到桥的 /upload，拿回 fileInfo。 */
 function uploadAttachment(item, tk) {
+  // 非本机不向 127.0.0.1 发请求（2026-10-19 审计修复）
+  if (!LOCAL_ONLY) return Promise.reject(new Error("学习助手只在你自己电脑上可用"));
   var b64 = String(item.dataUrl || "").split(",")[1] || "";
   return fetch(withToken(BRIDGE + "/upload", tk), {
     method: "POST",
@@ -1156,6 +1191,14 @@ function showJump() {
 // ── SSE 请求 ────────────────────────────────────────────────
 function askChat(text) {
   if (busy) return;
+  // 底层兜底（2026-10-19）：UI 已经禁用了输入框，但 __chatPanel.ask 是暴露的，
+  // 别让任何调用路径在非本机环境发出请求。
+  if (!LOCAL_ONLY) {
+    var nope = addMsg("bot");
+    nope.body.textContent = "学习助手只在你自己电脑上可用（要连本地桥进程）。";
+    nope.done = true;
+    return;
+  }
   var userMsg = addMsg("user");
   userMsg.body.textContent = text;
 
@@ -1583,11 +1626,34 @@ function openPanel() {
   document.body.classList.add("chat-open");
   var btn = document.getElementById("assistant-toggle");
   if (btn) btn.setAttribute("aria-expanded", "true");
-  if (logEl && !logEl.children.length) showEmpty();
+  if (logEl && !logEl.children.length) {
+    if (LOCAL_ONLY) showEmpty();
+    else showLocalOnlyNotice();
+  }
   // 手机上不自动抢焦点：会立刻弹键盘，把抽屉顶成半屏
-  if (inputEl && !(window.innerWidth <= 860)) inputEl.focus();
+  if (inputEl && LOCAL_ONLY && !(window.innerWidth <= 860)) inputEl.focus();
   stuck = true;
   scrollToBottom();
+}
+
+/**
+ * 非本机环境下的说明（不发任何请求）。
+ *
+ * 为什么不干脆隐藏按钮：站长会在线上域名自测，看不见入口反而困惑。
+ * 为什么不静默禁用：用户会以为坏了。说清楚「这是本机功能」最省事。
+ */
+function showLocalOnlyNotice() {
+  if (inputEl) { inputEl.disabled = true; inputEl.placeholder = "仅本机可用"; }
+  if (sendBtn) sendBtn.disabled = true;
+  if (attachBtn) attachBtn.disabled = true;
+  var box = document.createElement("div");
+  box.className = "chat-empty chat-local-only";
+  var p1 = document.createElement("p");
+  p1.textContent = "学习助手要连你电脑上的本地桥进程，所以只在你自己电脑上打开本站时可用。";
+  var p2 = document.createElement("p");
+  p2.textContent = "在线版可以正常阅读全部课程资料；需要用助手时，在本机跑 node bridge.mjs 后从 127.0.0.1 打开站点。";
+  box.appendChild(p1); box.appendChild(p2);
+  logEl.appendChild(box);
 }
 
 function close() {
