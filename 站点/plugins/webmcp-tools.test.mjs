@@ -325,6 +325,36 @@ test('renderMarkdown：KaTeX 的 html 副本不重复读（实测出现 BBBHHH �
   assert.equal(md, '$B$B', '公式只读一次，正文里的 B 是另一处内容');
 });
 
+test('renderMarkdown：深嵌套列表/引用不栈溢出（2026-10-19 真实页 Maximum call stack）', () => {
+  // 旧实现 walk→renderMarkdown→walk 从根重来，真实页 18000 节点直接爆栈。
+  let node = el('p', '最内层文字');
+  for (let i = 0; i < 60; i++) {
+    const ul = el('ul', '');
+    const li = el('li', '');
+    li.children = [node];
+    node.parentElement = li;
+    ul.children = [li];
+    li.parentElement = ul;
+    node = ul;
+  }
+  const md = renderMarkdown(node);
+  assert.match(md, /最内层文字/);
+});
+
+test('renderMarkdown：引用块不重复整页内容（旧实现从根重来）', () => {
+  const root = el('div', '');
+  const h1 = el('h1', '标题一');
+  const bq = el('blockquote', '');
+  const p = el('p', '引用里的话');
+  bq.children = [p];
+  p.parentElement = bq;
+  root.children = [h1, bq];
+  const md = renderMarkdown(root);
+  assert.match(md, /引用里的话/);
+  const hits = (md.match(/# 标题一/g) || []).length;
+  assert.equal(hits, 1, '标题只出现一次（不该被引用块再渲染一遍）');
+});
+
 test('renderMarkdown：折叠面板保留内容并标〔折叠〕；includeCollapsed=false 时跳过', () => {
   const doc = fakeDoc();
   const root = doc.children[0];
@@ -421,6 +451,18 @@ test('site_read：what=section 只读那一节（含子标题）', () => {
   assert.match(r.text, /第一节正文/);
   assert.match(r.text, /小节 A 正文/, '应含下级小节');
   assert.doesNotMatch(r.text, /第二节正文/, '不应含同级下一节');
+});
+
+test('site_read：section 读到的正文不含父级标题（线性前进不越界）', () => {
+  // 2026-10-19 真实页崩过（HTMLCollection 无 indexOf）；修完后用真页复验通过。
+  // 这里守的是同一条契约：从某节开始读，遇到同级标题就停，且不重复父级内容。
+  const doc = fakeDoc();
+  const r = createPageView(doc).readContent({ what: 'section', query: '第一节' });
+  assert.equal(r.ok, true);
+  assert.match(r.text, /第一节正文/);
+  assert.match(r.text, /小节 A 正文/, '含下级小节');
+  assert.doesNotMatch(r.text, /第二节正文/, '不含同级下一节');
+  assert.doesNotMatch(r.text, /变压器额定电流/, '不含页面 h1（父级标题）');
 });
 
 test('site_read：what=section 找不到给候选', () => {
@@ -951,6 +993,38 @@ test('WEBMCP_TOOLS_JS：是真函数派生的、语法可解析、含两个注�
   assert.ok(WEBMCP_TOOLS_JS.includes('doc.modelContext') && WEBMCP_TOOLS_JS.includes('nav.modelContext'),
     '两个注册表都要探测（Chromium 回归的判据）');
   assert.doesNotThrow(() => new Function(WEBMCP_TOOLS_JS), '内联源码必须语法可解析');
+});
+
+test('WEBMCP_TOOLS_JS：内联源码必须自带全部依赖（2026-10-19 真实页崩过：isTextNode is not defined）', async () => {
+  // 盲区：模块测试直接 import 函数，能跑；浏览器跑的是内联字符串，
+  // 漏了一个依赖（childrenOf/isTextNode 提升到模块级后忘了加）就整条 site_read 崩。
+  // 这里在**隔离 vm** 里跑内联源码，并真的调用 site_read 的 section 分支。
+  const vm = await import('node:vm');
+  const doc = fakeDoc();
+  let captured = null;
+  doc.modelContext = {
+    registerTool: (t) => { if (t.name === 'site_read') captured = t; return Promise.resolve(); },
+  };
+  const sandbox = {
+    document: doc, navigator: null, Promise, RegExp, JSON, Array, Number, String, Object,
+    Math, URL, Event: class {}, MouseEvent: class {}, setTimeout, console,
+  };
+  sandbox.window = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(WEBMCP_TOOLS_JS, sandbox);
+  assert.ok(captured, 'site_read 应已注册');
+  const r = await captured.execute({ what: 'section', query: '第一节' });
+  assert.equal(r.ok, true, 'section 分支在内联环境里必须能跑：' + JSON.stringify(r));
+  assert.match(r.text, /第一节正文/);
+});
+
+test('WEBMCP_TOOLS_JS：内联源码引用的每个模块级函数都在（派生完整性）', () => {
+  // 粗粒度守卫：源码里出现的「裸函数名调用」必须要么是内联过的，要么是 JS 内置。
+  const inlined = ['textOf', 'hasClass', 'childrenOf', 'isTextNode', 'renderMarkdown',
+    'createPageView', 'buildToolDefs', 'registerTools'];
+  for (const fn of inlined) {
+    assert.ok(WEBMCP_TOOLS_JS.includes(`var ${fn} = `), `内联源码缺 ${fn}`);
+  }
 });
 
 test('WEBMCP_TOOLS_JS：在假环境里能真的注册上（端到端，不靠浏览器）', async () => {
