@@ -346,3 +346,48 @@ test('CHAT_JS：模板串内没有裸反引号（会提前闭合模板）', asyn
   });
   assert.deepEqual(offenders, [], '模板串内出现反引号，会提前闭合：\n' + offenders.join('\n'));
 });
+
+// ── 本机守卫（2026-10-19 审计修复）──────────────────────────
+//
+// 审计发现：页面桥有 loopback 判断（webmcp-loader 的 shouldBridge），
+// 但**助手面板漏了** —— BRIDGE 是硬编码常量，文件里没有任何 hostname 检查。
+// 线上访客点助手会去请求 127.0.0.1:9345，语义上是「公网页面探测访问者本机服务」。
+//
+// 判据：三个出站路径（/chat、/upload、/bootstrap）都必须先看 LOCAL_ONLY。
+
+test('本机守卫：LOCAL_ONLY 存在且按 hostname 判断', () => {
+  assert.match(CHAT_JS, /var LOCAL_ONLY = \(function \(\)/);
+  assert.match(CHAT_JS, /location\.hostname/);
+  // 三种回环写法都要认
+  for (const h of ['127.0.0.1', 'localhost', '::1']) {
+    assert.ok(CHAT_JS.includes(h), 'LOCAL_ONLY 缺 ' + h);
+  }
+});
+
+test('本机守卫：非本机时 tokenAsync 不请求 127.0.0.1', () => {
+  const fn = CHAT_JS.slice(CHAT_JS.indexOf('function tokenAsync'), CHAT_JS.indexOf('function withToken'));
+  assert.match(fn, /if \(!LOCAL_ONLY\) return resolve\(""\)/, 'tokenAsync 要先判 LOCAL_ONLY');
+});
+
+test('本机守卫：非本机时 askChat 不发请求', () => {
+  const fn = CHAT_JS.slice(CHAT_JS.indexOf('function askChat'), CHAT_JS.indexOf('function resetSendButton'));
+  assert.match(fn, /if \(!LOCAL_ONLY\)/, 'askChat 要拦截');
+  assert.match(fn, /只在你自己电脑上可用/, '要给出说明');
+});
+
+test('本机守卫：非本机时上传被拒', () => {
+  const fn = CHAT_JS.slice(CHAT_JS.indexOf('function uploadAttachment'), CHAT_JS.indexOf('function renderAttachBar'));
+  assert.match(fn, /if \(!LOCAL_ONLY\) return Promise\.reject/, 'uploadAttachment 要拦截');
+});
+
+test('本机守卫：非本机时输入框禁用并显示说明', () => {
+  assert.match(CHAT_JS, /function showLocalOnlyNotice/);
+  // 该函数定义在 openPanel 之后，用下一个已知函数名收边界
+  const start = CHAT_JS.indexOf('function showLocalOnlyNotice');
+  const end = CHAT_JS.indexOf('function close()', start);
+  const fn = CHAT_JS.slice(start, end);
+  assert.ok(fn.length > 0, '找不到 showLocalOnlyNotice');
+  assert.match(fn, /inputEl\.disabled = true/);
+  assert.match(fn, /sendBtn\.disabled = true/);
+  assert.match(fn, /attachBtn\.disabled = true/);
+});
