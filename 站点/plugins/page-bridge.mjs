@@ -63,16 +63,53 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
     return;
   }
 
-  const post = (payload) => fetch(BRIDGE + '/result', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Bridge-Token': TOKEN },
-    body: JSON.stringify(payload),
-  }).catch((e) => console.warn('[bridge] 回传失败', e));
+  /**
+   * 回传结果给桥（2026-10-19 修 P2-20）。
+   *
+   * 旧实现：裸 fetch + catch 打印 ⇒ 桥短暂抖动就丢结果，桥那边白等 30s。
+   * 现在：8s 超时 + 最多 3 次重试（200/600ms 退避）。
+   * **工具执行结果不能丢**——丢了模型就看不到真实数据。
+   */
+  const post = (payload, attempt) => {
+    const n = attempt || 1;
+    const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    const timer = setTimeout(() => { try { ctrl && ctrl.abort(); } catch (e) { /* 无 */ } }, 8000);
+    return fetch(BRIDGE + '/result', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Bridge-Token': TOKEN },
+      body: JSON.stringify(payload),
+      signal: ctrl ? ctrl.signal : undefined,
+    }).then((r) => {
+      clearTimeout(timer);
+      if (!r.ok && n < 3) throw new Error('HTTP ' + r.status);
+      return r;
+    }).catch((e) => {
+      clearTimeout(timer);
+      if (n < 3) {
+        const wait = 200 * Math.pow(3, n - 1);
+        console.warn('[bridge] 回传失败（第 ' + n + ' 次），' + wait + 'ms 后重试', e && e.message);
+        return new Promise((res) => setTimeout(res, wait)).then(() => post(payload, n + 1));
+      }
+      console.warn('[bridge] 回传失败（已重试 3 次，放弃）', e && e.message);
+      return null;
+    });
+  };
 
   // —— ② 报到：把工具清单（去掉 window 等不可序列化字段）报给桥 ——
   let handles = [];
   const report = async () => {
-    const list = await mc.getTools();          // 规范形态返回 Promise
+    // 2026-10-19 修 P2-20：getTools() 可能是 Promise，rejection 此前无人处理
+    //（es.onopen 直接调用 async 函数 → unhandled rejection）。
+    let list;
+    try {
+      list = await mc.getTools();              // 规范形态返回 Promise
+    } catch (e) {
+      console.warn('[bridge] 取工具清单失败，稍后重试', e && e.message);
+      // 1s 后重试一次（注册表可能还没就绪）
+      setTimeout(() => { report().catch(() => {}); }, 1000);
+      return;
+    }
+    if (!Array.isArray(list)) { console.warn('[bridge] getTools 返回非数组'); return; }
     handles = list;
     const tools = list.map((t) => ({
       name: t.name,
@@ -175,7 +212,6 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
     window.__bridgeReconnect.tick = setInterval(() => {
       const b = window.__bridgeReconnect;
       const cur = window.__mcpBridge && window.__mcpBridge.es;
-      const dead = !cur || cur.readyState === 2;
       // 连接活着（readyState 1）就算好
       if (cur && cur.readyState === 1) { b.fails = 0; return; }
       b.fails++;
