@@ -73,7 +73,42 @@ function injectPlugins() {
   // ⭐ 2026-10-19：页面桥植入站点（用户定案「每次搭桥太傻逼」）。
   // 工具注册是异步的（registerTool 返回 Promise），桥要等它们进注册表再报到，
   // 所以延后一拍注入。守卫见 shouldBridge()。
-  if (shouldBridge()) setTimeout(function () { inject("webmcp-bridge.js"); }, 300);
+  if (shouldBridge()) setTimeout(function () { injectBridge(); }, 300);
+}
+
+/**
+ * 注入页面桥（2026-10-19 修 P0-2）。
+ *
+ * 关键：**先把源码取回来塞进 window.__mcpBridgeSource**，再插 <script>。
+ * 这样断线看门狗有源码可 eval 重建——旧实现靠 arguments.callee（箭头函数里没有），
+ * 源码恒为 null，看门狗自杀后永不重连。
+ *
+ * 顺带把 token 也塞进 window.__bridgeToken（bridge 启动时写 .bridge-token）。
+ */
+function injectBridge() {
+  var url = baseDir() + "webmcp-bridge.js";
+  window.__mcpBridgeReload = url;
+  // token：优先 localStorage（用户可手配），否则空（本机开发桥可能未开鉴权）
+  try {
+    var t = localStorage.getItem("webmcp_bridge_token");
+    if (t) window.__bridgeToken = t;
+  } catch (e) {}
+  fetch(url, { cache: "force-cache" })
+    .then(function (r) { return r.text(); })
+    .then(function (src) {
+      window.__mcpBridgeSource = src;
+      var el = document.createElement("script");
+      el.src = url;
+      el.async = false;
+      document.head.appendChild(el);
+    })
+    .catch(function () {
+      // 取源码失败也别放弃：直接插标签，桥本身能跑，只是重建能力退化到 reinjectTag
+      var el = document.createElement("script");
+      el.src = url;
+      el.async = false;
+      document.head.appendChild(el);
+    });
 }
 
 // 只在「本机 / 显式开启」时连桥。线上访客一个请求都不会打到 127.0.0.1。
