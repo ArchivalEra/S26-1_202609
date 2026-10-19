@@ -1096,6 +1096,77 @@ export function createPageView(doc, loc, winOverride) {
   }
 
   /**
+   * 直读搜索索引（2026-10-19 用户定案）：**搜索框是给人用的，模型要的是结果**。
+   *
+   * 旧实现走 UI：开面板 → 填输入框 → 派发 input → 等 1200ms → 读 DOM，
+   * 拿到的永远是被 UI 截断的 12 条，且没有锚点。
+   * 而 `search/index.json` 里有 114 页 × 1286 个标题（标题 + 锚点 + 层级），
+   * 同步、无上限、可精确到节。
+   *
+   * @param {string} q 查询词
+   * @param {object} [o]
+   * @param {number} [o.limit=20] 命中上限
+   * @param {boolean} [o.includeHeadings=true] 是否返回页内小节命中
+   */
+  function searchIndex(q, o) {
+    const opt = o || {};
+    const query = String(q || '').trim();
+    if (!query) return Promise.resolve({ ok: false, reason: 'empty_query' });
+    const limit = Math.max(1, Math.min(100, Number(opt.limit) || 20));
+    const withHeadings = opt.includeHeadings !== false;
+    const rootAttr = (doc.documentElement && doc.documentElement.getAttribute('data-root')) || './';
+    const url = rootAttr + 'search/index.json';
+
+    return fetch(url).then((r) => {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).then((idx) => {
+      const docs = (idx && idx.docs) || [];
+      const needle = query.toLowerCase();
+      const hits = [];
+      for (const d of docs) {
+        // ① 标题命中
+        const titleHit = String(d.title || '').toLowerCase().indexOf(needle) >= 0;
+        // ② 小节标题命中
+        const secHits = withHeadings
+          ? (d.headings || []).filter((h) => String(h.t || h.d || '').toLowerCase().indexOf(needle) >= 0)
+          : [];
+        if (!titleHit && !secHits.length) continue;
+        const hit = {
+          title: d.title,
+          path: String(d.url || '').replace(/^\//, ''),
+          chars: d.chars,
+        };
+        if (secHits.length) {
+          hit.sections = secHits.slice(0, 8).map((h) => ({
+            title: h.d || h.t, anchor: h.a, level: h.l,
+          }));
+        }
+        hits.push(hit);
+        if (hits.length >= limit) break;
+      }
+      // 站内路径解码（索引里是百分号编码）
+      for (const h of hits) {
+        try { h.path = decodeURI(h.path); } catch (e) { /* 原样 */ }
+      }
+      return {
+        ok: true, query, scope: 'index',
+        total: hits.length,
+        totalPages: docs.length,
+        truncated: hits.length >= limit,
+        hits,
+        hint: hits.length
+          ? '跳页用 site_navigate(to="page", path=…)，需要节内定位再加 hash'
+          : '索引里没有匹配的标题/小节；试试换个词，或用 site_index 看全站结构',
+      };
+    }).catch((e) => ({
+      ok: false, reason: 'index_unavailable',
+      detail: String((e && e.message) || e),
+      hint: 'search/index.json 取不到（可能未构建或跨域）。退路：site_index 看结构，或 site_read 读本页',
+    }));
+  }
+
+  /**
    * 站点索引：从**侧栏导航树**重建层级（2026-10-19 grill Q13 定案）。
    *
    * 为什么不读目录页：实测侧栏能重建出 **118 个节点**，与构建期 NAV_STRUCTURE 逐字一致；
@@ -1379,7 +1450,7 @@ export function createPageView(doc, loc, winOverride) {
     headings, pageInfo, openSection, togglePanels, findSymbol, listSymbols, glossaryDict,
     searchResults, searchUi, captureView,
     readContent, findInPage, navigate, setView, viewState, panelState,
-    listImages, imageToDataUrl, siteIndex,
+    listImages, imageToDataUrl, siteIndex, searchIndex,
   };
 }
 
@@ -1443,7 +1514,7 @@ export function buildToolDefs(doc, win) {
     },
     {
       name: 'site_search',
-      description: '找内容。scope=site（默认）用全站搜索面板检索，返回命中标题与链接；scope=page 在本页内文里找（像 Ctrl+F），返回片段与所在小节。',
+      description: '找内容。scope=site（默认）直读全站索引，返回命中页面的标题、路径、以及页内命中小节（含锚点）；scope=page 在本页内文里找（像 Ctrl+F），返回片段与所在小节。',
       inputSchema: {
         type: 'object',
         properties: {
@@ -1455,22 +1526,11 @@ export function buildToolDefs(doc, win) {
       execute: (a) => {
         const q = String((a && a.query) || '').trim();
         if (!q) return { ok: false, reason: 'empty_query' };
+        // scope=page：页内查找（Ctrl+F 语义）
         if ((a && a.scope) === 'page') return view.findInPage(q);
-        const { panel, input } = view.searchUi();
-        if (!input) return { ok: false, reason: 'search_ui_missing' };
-        // 走真人同一条路径：开面板（含 body.search-open 滚动锁）、填值、派发 input
-        if (panel) panel.hidden = false;
-        try { if (doc.body && doc.body.classList) doc.body.classList.add('search-open'); } catch (e) { /* 无 body */ }
-        input.focus();
-        input.value = q;
-        const win2 = w || {};
-        const InputEvent = win2.Event || (typeof Event !== 'undefined' ? Event : null);
-        if (InputEvent) input.dispatchEvent(new InputEvent('input', { bubbles: true }));
-        // 面板是异步渲染的——等一拍再读（与真人「输入后等一下」同）。
-        return new Promise((resolve) => {
-          const read = () => resolve({ ok: true, query: q, scope: 'site', ...view.searchResults() });
-          (win2.setTimeout ? win2.setTimeout : setTimeout)(read, 1200);
-        });
+        // scope=site（默认）：**直读 search/index.json**，不开搜索框。
+        // 2026-10-19 用户定案：「搜索框明显是给人类用的」——模型要的是结果+链接+锚点。
+        return view.searchIndex(q, { limit: a && a.limit, includeHeadings: true });
       },
     },
     {

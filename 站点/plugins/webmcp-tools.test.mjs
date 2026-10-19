@@ -1016,27 +1016,61 @@ test('site_navigate.execute：按锚点跳', async () => {
   assert.equal(r.anchor, 'sec-1');
 });
 
-test('site_search.execute：空查询报 empty_query；无面板报 search_ui_missing', async () => {
+test('site_search.execute：空查询报 empty_query', async () => {
   const a = await buildToolDefs(fakeDoc())[4].execute({ query: '  ' });
   assert.deepEqual(a, { ok: false, reason: 'empty_query' });
-  const b = await buildToolDefs(fakeDoc({ withSearch: false }))[4].execute({ query: '变压器' });
-  assert.equal(b.reason, 'search_ui_missing');
 });
 
-test('site_search.execute：填输入框、开面板、加滚动锁、派发 input 事件（与真人同路径）', async () => {
+test('site_search（site 作用域）：直读 search/index.json，不开搜索框（用户定案）', async () => {
   const doc = fakeDoc();
-  const defs = buildToolDefs(doc);
-  const p = defs[4].execute({ query: '变压器' });
-  const input = doc.getElementById('search-input');
-  const panel = doc.getElementById('search-panel');
-  assert.equal(input.value, '变压器');
-  assert.equal(panel.hidden, false);
-  assert.equal(input._focused, true);
-  assert.ok(hasClass(doc.body, 'search-open'), '2026-10-19 修：旧版漏了滚动锁');
-  assert.equal(input._events.length, 1, '应派发一次 input 事件');
-  const r = await p;
-  assert.equal(r.ok, true);
-  assert.equal(r.total, 7);
+  const index = {
+    pages: 2,
+    docs: [
+      { id: 0, url: '%E8%AF%BE%E7%A8%8B/x.html', title: '变压器额定电流', chars: 900,
+        headings: [{ t: '额定容量', d: '额定容量', a: '额定容量', l: 2, s: 10 }] },
+      { id: 1, url: 'other.html', title: '无关页', chars: 100, headings: [] },
+    ],
+  };
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async (u) => {
+    assert.match(String(u), /search\/index\.json$/, '应取索引文件');
+    return { ok: true, json: async () => index };
+  };
+  try {
+    const r = await buildToolDefs(doc)[4].execute({ query: '变压器' });
+    assert.equal(r.ok, true);
+    assert.equal(r.scope, 'index');
+    assert.equal(r.total, 1);
+    assert.equal(r.hits[0].title, '变压器额定电流');
+    assert.equal(r.hits[0].path, '课程/x.html', '百分号编码要解码');
+    // 搜索面板**不该被打开**——那是给人用的
+    assert.equal(doc.getElementById('search-panel').hidden, true);
+    assert.equal(doc.getElementById('search-input')._focused, undefined);
+  } finally { globalThis.fetch = origFetch; }
+});
+
+test('site_search（site 作用域）：小节命中带锚点', async () => {
+  const doc = fakeDoc();
+  const index = { docs: [{ id: 0, url: 'a.html', title: '总览', chars: 500,
+    headings: [{ t: '铁芯损耗', d: '五、铁芯损耗', a: '五-铁芯损耗', l: 3, s: 20 }] }] };
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, json: async () => index });
+  try {
+    const r = await buildToolDefs(doc)[4].execute({ query: '铁芯' });
+    assert.equal(r.total, 1);
+    assert.equal(r.hits[0].sections[0].anchor, '五-铁芯损耗', '要带锚点，模型才能精确到节');
+  } finally { globalThis.fetch = origFetch; }
+});
+
+test('site_search（site 作用域）：索引取不到时给退路，不静默失败', async () => {
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: false, status: 404 });
+  try {
+    const r = await buildToolDefs(fakeDoc())[4].execute({ query: '变压器' });
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'index_unavailable');
+    assert.match(r.hint, /site_index/, '要告诉模型退路');
+  } finally { globalThis.fetch = origFetch; }
 });
 
 test('site_search.execute：scope=page 走页内查找', async () => {
