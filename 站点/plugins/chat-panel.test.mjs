@@ -75,7 +75,12 @@ test('applyOps：列表、表格、标题', () => {
   assert.equal(root.children[0].tagName, 'H2');
   assert.equal(root.children[1].tagName, 'OL');
   assert.equal(root.children[1].children.length, 2);
-  assert.equal(root.children[2].tagName, 'TABLE');
+  // 表格外面多了一层滚动容器（2026-10-19：overflow 不能挂在 table 上，
+  // 否则边框盒撑满容器而列按内容宽，右侧留白）
+  const wrap = root.children[2];
+  assert.equal(wrap.tagName, 'DIV');
+  assert.equal(wrap.className, 'chat-table-wrap');
+  assert.equal(wrap.children[0].tagName, 'TABLE');
 });
 
 test('applyOps：链接外链加 target=_blank 与 rel', () => {
@@ -193,9 +198,14 @@ test('CHAT_CSS：三档布局断点齐全', () => {
 
 test('CHAT_CSS：用站点语义色，不写死颜色', () => {
   assert.match(CHAT_CSS, /--md-sys-color-primary/);
-  // 除了 KaTeX 错误色回退值，不应出现大量硬编码 hex
+  // 允许的硬编码只有两类，且都写成"带主题回退"的形式：
+  //   · var(--md-sys-color-error, #b3261e) —— 主题变量缺失时的错误色回退
+  //   · color-mix(in srgb, #000 …)        —— 叠在任意图片上的半透明黑
+  // 除此之外任何写死的颜色都算主题失守。
   const hexes = (CHAT_CSS.match(/#[0-9a-fA-F]{3,6}\b/g) || []);
-  assert.ok(hexes.length <= 2, '硬编码颜色应极少（实际 ' + hexes.length + '）');
+  const allowed = hexes.filter((h) => h === '#b3261e' || h === '#000');
+  assert.equal(hexes.length, allowed.length,
+    '出现未被允许的硬编码颜色：' + hexes.filter((h) => !allowed.includes(h)).join(', '));
 });
 
 test('CHAT_CSS：输入框字号 ≥16px（iOS 防缩放）', () => {
@@ -205,8 +215,23 @@ test('CHAT_CSS：输入框字号 ≥16px（iOS 防缩放）', () => {
 });
 
 test('CHAT_CSS：宽内容横向滚动（240px 下表格/公式会溢出）', () => {
-  assert.match(CHAT_CSS, /\.chat-body table[\s\S]*?overflow-x:\s*auto/);
+  // 表格的横滚挂在包裹层上，不挂在 table 本身（2026-10-19 截图实测：
+  // overflow 挂 table 时边框盒撑满容器、列却按内容宽，右侧留白）。
+  assert.match(CHAT_CSS, /\.chat-table-wrap[\s\S]*?overflow-x:\s*auto/);
   assert.match(CHAT_CSS, /katex-display[\s\S]*?overflow-x:\s*auto/);
+});
+
+test('CHAT_CSS：表格观感与站点正文一致（表头分区 / 行线 / 斑马纹）', () => {
+  // 用户报「这个表格不美观」。原来四边全框 + 0.25rem padding，像一堆格子。
+  assert.match(CHAT_CSS, /\.chat-body th[\s\S]*?surface-container/, '表头要有底色');
+  assert.match(CHAT_CSS, /\.chat-body tr:last-child td\s*\{\s*border-bottom:\s*none/, '末行不要多余底边');
+  assert.match(CHAT_CSS, /tbody tr:nth-child\(even\)/, '要有斑马纹');
+  // 单元格不再四边全框
+  assert.match(CHAT_CSS, /\.chat-body th, \.chat-body td[\s\S]*?border:\s*none/);
+});
+
+test('CHAT_JS：表格包在 .chat-table-wrap 里（让列宽与外框对齐）', () => {
+  assert.match(CHAT_JS, /chat-table-wrap/);
 });
 
 test('CHAT_CSS：尊重 prefers-reduced-motion', () => {

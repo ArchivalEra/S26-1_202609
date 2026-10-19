@@ -249,22 +249,51 @@ export const CHAT_CSS = `
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-/* 宽内容横向滚动（240px 下表格/公式会溢出） */
-.chat-body table {
-  border-collapse: collapse;
-  font-size: 0.76rem;
-  display: block;
+/* ── 表格（2026-10-19 用户报「表格不美观」）─────────────────────
+   原来为了宽内容不撑破 240px，把 table 直接设成 display:block + 四边全框，
+   结果是「一堆格子」而不是一张表：没有表头分区、没有行分隔层次、
+   内边距挤成 0.25rem、首尾还多出边框。
+
+   现在与站点正文表格同一套观感（shirone-reader.css 的 table 段），
+   并补上一个滚动包裹层：
+     · .chat-table-wrap 负责**横滚 + 外框 + 圆角**（宽度随容器）
+     · table 用 width:max-content 按内容排，不被拉伸
+   早先把 overflow 挂在 table 上时，边框盒撑满整行而列只有内容宽，
+   右侧会留一条空白、圆角画在空盒上（截图实测）。 */
+.chat-table-wrap {
   overflow-x: auto;
   max-width: 100%;
-  margin: 0 0 .55rem;
+  margin: .2rem 0 .7rem;
+  border-radius: 10px;
+  /* 只留外圈一道淡边，避免"每个格子都是框"的网格感 */
+  box-shadow: 0 0 0 1px var(--md-sys-color-outline-variant);
+}
+.chat-body table {
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  width: max-content;
+  min-width: 100%;
 }
 .chat-body th, .chat-body td {
-  border: 1px solid var(--md-sys-color-outline-variant);
-  padding: .25rem .45rem;
+  border: none;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  padding: .45rem .6rem;
   text-align: left;
   white-space: nowrap;
+  vertical-align: top;
 }
-.chat-body th { background-color: var(--md-sys-color-surface-container); font-weight: 700; }
+.chat-body th {
+  background-color: var(--md-sys-color-surface-container);
+  font-weight: 600;
+  color: var(--md-sys-color-on-surface);
+  /* 表头下沿加重一档：一眼分得出哪行是表头 */
+  border-bottom-color: var(--md-sys-color-outline);
+}
+.chat-body tr:last-child td { border-bottom: none; }
+/* 斑马纹：数字型表格最容易看串行 */
+.chat-body tbody tr:nth-child(even) {
+  background-color: color-mix(in srgb, var(--md-sys-color-surface-container) 45%, transparent);
+}
 .chat-body .katex-display {
   overflow-x: auto;
   overflow-y: hidden;
@@ -382,10 +411,85 @@ export const CHAT_CSS = `
 }
 .chat-send:disabled { opacity: .45; cursor: default; }
 .chat-send.stop { background-color: var(--md-sys-color-error, #b3261e); }
+/* 停止态：正方形（▢）比圆更符合「中止」的语义，也让「正在回答」一眼可辨 */
+.chat-send.stop {
+  border-radius: 10px;
+}
+
+/* ── 附件（2026-10-19 用户要求）─────────────────────────────
+   回形针按钮 + 待发图片缩略图条。
+   缩略图条在输入区**上方**：发送前能看到自己附了什么，发完自动收起。 */
+.chat-attach-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px; height: 34px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  cursor: pointer;
+}
+.chat-attach-btn:hover { background-color: var(--md-sys-color-surface-container-high); }
+.chat-attach-btn:disabled { opacity: .4; cursor: default; }
+
+.chat-attach-bar {
+  display: flex;
+  gap: .4rem;
+  padding: .5rem .9rem .1rem;
+  flex-shrink: 0;
+  overflow-x: auto;
+}
+.chat-attach-bar:empty { display: none; }
+.chat-attach-item {
+  position: relative;
+  flex: 0 0 auto;
+  width: 56px; height: 56px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  background-color: var(--md-sys-color-surface-container);
+}
+.chat-attach-item img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.chat-attach-item.uploading::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--md-sys-color-surface) 60%, transparent);
+  animation: chat-pulse 1.2s ease-in-out infinite;
+}
+.chat-attach-item.failed { border-color: var(--md-sys-color-error, #b3261e); }
+.chat-attach-x {
+  position: absolute;
+  top: 1px; right: 1px;
+  width: 18px; height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  /* 缩略图上叠的删除键：底色必须与图片内容解耦（图片可能是任意颜色），
+     所以用半透明黑而不是主题色——换成 primary 会在浅色图上消失。 */
+  background: color-mix(in srgb, #000 55%, transparent);
+  color: var(--md-sys-color-on-primary);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+  cursor: pointer;
+}
+/* 拖拽悬停：整块面板给个提示色 */
+.chat-panel.chat-dragover {
+  outline: 2px dashed var(--md-sys-color-primary);
+  outline-offset: -6px;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .chat-panel { transition: none; }
   .chat-cursor::after { animation: none; }
+  .chat-attach-item.uploading::after { animation: none; }
 }
 `;
 
@@ -507,6 +611,15 @@ export function applyOps(doc, el, ops, katex) {
           }
           node.appendChild(tbody);
         }
+        // 包一层滚动容器（2026-10-19 截图实测）：
+        // 直接给 table 设 display:block + overflow-x:auto 时，**边框盒**撑满
+        // 整个容器宽度，而列按内容宽排——右侧于是留出一条空白，圆角也画在
+        // 空盒上。改成外层 div 负责滚动与外框、table 按内容宽，二者才对齐。
+        // 这与站点正文的 .table-scroll-container 是同一手法。
+        var tableWrap = mk('div');
+        tableWrap.className = 'chat-table-wrap';
+        tableWrap.appendChild(node);
+        node = tableWrap;
         break;
       }
       default: break;
@@ -569,6 +682,7 @@ var BRIDGE = "http://127.0.0.1:9345";
 
 // ── 状态 ────────────────────────────────────────────────────
 var panel = null, logEl = null, inputEl = null, sendBtn = null, jumpBtn = null, backdrop = null;
+var attachBtn = null, attachBar = null, fileInput = null;
 var open = false;
 var busy = false;
 var sessionKey = "web-" + (Date.now() % 100000);
@@ -576,6 +690,8 @@ var katexLoading = null;
 var stream = null;          // 当前 AbortController
 var stuck = true;           // 是否贴底
 var msgEls = [];            // 消息 DOM 引用（用于流式更新最后一条）
+var pending_attach = [];    // 待发附件：{id, name, dataUrl, fileInfo, status:'uploading'|'ready'|'failed'}
+var stopAnswerRef = function () {};   // 当前提问的停止句柄（askChat 里赋值）
 
 // ── 工具函数 ────────────────────────────────────────────────
 
@@ -628,6 +744,164 @@ function ensureKatex() {
     document.head.appendChild(s);
   });
   return katexLoading;
+}
+
+// ── 附件（2026-10-19 用户要求）──────────────────────────────
+//
+// 上游只收 jpg/png。浏览器里 input[type=file] 能拿到 png/jpeg/webp/heic…
+// 所以这里做两道：
+//   ① 选图时按 **magic bytes** 判真实格式（不信任扩展名）
+//   ② 非 jpg/png 的画到 canvas 上转成 jpeg（和 site_image 的 webp→jpeg 同一套思路）
+//
+// 为什么在浏览器转而不是后端转：转码要解码图片，Node 侧没有可靠的零依赖解码器，
+// 而浏览器本来就要把图画到缩略图上——顺手就转了，零额外成本。
+
+/** 按文件头判真实类型。返回 'jpeg' | 'png' | 'webp' | 'gif' | 'unknown'。 */
+function sniffImage(bytes) {
+  var b = bytes;
+  if (b.length < 12) return "unknown";
+  if (b[0] === 0xFF && b[1] === 0xD8) return "jpeg";
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) return "png";
+  if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return "gif";
+  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46
+      && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return "webp";
+  return "unknown";
+}
+
+/** 把任意可解码图片重绘成 jpeg（透明底铺白），返回 {dataUrl, mimeType}。 */
+function transcodeToJpeg(dataUrl, maxEdge) {
+  return new Promise(function (resolve, reject) {
+    var img = new Image();
+    img.onload = function () {
+      var w = img.naturalWidth || img.width;
+      var h = img.naturalHeight || img.height;
+      if (!w || !h) return reject(new Error("图片尺寸为 0"));
+      var scale = Math.min(1, (maxEdge || 2048) / Math.max(w, h));
+      var cw = Math.max(1, Math.round(w * scale));
+      var ch = Math.max(1, Math.round(h * scale));
+      var canvas = document.createElement("canvas");
+      canvas.width = cw; canvas.height = ch;
+      var g = canvas.getContext("2d");
+      if (!g) return reject(new Error("canvas 不可用"));
+      // jpeg 没有 alpha：先铺白，否则透明区会变黑
+      g.fillStyle = "#ffffff";
+      g.fillRect(0, 0, cw, ch);
+      g.drawImage(img, 0, 0, cw, ch);
+      try {
+        resolve({ dataUrl: canvas.toDataURL("image/jpeg", 0.9), mimeType: "image/jpeg" });
+      } catch (e) { reject(e); }
+    };
+    img.onerror = function () { reject(new Error("图片无法解码")); };
+    img.src = dataUrl;
+  });
+}
+
+/** File → {dataUrl, mimeType}（非 jpg/png 自动转码）。 */
+function prepareImage(file) {
+  return new Promise(function (resolve, reject) {
+    if (file.size > 12 * 1024 * 1024) return reject(new Error("图片太大（上限 12 MB）"));
+    var reader = new FileReader();
+    reader.onload = function () {
+      var dataUrl = String(reader.result || "");
+      var b64 = dataUrl.split(",")[1] || "";
+      var head;
+      try {
+        var bin = atob(b64.slice(0, 16));
+        head = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) head[i] = bin.charCodeAt(i);
+      } catch (e) { head = new Uint8Array(0); }
+      var kind = sniffImage(head);
+      if (kind === "jpeg") return resolve({ dataUrl: dataUrl, mimeType: "image/jpeg" });
+      if (kind === "png") return resolve({ dataUrl: dataUrl, mimeType: "image/png" });
+      // 其它（webp/gif/heic/未知）一律走 canvas 转 jpeg
+      transcodeToJpeg(dataUrl, 2048).then(resolve, reject);
+    };
+    reader.onerror = function () { reject(new Error("读文件失败")); };
+    reader.readAsDataURL(file);
+  });
+}
+
+/** 把一张图 POST 到桥的 /upload，拿回 fileInfo。 */
+function uploadAttachment(item, tk) {
+  var b64 = String(item.dataUrl || "").split(",")[1] || "";
+  return fetch(withToken(BRIDGE + "/upload", tk), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      data: b64,
+      mimeType: item.mimeType,
+      filename: item.name,
+      sessionId: sessionKey,
+    }),
+  }).then(function (r) { return r.json(); }).then(function (j) {
+    if (!j || !j.ok) throw new Error((j && j.error) || "上传失败");
+    item.fileInfo = j.fileInfo;
+    item.status = "ready";
+    return item;
+  }).catch(function (e) {
+    item.status = "failed";
+    item.error = String((e && e.message) || e);
+    throw e;
+  });
+}
+
+/** 重画附件条（缩略图 + 删除按钮）。 */
+function renderAttachBar() {
+  if (!attachBar) return;
+  while (attachBar.firstChild) attachBar.removeChild(attachBar.firstChild);
+  for (var i = 0; i < pending_attach.length; i++) {
+    (function (item) {
+      var box = document.createElement("div");
+      box.className = "chat-attach-item" + (item.status === "uploading" ? " uploading" : "")
+        + (item.status === "failed" ? " failed" : "");
+      box.title = item.status === "failed" ? ("上传失败：" + (item.error || "")) : item.name;
+      var img = document.createElement("img");
+      img.src = item.dataUrl;
+      img.alt = item.name;
+      box.appendChild(img);
+      var x = document.createElement("button");
+      x.type = "button";
+      x.className = "chat-attach-x";
+      x.textContent = "×";
+      x.setAttribute("aria-label", "移除这张图");
+      x.onclick = function () {
+        var k = pending_attach.indexOf(item);
+        if (k >= 0) pending_attach.splice(k, 1);
+        renderAttachBar();
+      };
+      box.appendChild(x);
+      attachBar.appendChild(box);
+    })(pending_attach[i]);
+  }
+}
+
+/** 收文件（来自选择器、粘贴、拖拽）。 */
+function acceptFiles(files) {
+  var list = Array.prototype.slice.call(files || []);
+  if (!list.length) return;
+  list.forEach(function (f) {
+    if (!f || !/^image\\//.test(f.type || "")) {
+      // HEIC 等有时 type 为空——只要文件名像图就试
+      if (!/\\.(jpe?g|png|webp|gif|heic|heif|bmp)$/i.test(f.name || "")) return;
+    }
+    var item = { id: "a" + Date.now() + Math.random().toString(16).slice(2, 6), name: f.name || "image", status: "uploading" };
+    pending_attach.push(item);
+    renderAttachBar();
+    prepareImage(f)
+      .then(function (prep) {
+        item.dataUrl = prep.dataUrl;
+        item.mimeType = prep.mimeType;
+        renderAttachBar();
+        return tokenAsync(false);
+      })
+      .then(function (tk) { return uploadAttachment(item, tk); })
+      .then(function () { renderAttachBar(); })
+      .catch(function (e) {
+        item.status = "failed";
+        item.error = String((e && e.message) || e);
+        renderAttachBar();
+      });
+  });
 }
 
 // ── 滚动吸附（use-stick-to-bottom 思路的极简移植）──────────
@@ -803,13 +1077,77 @@ function askChat(text) {
   var userMsg = addMsg("user");
   userMsg.body.textContent = text;
 
+  // 取走已就绪的附件（上传中的不算——它们还没 fileInfo，发出去等于丢图）
+  var ready = [];
+  var stillUploading = 0;
+  for (var ai = 0; ai < pending_attach.length; ai++) {
+    var a = pending_attach[ai];
+    if (a.status === "ready" && a.fileInfo) ready.push(a.fileInfo);
+    else if (a.status === "uploading") stillUploading += 1;
+  }
+  pending_attach = pending_attach.filter(function (x) {
+    return x.status === "uploading" || x.status === "failed";
+  });
+  renderAttachBar();
+  if (stillUploading && !ready.length && !text) {
+    // 只有图还在传、又没写字：别发空消息，等图
+    var wait = addMsg("bot");
+    wait.body.textContent = "（图片还在上传，稍等一下再发）";
+    wait.done = true;
+    return;
+  }
+
   var botMsg = addMsg("bot");
   attachStatusSlot(botMsg);
   busy = true;
-  if (sendBtn) { sendBtn.classList.add("stop"); sendBtn.disabled = false; }
+  if (sendBtn) {
+    sendBtn.classList.add("stop");
+    sendBtn.disabled = false;
+    // ▢ 而不是 ⏹：实心方块在一堆图标里显得过重，且部分安卓字体会画成彩色 emoji
+    sendBtn.textContent = "■";
+    sendBtn.setAttribute("aria-label", "停止回答");
+    sendBtn.title = "停止回答";
+  }
+  if (attachBtn) attachBtn.disabled = true;
   stream = (typeof AbortController !== "undefined") ? new AbortController() : null;
 
-  var body = JSON.stringify({ text: text, sessionId: sessionKey });
+  var payload = { text: text, sessionId: sessionKey };
+  if (ready.length) payload.attachments = ready;
+  var body = JSON.stringify(payload);
+
+  /**
+   * 停止回答：**两步都要做**，但顺序不能反。
+   *
+   *   ① POST /chat/cancel —— 让**上游**停下（真正的取消在这里）
+   *   ② 断本地 SSE —— 同时断，让面板立刻不再追字
+   *
+   * ⚠️ 2026-10-19 实测：先 abort 再发 cancel 不行——SSE 一断，
+   * 桥那边的 res.on('close') 立刻触发，/chat 的 handler 认为客户端
+   * 走了就直接收尾，**再来的 cancel 找不到在飞的提问**（返回 cancelled:false）。
+   * 于是上游继续生成、token 照烧，用户看到的「已停止」只是本地假象。
+   *
+   * 现在：cancel 请求**先发出去**（不等响应），下一拍再 abort。
+   * 用 setTimeout(0) 而不是 await —— 取消要立刻生效，不能等网络往返。
+   */
+  function stopAnswer() {
+    if (!busy) return;
+    var tk = (function () {
+      try { return window.__bridgeToken || localStorage.getItem("webmcp_bridge_token") || ""; } catch (e) { return ""; }
+    })();
+    var cancelReq = fetch(withToken(BRIDGE + "/chat/cancel", tk), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: sessionKey }),
+    }).catch(function () { /* 断网也要把本地停掉 */ });
+    // 先把 cancel 交出去，再断流。0ms 足够让请求离开事件循环（fetch 同步入队），
+    // 又不会让用户感觉「按了没反应」。
+    setTimeout(function () {
+      if (stream) { try { stream.abort(); } catch (e) { /* 已断 */ } }
+    }, 0);
+    return cancelReq;
+  }
+  // 暴露给表单的 submit 处理器（它在 askChat 外面，拿不到闭包里的 stopAnswer）
+  stopAnswerRef = stopAnswer;
 
   /** 发一次 /chat。401/403 时刷新一次 token 再试——桥可能重装过（新 token）。 */
   function attempt(n) {
@@ -875,23 +1213,46 @@ function askChat(text) {
         flushRender(botMsg);
       }
       busy = false;
-      if (sendBtn) { sendBtn.classList.remove("stop"); sendBtn.disabled = false; }
+      resetSendButton();
+      if (attachBtn) attachBtn.disabled = false;
       stream = null;
     }
     return pump();
   }).catch(function (e) {
     clearStatus(botMsg);
     if (e && e.name === "AbortError") {
+      // 用户点的「停止」：保留已收到的正文，补一句收尾标记，
+      // **不当错误**（否则用户会以为请求失败了）。
       flushRender(botMsg);
+      if (!botMsg.raw) {
+        botMsg.body.textContent = "（已停止）";
+      } else {
+        var tail = document.createElement("span");
+        tail.className = "chat-stopped";
+        tail.textContent = "（已停止）";
+        botMsg.body.appendChild(tail);
+      }
     } else {
       botMsg.raw = "";
       botMsg.done = true;
       botMsg.body.textContent = "连不上助手（" + describeFailure(e) + "）";
     }
     busy = false;
-    if (sendBtn) { sendBtn.classList.remove("stop"); sendBtn.disabled = false; }
+    resetSendButton();
+    if (attachBtn) attachBtn.disabled = false;
     stream = null;
   });
+}
+
+/** 把发送按钮恢复成「发送」态（停止与结束共用）。 */
+function resetSendButton() {
+  if (!sendBtn) return;
+  sendBtn.classList.remove("stop");
+  sendBtn.disabled = false;
+  sendBtn.textContent = "↑";
+  sendBtn.setAttribute("aria-label", "发送");
+  sendBtn.title = "";
+  stopAnswerRef = function () {};
 }
 
 /**
@@ -954,6 +1315,41 @@ function buildPanel() {
 
   var form = document.createElement("form");
   form.className = "chat-input";
+
+  // 附件条（输入区上方）：待发图片缩略图
+  attachBar = document.createElement("div");
+  attachBar.className = "chat-attach-bar";
+
+  // 隐藏的文件选择器：回形针按钮点它就等价于点「选择文件」
+  fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = "image/*";
+  fileInput.multiple = true;
+  fileInput.style.display = "none";
+  fileInput.addEventListener("change", function () {
+    acceptFiles(fileInput.files);
+    fileInput.value = "";      // 允许连续选同一个文件
+  });
+
+  attachBtn = document.createElement("button");
+  attachBtn.type = "button";
+  attachBtn.className = "chat-attach-btn";
+  attachBtn.setAttribute("aria-label", "添加图片");
+  attachBtn.title = "添加图片（也可以直接粘贴或拖进来）";
+  attachBtn.innerHTML = "";
+  (function () {
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("width", "18"); svg.setAttribute("height", "18");
+    svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor"); svg.setAttribute("stroke-width", "2");
+    svg.setAttribute("stroke-linecap", "round"); svg.setAttribute("stroke-linejoin", "round");
+    var p1 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    p1.setAttribute("d", "M21.4 11.6l-8.5 8.5a5.5 5.5 0 0 1-7.8-7.8l8.5-8.5a3.7 3.7 0 0 1 5.2 5.2l-8.5 8.5a1.8 1.8 0 0 1-2.6-2.6l7.8-7.8");
+    svg.appendChild(p1);
+    attachBtn.appendChild(svg);
+  })();
+  attachBtn.addEventListener("click", function () { fileInput.click(); });
+
   inputEl = document.createElement("textarea");
   inputEl.className = "chat-textarea";
   inputEl.rows = 1;
@@ -968,19 +1364,53 @@ function buildPanel() {
       form.requestSubmit ? form.requestSubmit() : sendNow();
     }
   });
+  // 粘贴图片：截图后直接 Ctrl+V 是最自然的上图方式
+  inputEl.addEventListener("paste", function (e) {
+    var items = (e.clipboardData && e.clipboardData.items) || [];
+    var files = [];
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].kind === "file" && /^image\\//.test(items[i].type)) {
+        var f = items[i].getAsFile();
+        if (f) files.push(f);
+      }
+    }
+    if (files.length) { e.preventDefault(); acceptFiles(files); }
+  });
+
   sendBtn = document.createElement("button");
   sendBtn.className = "chat-send";
   sendBtn.type = "submit";
   sendBtn.setAttribute("aria-label", "发送");
   sendBtn.textContent = "↑";
-  form.appendChild(inputEl); form.appendChild(sendBtn);
+  form.appendChild(attachBtn); form.appendChild(inputEl); form.appendChild(sendBtn);
+  form.appendChild(fileInput);
   form.addEventListener("submit", function (e) {
     e.preventDefault();
-    if (busy) { if (stream) stream.abort(); return; }
+    // busy 时这个按钮就是「停止」：走真正的取消，不只是断本地流
+    if (busy) { stopAnswerRef(); return; }
     sendNow();
   });
 
-  panel.appendChild(head); panel.appendChild(logEl); panel.appendChild(form);
+  // 拖图进面板 = 附件
+  panel.addEventListener("dragover", function (e) {
+    if (!e.dataTransfer || Array.prototype.indexOf.call(e.dataTransfer.types || [], "Files") < 0) return;
+    e.preventDefault();
+    panel.classList.add("chat-dragover");
+  });
+  panel.addEventListener("dragleave", function (e) {
+    if (e.target === panel) panel.classList.remove("chat-dragover");
+  });
+  panel.addEventListener("drop", function (e) {
+    panel.classList.remove("chat-dragover");
+    if (!e.dataTransfer || !e.dataTransfer.files || !e.dataTransfer.files.length) return;
+    e.preventDefault();
+    acceptFiles(e.dataTransfer.files);
+  });
+
+  panel.appendChild(head);
+  panel.appendChild(logEl);
+  panel.appendChild(attachBar);
+  panel.appendChild(form);
 
   // 挂载点必须同时满足两件事（2026-10-19 实测桌面档跑到正文上方，就是这里没做对）：
   //   ① **桌面档**要作为 .layout-container 的 flex 子项排在正文右侧（原来挂在
@@ -1012,7 +1442,17 @@ function buildPanel() {
 
 function sendNow() {
   var t = String(inputEl && inputEl.value || "").trim();
-  if (!t || busy) return;
+  if (busy) return;
+  // 只有图没写字也要能发（「这图里是什么」是最常见的用法，
+  // 让人再打一遍字是多余的）。附件里至少一张 ready 就放行。
+  var hasReadyImage = false;
+  for (var i = 0; i < pending_attach.length; i++) {
+    if (pending_attach[i].status === "ready") { hasReadyImage = true; break; }
+  }
+  if (!t && !hasReadyImage) return;
+  // 桥端要求 text 非空（它没法区分「空问题」和「坏包」）。只发图时补一个问题——
+  // 上游对「图里有什么」这类极简问法配合度最高（实测比任务式描述更少被拦）。
+  if (!t) t = "图里有什么？";
   inputEl.value = "";
   inputEl.style.height = "auto";
   askChat(t.slice(0, MAX_MESSAGE_CHARS));
