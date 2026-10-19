@@ -464,6 +464,18 @@ export const CHAT_CSS = `
   animation: chat-pulse 1.2s ease-in-out infinite;
 }
 .chat-attach-item.failed { border-color: var(--md-sys-color-error, #b3261e); }
+/* 浏览器解不了的格式（HEIC）画不出缩略图：显示扩展名方块，别露出破图图标 */
+.chat-attach-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%; height: 100%;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  color: var(--md-sys-color-on-surface-variant);
+  background-color: var(--md-sys-color-surface-container-high);
+}
 .chat-attach-x {
   position: absolute;
   top: 1px; right: 1px;
@@ -756,7 +768,14 @@ function ensureKatex() {
 // 为什么在浏览器转而不是后端转：转码要解码图片，Node 侧没有可靠的零依赖解码器，
 // 而浏览器本来就要把图画到缩略图上——顺手就转了，零额外成本。
 
-/** 按文件头判真实类型。返回 'jpeg' | 'png' | 'webp' | 'gif' | 'unknown'。 */
+/**
+ * 按文件头判真实类型。返回 'jpeg' | 'png' | 'gif' | 'webp' | 'heic' | 'unknown'。
+ *
+ * HEIC 单独认出来（2026-10-19 实测）：iPhone 拍照默认就是它，而**绝大多数
+ * 桌面浏览器（Chromium/Firefox on Linux/Windows）根本解不了**——
+ * new Image() 直接 onerror、createImageBitmap 报 "could not be decoded"。
+ * 所以这不是「转码失败」，是「这个环境读不了这个格式」，得给用户明确的出路。
+ */
 function sniffImage(bytes) {
   var b = bytes;
   if (b.length < 12) return "unknown";
@@ -765,6 +784,12 @@ function sniffImage(bytes) {
   if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return "gif";
   if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46
       && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return "webp";
+  // HEIF/HEIC：ISO BMFF，第 4..7 字节是 'ftyp'，brand 在 8..11
+  if (b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) {
+    var brand = "";
+    for (var i = 8; i < 12; i++) brand += String.fromCharCode(b[i]);
+    if (/^(heic|heix|hevc|hevx|heim|heis|mif1|msf1)$/.test(brand)) return "heic";
+  }
   return "unknown";
 }
 
@@ -813,8 +838,23 @@ function prepareImage(file) {
       var kind = sniffImage(head);
       if (kind === "jpeg") return resolve({ dataUrl: dataUrl, mimeType: "image/jpeg" });
       if (kind === "png") return resolve({ dataUrl: dataUrl, mimeType: "image/png" });
-      // 其它（webp/gif/heic/未知）一律走 canvas 转 jpeg
-      transcodeToJpeg(dataUrl, 2048).then(resolve, reject);
+      // 其余先试浏览器转码：Safari（macOS/iOS）能直接解 HEIC，那就照常走。
+      transcodeToJpeg(dataUrl, 2048).then(resolve, function () {
+        // 浏览器解不了（2026-10-19 实测：Chromium/Firefox 在 Linux/Windows 上
+        // 对 HEIC 一律失败）。**不要把原始字节丢掉**——桥那边有 ImageMagick，
+        // 它能解。这里原样交给桥，由它转完再上传。
+        //
+        // 前端不再自己判"能不能转"，也不给用户抛「请改相机设置」这种
+        // 让他去改设备的建议：本机桥能解决的事，不该推给用户。
+        resolve({
+          dataUrl: dataUrl,
+          mimeType: kind === "heic" ? "image/heic"
+            : kind === "gif" ? "image/gif"
+            : kind === "webp" ? "image/webp"
+            : "application/octet-stream",
+          needsServerConvert: true,
+        });
+      });
     };
     reader.onerror = function () { reject(new Error("读文件失败")); };
     reader.readAsDataURL(file);
@@ -858,6 +898,17 @@ function renderAttachBar() {
       var img = document.createElement("img");
       img.src = item.dataUrl;
       img.alt = item.name;
+      // 浏览器解不了的格式（HEIC 等）画不出缩略图——退成文件名方块，
+      // 别让用户看到破图图标还以为是自己传坏了。
+      img.onerror = function () {
+        img.style.display = "none";
+        if (!box.querySelector(".chat-attach-fallback")) {
+          var fb = document.createElement("span");
+          fb.className = "chat-attach-fallback";
+          fb.textContent = (item.name || "").split(".").pop().toUpperCase() || "IMG";
+          box.appendChild(fb);
+        }
+      };
       box.appendChild(img);
       var x = document.createElement("button");
       x.type = "button";
@@ -983,9 +1034,29 @@ function renderMessage(msg, final) {
     tail.className = "chat-tail";
     msg.body.appendChild(tail);
     msg.tailEl = tail;
+  } else if (final && parsed.rest) {
+    // ⭐ 收尾时还没闭合的尾巴必须**显示出来**（2026-10-19 实测）：
+    // 上游常在最后一句中间结束（或其他原因不再有 delta），
+    // 只清掉 tailEl 会让最后一截正文凭空消失——用户看到的是半句话。
+    // 这里把它当普通段落追加，保证「流结束时面板里的字 >= 已经收到的字」。
+    var lastP = document.createElement("p");
+    lastP.textContent = parsed.rest;
+    msg.body.appendChild(lastP);
+    // 追加后把水位推到末尾：这条尾巴已经被"消费"。
+    // 不推的话，任何后续解析都会从同一位置再取一遍 rest（2026-10-19 调查
+    // 实测的正文重复就是这么来的）。flushRender 现在已幂等，但水位正确是
+    // 更底层的保证，不该依赖调用方只调一次。
+    msg.restStart = msg.raw.length;
   }
   if (final) msg.body.classList.remove("chat-cursor");
   else msg.body.classList.add("chat-cursor");
+
+  // 最后一道保险（2026-10-19 实测）：收尾时若正文仍是空的、而 raw 里明明
+  // 有字，说明解析链在某个边界上把内容全丢了。宁可**降级成纯文本**，
+  // 也不能让用户看到一片空白——这比排版难看严重得多。
+  if (final && msg.raw && !msg.body.textContent.trim()) {
+    msg.body.textContent = msg.raw;
+  }
 
   if (stuck) scrollToBottom();
   else if (!jumpBtn) showJump();
@@ -1005,6 +1076,15 @@ function scheduleRender(msg) {
 
 /** 立刻渲染并标记收尾（绕过 rAF，保证最终状态不丢）。 */
 function flushRender(msg) {
+  // ⚠️ 幂等（2026-10-19 调查发现的真 bug）：done 事件会 flush 一次，
+  // 随后 SSE 正常结束的 finish() 又 flush 一次；停止分支、error 分支同理。
+  //
+  // 而 renderMessage(final) 会把**未闭合的尾巴**追加成 <p>（答案最后一行
+  // 没有尾换行是最常见的情况），且不推进 restStart ⇒ 第二次 flush 从同一
+  // 位置再解析、再追加一遍，正文重复（实测「第二段第二段」）。
+  //
+  // 收尾只做一次。
+  if (msg.done) return;
   msg.done = true;
   renderMessage(msg, true);
 }
@@ -1031,7 +1111,9 @@ var TOOL_LABEL = {
 };
 
 function setStatus(msg, text) {
-  if (!msg.statusEl) return;
+  // 过程提示可能已经被 clearStatus 清掉（第一个 delta 到达时就会清）。
+  // 撤回场景需要它「回来」，所以这里允许重建——没有槽就补一个。
+  if (!msg.statusEl) { attachStatusSlot(msg); if (!msg.statusEl) return; }
   // 秒数一律由本地秒表负责：把服务端可能带的所有「（N 秒）」全剥掉，
   // 否则会出现「…（15 秒）（16 秒）」这种叠字。
   msg.statusBase = String(text).replace(/（\s*\d+\s*秒\s*）/g, "").trim();
@@ -1195,7 +1277,29 @@ function askChat(text) {
         if (s) setStatus(botMsg, s);
       } else if (ev.type === "done") {
         clearStatus(botMsg);
-        if (ev.text && !botMsg.raw) botMsg.raw = String(ev.text);
+        // ⚠️ 2026-10-19 实测 bug：done.text 是**完整答案**，不是增量。
+        // 旧代码只在 raw 为空时把它塞进 raw，然后又走「续解」路径——
+        // 此时 restStart 已经推进到旧文本末尾，raw.slice(restStart) 从
+        // 答案中间开始，解析出来的块全乱、面板显示空白（实测流结束、busy 复位、
+        // 正文一个字都没有）。
+        //
+        // 正确处理分两种：
+        //   · raw 为空（没走流式）⇒ 用它当全文，restStart 归零后整体渲染
+        //   · raw 有值（已流过 delta）⇒ 通常 done.text 是同一份答案的副本；
+        //     但**不总是**：流出去的是未清洗原文，done.text 才是 cleanAnswer
+        //     之后的版本（think 块、工具调用标记都会在服务端被剥掉）。
+        //     2026-10-19 调查实测：先说话再吐 function_calls 时，面板会永久
+        //     保留那段 XML。所以这里以 **done.text 为准**重建一次，
+        //     而不是只在 raw 为空时才用。
+        if (ev.text) {
+          var clean = String(ev.text);
+          if (clean !== botMsg.raw) {
+            botMsg.raw = clean;
+            botMsg.restStart = 0;
+            while (botMsg.body.firstChild) botMsg.body.removeChild(botMsg.body.firstChild);
+            botMsg.tailEl = null;
+          }
+        }
         flushRender(botMsg);
       } else if (ev.type === "error") {
         clearStatus(botMsg);

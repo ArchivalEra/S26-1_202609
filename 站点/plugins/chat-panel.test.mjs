@@ -321,3 +321,28 @@ test('CHAT_JS：失败原因翻译成人话', () => {
   assert.match(CHAT_JS, /本地桥没在运行/, '连不上要说清是桥没起');
   assert.match(CHAT_JS, /刷新页面再试/, '401/403 要给出可执行动作');
 });
+
+// ── 模板字符串陷阱（2026-10-19，同一类错误犯了四次）───────────────
+//
+// CHAT_JS 是用反引号模板串生成的：整段客户端 IIFE 都在这一个字符串里。
+// 因此**注释里也不能出现反引号**——它会提前闭合模板串，报的却是
+// "Unexpected identifier"，指向的行往往离真正的问题很远。
+// 这个坑在本轮改了四次代码、踩了四次，每次都要重新定位（反引号一律写成中文引号）。
+//
+// 判据：CHAT_JS 已经是个字符串了，源码里不该再有裸反引号；而产出的
+// 字符串本身必须能解析（下面的测试已经在做）。
+test('CHAT_JS：模板串内没有裸反引号（会提前闭合模板）', async () => {
+  const src = (await import('node:fs')).readFileSync(new URL('./chat-panel.mjs', import.meta.url), 'utf8');
+  const start = src.indexOf('export const CHAT_JS = `');
+  const end = src.indexOf('})();`;', start);
+  assert.ok(start > 0 && end > start, '找不到 CHAT_JS 模板串边界');
+  // 第一行是模板串的开始标记（export const CHAT_JS = `），它本来就该有反引号
+  const body = src.slice(start, end).split('\n').slice(1);
+  const offenders = [];
+  body.forEach((line, i) => {
+    // 去掉 ${...} 插值后再找反引号
+    const stripped = line.replace(/\$\{[^}]*\}/g, '');
+    if (stripped.includes('`')) offenders.push(`${i + 1}: ${line.trim().slice(0, 60)}`);
+  });
+  assert.deepEqual(offenders, [], '模板串内出现反引号，会提前闭合：\n' + offenders.join('\n'));
+});
