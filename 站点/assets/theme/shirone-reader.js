@@ -1,24 +1,41 @@
 // Shirone M3E Reader Interactive Script
 (function () {
   // Theme Toggle
-  const themeToggleBtn = document.getElementById("theme-toggle");
-  const currentTheme = localStorage.getItem("theme") || 
+  // 2026-10-19：明暗切换从顶栏按钮**收进调色盘**（用户定案）。
+  // 顶栏位置改成调色盘的手形图标；切换在弹层里做。
+  const currentTheme = localStorage.getItem("theme") ||
     (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-  
+
   if (currentTheme === "dark") {
     document.documentElement.setAttribute("data-theme", "dark");
   } else {
     document.documentElement.setAttribute("data-theme", "light");
   }
 
-  if (themeToggleBtn) {
-    themeToggleBtn.addEventListener("click", () => {
-      const active = document.documentElement.getAttribute("data-theme");
-      const next = active === "dark" ? "light" : "dark";
-      document.documentElement.setAttribute("data-theme", next);
-      localStorage.setItem("theme", next);
+  /** 把当前主题同步到弹层里的两个按钮（选中态 + aria-pressed）。 */
+  function syncThemeButtons() {
+    const active = document.documentElement.getAttribute("data-theme") || "light";
+    document.querySelectorAll("[data-theme-set]").forEach((btn) => {
+      const on = btn.getAttribute("data-theme-set") === active;
+      btn.classList.toggle("active", on);
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
     });
   }
+
+  function setTheme(next) {
+    if (next !== "light" && next !== "dark") return;
+    document.documentElement.setAttribute("data-theme", next);
+    localStorage.setItem("theme", next);
+    syncThemeButtons();
+  }
+
+  syncThemeButtons();
+  document.querySelectorAll("[data-theme-set]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();   // 别让弹层的「点外部关闭」把这次点击吃掉
+      setTheme(btn.getAttribute("data-theme-set"));
+    });
+  });
 
   // Drawer Toggle (Mobile slide-out & Desktop sidebar collapse)
   const drawerToggleBtn = document.getElementById("drawer-toggle");
