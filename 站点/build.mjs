@@ -1345,7 +1345,7 @@ for (const relPath of TARGET_FILES) {
         </div>
 
         <div class="top-bar-right">
-          <button class="m3-icon-btn" id="palette-toggle" aria-label="调色盘" title="自定义主题强调色">
+          <button class="m3-icon-btn" id="palette-toggle" aria-label="调色盘" title="主题与调色盘" aria-expanded="false">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/>
               <circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/>
@@ -1366,6 +1366,19 @@ for (const relPath of TARGET_FILES) {
             <div class="palette-current-row">
               <span class="palette-hue-badge" id="palette-hue-badge">Hue 248°</span>
               <div class="palette-color-dot" id="palette-color-dot"></div>
+            </div>
+            <div class="palette-mode-row">
+              <span class="palette-mode-label">明暗</span>
+              <div class="palette-mode-switch" role="group" aria-label="明暗主题">
+                <button class="palette-mode-btn" data-theme-set="light" title="浅色">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+                  <span>浅色</span>
+                </button>
+                <button class="palette-mode-btn" data-theme-set="dark" title="深色">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a6.6 6.6 0 0 0 9.8 9.8z"/></svg>
+                  <span>深色</span>
+                </button>
+              </div>
             </div>
             <div class="palette-slider-container">
               <span class="palette-slider-label">色相微调 (0° - 360°)</span>
@@ -1414,9 +1427,27 @@ for (const relPath of TARGET_FILES) {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
           </button>
 
-          <button class="m3-icon-btn" id="theme-toggle" aria-label="切换昼夜主题">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          <!-- 豆姐入口：图标简化自 r-906《In My Hands》封面的左手。
+               识别特征保留：四指分开向上、碎片白缝、拇指外撇、掌心圆洞、分离的腕部。 -->
+          <button class="m3-icon-btn hand-btn" id="assistant-toggle" aria-label="豆姐助手" title="豆姐助手" aria-expanded="false">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <!-- 四指：细长、分开向上 -->
+              <rect x="6.6" y="3.0" width="2.1" height="9.6" rx="1.05"/>
+              <rect x="9.5" y="2.2" width="2.1" height="10.4" rx="1.05"/>
+              <rect x="12.4" y="4.4" width="2.1" height="8.2" rx="1.05"/>
+              <rect x="15.3" y="6.4" width="2.0" height="6.2" rx="1"/>
+              <!-- 掌部 -->
+              <path d="M6.4 11.0h11.1v4.6a2.2 2.2 0 0 1-2.2 2.2H8.6a2.2 2.2 0 0 1-2.2-2.2z"/>
+              <!-- 拇指：外撇，与掌留白缝 -->
+              <path d="M6.4 12.2 4.3 14.3a1.25 1.25 0 1 0 1.77 1.77l2.1-2.1z"/>
+              <!-- 掌心空洞 -->
+              <circle cx="11.4" cy="13.7" r="1.35" fill="#fff"/>
+              <!-- 腕部：分离的一截 -->
+              <path d="M8.6 19.1h6.8v1.4a1.5 1.5 0 0 1-1.5 1.5h-3.8a1.5 1.5 0 0 1-1.5-1.5z"/>
+            </svg>
           </button>
+
+
         </div>
       </header>
 

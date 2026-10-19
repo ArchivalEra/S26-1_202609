@@ -309,6 +309,71 @@ body {
   transition: background-color 0.15s;
 }
 
+/* ── 豆姐入口的手形按钮（2026-10-19）────────────────────────
+   图标简化自 r-906《In My Hands》封面的左手：指向上、碎片化白缝、
+   拇指外撇、掌心圆孔、分离的腕部。
+   按钮本身沿用 .m3-icon-btn 的尺寸/悬停；这里只调图标观感。 */
+.hand-btn svg {
+  transition: transform .18s cubic-bezier(.2, .8, .3, 1), color .18s ease;
+}
+.hand-btn:hover svg {
+  transform: translateY(-1px) rotate(-4deg);
+}
+.hand-btn:active svg {
+  transform: translateY(0) rotate(0) scale(.94);
+}
+/* 面板打开时按钮保持强调色，形成「按下」的连续感 */
+.hand-btn[aria-expanded="true"] {
+  color: var(--md-sys-color-primary);
+  background-color: var(--md-sys-color-primary-container);
+}
+
+/* ── 弹层内的明暗切换（从顶栏收进来的）──────────────────── */
+.palette-mode-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+}
+.palette-mode-label {
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.palette-mode-switch {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  background-color: var(--md-sys-color-surface-container-high);
+  border-radius: 999px;
+}
+.palette-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .32rem;
+  padding: .3rem .62rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color .16s ease, color .16s ease;
+}
+.palette-mode-btn:hover {
+  color: var(--md-sys-color-on-surface);
+}
+.palette-mode-btn.active {
+  background-color: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+}
+.palette-mode-btn:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+}
+
 .palette-slider-container {
   display: flex;
   flex-direction: column;
