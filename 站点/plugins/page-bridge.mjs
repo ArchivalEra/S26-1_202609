@@ -57,6 +57,10 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
   })();
   const withToken = (u) => TOKEN ? (u + (u.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN)) : u;
 
+  // 2026-10-19：桥在 SSE 首帧推一个 clientId 过来，此后每次 /result 都带上它——
+  // 桥据此知道「这条 hello 来自哪个标签页」，才能正确切换活动页（P1-8 修复）。
+  let CLIENT_ID = '';
+
   const mc = document.modelContext || navigator.modelContext || null;
   if (!mc || typeof mc.getTools !== 'function') {
     console.warn('[bridge] 本页没有 WebMCP（先带 ?webmcp=1 打开）');
@@ -74,10 +78,10 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
     const n = attempt || 1;
     const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     const timer = setTimeout(() => { try { ctrl && ctrl.abort(); } catch (e) { /* 无 */ } }, 8000);
-    return fetch(BRIDGE + '/result', {
+    return fetch(withToken(BRIDGE + '/result'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Bridge-Token': TOKEN },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(CLIENT_ID ? { ...payload, clientId: CLIENT_ID } : payload),
       signal: ctrl ? ctrl.signal : undefined,
     }).then((r) => {
       clearTimeout(timer);
@@ -117,6 +121,11 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
       description: t.description || '',
       inputSchema: t.inputSchema || { type: 'object', properties: {} },
     }));
+    // 2026-10-19：报到去重——实测同一页会报 4 次（onopen + toolchange + 重试链）。
+    // 内容没变就不重复 POST（桥那边也不该被重复 hello 刷屏）。
+    const fingerprint = tools.map((t) => t.name).join(',') + '|' + location.href;
+    if (window.__bridgeLastHello === fingerprint) return;
+    window.__bridgeLastHello = fingerprint;
     post({ type: 'hello', protocol: 2, url: location.href, title: document.title, tools });
     console.log('[bridge] 已报到，工具：', tools.map((t) => t.name).join(', '));
   };
@@ -255,11 +264,21 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
   }
 
   const es = new EventSource(withToken(BRIDGE + '/events'));
-  es.onopen = () => { console.log('[bridge] 已连上本地桥'); report(); };
+  es.onopen = () => {
+    console.log('[bridge] 已连上本地桥');
+    // 桥会立刻推一帧 hello{clientId}；等 200ms 让那帧先到，再报到。
+    // 拿不到 clientId 也照常报到（桥会退回「首个连接即活动页」）。
+    setTimeout(() => { report().catch(() => {}); }, 200);
+  };
   es.onerror = () => console.warn('[bridge] SSE 错误（看门狗会处理重连）');
   es.onmessage = (ev) => {
     let msg = null;
     try { msg = JSON.parse(ev.data); } catch (e) { return; }
+    if (msg && msg.type === 'hello' && msg.clientId) {
+      // 桥发来的连接标识：存下来，后续 /result 都带上
+      CLIENT_ID = msg.clientId;
+      return;
+    }
     if (msg && msg.type === 'call') run(msg);
   };
   // 工具列表变动时重新报到（页面运行期可能注册新工具）
