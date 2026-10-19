@@ -241,8 +241,8 @@ test('超长输入被截断（防 ReDoS）', () => {
 // ── 边界：空输入与纯空白 ────────────────────────────────────
 
 test('空输入返回空块与空 rest', () => {
-  assert.deepEqual(parseIncremental(''), { blocks: [], rest: '' });
-  assert.deepEqual(parseIncremental('\n\n\n'), { blocks: [], rest: '' });
+  assert.deepEqual(parseIncremental(''), { blocks: [], rest: '', restStart: 0 });
+  assert.deepEqual(parseIncremental('\n\n\n'), { blocks: [], rest: '', restStart: 3 });
 });
 
 test('parseInline 空输入不崩', () => {
