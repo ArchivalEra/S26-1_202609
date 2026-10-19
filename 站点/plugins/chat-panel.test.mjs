@@ -212,3 +212,48 @@ test('CHAT_CSS：宽内容横向滚动（240px 下表格/公式会溢出）', ()
 test('CHAT_CSS：尊重 prefers-reduced-motion', () => {
   assert.match(CHAT_CSS, /prefers-reduced-motion/);
 });
+
+// ── 手机档是右侧抽屉（2026-10-19 用户定案）─────────────────
+
+test('CHAT_CSS：手机档是右侧抽屉，不是底部窗口', () => {
+  // 原来 height:70dvh + bottom:var(--chat-kb-inset) 会随 URL 栏/键盘每帧改布局，
+  // 用户在手机上「划一下像磕大」。改成与左侧边栏同款 fixed + translateX 抽屉。
+  assert.doesNotMatch(CHAT_CSS, /70dvh/, '底部窗口已废弃');
+  assert.doesNotMatch(CHAT_CSS, /--chat-kb-inset/, '键盘内缩变量已废弃');
+  const mobile = CHAT_CSS.slice(CHAT_CSS.indexOf('@media (max-width: 860px)'));
+  assert.match(mobile, /position:\s*fixed/);
+  assert.match(mobile, /transform:\s*translateX\(100%\)/, '收起态要滑到视口外');
+  assert.match(mobile, /visibility:\s*hidden/, '收起态要不可聚焦');
+  assert.match(mobile, /pointer-events:\s*none/, '收起态不能吃点击');
+});
+
+test('CHAT_CSS：不允许出现会覆盖手机档 fixed 的无条件 position', () => {
+  // 2026-10-19 实测：媒体查询之后再写一条 `.chat-panel { position: relative }`
+  // （给 .chat-jump 做包含块用的）会以同特异度覆盖手机档的 fixed，
+  // 抽屉退回文档流、贴着正文顶部——浏览器里表现为「面板横在正文上方」。
+  for (const m of CHAT_CSS.matchAll(/^\.chat-panel\s*\{([^}]*)\}/gm)) {
+    assert.doesNotMatch(m[1], /position\s*:/, '无条件 .chat-panel 规则里不能写 position');
+  }
+});
+
+test('CHAT_JS：面板挂到 .layout-container 内，遮罩挂 body', () => {
+  // 桌面档面板是 flex 子项，必须排在正文右侧（挂在 .main-column 里会横在正文上方）；
+  // 手机档遮罩要盖全屏，挂在 body 才不会被 overflow 裁剪。
+  assert.match(CHAT_JS, /\.layout-container \.m3-toc/, '桌面档要以 TOC 为锚点插入');
+  assert.match(CHAT_JS, /document\.body\.appendChild\(backdrop\)/, '遮罩要挂 body');
+});
+
+test('CHAT_JS：流式渲染续解 + 帧合并', () => {
+  // ① 续解：用 parser 返回的 restStart 只解未闭合的尾巴，否则长回答是 O(n²)
+  assert.match(CHAT_JS, /msg\.raw\.slice\(msg\.restStart/, '必须只交未解析的尾巴');
+  // ② 帧合并：delta 用 scheduleRender（rAF），收尾用 flushRender
+  assert.match(CHAT_JS, /function scheduleRender/);
+  assert.match(CHAT_JS, /requestAnimationFrame/);
+  assert.match(CHAT_JS, /function flushRender/);
+});
+
+test('CHAT_JS：面板自称学习助手，不出现豆姐', () => {
+  assert.match(CHAT_JS, /学习助手/);
+  assert.doesNotMatch(CHAT_JS, /豆姐/);
+  assert.doesNotMatch(CHAT_JS, /豆包/);
+});

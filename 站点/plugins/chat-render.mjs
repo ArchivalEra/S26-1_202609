@@ -67,8 +67,12 @@ export function isMathOpen(text, i) {
  * 未闭合的块留在 `rest` 里，下一轮 delta 到来时继续累积。这样**已渲染的块
  * 永远不会被重排**（不闪烁）。
  *
+ * `restStart` 是 `rest` 在入参里的起点。调用方存下它，下一次只把
+ * `buffer.slice(restStart)` 交回本函数——流式长消息因此从 O(n²) 降到 O(n)。
+ * 解析是严格从左到右、块与块互不影响，所以从块边界续解与整段重解等价。
+ *
  * @param {string} buffer 累积的全部文本
- * @returns {{blocks: Array<{kind:string, ...}>, rest: string}}
+ * @returns {{blocks: Array<{kind:string, ...}>, rest: string, restStart: number}}
  */
 export function parseIncremental(buffer) {
   const text = String(buffer || '').slice(0, MAX_MESSAGE_CHARS);
@@ -101,7 +105,7 @@ export function parseIncremental(buffer) {
         body += l.line + '\n';
         j = l.next;
       }
-      if (!closed) return { blocks, rest: text.slice(i) };
+      if (!closed) return { blocks, rest: text.slice(i), restStart: i };
       blocks.push({ kind: 'code', lang, text: body.replace(/\n$/, '') });
       i = j;
       continue;
@@ -110,7 +114,7 @@ export function parseIncremental(buffer) {
     // ③ 块级公式 $$…$$
     if (text.startsWith('$$', i)) {
       const end = text.indexOf('$$', i + 2);
-      if (end < 0) return { blocks, rest: text.slice(i) };
+      if (end < 0) return { blocks, rest: text.slice(i), restStart: i };
       const tex = text.slice(i + 2, end).trim();
       if (tex) blocks.push({ kind: 'math', tex, display: true });
       i = end + 2;
@@ -123,7 +127,7 @@ export function parseIncremental(buffer) {
       if (env) {
         const close = '\\end{' + env[1] + '}';
         const end = text.indexOf(close, i);
-        if (end < 0) return { blocks, rest: text.slice(i) };
+        if (end < 0) return { blocks, rest: text.slice(i), restStart: i };
         const tex = text.slice(i, end + close.length);
         blocks.push({ kind: 'math', tex, display: true });
         i = end + close.length;
@@ -156,7 +160,7 @@ export function parseIncremental(buffer) {
           j = l.next;
         }
         // j === -1 表示撞到不完整的尾巴；没 terminated 表示读到了文本末尾（也没结束）
-        if (j < 0 || (!terminated && j >= n)) return { blocks, rest: text.slice(i) };
+        if (j < 0 || (!terminated && j >= n)) return { blocks, rest: text.slice(i), restStart: i };
         blocks.push({ kind: 'table', header: rows[0], rows: rows.slice(1) });
         i = j;
         continue;
@@ -177,7 +181,7 @@ export function parseIncremental(buffer) {
         items.push(m[1]);
         j = l.next;
       }
-      if (j < 0 || (!terminated && j >= n)) return { blocks, rest: text.slice(i) };
+      if (j < 0 || (!terminated && j >= n)) return { blocks, rest: text.slice(i), restStart: i };
       blocks.push({ kind: 'list', ordered: /^\d/.test(li0[0]), items });
       i = j;
       continue;
@@ -212,24 +216,25 @@ export function parseIncremental(buffer) {
       }
       if (hitSpecial) {
         // 走到了这里说明 ②-⑦ 都不认这个「特殊块」（例如 `> 引用`、`---` 分隔线）。
-        // 兜底：吃一整行当段落，保证 i 前进。
+        // 兜底：吃一整行当段落，保证 i 前进。行没结束时**不能**吃掉——
+        // 否则不完整的半行会被当成一段渲染，补全后再来一遍就重了。
         const l = readLine(i);
+        if (!l.complete) return { blocks, rest: text.slice(i), restStart: i };
         const raw = l.line.trim();
         if (raw) blocks.push({ kind: 'p', text: raw });
-        i = l.complete ? l.next : n;
-        if (!l.complete) return { blocks, rest: '' };
+        i = l.next;
         continue;
       }
       // 段落没遇到空行就到底了 ⇒ 还没完整，整段留 rest 等下一个 delta。
       // ⚠️ 判据是「最后一行的 readLine 不完整」（没有换行符），不是 j >= n——
       // 后者在 `'x'`（长度 1、j=0）时为假，会 i=j=0 死循环（2026-10-19 实测）。
       const last = readLine(j === i ? i : Math.max(i, j - 1));
-      if (!last.complete) return { blocks, rest: text.slice(i) };
+      if (!last.complete) return { blocks, rest: text.slice(i), restStart: i };
       i = j;
     }
   }
 
-  return { blocks, rest: '' };
+  return { blocks, rest: '', restStart: n };
 }
 
 /** 拆表格行：`| a | b |` → ['a','b']。 */

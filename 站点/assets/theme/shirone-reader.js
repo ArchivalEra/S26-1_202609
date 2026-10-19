@@ -337,7 +337,15 @@
     window.addEventListener("hashchange", onScroll);
     // 用户手动开合面板同样改变布局，重算一次。
     document.addEventListener("toggle", onScroll, true);
-    window.addEventListener("scroll", onScroll, { passive: true });
+    // 滚动用 rAF 合并（2026-10-19）：onScroll 对每个标题调 getBoundingClientRect，
+    // 会强制同步布局。移动端 scroll 事件的密度高于帧率，逐个处理就是白烧主线程——
+    // 一帧最多算一次。
+    let scrollQueued = false;
+    window.addEventListener("scroll", () => {
+      if (scrollQueued) return;
+      scrollQueued = true;
+      requestAnimationFrame(() => { scrollQueued = false; onScroll(); });
+    }, { passive: true });
     onScroll();
   }
 })();

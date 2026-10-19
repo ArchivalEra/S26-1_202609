@@ -149,8 +149,10 @@ body {
   justify-content: space-between;
   padding: 0 1.25rem;
   z-index: 30;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  /* ⚠️ 这里不能加 backdrop-filter。底色是不透明的 surface-container-lowest，
+     模糊没有视觉收益，但 sticky 元素带 backdrop-filter 会让合成器在**每一帧**
+     重新采样背后的页面——手机上一划就掉帧（2026-10-19 用户报「划一下像磕大」）。
+     要半透明玻璃效果再说，那时代价要另算。 */
   max-width: 100%;
   box-sizing: border-box;
 }
@@ -309,7 +311,7 @@ body {
   transition: background-color 0.15s;
 }
 
-/* ── 豆姐入口的手形按钮（2026-10-19）────────────────────────
+/* ── 学习助手入口的手形按钮（2026-10-19）────────────────────
    图标简化自 r-906《In My Hands》封面的左手：指向上、碎片化白缝、
    拇指外撇、掌心圆孔、分离的腕部。
    按钮本身沿用 .m3-icon-btn 的尺寸/悬停；这里只调图标观感。 */

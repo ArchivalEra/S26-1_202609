@@ -150,7 +150,7 @@ fs.writeFileSync(path.join(webmcpDir, 'webmcp-tools.js'), WEBMCP_TOOLS_JS);
 fs.writeFileSync(path.join(webmcpDir, 'webmcp-relay.js'), WEBMCP_RELAY_JS);
 // 页面桥（2026-10-19 植入）：打开页面自动连本机桥，不再手工注入
 fs.writeFileSync(path.join(webmcpDir, 'webmcp-bridge.js'), PAGE_BRIDGE_JS);
-// 豆姐聊天面板（2026-10-19）：JS + CSS 都是构建期写盘，SW 会自动预缓存
+// 学习助手面板（2026-10-19）：JS + CSS 都是构建期写盘，SW 会自动预缓存
 fs.writeFileSync(path.join(webmcpDir, 'chat-panel.js'), CHAT_JS);
 fs.writeFileSync(path.join(webmcpDir, 'chat-panel.css'), CHAT_CSS);
 // vendor 第三方资产（polyfill + relay embed/widget）逐字节拷贝。
@@ -1432,23 +1432,23 @@ for (const relPath of TARGET_FILES) {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
           </button>
 
-          <!-- 豆姐入口：图标简化自 r-906《In My Hands》封面的左手。
+          <!-- 学习助手入口：图标简化自 r-906《In My Hands》封面的左手。
                识别特征保留：四指分开向上、碎片白缝、拇指外撇、掌心圆洞、分离的腕部。 -->
-          <button class="m3-icon-btn hand-btn" id="assistant-toggle" aria-label="豆姐助手" title="豆姐助手" aria-expanded="false">
+          <button class="m3-icon-btn hand-btn" id="assistant-toggle" aria-label="学习助手" title="学习助手" aria-expanded="false">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <!-- 四指：细长、分开向上 -->
-              <rect x="6.6" y="3.0" width="2.1" height="9.6" rx="1.05"/>
-              <rect x="9.5" y="2.2" width="2.1" height="10.4" rx="1.05"/>
-              <rect x="12.4" y="4.4" width="2.1" height="8.2" rx="1.05"/>
-              <rect x="15.3" y="6.4" width="2.0" height="6.2" rx="1"/>
+              <!-- 四指：指缝留 0.8px 以上，22px 下才不糊成一坨 -->
+              <rect x="6.2" y="3.4" width="2.3" height="9.2" rx="1.15"/>
+              <rect x="9.3" y="2.2" width="2.3" height="10.4" rx="1.15"/>
+              <rect x="12.4" y="3.0" width="2.3" height="9.6" rx="1.15"/>
+              <rect x="15.5" y="5.6" width="2.2" height="7.0" rx="1.1"/>
               <!-- 掌部 -->
-              <path d="M6.4 11.0h11.1v4.6a2.2 2.2 0 0 1-2.2 2.2H8.6a2.2 2.2 0 0 1-2.2-2.2z"/>
+              <path d="M6.1 11.4h11.8v4.4a2.3 2.3 0 0 1-2.3 2.3H8.4a2.3 2.3 0 0 1-2.3-2.3z"/>
               <!-- 拇指：外撇，与掌留白缝 -->
-              <path d="M6.4 12.2 4.3 14.3a1.25 1.25 0 1 0 1.77 1.77l2.1-2.1z"/>
+              <path d="M6.0 12.4 3.9 14.5a1.3 1.3 0 1 0 1.84 1.84l2.1-2.1z"/>
               <!-- 掌心空洞 -->
-              <circle cx="11.4" cy="13.7" r="1.35" fill="#fff"/>
+              <circle cx="11.5" cy="14.0" r="1.3" fill="#fff"/>
               <!-- 腕部：分离的一截 -->
-              <path d="M8.6 19.1h6.8v1.4a1.5 1.5 0 0 1-1.5 1.5h-3.8a1.5 1.5 0 0 1-1.5-1.5z"/>
+              <path d="M8.6 19.4h6.8v1.3a1.6 1.6 0 0 1-1.6 1.6h-3.6a1.6 1.6 0 0 1-1.6-1.6z"/>
             </svg>
           </button>
 
