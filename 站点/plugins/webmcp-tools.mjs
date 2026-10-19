@@ -264,7 +264,11 @@ export function renderMarkdown(root, opts) {
     }
     if (tag === 'BLOCKQUOTE') {
       ensureNl(1);
-      const inner = renderMarkdown(node, o).trim();
+      // 用**局部渲染器**（同一份 out 缓冲），不要递归调 renderMarkdown——
+      // 那会从根节点重来，在嵌套结构上直接栈溢出（2026-10-19 真实页实测）。
+      const mark = out.length;
+      childrenOf(node).forEach((c) => walk(c, depth));
+      const inner = out.splice(mark).join('').trim();
       if (inner) push(inner.split('\n').map((l) => '> ' + l).join('\n') + '\n\n');
       return;
     }
@@ -273,7 +277,10 @@ export function renderMarkdown(root, opts) {
       const items = childrenOf(node).filter((c) => String(c.tagName || '').toUpperCase() === 'LI');
       items.forEach((li, i) => {
         const marker = tag === 'OL' ? `${i + 1}. ` : '- ';
-        const body = renderMarkdown(li, o).trim().replace(/\n{2,}/g, '\n').replace(/\n/g, '\n  ');
+        const mark = out.length;
+        childrenOf(li).forEach((c) => walk(c, depth + 1));
+        const body = out.splice(mark).join('').trim()
+          .replace(/\n{2,}/g, '\n').replace(/\n/g, '\n  ');
         push(marker + body + '\n');
       });
       push('\n');
@@ -599,26 +606,29 @@ export function createPageView(doc, loc, winOverride) {
         const hs = headings();
         const hit = hs.filter((h) => h.title.indexOf(needle) >= 0 || h.anchor === needle)[0];
         if (!hit) return { ok: false, reason: 'not_found', available: hs.map((h) => h.title).slice(0, 30) };
-        // 从该标题往后，直到同级或更高级标题为止
-        const flat = [];
-        (function collect(n) {
-          for (const c of (n.children || [])) { flat.push(c); collect(c); }
-        })(article);
-        const start = flat.indexOf(byId(hit.anchor));
+        const target = byId(hit.anchor);
+        if (!target) return { ok: false, reason: 'anchor_missing', anchor: hit.anchor };
+
+        // ⚠️ 2026-10-19 实测：真实页有 **18000+ 节点**（KaTeX 每公式 ~30 个 span）。
+        // 旧实现把整棵树摊平成数组再逐对做祖先检查（O(n²)），在真实页上直接卡死/抛错
+        // ——「Tool execution failed」就是这么来的。
+        // 新实现：从目标标题开始，**沿 DOM 顺序线性前进**，遇到同级或更高级标题就停。
         const body = [];
-        if (start >= 0) {
-          for (let i = start; i < flat.length; i++) {
-            const el = flat[i];
-            const t = String(el.tagName || '').toUpperCase();
-            if (i > start && /^H[1-4]$/.test(t)) {
-              const lvl = Number(t.slice(1));
-              if (lvl <= hit.level) break;
-            }
-            body.push(el);
-          }
+        let node = target;
+        const LEVEL = hit.level;
+        while (node) {
+          const tag = String(node.tagName || '').toUpperCase();
+          if (node !== target && /^H[1-4]$/.test(tag) && Number(tag.slice(1)) <= LEVEL) break;
+          body.push(node);
+          // 深度优先取下一个节点（不进入已收元素的子树，交给 renderMarkdown 下钻）
+          node = nextInDoc(node, target);
         }
-        // 只渲染顶层节点（子节点由 renderMarkdown 自己下钻），避免重复
-        const top = body.filter((el) => !body.some((other) => other !== el && isAncestor(other, el)));
+        // 只保留「直接属于这一节」的顶层块：跳过被已收元素包含的节点
+        const top = [];
+        for (const el of body) {
+          if (el === target) { top.push(el); continue; }
+          if (!isAncestor(target, el) && !top.some((t) => isAncestor(t, el))) top.push(el);
+        }
         const md = renderMarkdown({ children: top, tagName: 'DIV' }, { includeCollapsed: opt.includeCollapsed });
         const c = clip(md);
         return { ok: true, what, title: hit.title, anchor: hit.anchor, level: hit.level, ...c };
@@ -645,6 +655,30 @@ export function createPageView(doc, loc, winOverride) {
     const md = renderMarkdown(article, { includeCollapsed: opt.includeCollapsed });
     const c = clip(md);
     return { ok: true, what: 'page', title: pageInfo().title, sections: headings().length, ...c };
+  }
+
+  /**
+   * DOM 顺序的下一个节点（先子后兄弟后上溯），但不进入 `stopAt` 之前已收元素的内部。
+   * 用于「从某标题开始读到下一个同级标题」——线性、不摊平整棵树。
+   */
+  function nextInDoc(node, stopAt) {
+    const kids = node.children;
+    if (kids && kids.length) return kids[0];
+    // 真实 DOM 有 nextElementSibling；假 DOM 没有 → 退化成「父节点里找我的下一个兄弟」
+    let cur = node;
+    while (cur) {
+      if (cur.nextElementSibling) return cur.nextElementSibling;
+      const par = cur.parentElement;
+      if (!par) return null;
+      // ⚠️ 真实 DOM 的 children 是 **HTMLCollection（没有 indexOf）**——
+      // 2026-10-19 在真实页上炸出 `sibs.indexOf is not a function`。
+      // 转成数组再找；假 DOM 的数组也照样能跑。
+      const sibs = Array.prototype.slice.call(par.children || []);
+      const at = sibs.indexOf(cur);
+      if (at >= 0 && at + 1 < sibs.length) return sibs[at + 1];
+      cur = par;
+    }
+    return null;
   }
 
   function isAncestor(a, b) {
@@ -1411,6 +1445,8 @@ if (typeof document === "undefined") return;
 var PAGE_SELECTORS = ${serializeSelectors(PAGE_SELECTORS)};
 var textOf = ${textOf.toString()};
 var hasClass = ${hasClass.toString()};
+var childrenOf = ${childrenOf.toString()};
+var isTextNode = ${isTextNode.toString()};
 var renderMarkdown = ${renderMarkdown.toString()};
 var createPageView = ${createPageView.toString()};
 var buildToolDefs = ${buildToolDefs.toString()};
