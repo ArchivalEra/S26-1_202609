@@ -41,15 +41,34 @@ npx -y @mcp-b/webmcp-local-relay@latest --widget-origin 'http://127.0.0.1:8899'
 
 然后 MCP 客户端就能看到页面注册的工具。
 
-## 五个站点工具
+## 十个站点工具
 
 | 工具 | 做什么 |
 | :--- | :--- |
-| `site_get_page_info` | 当前页信息：标题、所属课程、小节清单（含锚点） |
-| `site_open_section` | 跳到某小节（按标题片段或锚点 id），自动展开折叠面板 |
-| `site_search` | 用页面自带的搜索面板搜全站，返回命中标题与链接 |
-| `site_show_symbol` | 查本页某符号的含义（点开它的气泡），返回气泡文字 |
-| `site_toggle_panels` | 展开或收起本页全部折叠面板 |
+| `site_get_page_info` | 我在哪：标题、课程、URL、小节清单、当前高亮目录项、面板开合数、显示设置、阅读进度 |
+| `site_read` | **读内容（Markdown）**：`what=page` 整页正文 / `outline` 只列标题 / `section` 某一节 / `panel` 某折叠面板 / `symbols` 本页符号清单 |
+| `site_navigate` | 去别处：`to=section` 本页小节 / `link` 侧栏某页 / `page` 按路径 / `prev`/`next` / `home` / `back` / `top`/`bottom` |
+| `site_search` | 找内容：`scope=site` 全站索引 / `scope=page` 页内查找（返回片段与所在小节） |
+| `site_show_symbol` | 查符号：点开气泡，返回标题、解释、全部义项（当前语境标 `is-here`）与「详细」链接 |
+| `site_panels` | 折叠面板：`action=open/close/toggle`，可用 `match` 只作用于标题匹配的那些 |
+| `site_view` | 显示设置：`theme` 明暗 / `hue` 主题色相 / `sidebar` 侧栏开合 |
+| `site_list_images` | **列本页图片**：下标、地址、格式、alt、尺寸、`uploadable`（本站是 webp，学习通只收 jpg/png） |
+| `site_image` | **转码**：把页面图（webp/jxl 都行）用 canvas 转成 JPEG/PNG dataUrl，自动限宽限体积 |
+| `site_capture_view` | 截图：整屏走宿主 `__siteCapture`；给 `selector`/`rect` 时走页面内区域截图 |
+
+### 图片链路（2026-10-19）
+
+学习通只收 **jpg/png**，而本站配图是 **webp**。完整链路：
+
+```
+site_list_images  →  site_image（canvas 解码 webp → JPEG dataUrl）
+                  →  工具会话的 upload 接缝（上传）
+                  →  带图追问「图里有什么？」
+```
+
+`工具会话.mjs` 的 `upload` 接缝负责后两步；产品（`对话.mjs`）与实验（`续航器.mjs` 的 M7 臂）
+都注入同一个 `mgr.uploadImage`。实测：模型自己列出 35 张 webp → 选第 1 张 → 转码 →
+上传 → 准确描述出「24V 端口、上支路中点 B 标 3V、下支路中点 A 标 5V」。
 
 ## 四种加载形态（`window.__webmcpMode`）
 
