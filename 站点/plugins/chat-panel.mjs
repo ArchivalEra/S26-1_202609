@@ -1416,6 +1416,8 @@ function describeFailure(e) {
     if (code === 401 || code === 403) return "本地桥拒绝了这次请求，刷新页面再试（token 可能已更换）";
     if (code === 404) return "本地桥没有 /chat 端点，先更新桥脚本";
     if (code === 413) return "这条消息太长";
+    // 速率闸（2026-10-19）：连点或脚本连发时触发。要说清"等一下"，不是"坏了"
+    if (code === 429) return "发得太快了，等几秒再问";
   }
   if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) {
     return "本地桥没在运行（先在电脑上跑 node bridge.mjs）";
