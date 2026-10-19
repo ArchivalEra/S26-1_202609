@@ -218,6 +218,9 @@ configurable_selftest() {
   for f in R1 R2 R3; do
     printf '# %s\n\n切换器：[R1.md](R1.md) [R2.md](R2.md) [R3.md](R3.md)\n' "$f" > "$tmp/$f.md"
   done
+  # 换名：REFLECT_INVARIANTS —— 夹具里的规格文件（内容指向夹具自己的文件）
+  printf '{"checks":[{"path":"AGENTS.md","must_contain":["# AGENTS"],"why":"夹具自证：AGENTS.md 必须有标题"}]}\n' \
+    > "$tmp/SPEC.json"
   # 生成台账并把机器块渲染进 **夹具文档名**（名字全换掉）
   # ① 先量一遍（新仓库的正确顺序：量测 → 渲染）
   GATE_REPO="$tmp" REFLECT_FACTS="$fixture_facts" REFLECT_DOC="$fixture_doc" \
@@ -232,6 +235,7 @@ configurable_selftest() {
     if GATE_REPO="$tmp" REFLECT_FACTS="$fixture_facts" REFLECT_DOC="$fixture_doc" \
        REFLECT_DOCS="$fixture_doc,AGENTS.md" REFLECT_RETRACTIONS=RETRACT.json \
        REFLECT_QUESTIONS=cases REFLECT_READMES=R1.md,R2.md,R3.md \
+       REFLECT_INVARIANTS=SPEC.json \
        python3 "$g" >/dev/null 2>&1; then
       ok=$((ok + 1))
     else
@@ -248,9 +252,28 @@ configurable_selftest() {
   red_need=$(python3 "$HERE/zreflect/registry.py" --red-need)
   [ -n "$red_need" ] || { echo "  ❌ 红名单为空 —— 零值守卫：没有它这一节什么都没证明"; rm -rf "$tmp"; return 1; }
   red=""
+  # ⚠️ 2026-10-19 修（关键判据）：
+  #
+  # 这一段要证明「闸门没有把文件名写死」。正确判据是：
+  #   **旋钮用默认名**（environment 默认值，比如 facts.json / SPEC.json 这些**默认**），
+  #   **只换 GATE_REPO 到夹具**。若闸门里写死了真实文件名，它就会在夹具里找不到 → 红。
+  #
+  # 之前的版本只传 GATE_REPO，很多闸门因为**旋钮未配置**直接 OFF（rc=0），
+  # 被安静算成「没红」——自证对它们是空的。
+  # 现在给每个闸门传它的**默认名**旋钮值（与 Einfacht.env 里的默认一致），
+  # 并把同名文件放进夹具。这样：
+  #   · 换名测试（上一段）用改名后的文件 ⇒ 通过 = 没写死
+  #   · 本段用默认名的文件 + 换 GATE_REPO ⇒ 红 = 证明它真的在按名字找文件
+  # 关键：**不**把改名后的文件复制成默认名。
+  # 夹具里只有改名文件（LEDGER.json / NOTES.md / RETRACT.json / cases / R1-R3.md）。
+  # 于是「旋钮用默认名 + 换 GATE_REPO」时：
+  #   · 若闸门按旋钮名字找文件 ⇒ 找不到 ⇒ 红（证明它没写死路径）
+  #   · 若闸门写死了真实仓库名 ⇒ 也找不到 ⇒ 红（掩盖，但下一段的名字表会拦）
+  # 这样「默认名下必须红」这条判据才真的在测「按名字找文件」这件事。
   for rel in $(cd "$HERE" && python3 zreflect/registry.py --all-runnable); do
     b=$(basename "$rel")
-    if ! GATE_REPO="$tmp" python3 "$HERE/$rel" >/dev/null 2>&1; then red="$red $b"; fi
+    if ! GATE_REPO="$tmp" \
+         python3 "$HERE/$rel" >/dev/null 2>&1; then red="$red $b"; fi
   done
   for b in $red_need; do
     case " $red " in *" $b "*) ;; *) echo "  ❌ 默认名字下 $b **没有红** ⇒ 换名自证对它的名字什么都没证明"; red=""; break;; esac
