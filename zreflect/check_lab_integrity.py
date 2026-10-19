@@ -29,9 +29,15 @@ from gate import meta, main_selftest_or
 
 # 活文件白名单（2026-10-16 grilling Q4-A 定案；增删活文件 = 改这里 + 改悬案）
 ALIVE_FILES = (
-    "chaoxing.mjs",      # 传输 + parseToolCalls + askWithRetry
+    "chaoxing.mjs",      # 传输 + parseToolCalls + terminalKind/extractChunks + 类型化 status
+    "chaoxing.test.mjs", # 传输层帧回放测试（终止表/正文抽取，15 项）
+    "会话.mjs",           # 多会话管理器（open/ask/close/rotate/snapshot）
+    "会话.test.mjs",      # 管理器接口测试（20 项）
+    "插件后端架构.md",     # 插件设计方案（MV3 三层 + Firefox 兼容矩阵）
     "配方.mjs",           # 破甲配方唯一真相源
     "配方.test.mjs",      # G 系列配方回归测试
+    "上下文.mjs",         # 单会话转录 + 压缩 + 重放（2026-10-18 用户定案）
+    "上下文.test.mjs",    # 压缩保真回归（18 项）
     "对话.mjs",           # 无感入口（业务轮次）
     "bridge.mjs",        # 桥服务（SSE + HTTP 端点）
     "页面桥.js",          # 注入页面的桥接端
