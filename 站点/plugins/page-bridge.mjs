@@ -26,10 +26,36 @@
 
 export const PAGE_BRIDGE_JS = String.raw`(() => {
   const BRIDGE = 'http://127.0.0.1:9345';
-  // 把自身源码存好（自动重连重建用）——由外层注入方（playwright evaluate 传 src）写入更可靠，
-  // 但自存兜底：用 Function.prototype.toString 拿到本 IIFE 的源码
-  try { if (!window.__mcpBridgeSource) window.__mcpBridgeSource = '(' + arguments.callee.toString() + ')();'; } catch (e) { /* 严格模式无 callee，靠注入方 */ }
+
+  // ⭐ 2026-10-19 修 P0-2：源码**在构建期由 loader 注入**，不再靠 arguments.callee。
+  //
+  // 旧实现：try { window.__mcpBridgeSource = '(' + arguments.callee.toString() + ')();' }
+  //   —— 这在**箭头 IIFE** 里，箭头函数没有 arguments（Node 实测 undefined），
+  //   异常被 catch 吞掉 → 源码恒为 null → 看门狗 clearInterval 自杀 → 永不重连。
+  //
+  // 新实现：loader 注入本脚本前先把源码塞进 window.__mcpBridgeSource（见 webmcp-loader.mjs）。
+  // 这里的自存兜底改用「document.currentScript 拿不到就跳过」——拿不到也不影响重连，
+  // 因为 loader 已经给了。
+  if (!window.__mcpBridgeSource) {
+    try {
+      const cur = document.currentScript;
+      if (cur && cur.src) {
+        // 退路：从 src 重新拉一次源码（同源、同步缓存，代价可接受）
+        window.__mcpBridgeReload = cur.src;
+      }
+    } catch (e) { /* 无 currentScript */ }
+  }
   if (window.__mcpBridge) { try { window.__mcpBridge.es.close(); } catch (e) { /* 旧连接 */ } }
+
+  // token：从构建期常量或 localStorage 取（bridge 启动时写 .bridge-token）
+  const TOKEN = (function () {
+    try {
+      if (window.__bridgeToken) return window.__bridgeToken;
+      const t = localStorage.getItem('webmcp_bridge_token');
+      return t || '';
+    } catch (e) { return ''; }
+  })();
+  const withToken = (u) => TOKEN ? (u + (u.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN)) : u;
 
   const mc = document.modelContext || navigator.modelContext || null;
   if (!mc || typeof mc.getTools !== 'function') {
@@ -39,7 +65,7 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
 
   const post = (payload) => fetch(BRIDGE + '/result', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Bridge-Token': TOKEN },
     body: JSON.stringify(payload),
   }).catch((e) => console.warn('[bridge] 回传失败', e));
 
@@ -54,7 +80,7 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
       description: t.description || '',
       inputSchema: t.inputSchema || { type: 'object', properties: {} },
     }));
-    post({ type: 'hello', url: location.href, title: document.title, tools });
+    post({ type: 'hello', protocol: 2, url: location.href, title: document.title, tools });
     console.log('[bridge] 已报到，工具：', tools.map((t) => t.name).join(', '));
   };
 
@@ -122,6 +148,16 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
         throw new Error('executeTool 失败：' + String((inner && inner.message) || inner) + ' ｜ 真因：' + detail);
       }
       const effect = measureEffect(before);
+      // 2026-10-19 修 P2-14：判据.mjs 的 effect:'hits' 此前**永远不可能命中**——
+      // 页面侧从不产出 hits 字段。这里补上：搜索类工具把命中数带进回执。
+      try {
+        let vv = value;
+        if (typeof vv === 'string') { try { vv = JSON.parse(vv); } catch (e) { /* 原文 */ } }
+        if (vv && typeof vv === 'object' && typeof vv.total === 'number') {
+          effect.hits = vv.total;
+          if (Array.isArray(vv.hits)) effect.hitTitles = vv.hits.slice(0, 5).map((x) => x && x.title).filter(Boolean);
+        }
+      } catch (e) { /* 不改回执 */ }
       (window.__callTraces = window.__callTraces || []).push({ t: Date.now() % 1000000, name: msg.name, ...effect });
       post({ id: msg.id, ok: true, value, effect });
     } catch (e) {
@@ -150,13 +186,39 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
       clearInterval(window.__bridgeReconnect.tick);
       setTimeout(() => {
         window.__bridgeReconnect = null;
+        // ⭐ P0-2 修法：三条退路，任何一条成功都能重建。
+        //   ① 构建期注入的源码（loader 在注入前写好）——主路径
+        //   ② 同源重新拉一次脚本源码——主路径失效时
+        //   ③ 重新插入 <script> 标签——最朴素但最可靠（浏览器会走缓存）
         const s2 = window.__mcpBridgeSource;
-        if (s2) { try { (0, eval)(s2); } catch (e) { console.warn('[bridge] 重建失败', e); } }
+        if (s2) {
+          try { (0, eval)(s2); return; } catch (e) { console.warn('[bridge] eval 重建失败', e); }
+        }
+        if (window.__mcpBridgeReload) {
+          fetch(window.__mcpBridgeReload, { cache: 'force-cache' })
+            .then((r) => r.text())
+            .then((src) => {
+              window.__mcpBridgeSource = src;
+              try { (0, eval)(src); } catch (e) { console.warn('[bridge] 重新拉取后重建失败', e); }
+            })
+            .catch(() => reinjectTag());
+          return;
+        }
+        reinjectTag();
+
+        function reinjectTag() {
+          try {
+            const el = document.createElement('script');
+            el.src = window.__mcpBridgeReload || '';
+            if (!el.src) { console.warn('[bridge] 无源码可重建'); return; }
+            document.head.appendChild(el);
+          } catch (e) { console.warn('[bridge] 重新插入失败', e); }
+        }
       }, wait);
     }, 4000);
   }
 
-  const es = new EventSource(BRIDGE + '/events');
+  const es = new EventSource(withToken(BRIDGE + '/events'));
   es.onopen = () => { console.log('[bridge] 已连上本地桥'); report(); };
   es.onerror = () => console.warn('[bridge] SSE 错误（看门狗会处理重连）');
   es.onmessage = (ev) => {
@@ -165,10 +227,16 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
     if (msg && msg.type === 'call') run(msg);
   };
   // 工具列表变动时重新报到（页面运行期可能注册新工具）
-  if (typeof mc.addEventListener === 'function') mc.addEventListener('toolchange', report);
+  // 工具列表变动时重新报到。重建时会再进这里一次——先摘旧的，避免监听器累积。
+  if (typeof mc.removeEventListener === 'function' && window.__bridgeToolchange) {
+    try { mc.removeEventListener('toolchange', window.__bridgeToolchange); } catch (e) { /* 无 */ }
+  }
+  if (typeof mc.addEventListener === 'function') {
+    window.__bridgeToolchange = report;
+    mc.addEventListener('toolchange', report);
+  }
 
   window.__mcpBridge = { es, report, get tools() { return handles.map((t) => t.name); } };
-  window.__mcpBridgeSource = window.__mcpBridgeSource || null;
-  window.__mcpBridge.ping = () => fetch(BRIDGE + '/health').then((r) => r.json());
+  window.__mcpBridge.ping = () => fetch(withToken(BRIDGE + '/health'), { headers: { 'X-Bridge-Token': TOKEN } }).then((r) => r.json());
   console.log('[bridge] 页面桥已装好（window.__mcpBridge 可查状态）');
 })();`;
