@@ -13,8 +13,8 @@
      回喂带清单、caveman 保工具名）弄丢，配方.test.mjs 先红。
 
 判据：
-  · 根目录文件集合 ⊆ 白名单（活文件 19 个；多出的 ⇒ 报，说明有新文件要归档或入单）；
-  · 全部测试文件 `node --test` 全绿（cwd=实验空；128 项）；
+  · 根目录文件集合 ⊆ 白名单（活文件 21 个；多出的 ⇒ 报，说明有新文件要归档或入单）；
+  · 全部测试文件 `node --test` 全绿（cwd=实验空；154 项）；
   · 白名单里的文件必须存在（少 ⇒ 报，活文件被误删/误归档）。
 
 零值守卫：实验空目录整个不存在 ⇒ 通过（clone 环境本来就没有 .zcode/），
@@ -37,7 +37,9 @@ ALIVE_FILES = (
     "工具会话.test.mjs",   # 工具闭环接口测试（11 项）
     "判据.mjs",           # 全实验唯一判据表（judge/isPass/judgeChannel，2026-10-19）
     "判据.test.mjs",      # 判据回归（15 项）
-    "bridge.test.mjs",    # 桥服务接口测试（鉴权/来源/体积/pending，15 项，2026-10-19 补）
+    "bridge.test.mjs",    # 桥服务接口测试（鉴权/来源/体积/pending/chat，26 项）
+    "聊天服务.mjs",        # 模型驱动层（emit 接缝，createChatService，2026-10-19）
+    "聊天服务.test.mjs",   # emit 契约测试（14 项）
     "插件后端架构.md",     # 插件设计方案（MV3 三层 + Firefox 兼容矩阵）
     "配方.mjs",           # 破甲配方唯一真相源
     "配方.test.mjs",      # G 系列配方回归测试
@@ -75,11 +77,11 @@ def run(args):
 
     # 配方回归测试（只在 配方.test.mjs 存在时跑；缺失已由上面报过）
     # 2026-10-19：扩到全部测试文件——判据/工具会话是实验的判据与执行核心，
-    # 只测配方挡不住它们退化（此前 128 项里闸门只跑 7 项）。
+    # 只测配方挡不住它们退化（此前 154 项里闸门只跑 7 项）。
     if "配方.test.mjs" in actual:
         tests = [t for t in ("配方.test.mjs", "上下文.test.mjs", "会话.test.mjs",
                              "chaoxing.test.mjs", "工具会话.test.mjs", "判据.test.mjs",
-                             "bridge.test.mjs")
+                             "bridge.test.mjs", "聊天服务.test.mjs")
                  if t in actual]
         r = subprocess.run(
             ["node", "--test", *tests],

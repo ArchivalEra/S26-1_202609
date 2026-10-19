@@ -345,6 +345,10 @@
 !/站点/plugins/sw-template.js
 !/站点/plugins/site-search.test.mjs
 !/站点/plugins/page-bridge.mjs
+!/站点/plugins/chat-panel.mjs
+!/站点/plugins/chat-panel.test.mjs
+!/站点/plugins/chat-render.mjs
+!/站点/plugins/chat-render.test.mjs
 !/站点/plugins/webmcp-loader.mjs
 !/站点/plugins/webmcp-shim.mjs
 !/站点/plugins/webmcp-shim.test.mjs

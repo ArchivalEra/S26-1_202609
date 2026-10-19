@@ -11,6 +11,7 @@ import { SYMBOL_PACKS, COURSE_ENV, BUILD_PHASES } from './符号环境.mjs';
 import { extractSearchDoc, buildSearchBundle, SEARCH_JS, SEARCH_CSS } from './plugins/site-search.mjs';
 import { WEBMCP_LOADER_JS, WEBMCP_RELAY_JS } from './plugins/webmcp-loader.mjs';
 import { PAGE_BRIDGE_JS } from './plugins/page-bridge.mjs';
+import { CHAT_JS, CHAT_CSS } from './plugins/chat-panel.mjs';
 import { SPA_ROUTER_JS } from './plugins/spa-router.mjs';
 import { DRAWER_SYNC_JS } from './plugins/drawer-sync.mjs';
 import { WEBMCP_SHIM_JS } from './plugins/webmcp-shim.mjs';
@@ -149,6 +150,9 @@ fs.writeFileSync(path.join(webmcpDir, 'webmcp-tools.js'), WEBMCP_TOOLS_JS);
 fs.writeFileSync(path.join(webmcpDir, 'webmcp-relay.js'), WEBMCP_RELAY_JS);
 // 页面桥（2026-10-19 植入）：打开页面自动连本机桥，不再手工注入
 fs.writeFileSync(path.join(webmcpDir, 'webmcp-bridge.js'), PAGE_BRIDGE_JS);
+// 豆姐聊天面板（2026-10-19）：JS + CSS 都是构建期写盘，SW 会自动预缓存
+fs.writeFileSync(path.join(webmcpDir, 'chat-panel.js'), CHAT_JS);
+fs.writeFileSync(path.join(webmcpDir, 'chat-panel.css'), CHAT_CSS);
 // vendor 第三方资产（polyfill + relay embed/widget）逐字节拷贝。
 copyDir(path.join(SITE_DIR, 'assets', 'vendor', 'webmcp'), path.join(DIST_DIR, 'assets', 'vendor', 'webmcp'));
 console.log('[build] Wrote WebMCP plugins + copied vendor assets (polyfill + relay embed)');
@@ -1288,6 +1292,7 @@ for (const relPath of TARGET_FILES) {
   <link rel="stylesheet" href="${rootRel}assets/katex/katex.min.css">
   <link rel="stylesheet" href="${rootRel}${assetUrl('assets/theme/shirone-reader.css')}">
   <link rel="stylesheet" href="${rootRel}${assetUrl('assets/plugins/site-search.css')}">
+  <link rel="stylesheet" href="${rootRel}${assetUrl('assets/plugins/chat-panel.css')}">
   <!-- 站点图标：动画 GIF 为主（Chrome/Firefox/Edge 会动），静态 PNG 作不支持动画时的回退 -->
   <link rel="icon" type="image/gif" href="${rootRel}assets/favicon/favicon.gif">
   <link rel="alternate icon" type="image/png" href="${rootRel}assets/favicon/favicon.png">
@@ -1515,6 +1520,7 @@ for (const relPath of TARGET_FILES) {
        defer 脚本执行时 readyState 已是 interactive，document.write 会毁掉文档。 -->
   <script src="${rootRel}${assetUrl('assets/plugins/webmcp-relay.js')}"></script>
   <script src="${rootRel}${assetUrl('assets/plugins/drawer-sync.js')}" defer></script>
+  <script src="${rootRel}${assetUrl('assets/plugins/chat-panel.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/spa-router.js')}" defer></script>
   <script>if ('serviceWorker' in navigator) { addEventListener('load', function () { navigator.serviceWorker.register('${rootRel}sw.js'); }); }</script>
 </body>
