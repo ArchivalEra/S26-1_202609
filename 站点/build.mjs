@@ -32,22 +32,23 @@ const argvCanonical = process.argv.includes('--canonical-root')
   ? process.argv[process.argv.indexOf('--canonical-root') + 1] : null;
 const CANONICAL_ROOT = argvCanonical ? (argvCanonical.endsWith('/') ? argvCanonical : argvCanonical + '/') : '/';
 
-// 学习助手激活材料（2026-10-20，油猴脚本方案 F）：
-//   <html data-assistant-site> = C_site 密文（授权站点白名单，脚本用内置 K_script 解）
-//   <html data-assistant-key>  = K_page 钥匙（脚本解开自己内置的 C_upstream 拿上游地址）
-// 材料由 /mnt/hdd/study/userscript/build-user-script.mjs 的 makeSecrets 产出（secrets.json），
-// 两侧同批生成——站点埋 cSite+kPage，脚本埋 kScript+cUpstream。
-// ⚠️ 不传 --assistant-secrets 时**不埋**（页面无助手激活数据，脚本在该站休眠）——
-// 这样裸构建（CI 的 build:pages 未配密钥前）不引入未定稿材料。
+// 学习助手激活材料（2026-10-20 单向锁模型，方案 F）：
+//   <html data-assistant-key> = K_page 钥匙（32 字节随机数的 b64）
+// 站点只埋这一件。它单独存在时无处可用——没有密文，它就是一串随机字节。
+// 脚本侧才持有 C_upstream（密文）；脚本用它解自己的锁，解不开即休眠。
+// 两边都不知道对方是谁：站点不知道自己被谁服务，脚本不知道自己在哪个站生效。
+//
+// 材料由 /mnt/hdd/study/userscript/build-user-script.mjs 的 makeSecrets 产出
+// （secrets.json，形如 {kPage, cUpstream}）——站点拿 kPage，脚本拿 cUpstream。
+// ⚠️ 不传 --assistant-secrets 时**不埋**（脚本在该站拿不到钥匙 → 静默休眠）——
+// 这样裸构建（CI 未配密钥）不引入未定稿材料。
 // 传法：--assistant-secrets /mnt/hdd/study/userscript/secrets.json
 const argvSecrets = process.argv.includes('--assistant-secrets')
   ? process.argv[process.argv.indexOf('--assistant-secrets') + 1] : null;
-let ASSISTANT_SITE = null;   // C_site 密文（b64）
 let ASSISTANT_KEY = null;    // K_page 钥匙（b64）
 if (argvSecrets) {
   const sec = JSON.parse(fs.readFileSync(argvSecrets, 'utf8'));
-  if (!sec.cSite || !sec.kPage) throw new Error('--assistant-secrets 文件缺 cSite/kPage');
-  ASSISTANT_SITE = sec.cSite;
+  if (!sec.kPage) throw new Error('--assistant-secrets 文件缺 kPage');
   ASSISTANT_KEY = sec.kPage;
 }
 
@@ -55,7 +56,7 @@ console.log(`[build] Starting static site generation...`);
 console.log(`[build] Repo Root: ${ROOT}`);
 console.log(`[build] Output: ${DIST_DIR}`);
 console.log(`[build] Canonical Root: ${CANONICAL_ROOT}`);
-console.log(`[build] Assistant: ${ASSISTANT_SITE ? '埋入激活材料' : '未埋（无 --assistant-secrets）'}`);
+console.log(`[build] Assistant: ${ASSISTANT_KEY ? '埋入页面钥匙' : '未埋（无 --assistant-secrets）'}`);
 
 // 1. 页面清单：唯一真相源在 ./页面清单.mjs（build 与 MCP 读层共用），此处 import
 
@@ -1301,7 +1302,7 @@ for (const relPath of TARGET_FILES) {
 
   // Final HTML Document
   const finalHtml = `<!DOCTYPE html>
-<html lang="zh-CN" data-depth="${rootRel === './' ? 0 : rootRel.split('../').length - 1}" data-root="${rootRel}" data-canonical-root="${CANONICAL_ROOT}"${ASSISTANT_SITE ? ` data-assistant-site="${ASSISTANT_SITE}" data-assistant-key="${ASSISTANT_KEY}"` : ''}>
+<html lang="zh-CN" data-depth="${rootRel === './' ? 0 : rootRel.split('../').length - 1}" data-root="${rootRel}" data-canonical-root="${CANONICAL_ROOT}"${ASSISTANT_KEY ? ` data-assistant-key="${ASSISTANT_KEY}"` : ''}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
