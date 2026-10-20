@@ -23,9 +23,19 @@ const SITE_DIR = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = path.resolve(SITE_DIR, '..');
 const DIST_DIR = path.join(SITE_DIR, 'dist');
 
+// 正式部署根（2026-10-20 镜像入口修复）：站点在 isui.ren 上挂在子路径
+// /repo/S26-1_202609/ 下，但托管层让无前缀路径也返回 200——两个入口指向
+// 同一份文件。构建期把正式根写进 <html data-canonical-root>，运行时
+// site-root.mjs 探测实际根，不一致就把链接规范到正式根。
+// 不传（默认 /）= 部署在域名根（GitHub Pages 用户页场景），行为不变。
+const argvCanonical = process.argv.includes('--canonical-root')
+  ? process.argv[process.argv.indexOf('--canonical-root') + 1] : null;
+const CANONICAL_ROOT = argvCanonical ? (argvCanonical.endsWith('/') ? argvCanonical : argvCanonical + '/') : '/';
+
 console.log(`[build] Starting static site generation...`);
 console.log(`[build] Repo Root: ${ROOT}`);
 console.log(`[build] Output: ${DIST_DIR}`);
+console.log(`[build] Canonical Root: ${CANONICAL_ROOT}`);
 
 // 1. 页面清单：唯一真相源在 ./页面清单.mjs（build 与 MCP 读层共用），此处 import
 
@@ -153,6 +163,9 @@ fs.writeFileSync(path.join(webmcpDir, 'webmcp-bridge.js'), PAGE_BRIDGE_JS);
 // 学习助手面板（2026-10-19）：JS + CSS 都是构建期写盘，SW 会自动预缓存
 fs.writeFileSync(path.join(webmcpDir, 'chat-panel.js'), CHAT_JS);
 fs.writeFileSync(path.join(webmcpDir, 'chat-panel.css'), CHAT_CSS);
+// 部署根探测（2026-10-20）：修「无前缀入口下相对链接退到域名根」的线上 404。
+// 原样拷贝源文件（内含全局暴露，模板里同步加载并立即调用 fixSiteRoot()）。
+fs.writeFileSync(path.join(webmcpDir, 'site-root.js'), fs.readFileSync(path.join(SITE_DIR, 'plugins', 'site-root.mjs'), 'utf8'));
 // vendor 第三方资产（polyfill + relay embed/widget）逐字节拷贝。
 copyDir(path.join(SITE_DIR, 'assets', 'vendor', 'webmcp'), path.join(DIST_DIR, 'assets', 'vendor', 'webmcp'));
 console.log('[build] Wrote WebMCP plugins + copied vendor assets (polyfill + relay embed)');
@@ -1268,7 +1281,7 @@ for (const relPath of TARGET_FILES) {
 
   // Final HTML Document
   const finalHtml = `<!DOCTYPE html>
-<html lang="zh-CN" data-depth="${rootRel === './' ? 0 : rootRel.split('../').length - 1}" data-root="${rootRel}">
+<html lang="zh-CN" data-depth="${rootRel === './' ? 0 : rootRel.split('../').length - 1}" data-root="${rootRel}" data-canonical-root="${CANONICAL_ROOT}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1519,6 +1532,10 @@ for (const relPath of TARGET_FILES) {
        而 embed.js 靠 document.currentScript.src 定位同目录的 widget.html——
        defer 脚本执行时 readyState 已是 interactive，document.write 会毁掉文档。 -->
   <script src="${rootRel}${assetUrl('assets/plugins/webmcp-relay.js')}"></script>
+  <!-- site-root：部署根探测与链接修正。同步执行、先于一切读 data-root 的脚本
+       （drawer-sync / spa-router / chat-panel / loader），否则它们拿到错误的相对根。 -->
+  <script src="${rootRel}${assetUrl('assets/plugins/site-root.js')}"></script>
+  <script>try { fixSiteRoot(); } catch (e) { /* 探测失败保持构建期相对路径 */ }</script>
   <script src="${rootRel}${assetUrl('assets/plugins/drawer-sync.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/chat-panel.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/spa-router.js')}" defer></script>

@@ -693,24 +693,26 @@ var renderMathInto = ${renderMathInto.toString()};
 var BRIDGE = "http://127.0.0.1:9345";
 
 /**
- * 本机守卫（2026-10-19 补，审计发现）。
+ * 是否允许使用助手（2026-10-19 扩到公网站点）。
  *
- * 助手面板要与**用户自己电脑上**的桥进程通信。线上访客的浏览器里没有那个进程，
- * 发请求只会失败；更重要的是，**代码不该让公网页面去敲 localhost**——
- * 那在语义上是「网站探测访问者的本机服务」。
+ * 助手要与**访问者自己机器上**的桥进程通信。127.0.0.1 在浏览器里永远指
+ * 访问者本机，所以「公网页面 + 访客本地程序」这个组合本身是成立的
+ * （和本地下载器助手、IDE 插件同构）——只要访客自己跑了桥。
  *
- * 页面桥早有这道判断（webmcp-loader 的 shouldBridge），但面板漏了：
- * BRIDGE 是硬编码常量，文件里没有任何 hostname 检查。
+ * 允许的三种情况：
+ *   ① loopback hostname（本机开发/阅读）
+ *   ② 站点部署域名（isui.ren / GitHub Pages）——同学在公网上打开时会命中
+ *   ③ 用户显式开关（?assistant=1 / localStorage.webmcp_bridge=on）
  *
- * 判据与页面桥对齐：loopback hostname，或用户显式要（?assistant=1 /
- * localStorage.webmcp_bridge=on）。
- * 非本机时**不拦截按钮，只在点开时给一句说明**——按钮本身不构成风险，
- * 真问题是那些出站请求；而站长在线上域名自测时也需要能看见入口。
+ * 注意「允许打开面板」不等于「能连上」：真正连不上时（没跑桥）会走
+ * 已有的失败提示「本地桥没在运行」。
  */
+var SITE_HOSTS = ["isui.ren", "archivalera.github.io"];
 var LOCAL_ONLY = (function () {
   try {
     var h = location.hostname;
     if (h === "127.0.0.1" || h === "localhost" || h === "[::1]" || h === "::1") return true;
+    for (var i = 0; i < SITE_HOSTS.length; i++) if (h === SITE_HOSTS[i]) return true;
   } catch (e) { /* 无 location */ }
   try {
     var qs = new URLSearchParams(location.search);

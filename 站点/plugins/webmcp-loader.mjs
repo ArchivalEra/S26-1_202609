@@ -211,13 +211,22 @@ function resolveToken() {
     .catch(function () { clearTimeout(timer); return ""; });
 }
 
-// 只在「本机 / 显式开启」时连桥。线上访客一个请求都不会打到 127.0.0.1。
+// 站点部署域名（2026-10-19 扩到公网）：同学在 isui.ren 上打开时也要连
+// **他自己机器**的桥。127.0.0.1 在浏览器里永远指访问者本机，所以这不是
+// 「连站长的服务器」，而是「连访客自己的本地程序」。
+var SITE_HOSTS = ['isui.ren', 'archivalera.github.io'];
+
+// 只在「本机 / 本站部署域名 / 显式开启」时连桥。
 function shouldBridge() {
   try {
     if (qs && qs.get("bridge") === "1") return true;
     if (localStorage.getItem("webmcp_bridge") === "on") return true;
+    var h = location.hostname;
     // 本机环境默认开（开发/实验）
-    return /^(127\\.0\\.0\\.1|localhost|\\[::1\\])$/.test(location.hostname);
+    if (/^(127\\.0\\.0\\.1|localhost|\\[::1\\]|::1)$/.test(h)) return true;
+    // 本站的部署域名
+    for (var i = 0; i < SITE_HOSTS.length; i++) if (h === SITE_HOSTS[i]) return true;
+    return false;
   } catch (e) { return false; }
 }
 
