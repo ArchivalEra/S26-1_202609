@@ -35,13 +35,33 @@ jobs:
         with:
           node-version: 22
 
+      - name: Materialize assistant secrets
+        # 学习助手激活材料（2026-10-20）：构建期要往每页埋 data-assistant-site/key。
+        # 材料是 AES-GCM 密文，存在仓库 secret 里；缺 secret 时构建自动退化为「不埋」。
+        env:
+          ASSISTANT_SECRETS: ${{ secrets.ASSISTANT_SECRETS }}
+        run: |
+          set -euo pipefail
+          if [ -n "${ASSISTANT_SECRETS:-}" ]; then
+            printf '%s' "$ASSISTANT_SECRETS" > "$RUNNER_TEMP/assistant-secrets.json"
+            echo "ASSISTANT_SECRETS_FILE=$RUNNER_TEMP/assistant-secrets.json" >> "$GITHUB_ENV"
+            echo "激活材料：已注入"
+          else
+            echo "激活材料：未配置 secret（站点将不带助手激活数据）"
+          fi
+
       - name: Build static site (含自持搜索索引)
         working-directory: 站点
         run: |
           set -euo pipefail
           # 零构建期依赖：搜索索引由 plugins/site-search.mjs 在 build.mjs 里直接产出
           # （此前用 pagefind，但它按单字索引中文，已弃用）。
-          npm run build
+          # 激活材料：有 secret 就带参构建，没有就裸构建（不埋）。
+          if [ -n "${ASSISTANT_SECRETS_FILE:-}" ]; then
+            node build.mjs --canonical-root /repo/S26-1_202609/ --assistant-secrets "$ASSISTANT_SECRETS_FILE"
+          else
+            npm run build
+          fi
           # 顺手跑一遍插件测试：搜索的折叠/短语校验逻辑一旦回归，这里会先炸
           npm test
 
