@@ -5,7 +5,8 @@
   "description": "Engineering Mathematics course reading site with Shirone M3E theme",
   "private": true,
   "scripts": {
-    "build": "node build.mjs",
-    "test": "node --test plugins/*.test.mjs"
+    "build": "node build.mjs --canonical-root /repo/S26-1_202609/",
+    "test": "node --test plugins/*.test.mjs",
+    "build:pages": "node build.mjs --canonical-root /S26-1_202609/"
   }
 }

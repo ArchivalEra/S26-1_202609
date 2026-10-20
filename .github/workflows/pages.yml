@@ -50,7 +50,9 @@ jobs:
           set -euo pipefail
           # 与 deploy.yml 同一条构建命令：产物落到 站点/dist，纯相对引用，
           # 可直接挂任意子路径（Pages 子路径 /S26-1_202609/ 即一例）。
-          npm run build
+          # Pages 部署在项目子路径 /S26-1_202609/——正式根要带参（2026-10-20
+          # 镜像入口修复：构建期埋 data-canonical-root，运行时探测实际根并规范链接）
+          npm run build:pages
           npm test
 
       - name: Upload Pages artifact
