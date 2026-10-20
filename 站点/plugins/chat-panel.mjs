@@ -379,6 +379,19 @@ body.chat-resizing .chat-panel {
   50% { opacity: 1; }
 }
 
+/* 耗时诊断行（2026-10-20 查「每次都 50 秒」）：安静地待在答案末尾。
+   用户据此能直接看出是「一轮就慢」还是「四轮叠加」。 */
+.chat-timings {
+  margin-top: .6rem;
+  padding-top: .4rem;
+  border-top: 1px dashed var(--md-sys-color-outline-variant);
+  font-size: .7rem;
+  line-height: 1.5;
+  color: var(--md-sys-color-on-surface-variant);
+  font-variant-numeric: tabular-nums;
+  opacity: .75;
+}
+
 /* 空状态 */
 .chat-empty {
   color: var(--md-sys-color-on-surface-variant);
@@ -1212,6 +1225,32 @@ function clearStatus(msg) {
   msg.statusEl = null;
 }
 
+/**
+ * 耗时诊断行（2026-10-20）：把每轮耗时折成一行小字附在答案末尾。
+ *
+ * 为什么要显示出来：用户报「每次都 50 秒以上」，而这条链上有四轮工具循环、
+ * 换线重试、上下文重放——只看总时长分不清是哪一种。把每轮摊开，
+ * 「4×12s」和「1×45s」一眼就分开，不用再靠猜。
+ * 只在脚本形态（B 侧）有 timings；本机桥形态没有，就不显示。
+ */
+function attachTimings(msg, timings) {
+  var total = 0;
+  var parts = [];
+  for (var i = 0; i < timings.length; i++) {
+    var t = timings[i] || {};
+    var ms = typeof t.ms === "number" ? t.ms : 0;
+    total += ms;
+    var seg = "第" + (t.round || i + 1) + "轮 " + (ms / 1000).toFixed(1) + "s";
+    if (t.attempts > 1) seg += "（重试 " + (t.attempts - 1) + " 次）";
+    if (t.calls) seg += " · " + t.calls + " 个工具";
+    parts.push(seg);
+  }
+  var el = document.createElement("div");
+  el.className = "chat-timings";
+  el.textContent = "耗时：" + parts.join("；") + "（合计 " + (total / 1000).toFixed(1) + "s）";
+  msg.body.appendChild(el);
+}
+
 /** 把服务端 status 事件翻成一句人话。**不带秒数**——秒数由本地秒表统一追加。 */
 function statusText(ev) {
   var phase = ev && ev.phase;
@@ -1320,6 +1359,12 @@ function askChat(text) {
         if (s) setStatus(botMsg, s);
       } else if (ev.type === "done") {
         clearStatus(botMsg);
+        // 诊断（2026-10-20 查「每次都 50 秒」）：把每轮耗时附在答案末尾，
+        // 折叠成一行小字。用户据此能直接看出是「一轮就慢」还是「四轮叠加」，
+        // 不用再靠猜。没有 timings（本机桥形态）就什么都不加。
+        if (Array.isArray(ev.timings) && ev.timings.length) {
+          try { attachTimings(botMsg, ev.timings); } catch (e) { /* 诊断不影响正文 */ }
+        }
         // ⚠️ 2026-10-19 实测 bug：done.text 是**完整答案**，不是增量。
         // 旧代码只在 raw 为空时把它塞进 raw，然后又走「续解」路径——
         // 此时 restStart 已经推进到旧文本末尾，raw.slice(restStart) 从
