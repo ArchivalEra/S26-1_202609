@@ -45,8 +45,8 @@ jobs:
           node-version: 22
 
       - name: Materialize assistant secrets
-        # 学习助手激活材料（2026-10-20）：构建期要往每页埋 data-assistant-site/key。
-        # 材料是 AES-GCM 密文（不是明文密钥本体），存在仓库 secret 里；
+        # 学习助手激活材料（2026-10-20 单向锁模型）：构建期往每页埋 data-assistant-key。
+        # 站点只存这一把钥匙（32 字节随机数）；没有对应密文时它无处可用。
         # 缺 secret 时本步骤写空文件，构建自动退化为「不埋」（脚本在该站休眠）。
         env:
           ASSISTANT_SECRETS: ${{ secrets.ASSISTANT_SECRETS }}
