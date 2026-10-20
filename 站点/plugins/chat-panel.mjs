@@ -737,6 +737,13 @@ var msgEls = [];            // 消息 DOM 引用（用于流式更新最后一�
 var pending_attach = [];    // 待发附件：{id, name, dataUrl, fileInfo, status:'uploading'|'ready'|'failed'}
 var stopAnswerRef = function () {};   // 当前提问的停止句柄（askChat 里赋值）
 
+// ── 传输层替换钩子（2026-10-20，油猴脚本形态）──────────────────
+// setTransport(fn)：fn = {ask, cancel, upload}（契约见 .zcode/userscript-impl 的
+// chat-panel-hook.md，合入记录在归档）。null = 恢复本机桥。不装脚本时这个钩子
+// 永远空置——面板行为与原来完全一致（双形态并存，验收 13）。
+// 面板不知道 iframe/通道/密文的存在：它只认这三个函数，换传输层不用再动面板。
+var transport = null;
+
 // ── 工具函数 ────────────────────────────────────────────────
 
 /**
@@ -898,6 +905,8 @@ function prepareImage(file) {
 
 /** 把一张图 POST 到桥的 /upload，拿回 fileInfo。 */
 function uploadAttachment(item, tk) {
+  // 脚本形态：transport 决定怎么上送（攒着随下次 ask 的 payload.images 一起走）
+  if (transport && transport.upload) return transport.upload(item);
   // 非本机不向 127.0.0.1 发请求（2026-10-19 审计修复）
   if (!LOCAL_ONLY) return Promise.reject(new Error("学习助手只在你自己电脑上可用"));
   var b64 = String(item.dataUrl || "").split(",")[1] || "";
@@ -1195,7 +1204,8 @@ function askChat(text) {
   if (busy) return;
   // 底层兜底（2026-10-19）：UI 已经禁用了输入框，但 __chatPanel.ask 是暴露的，
   // 别让任何调用路径在非本机环境发出请求。
-  if (!LOCAL_ONLY) {
+  // transport 存在 = 脚本形态接管（事件走 iframe 通道，不连本机桥）——豁免此门。
+  if (!transport && !LOCAL_ONLY) {
     var nope = addMsg("bot");
     nope.body.textContent = "学习助手只在你自己电脑上可用（要连本地桥进程）。";
     nope.done = true;
@@ -1258,6 +1268,8 @@ function askChat(text) {
    */
   function stopAnswer() {
     if (!busy) return;
+    // 脚本形态：走通道 cancel（B 侧真停上游）；面板照常收尾
+    if (transport) { try { transport.cancel(); } catch (e) { /* 面板照常收尾 */ } return; }
     var tk = (function () {
       try { return window.__bridgeToken || localStorage.getItem("webmcp_bridge_token") || ""; } catch (e) { return ""; }
     })();
@@ -1275,6 +1287,24 @@ function askChat(text) {
   }
   // 暴露给表单的 submit 处理器（它在 askChat 外面，拿不到闭包里的 stopAnswer）
   stopAnswerRef = stopAnswer;
+
+  // ── 双形态分派（2026-10-20）──────────────────────────────
+  // transport 存在 = 脚本形态：事件走 transport.ask 的 onEvent，终态走 Promise。
+  // 词汇与本机桥 SSE 完全一致（handleEventPlain 同一个消费者）。
+  if (transport) {
+    transport.ask(payload, function (ev) { handleEventPlain(ev); })
+      .then(function (r) {
+        if (r && r.ok) { handleEventPlain({ type: "done", text: r.text || "" }); }
+        else { handleEventPlain({ type: "error", reason: (r && r.reason) || "未知错误" }); }
+        finish();
+      })
+      .catch(function (e) {
+        handleEventPlain({ type: "error", reason: String((e && e.message) || e) });
+        finish();
+      });
+    return;
+  }
+  // ── 本机桥形态（现状，原链不动）──────────────────────────
 
   /** 发一次 /chat。401/403 时刷新一次 token 再试——桥可能重装过（新 token）。 */
   function attempt(n) {
@@ -1311,6 +1341,10 @@ function askChat(text) {
       if (!line) return;                     // 注释/心跳
       var ev;
       try { ev = JSON.parse(line.slice(5).trim()); } catch (e) { return; }
+      handleEventPlain(ev);
+    }
+    /** 事件统一入口：SSE 行解析后的 ev 与 transport 的 ev 同一词汇，走同一处理。 */
+    function handleEventPlain(ev) {
       if (ev.type === "delta") {
         // 答案已开始：过程提示该退了（思考与输出的分界就在这里）
         clearStatus(botMsg);
@@ -1691,4 +1725,17 @@ window.__chatSync = function () {
 };
 
 window.__chatPanel = { open: openPanel, close: close, toggle: toggle, ask: askChat, get isOpen() { return open; } };
+
+// ── setTransport 钩子（2026-10-20，契约见 chat-panel-hook 文档）──
+// fn = {ask, cancel, upload} 或 null（恢复本机桥）。ready 超时指引走 showNotice。
+window.__chatPanel.setTransport = function (fn) {
+  transport = fn || null;
+  // 切换前停掉在飞的一问（若正在跑）——两种形态切换的干净边界
+  if (busy) { try { stopAnswerRef(); } catch (e) { /* 已停 */ } }
+};
+window.__chatPanel.showNotice = function (text) {
+  var notice = addMsg("bot");
+  notice.body.textContent = String(text || "");
+  notice.done = true;
+};
 })();`;
