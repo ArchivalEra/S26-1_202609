@@ -44,6 +44,22 @@ jobs:
         with:
           node-version: 22
 
+      - name: Materialize assistant secrets
+        # 学习助手激活材料（2026-10-20）：构建期要往每页埋 data-assistant-site/key。
+        # 材料是 AES-GCM 密文（不是明文密钥本体），存在仓库 secret 里；
+        # 缺 secret 时本步骤写空文件，构建自动退化为「不埋」（脚本在该站休眠）。
+        env:
+          ASSISTANT_SECRETS: ${{ secrets.ASSISTANT_SECRETS }}
+        run: |
+          set -euo pipefail
+          if [ -n "${ASSISTANT_SECRETS:-}" ]; then
+            printf '%s' "$ASSISTANT_SECRETS" > "$RUNNER_TEMP/assistant-secrets.json"
+            echo "ASSISTANT_SECRETS_FILE=$RUNNER_TEMP/assistant-secrets.json" >> "$GITHUB_ENV"
+            echo "激活材料：已注入"
+          else
+            echo "激活材料：未配置 secret（站点将不带助手激活数据）"
+          fi
+
       - name: Build static site (含自持搜索索引)
         working-directory: 站点
         run: |
@@ -52,7 +68,12 @@ jobs:
           # 可直接挂任意子路径（Pages 子路径 /S26-1_202609/ 即一例）。
           # Pages 部署在项目子路径 /S26-1_202609/——正式根要带参（2026-10-20
           # 镜像入口修复：构建期埋 data-canonical-root，运行时探测实际根并规范链接）
-          npm run build:pages
+          # 激活材料：有 secret 就带参构建，没有就裸构建（不埋）。
+          if [ -n "${ASSISTANT_SECRETS_FILE:-}" ]; then
+            node build.mjs --canonical-root /S26-1_202609/ --assistant-secrets "$ASSISTANT_SECRETS_FILE"
+          else
+            npm run build:pages
+          fi
           npm test
 
       - name: Upload Pages artifact
