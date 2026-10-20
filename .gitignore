@@ -349,6 +349,7 @@
 !/站点/plugins/chat-panel.test.mjs
 !/站点/plugins/chat-render.mjs
 !/站点/plugins/chat-render.test.mjs
+!/站点/plugins/site-root.mjs
 !/站点/plugins/webmcp-loader.mjs
 !/站点/plugins/webmcp-shim.mjs
 !/站点/plugins/webmcp-shim.test.mjs
