@@ -371,7 +371,8 @@ test('本机守卫：非本机时 tokenAsync 不请求 127.0.0.1', () => {
 
 test('本机守卫：非本机时 askChat 不发请求', () => {
   const fn = CHAT_JS.slice(CHAT_JS.indexOf('function askChat'), CHAT_JS.indexOf('function resetSendButton'));
-  assert.match(fn, /if \(!LOCAL_ONLY\)/, 'askChat 要拦截');
+  // 2026-10-20：transport 接管时豁免（脚本形态不连本机桥）；无 transport 时仍拦
+  assert.match(fn, /if \(!transport && !LOCAL_ONLY\)/, 'askChat 要拦截（transport 除外）');
   assert.match(fn, /只在你自己电脑上可用/, '要给出说明');
 });
 
@@ -390,4 +391,39 @@ test('本机守卫：非本机时输入框禁用并显示说明', () => {
   assert.match(fn, /inputEl\.disabled = true/);
   assert.match(fn, /sendBtn\.disabled = true/);
   assert.match(fn, /attachBtn\.disabled = true/);
+});
+
+// ── setTransport 钩子（2026-10-20，油猴脚本形态）──────────────
+
+test('钩子：setTransport/showNotice 暴露在 __chatPanel 上', () => {
+  assert.match(CHAT_JS, /window\.__chatPanel\.setTransport\s*=/, 'setTransport 要暴露');
+  assert.match(CHAT_JS, /window\.__chatPanel\.showNotice\s*=/, 'showNotice 要暴露');
+});
+
+test('钩子：askChat 双形态分派（transport 存在走通道，否则本机桥）', () => {
+  const fn = CHAT_JS.slice(CHAT_JS.indexOf('function askChat'), CHAT_JS.indexOf('function resetSendButton'));
+  assert.match(fn, /if \(transport\) \{/, '分派点存在');
+  assert.match(fn, /transport\.ask\(payload/, '脚本形态走 transport.ask');
+  assert.match(fn, /handleEventPlain\(ev\)/, '事件词汇共用同一消费者');
+  // 本机桥路径保留（零删除）
+  assert.match(fn, /attempt\(1\)\.then/, '本机桥路径仍在');
+});
+
+test('钩子：事件词汇两路共用 handleEventPlain', () => {
+  assert.match(CHAT_JS, /function handleEventPlain\(ev\)/);
+  const he = CHAT_JS.slice(CHAT_JS.indexOf('function handleEvent('), CHAT_JS.indexOf('function handleEventPlain'));
+  assert.match(he, /handleEventPlain\(ev\)/, 'SSE 路径要转发');
+});
+
+test('钩子：stopAnswer 与 uploadAttachment 的传输分派', () => {
+  const fn = CHAT_JS.slice(CHAT_JS.indexOf('function askChat'), CHAT_JS.indexOf('function resetSendButton'));
+  assert.match(fn, /if \(transport\) \{ try \{ transport\.cancel\(\)/, '停止走通道');
+  const up = CHAT_JS.slice(CHAT_JS.indexOf('function uploadAttachment'), CHAT_JS.indexOf('function renderAttachBar'));
+  assert.match(up, /if \(transport && transport\.upload\) return transport\.upload\(item\)/, '上传走 transport');
+});
+
+test('钩子：setTransport(null) 逃生门 + 切换时停在飞问答', () => {
+  const fn = CHAT_JS.slice(CHAT_JS.indexOf('window.__chatPanel.setTransport'));
+  assert.match(fn, /transport = fn \|\| null/, 'null 恢复本机桥');
+  assert.match(fn, /if \(busy\) \{ try \{ stopAnswerRef\(\)/, '切换前停掉在飞一问');
 });
