@@ -1266,85 +1266,11 @@ function askChat(text) {
    * 现在：cancel 请求**先发出去**（不等响应），下一拍再 abort。
    * 用 setTimeout(0) 而不是 await —— 取消要立刻生效，不能等网络往返。
    */
-  function stopAnswer() {
-    if (!busy) return;
-    // 脚本形态：走通道 cancel（B 侧真停上游）；面板照常收尾
-    if (transport) { try { transport.cancel(); } catch (e) { /* 面板照常收尾 */ } return; }
-    var tk = (function () {
-      try { return window.__bridgeToken || localStorage.getItem("webmcp_bridge_token") || ""; } catch (e) { return ""; }
-    })();
-    var cancelReq = fetch(withToken(BRIDGE + "/chat/cancel", tk), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: sessionKey }),
-    }).catch(function () { /* 断网也要把本地停掉 */ });
-    // 先把 cancel 交出去，再断流。0ms 足够让请求离开事件循环（fetch 同步入队），
-    // 又不会让用户感觉「按了没反应」。
-    setTimeout(function () {
-      if (stream) { try { stream.abort(); } catch (e) { /* 已断 */ } }
-    }, 0);
-    return cancelReq;
-  }
-  // 暴露给表单的 submit 处理器（它在 askChat 外面，拿不到闭包里的 stopAnswer）
-  stopAnswerRef = stopAnswer;
-
-  // ── 双形态分派（2026-10-20）──────────────────────────────
-  // transport 存在 = 脚本形态：事件走 transport.ask 的 onEvent，终态走 Promise。
-  // 词汇与本机桥 SSE 完全一致（handleEventPlain 同一个消费者）。
-  if (transport) {
-    transport.ask(payload, function (ev) { handleEventPlain(ev); })
-      .then(function (r) {
-        if (r && r.ok) { handleEventPlain({ type: "done", text: r.text || "" }); }
-        else { handleEventPlain({ type: "error", reason: (r && r.reason) || "未知错误" }); }
-        finish();
-      })
-      .catch(function (e) {
-        handleEventPlain({ type: "error", reason: String((e && e.message) || e) });
-        finish();
-      });
-    return;
-  }
-  // ── 本机桥形态（现状，原链不动）──────────────────────────
-
-  /** 发一次 /chat。401/403 时刷新一次 token 再试——桥可能重装过（新 token）。 */
-  function attempt(n) {
-    return tokenAsync(n > 1).then(function (tk) {
-      return fetch(withToken(BRIDGE + "/chat", tk), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: body,
-        signal: stream ? stream.signal : undefined,
-      });
-    }).then(function (res) {
-      if ((res.status === 401 || res.status === 403) && n === 1) return attempt(2);
-      return res;
-    });
-  }
-
-  attempt(1).then(function (res) {
-    if (!res.ok || !res.body) throw new Error("HTTP " + res.status);
-    var reader = res.body.getReader();
-    var dec = new TextDecoder();
-    var buf = "";
-    function pump() {
-      return reader.read().then(function (r) {
-        if (r.done) return finish();
-        buf += dec.decode(r.value, { stream: true });
-        var parts = buf.split("\\n\\n");
-        buf = parts.pop();
-        for (var i = 0; i < parts.length; i++) handleEvent(parts[i]);
-        return pump();
-      });
-    }
-    function handleEvent(raw) {
-      var line = raw.split("\\n").filter(function (l) { return l.indexOf("data:") === 0; })[0];
-      if (!line) return;                     // 注释/心跳
-      var ev;
-      try { ev = JSON.parse(line.slice(5).trim()); } catch (e) { return; }
-      handleEventPlain(ev);
-    }
-    /** 事件统一入口：SSE 行解析后的 ev 与 transport 的 ev 同一词汇，走同一处理。 */
-    function handleEventPlain(ev) {
+  /** 事件统一入口（2026-10-20 提升到 askChat 顶层）：
+   *  SSE 行解析后的 ev 与 transport 的 ev 同一词汇，走同一处理。
+   *  ⚠️ 原先定义在 attempt().then 回调内部——transport 分派点在它之前 return，
+   *  作用域不可达（实测报 handleEventPlain is not defined，busy 永卡）。 */
+  function handleEventPlain(ev) {
       if (ev.type === "delta") {
         // 答案已开始：过程提示该退了（思考与输出的分界就在这里）
         clearStatus(botMsg);
@@ -1387,7 +1313,12 @@ function askChat(text) {
       }
       // ev.type === "tool" 不显示
     }
-    function finish() {
+
+  /** 收尾（2026-10-20 提升到 askChat 顶层）：
+   *  ⚠️ 原先定义在 attempt().then 回调闭包里——transport 分派（提前 return 的分支）
+   *  引用不到它，实测 ReferenceError 静默吞掉 → busy 永卡、按钮不复位。
+   *  与 handleEventPlain 一同提升，两种传输形态共用。 */
+  function finish() {
       clearStatus(botMsg);
       if (!botMsg.raw) {
         botMsg.body.textContent = "（没有收到回答）";
@@ -1400,6 +1331,108 @@ function askChat(text) {
       if (attachBtn) attachBtn.disabled = false;
       stream = null;
     }
+
+  function stopAnswer() {
+    if (!busy) return;
+    // 脚本形态：走通道 cancel（B 侧真停上游）；5s 无终态则本地收尾（兜底）
+    if (transport) {
+      try { transport.cancel(); } catch (e) { /* 面板照常收尾 */ }
+      try { if (botMsg && botMsg.__shortStop) botMsg.__shortStop(); } catch (e) { /* 已收尾 */ }
+      return;
+    }
+    var tk = (function () {
+      try { return window.__bridgeToken || localStorage.getItem("webmcp_bridge_token") || ""; } catch (e) { return ""; }
+    })();
+    var cancelReq = fetch(withToken(BRIDGE + "/chat/cancel", tk), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: sessionKey }),
+    }).catch(function () { /* 断网也要把本地停掉 */ });
+    // 先把 cancel 交出去，再断流。0ms 足够让请求离开事件循环（fetch 同步入队），
+    // 又不会让用户感觉「按了没反应」。
+    setTimeout(function () {
+      if (stream) { try { stream.abort(); } catch (e) { /* 已断 */ } }
+    }, 0);
+    return cancelReq;
+  }
+  // 暴露给表单的 submit 处理器（它在 askChat 外面，拿不到闭包里的 stopAnswer）
+  stopAnswerRef = stopAnswer;
+
+  // ── 双形态分派（2026-10-20）──────────────────────────────
+  // transport 存在 = 脚本形态：事件走 transport.ask 的 onEvent，终态走 Promise。
+  // 词汇与本机桥 SSE 完全一致（handleEventPlain 同一个消费者）。
+  if (transport) {
+    // 2026-10-20 无人值守实测发现（端到端）：B 侧不存在/失联时 transport.ask 的
+    // Promise 永远不落定 → busy 永卡、close 也解不开、后续 submit 全进 stopAnswer。
+    // 兜底：本地超时（比正常一问的最长往返 400s 短不了，但比「永远」好）——
+    // cancel 被点过的场合用短超时（5s：停止后上游回包最多几秒）；
+    // 无人点停的长跑用 420s（对齐管理器 deadline 360s + 余量）。
+    var stopPressed = false;
+    var localTimer = setTimeout(function () {
+      handleEventPlain({ type: "error", reason: stopPressed ? "（已停止）" : "回答超时（助手未响应）" });
+      finish();
+    }, 420000);
+    transport.ask(payload, function (ev) { handleEventPlain(ev); })
+      .then(function (r) {
+        clearTimeout(localTimer);
+        if (r && r.ok) { handleEventPlain({ type: "done", text: r.text || "" }); }
+        else { handleEventPlain({ type: "error", reason: (r && r.reason) || "未知错误" }); }
+        finish();
+      })
+      .catch(function (e) {
+        clearTimeout(localTimer);
+        handleEventPlain({ type: "error", reason: String((e && e.message) || e) });
+        finish();
+      });
+    // 停止被点时缩短兜底（stopAnswer 里置位；那里调 transport.cancel 后
+    // B 侧正常会回 done{cancelled}，5s 内没回就本地收尾）
+    botMsg.__shortStop = function () { stopPressed = true; clearTimeout(localTimer);
+      localTimer = setTimeout(function () {
+        handleEventPlain({ type: "error", reason: "（已停止）" });
+        finish();
+      }, 5000); };
+    return;
+  }
+  // ── 本机桥形态（现状，原链不动）──────────────────────────
+
+  /** 发一次 /chat。401/403 时刷新一次 token 再试——桥可能重装过（新 token）。 */
+  function attempt(n) {
+    return tokenAsync(n > 1).then(function (tk) {
+      return fetch(withToken(BRIDGE + "/chat", tk), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: body,
+        signal: stream ? stream.signal : undefined,
+      });
+    }).then(function (res) {
+      if ((res.status === 401 || res.status === 403) && n === 1) return attempt(2);
+      return res;
+    });
+  }
+
+  attempt(1).then(function (res) {
+    if (!res.ok || !res.body) throw new Error("HTTP " + res.status);
+    var reader = res.body.getReader();
+    var dec = new TextDecoder();
+    var buf = "";
+    function pump() {
+      return reader.read().then(function (r) {
+        if (r.done) return finish();
+        buf += dec.decode(r.value, { stream: true });
+        var parts = buf.split("\\n\\n");
+        buf = parts.pop();
+        for (var i = 0; i < parts.length; i++) handleEvent(parts[i]);
+        return pump();
+      });
+    }
+    function handleEvent(raw) {
+      var line = raw.split("\\n").filter(function (l) { return l.indexOf("data:") === 0; })[0];
+      if (!line) return;                     // 注释/心跳
+      var ev;
+      try { ev = JSON.parse(line.slice(5).trim()); } catch (e) { return; }
+      handleEventPlain(ev);
+    }
+
     return pump();
   }).catch(function (e) {
     clearStatus(botMsg);
@@ -1730,8 +1763,17 @@ window.__chatPanel = { open: openPanel, close: close, toggle: toggle, ask: askCh
 // fn = {ask, cancel, upload} 或 null（恢复本机桥）。ready 超时指引走 showNotice。
 window.__chatPanel.setTransport = function (fn) {
   transport = fn || null;
-  // 切换前停掉在飞的一问（若正在跑）——两种形态切换的干净边界
-  if (busy) { try { stopAnswerRef(); } catch (e) { /* 已停 */ } }
+  // 切换前收尾在飞的一问（若正在跑）——两种形态切换的干净边界。
+  // ⚠️ 2026-10-20 无人值守实测：旧形态的 stopAnswerRef 依赖悬死 Promise 落定
+  // 才复位 busy；transport 形态失联时永不落定。这里直接本地收尾，不赌对端。
+  if (busy) {
+    try { stopAnswerRef(); } catch (e) { /* 已停 */ }
+    // stopAnswerRef 是旧形态句柄；transport 形态靠兜底定时器（上面 5s/420s）。
+    // 为确保切换立刻干净：再挂一个 2s 的强制复位（比兜底更短）。
+    setTimeout(function () {
+      if (busy) { busy = false; resetSendButton(); if (attachBtn) attachBtn.disabled = false; stream = null; }
+    }, 2000);
+  }
 };
 window.__chatPanel.showNotice = function (text) {
   var notice = addMsg("bot");
