@@ -410,14 +410,22 @@ test('钩子：askChat 双形态分派（transport 存在走通道，否则本�
 });
 
 test('钩子：事件词汇两路共用 handleEventPlain', () => {
-  assert.match(CHAT_JS, /function handleEventPlain\(ev\)/);
-  const he = CHAT_JS.slice(CHAT_JS.indexOf('function handleEvent('), CHAT_JS.indexOf('function handleEventPlain'));
-  assert.match(he, /handleEventPlain\(ev\)/, 'SSE 路径要转发');
+  // 2026-10-20 提升：handleEventPlain 在 askChat 顶层（transport 分派可达），
+  // handleEvent 壳留在 SSE pump 里转发给它。
+  const hi = CHAT_JS.indexOf('function handleEventPlain(ev)');
+  assert.ok(hi > 0, 'handleEventPlain 存在');
+  const heStart = CHAT_JS.indexOf('function handleEvent(raw)');
+  const heBody = CHAT_JS.slice(heStart, heStart + 400);
+  assert.match(heBody, /handleEventPlain\(ev\)/, 'SSE 路径要转发');
+  // transport 分派点在 handleEventPlain 定义之后（作用域可达——当年 bug 的判据）
+  const dispatch = CHAT_JS.indexOf('if (transport) {');
+  assert.ok(dispatch < 0 || hi < dispatch || CHAT_JS.indexOf('transport.ask(payload', dispatch) > hi,
+    '分派点能看见 handleEventPlain');
 });
 
 test('钩子：stopAnswer 与 uploadAttachment 的传输分派', () => {
   const fn = CHAT_JS.slice(CHAT_JS.indexOf('function askChat'), CHAT_JS.indexOf('function resetSendButton'));
-  assert.match(fn, /if \(transport\) \{ try \{ transport\.cancel\(\)/, '停止走通道');
+  assert.match(fn, /if \(transport\) \{[\s\S]{0,80}transport\.cancel\(\)/, '停止走通道');
   const up = CHAT_JS.slice(CHAT_JS.indexOf('function uploadAttachment'), CHAT_JS.indexOf('function renderAttachBar'));
   assert.match(up, /if \(transport && transport\.upload\) return transport\.upload\(item\)/, '上传走 transport');
 });
@@ -425,5 +433,6 @@ test('钩子：stopAnswer 与 uploadAttachment 的传输分派', () => {
 test('钩子：setTransport(null) 逃生门 + 切换时停在飞问答', () => {
   const fn = CHAT_JS.slice(CHAT_JS.indexOf('window.__chatPanel.setTransport'));
   assert.match(fn, /transport = fn \|\| null/, 'null 恢复本机桥');
-  assert.match(fn, /if \(busy\) \{ try \{ stopAnswerRef\(\)/, '切换前停掉在飞一问');
+  assert.match(fn, /if \(busy\) \{[\s\S]{0,40}stopAnswerRef\(\)/, '切换前停掉在飞一问');
+  assert.match(fn, /setTimeout[\s\S]{0,120}busy = false/, '2s 强制复位兜底（失联不永卡）');
 });
