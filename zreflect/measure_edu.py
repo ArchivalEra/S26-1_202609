@@ -53,6 +53,11 @@ HOOKTESTS_CMD = (
 PLUGIN_TESTS_CMD = (
     "cd 站点 && node --test plugins/*.test.mjs 2>&1 | grep -oE 'tests [0-9]+' | head -1 | grep -oE '[0-9]+'"
 )
+# handoff 体量（2026-10-20 站长定案精简时入账）：handoff 是「下个会话只读这一份
+# 就能接着干」的进度手记，越长越读不完。两条事实把它变成可测量的：
+# 行数超阈值、节数超阈值，都该触发一次归档精简。
+HANDOFF_LINES_CMD = "wc -l < .zcode/handoff.md"
+HANDOFF_SECTIONS_CMD = "grep -c '^### 0\\.' .zcode/handoff.md"
 
 # (键, 复跑命令, 出处, 备注) —— 可选第五列：dict，透传 ledger.fact() 的贵事实参数
 # （replay=False / witness / calibrate，见 ledger.py 的三档设计）。
@@ -81,6 +86,11 @@ TABLE = [
      {"replay": False, "witness": HOOKTESTS_WITNESS,
       "witness_expect": "25"}),
     ("plugin_tests", PLUGIN_TESTS_CMD, "站点/plugins/", "站点插件测试项数"),
+    # handoff 体量：见 HANDOFF_LINES_CMD 处的注释。「读不完」本身就是要量的事实。
+    ("handoff_lines", HANDOFF_LINES_CMD, ".zcode/handoff.md",
+     "进度手记总行数（超 ~1500 行该归档精简）"),
+    ("handoff_sections", HANDOFF_SECTIONS_CMD, ".zcode/handoff.md",
+     "进度手记节数（### 0.x 条目数）"),
 ]
 
 
