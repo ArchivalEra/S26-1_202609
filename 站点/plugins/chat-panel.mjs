@@ -61,18 +61,56 @@ export const CHAT_CSS = `
   color: var(--md-sys-color-on-surface);
 }
 
+/* 面板宽度：桌面档可拖拽（2026-10-20，与左侧边栏同一套手法）。
+   变量挂在 :root 上，由本文件的 JS 读写 + localStorage 记忆。
+   默认值直接继承 TOC 的宽度，保持「打开助手就接管目录栏位置」的原始观感。 */
+:root { --chat-width: var(--toc-width); }
+
+/* 拖拽手柄：贴面板左缘（宽度向右增长，所以手柄在西侧）。
+   命中区 6px 比视觉竖线宽——细线好抓。 */
+.chat-resizer {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 50;
+  transition: background-color 0.15s;
+}
+.chat-resizer:hover,
+.chat-resizer.dragging {
+  background-color: var(--md-sys-color-primary);
+}
+
+/* 拖拽期间：全局竖光标、禁选中，并掐掉面板自身的过渡（否则跟手迟滞） */
+body.chat-resizing,
+body.chat-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+body.chat-resizing .chat-panel {
+  transition: none !important;
+}
+
 /* 桌面：右栏，位置与宽度对齐 TOC */
 @media (min-width: 1201px) {
   .chat-panel {
-    width: var(--toc-width);
+    /* 拖拽改的是 --chat-width；未拖过时它就是 TOC 的默认宽度 */
+    width: var(--chat-width);
     flex-shrink: 0;
     height: calc(100vh - var(--header-height));
+    /* sticky 本身就给 .chat-resizer 提供包含块（非 static 即可），
+       不需要另写 position:relative——那条会覆盖手机档的 fixed（见上）。 */
     position: sticky;
     top: var(--header-height);
     border-left: 1px solid var(--md-sys-color-outline-variant);
   }
   body.chat-open .chat-panel { display: flex; }
   body.chat-open .m3-toc { display: none; }
+  /* 桌面档才给手柄 */
+  body.chat-open .chat-resizer { display: block; }
 }
 
 /* 中等：浮层 */
@@ -1495,6 +1533,117 @@ function describeFailure(e) {
 }
 
 // ── 面板开关 ────────────────────────────────────────────────
+// ── 宽度拖拽（桌面档）──────────────────────────────────────
+// 与左侧边栏同一套手法（shirone-reader.js 的 sidebar-resizer）：按下记起点，
+// 移动改 CSS 变量，松开落 localStorage，双击复位。
+//
+// 两处与左栏不同，都是「右边」这个位置带来的：
+//   ① 方向相反——手柄在面板左缘，往左拖是变宽，所以 dx 取负；
+//   ② 上限更宽——助手要放代码块和表格，允许到 720px（左栏导航到 580 就够）。
+var CHAT_W = "chat-width";
+var CHAT_W_KEY = "shirone-chat-width";
+var CHAT_W_DEFAULT = 240;
+var CHAT_W_MIN = 240;
+var CHAT_W_MAX = 720;
+// 正文列至少留这么宽，否则拖着拖着把文章挤没了
+var CHAT_MAIN_MIN = 420;
+
+function chatMaxWidth() {
+  // 可视宽度减掉左栏与正文的最小宽度；夹在 [MIN, MAX] 之间
+  var sidebar = 0;
+  var d = document.querySelector(".m3-drawer");
+  if (d && window.innerWidth > 860) sidebar = d.getBoundingClientRect().width || 0;
+  var room = Math.floor(window.innerWidth - sidebar - CHAT_MAIN_MIN);
+  if (room < CHAT_W_MIN) return CHAT_W_MIN;
+  return Math.min(CHAT_W_MAX, room);
+}
+
+function applyChatWidth(w, persist) {
+  var max = chatMaxWidth();
+  var v = Math.round(w);
+  if (v < CHAT_W_MIN) v = CHAT_W_MIN;
+  if (v > max) v = max;
+  document.documentElement.style.setProperty("--" + CHAT_W, v + "px");
+  if (persist) {
+    try { localStorage.setItem(CHAT_W_KEY, String(v)); } catch (e) { /* 隐私模式 */ }
+  }
+  return v;
+}
+
+/** 恢复已保存的宽度（只在桌面档有意义；窄屏那条规则根本不用这个变量）。 */
+function restoreChatWidth() {
+  if (window.innerWidth <= 860) return;
+  try {
+    var s = localStorage.getItem(CHAT_W_KEY);
+    if (!s) return;
+    var n = parseInt(s, 10);
+    if (isNaN(n) || n < CHAT_W_MIN) return;
+    applyChatWidth(n, false);
+  } catch (e) { /* 无 localStorage */ }
+}
+
+function buildResizer() {
+  var el = document.createElement("div");
+  el.className = "chat-resizer";
+  el.id = "chat-resizer";
+  el.title = "按住拖拽调整助手宽度，双击恢复默认";
+
+  var dragging = false;
+  var startX = 0;
+  var startW = 0;
+
+  el.addEventListener("mousedown", function (e) {
+    if (window.innerWidth <= 860) return;
+    dragging = true;
+    startX = e.clientX;
+    startW = panel.getBoundingClientRect().width;
+    el.classList.add("dragging");
+    document.body.classList.add("chat-resizing");
+    e.preventDefault();
+  });
+
+  window.addEventListener("mousemove", function (e) {
+    if (!dragging) return;
+    // 往左拖 = 变宽，所以取负
+    applyChatWidth(startW + (startX - e.clientX), false);
+  });
+
+  window.addEventListener("mouseup", function () {
+    if (!dragging) return;
+    dragging = false;
+    el.classList.remove("dragging");
+    document.body.classList.remove("chat-resizing");
+    if (panel) applyChatWidth(panel.getBoundingClientRect().width, true);
+  });
+
+  el.addEventListener("dblclick", function () {
+    applyChatWidth(CHAT_W_DEFAULT, true);
+  });
+
+  // 触屏：桌面档在平板上也可能命中（>1200px 的横屏平板）
+  el.addEventListener("touchstart", function (e) {
+    if (window.innerWidth <= 860 || !e.touches.length) return;
+    dragging = true;
+    startX = e.touches[0].clientX;
+    startW = panel.getBoundingClientRect().width;
+    el.classList.add("dragging");
+    document.body.classList.add("chat-resizing");
+  }, { passive: true });
+  el.addEventListener("touchmove", function (e) {
+    if (!dragging || !e.touches.length) return;
+    applyChatWidth(startW + (startX - e.touches[0].clientX), false);
+  }, { passive: true });
+  el.addEventListener("touchend", function () {
+    if (!dragging) return;
+    dragging = false;
+    el.classList.remove("dragging");
+    document.body.classList.remove("chat-resizing");
+    if (panel) applyChatWidth(panel.getBoundingClientRect().width, true);
+  });
+
+  return el;
+}
+
 function buildPanel() {
   if (panel) return;
   panel = document.createElement("aside");
@@ -1629,6 +1778,8 @@ function buildPanel() {
   panel.appendChild(logEl);
   panel.appendChild(attachBar);
   panel.appendChild(form);
+  // 拖拽手柄放最后（z-index 已够高，顺序只为「不挡已有子元素」）
+  panel.appendChild(buildResizer());
 
   // 挂载点必须同时满足两件事（2026-10-19 实测桌面档跑到正文上方，就是这里没做对）：
   //   ① **桌面档**要作为 .layout-container 的 flex 子项排在正文右侧（原来挂在
@@ -1695,6 +1846,7 @@ function openPanel() {
   buildPanel();
   open = true;
   document.body.classList.add("chat-open");
+  restoreChatWidth();
   var btn = document.getElementById("assistant-toggle");
   if (btn) btn.setAttribute("aria-expanded", "true");
   if (logEl && !logEl.children.length) {
@@ -1756,6 +1908,19 @@ window.__chatSync = function () {
   stuck = true;
   scrollToBottom();
 };
+
+// 窗口变窄时把面板宽度收回合法区间（否则 720px 的记忆值会把正文挤没）。
+// 只夹不存——存了就把用户原本的偏好改掉了，窗口再变宽时回不去。
+var resizeQueued = false;
+window.addEventListener("resize", function () {
+  if (resizeQueued) return;
+  resizeQueued = true;
+  requestAnimationFrame(function () {
+    resizeQueued = false;
+    if (!open || window.innerWidth <= 860) return;
+    if (panel) applyChatWidth(panel.getBoundingClientRect().width, false);
+  });
+}, { passive: true });
 
 window.__chatPanel = { open: openPanel, close: close, toggle: toggle, ask: askChat, get isOpen() { return open; } };
 

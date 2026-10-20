@@ -185,6 +185,53 @@ test('CHAT_JS：暴露 window.__chatPanel 与 __chatSync', () => {
   assert.match(CHAT_JS, /window\.__chatSync/);
 });
 
+// ── 宽度拖拽（2026-10-20，与左侧边栏同一套手法）─────────────────
+
+test('CHAT_CSS：桌面档宽用 --chat-width 变量，不再写死 --toc-width', () => {
+  const desktop = CHAT_CSS.match(/@media \(min-width:\s*1201px\)\s*\{[\s\S]*?\n\}/);
+  assert.ok(desktop, '缺桌面档媒体查询');
+  assert.match(desktop[0], /width:\s*var\(--chat-width\)/, '桌面档宽应来自可改变的变量');
+  assert.match(CHAT_CSS, /:root\s*\{\s*--chat-width:/, '缺 --chat-width 定义');
+});
+
+test('CHAT_CSS：拖拽手柄有命中区与视觉反馈，且只在桌面档显示', () => {
+  const m = CHAT_CSS.match(/\.chat-resizer\s*\{[\s\S]*?\n\}/);
+  assert.ok(m, '缺 .chat-resizer 样式');
+  assert.match(m[0], /cursor:\s*col-resize/);
+  assert.match(m[0], /position:\s*absolute/);
+  assert.match(m[0], /left:\s*-3px/, '右侧面板的手柄应贴左缘');
+  assert.match(m[0], /display:\s*none/, '默认隐藏，由桌面档打开');
+  assert.match(CHAT_CSS, /\.chat-resizer:hover[\s\S]*?background-color/, '缺悬停反馈');
+  assert.match(CHAT_CSS, /body\.chat-resizing[\s\S]*?cursor:\s*col-resize/, '拖拽期应全局竖光标');
+  assert.match(CHAT_CSS, /body\.chat-resizing \.chat-panel\s*\{[\s\S]*?transition:\s*none/, '拖拽期应掐掉过渡');
+});
+
+test('CHAT_CSS：手机档仍用 fixed（手柄的 absolute 不得反客为主）', () => {
+  const mobile = CHAT_CSS.match(/@media \(max-width:\s*860px\)\s*\{[\s\S]*?\n\}\n/);
+  assert.ok(mobile, '缺手机档媒体查询');
+  assert.match(mobile[0], /position:\s*fixed/, '手机档必须是 fixed 抽屉');
+  // 无条件的 .chat-panel { position: relative } 会覆盖上面这条（同特异度后者胜）
+  assert.doesNotMatch(CHAT_CSS, /^\.chat-panel\s*\{[^}]*position:\s*relative/m,
+    '不得有覆盖手机档的无条件 position:relative');
+});
+
+test('CHAT_JS：拖拽方向与左栏相反、宽度夹在合法区间、双击复位', () => {
+  // 右侧面板往左拖是变宽 ⇒ startX - clientX
+  assert.match(CHAT_JS, /startW \+ \(startX - e\.clientX\)/, '拖拽方向应取负（右栏特性）');
+  assert.match(CHAT_JS, /CHAT_W_MIN/);
+  assert.match(CHAT_JS, /CHAT_W_MAX/);
+  assert.match(CHAT_JS, /dblclick/);
+  assert.match(CHAT_JS, /shirone-chat-width/, '宽度要记住');
+  assert.match(CHAT_JS, /localStorage\.setItem/, '宽度要落 localStorage');
+});
+
+test('CHAT_JS：宽屏恢复记忆值，窄屏不施加（手机档不用这个变量）', () => {
+  const fn = CHAT_JS.match(/function restoreChatWidth\([\s\S]*?\n\}/);
+  assert.ok(fn, '缺 restoreChatWidth');
+  assert.match(fn[0], /innerWidth <= 860\) return/, '窄屏直接跳过');
+  assert.match(CHAT_JS, /restoreChatWidth\(\)/, 'openPanel 里要调用');
+});
+
 test('CHAT_JS：与 TOC 互斥用 body.chat-open 类', () => {
   assert.match(CHAT_JS, /chat-open/);
   assert.match(CHAT_CSS, /body\.chat-open \.m3-toc\s*\{\s*display:\s*none/);
