@@ -1406,8 +1406,15 @@ function askChat(text) {
     // cancel 被点过的场合用短超时（5s：停止后上游回包最多几秒）；
     // 无人点停的长跑用 420s（对齐管理器 deadline 360s + 余量）。
     var stopPressed = false;
+    // ⚠️ 2026-10-20 修「按钮已复位却报上一问还没结束」：
+    // 兜底定时器只复位面板自己的 busy，transport 那边的 activeSid 仍指着那一问，
+    // 于是下一问被 transport 直接拒掉，而界面上根本没有停止按钮可按。
+    // 收尾必须**两边一起**：先让 transport 本地放弃（它会落定 Promise，
+    // 下面 .then 里的 finish 也会跑），再补一次面板收尾兜住异常路径。
     var localTimer = setTimeout(function () {
-      handleEventPlain({ type: "error", reason: stopPressed ? "（已停止）" : "回答超时（助手未响应）" });
+      var why = stopPressed ? "（已停止）" : "回答超时（助手未响应）";
+      try { if (transport && typeof transport.abandon === "function") transport.abandon(why); } catch (e) { /* 面板自理 */ }
+      handleEventPlain({ type: "error", reason: why });
       finish();
     }, 420000);
     transport.ask(payload, function (ev) { handleEventPlain(ev); })
@@ -1426,6 +1433,7 @@ function askChat(text) {
     // B 侧正常会回 done{cancelled}，5s 内没回就本地收尾）
     botMsg.__shortStop = function () { stopPressed = true; clearTimeout(localTimer);
       localTimer = setTimeout(function () {
+        try { if (transport && typeof transport.abandon === "function") transport.abandon("（已停止）"); } catch (e) { /* 面板自理 */ }
         handleEventPlain({ type: "error", reason: "（已停止）" });
         finish();
       }, 5000); };
@@ -1927,13 +1935,16 @@ window.__chatPanel = { open: openPanel, close: close, toggle: toggle, ask: askCh
 // ── setTransport 钩子（2026-10-20，契约见 chat-panel-hook 文档）──
 // fn = {ask, cancel, upload} 或 null（恢复本机桥）。ready 超时指引走 showNotice。
 window.__chatPanel.setTransport = function (fn) {
+  var prev = transport;
   transport = fn || null;
   // 切换前收尾在飞的一问（若正在跑）——两种形态切换的干净边界。
   // ⚠️ 2026-10-20 无人值守实测：旧形态的 stopAnswerRef 依赖悬死 Promise 落定
   // 才复位 busy；transport 形态失联时永不落定。这里直接本地收尾，不赌对端。
   if (busy) {
     try { stopAnswerRef(); } catch (e) { /* 已停 */ }
-    // stopAnswerRef 是旧形态句柄；transport 形态靠兜底定时器（上面 5s/420s）。
+    // 旧 transport 的在飞状态也要收（它不会因为换了对象就自己清）——
+    // 否则同一个 transport 对象被复用时下一问仍撞「上一问还没结束」。
+    try { if (prev && typeof prev.abandon === "function") prev.abandon("连接方式已切换"); } catch (e) { /* 已收 */ }
     // 为确保切换立刻干净：再挂一个 2s 的强制复位（比兜底更短）。
     setTimeout(function () {
       if (busy) { busy = false; resetSendButton(); if (attachBtn) attachBtn.disabled = false; stream = null; }
