@@ -189,6 +189,56 @@ function fakeDoc({ title = '测试页', url = 'http://x/y.html', withSearch = tr
   drawerArea.children = [drawerRootUl]; drawerRootUl.parentElement = drawerArea;
   const brand = el('a', 'S26', { className: 'sidebar-brand', attrs: { href: '../index.html' } });
 
+  // ── 侧栏形状 JSON（阶段一，2026-10-21）──────────────────────
+  // site_index / site_navigate 的**唯一数据源**已从「爬侧栏 DOM」改为「读 #nav-structure-json」。
+  // 这份 JSON 由 build.mjs 构建期烘焙（nav-structure.mjs 的 buildNavModel 产出）。
+  //
+  // ⚠️ 为什么不手写第二份树：手写会与上面的 DOM 夹具漂移——正是这轮反复踩的坑
+  // （夹具与现实不符 ⇒ 测试恒绿、功能恒坏）。这里**从 DOM 夹具派生**，两者永远同步。
+  const navJson = (() => {
+    const walk = (li, depth) => {
+      const kids = li.children || [];
+      const head = kids.find((c) => hasClass(c, 'nav-group-header'));
+      const wrap = kids.find((c) => hasClass(c, 'nav-nested-wrapper'));
+      const a = kids.find((c) => c.tagName === 'A' && hasClass(c, 'drawer-nav-link'));
+      if (head) {
+        const title = head.querySelector('.drawer-section-title-text');
+        const label = (title ? title.textContent : head.textContent) || '';
+        const innerUl = wrap && wrap.querySelector('ul');
+        const children = innerUl
+          ? (innerUl.children || []).map((c) => walk(c, depth + 1)).filter(Boolean)
+          : null;
+        const p = li.getAttribute ? li.getAttribute('data-path') : null;
+        return { id: p || ('#' + label), label, path: p, href: p, depth, indexHref: null, children };
+      }
+      if (a) {
+        const p = a.getAttribute('data-path');
+        return { id: p, label: a.textContent, path: p, href: p, depth, indexHref: null, children: null };
+      }
+      return null;
+    };
+    const nodes = (drawerRootUl.children || []).map((li) => walk(li, 0)).filter(Boolean);
+    // 夹具里还有一条**树外**的 navLink（`课程/电机学/第二章.html`）——真实页面里
+    // 它就是「课程/电机学」组下的一个叶子。派生时补进对应课程组，保证
+    // site_navigate 的白名单与旧 DOM 夹具一致（否则那几个 navigate 测试会误报 not_in_nav）。
+    const extraPath = navLink.getAttribute('data-path');
+    if (extraPath) {
+      const courseGroup = nodes.find((n) => n.label === '课程总览')
+        && (nodes.find((n) => n.label === '课程总览').children || []).find((n) => n.label === '电机学');
+      if (courseGroup) {
+        courseGroup.children = courseGroup.children || [];
+        courseGroup.children.unshift({
+          id: extraPath, label: '第二章 变压器', path: extraPath, href: extraPath,
+          depth: (courseGroup.depth || 0) + 1, indexHref: null, children: null,
+        });
+      }
+    }
+    // 夹具里的组节点都不带 path ⇒ indexHref 全 null（真实构建里 index.md 组才有）
+    return { v: 1, current: '课程/电机学/第二章.html', activeIds: [], expandedIds: [], nodes };
+  })();
+  const navJsonTag = el('script', JSON.stringify(navJson), { id: 'nav-structure-json' });
+  navJsonTag.setAttribute('type', 'application/json');
+
   // 上一节/下一节
   const prev = el('a', '上一节：第一章', { className: 'paging-card paging-prev', attrs: { href: 'prev.html' } });
   const prevTitle = el('span', '第一章 概述', { className: 'paging-title' });
@@ -210,7 +260,7 @@ function fakeDoc({ title = '测试页', url = 'http://x/y.html', withSearch = tr
   article.children = [h1, chip, chip2, h2a, p1, h3, p2, h2b, p3, details1, katex, proseTerm, bubble];
   for (const c of article.children) c.parentElement = article;
   // 让 p2 与 h3 的祖先关系成立（h3 在 h2a 后）
-  const all = [article, prev, next, navLink, brand, tocActive, glossJson, drawerArea];
+  const all = [article, prev, next, navLink, brand, tocActive, glossJson, drawerArea, navJsonTag];
   if (withSearch) all.push(panel, input, results, hit);
   if (withPaging) all.push(prev, next);
   // 建父子链（details 里放一个标题，测「开面板」）
@@ -894,12 +944,17 @@ test('site_index：列出全部课程名（供跨课程发现）', async () => {
   assert.deepEqual(r.courses, ['电机学', '电路原理']);
 });
 
-test('site_index：没有侧栏时报 no_sidebar（不返回空树假装成功）', async () => {
+test('site_index：没有侧栏形状数据时报 no_sidebar（不返回空树假装成功）', async () => {
   const doc = fakeDoc();
-  doc.children = doc.children.filter((c) => c !== doc._all.find((x) => x.className === 'drawer-nav-scroll-area'));
+  // 阶段一（2026-10-21）：数据源已从「侧栏 DOM」改为 `#nav-structure-json`，
+  // 所以「没有侧栏」的构造方式随之变成「移除 JSON 脚本块」。
+  // 保留 DOM 侧栏不动——正好证明工具**不再依赖 DOM**：DOM 还在，照样报 no_sidebar。
+  doc.children = doc.children.filter((c) => c !== doc._all.find((x) => x.id === 'nav-structure-json'));
   const r = await buildToolDefs(doc)[2].execute({});
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'no_sidebar');
+  assert.ok(doc._all.some((x) => x.className === 'drawer-nav-scroll-area'),
+    'DOM 侧栏仍在场——报错只能来自 JSON 缺失');
 });
 
 // ---------------------------------------------------------------- links 开关

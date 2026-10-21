@@ -69,10 +69,14 @@ test('sw 预缓存清单来自实际产物', () => {
 });
 
 
-test('① 旧缓存页防御：无 data-path 的侧栏 active 不被清空（守卫已迁 drawer-sync）', () => {
+test('① 旧缓存页防御：读不到侧栏形状时 active 不被清空（return undefined = 不动）', () => {
   const src = fs.readFileSync(path.join(HERE, 'drawer-sync.mjs'), 'utf8');
-  assert.ok(src.includes('无证据时不动'), '设计原则注释在');
-  assert.ok(src.includes('return undefined'), '旧资产返回 undefined（不动）');
+  // 阶段一（2026-10-21）：数据源从「侧栏 DOM 的 data-path」换成 `#nav-structure-json`，
+  // 但「无证据时不动」这条守卫语义**原样保留**——只是证据的形式变了。
+  assert.ok(src.includes('无侧栏形状') || src.includes('无证据时不动'),
+    '设计原则注释在（无 JSON 时不动）');
+  assert.match(src, /if \(!json \|\| !json\.nodes\) return undefined/,
+    '读不到 nav JSON 时返回 undefined（保留烘焙态，不清空强调栏）');
 });
 
 test('② SW 版本握手：activate 清空 pages 缓存（含本版），杜绝新旧页面组合', () => {
