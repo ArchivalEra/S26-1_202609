@@ -14,6 +14,7 @@ import { PAGE_BRIDGE_JS } from './plugins/page-bridge.mjs';
 import { CHAT_JS, CHAT_CSS } from './plugins/chat-panel.mjs';
 import { SPA_ROUTER_JS } from './plugins/spa-router.mjs';
 import { DRAWER_SYNC_JS } from './plugins/drawer-sync.mjs';
+import { buildNavModel, isActive, isExpanded, NAV_STRUCTURE_JS } from './plugins/nav-structure.mjs';
 import { WEBMCP_SHIM_JS } from './plugins/webmcp-shim.mjs';
 import { WEBMCP_TOOLS_JS } from './plugins/webmcp-tools.mjs';
 import { TARGET_FILES } from './页面清单.mjs';
@@ -195,6 +196,9 @@ console.log('[build] Wrote WebMCP plugins + copied vendor assets (polyfill + rel
 //   document 不销毁 ⇒ WebMCP 工具注册一次永久有效。SW 双策略：资产 cache-first、页面 SWR。
 //   可拆卸：删掉本段与模板里 spa-router 一行 + dist/sw.js 即回退。
 fs.writeFileSync(path.join(webmcpDir, 'spa-router.js'), SPA_ROUTER_JS);
+// 侧栏形状运行时（阶段一，2026-10-21）：读 #nav-structure-json + 共享判定。
+// 由 nav-structure.mjs 的真函数派生（浏览器跑的就是测试跑的）。drawer-sync 依赖它。
+fs.writeFileSync(path.join(webmcpDir, 'nav-structure.js'), NAV_STRUCTURE_JS);
 fs.writeFileSync(path.join(webmcpDir, 'drawer-sync.js'), DRAWER_SYNC_JS);
 
 // SW：模板 + 本版资产清单（预缓存）注入，写到 dist 根（注册 scope ./ 覆盖全站）
@@ -1170,33 +1174,34 @@ for (const relPath of TARGET_FILES) {
     if (idx < NOTES_ORDER.length - 1) nextPage = pageMetaMap.get(NOTES_ORDER[idx + 1]);
   }
 
-  // Helper to check if node or any descendant is active
-  function isNodeOrDescendantActive(node, targetPath) {
-    if (node.path === targetPath) return true;
-    if (node.children) {
-      return node.children.some(child => isNodeOrDescendantActive(child, targetPath));
-    }
-    return false;
-  }
+  // 侧栏形状 = 唯一真相源 nav-structure.mjs（阶段一，2026-10-21）。
+  // buildNavModel 产出归一化节点树 + 烘焙 JSON；本处只负责出 HTML。
+  const navModel = buildNavModel(NAV_STRUCTURE, relPath);
+  const navJsonPayload = navModel.json;
 
   // Render Sidebar Tree HTML with Collapsible Groups
+  // 每个 <li> 带 data-node-id（归一化节点 id）：SPA 换页后 drawer-sync 据此对齐 active。
+  const attrEsc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
   function renderNav(nodes, depth = 0) {
     let out = '<ul class="drawer-nav-list">';
     for (const node of nodes) {
       const hasChildren = node.children && node.children.length > 0;
-      const isActive = node.path === relPath;
-      const isDescendantActive = isNodeOrDescendantActive(node, relPath);
+      const nodeActive = isActive(node, relPath);
+      const nodeExpanded = isExpanded(node, relPath)
+        || (depth === 0 && node.label === "课程总览");
 
-      // Default expanded if active, or any descendant is active, or top-level "课程总览"
-      const isExpanded = isDescendantActive || (depth === 0 && node.label === "课程总览");
-
-      // 有子节点的组节点：一律纯标题（可点开折叠，不跳页）。它的 path 不再出链接——
-      // 若组节点链接指向「下级第一页」（电机学章节点就是这种写法），URL 与子项相同，
-      // 强调判定会父子一起亮；组节点自身没有独立页面内容，链接是空转（2026-10-18 定案）。
+      // 有子节点的组节点：标题仍只负责折叠；**有索引页时**额外给一个独立图标链接
+      // （`.nav-index-link`）——它不带 data-path、不用 drawer-nav-link 类，
+      // 所以 drawer-sync/active 判定天然不命中它，父子双亮结构上不可能（架构评审候选 2）。
+      // 无 indexHref（无 path 的组、path 与子项重复的电机学章节点）则不出图标。
       if (hasChildren) {
-        out += `<li class="drawer-nav-group ${isExpanded ? 'expanded' : 'collapsed'}">
+        const indexLink = node.indexHref
+          ? `<a class="nav-index-link" href="${rootRel}${node.indexHref}" title="打开 ${node.label} 索引页">索引 ›</a>`
+          : '';
+        out += `<li class="drawer-nav-group ${nodeExpanded ? 'expanded' : 'collapsed'}" data-node-id="${attrEsc(node.id)}">
           <div class="nav-group-header nav-header-clickable">
             <span class="drawer-section-title-text">${node.label}</span>
+            ${indexLink}
             <button class="nav-collapse-btn" aria-label="折叠或展开 ${node.label}" title="折叠/展开">
               <svg class="chevron-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
             </button>
@@ -1208,16 +1213,14 @@ for (const relPath of TARGET_FILES) {
           </div>
         </li>`;
       } else {
-        if (node.path) {
-          const itemMeta = pageMetaMap.get(node.path);
-          const itemHref = `${rootRel}${itemMeta ? itemMeta.htmlRelPath : node.path}`;
-          out += `<li class="drawer-nav-item ${isActive ? 'active' : ''}">
-            <a href="${itemHref}" data-path="${itemMeta ? itemMeta.htmlRelPath : node.path}" class="drawer-nav-link">
+        if (node.href) {
+          out += `<li class="drawer-nav-item ${nodeActive ? 'active' : ''}" data-node-id="${attrEsc(node.id)}">
+            <a href="${rootRel}${node.href}" data-path="${node.href}" class="drawer-nav-link">
               <span>${node.label}</span>
             </a>
           </li>`;
         } else {
-          out += `<li class="drawer-section-title">${node.label}</li>`;
+          out += `<li class="drawer-section-title" data-node-id="${attrEsc(node.id)}">${node.label}</li>`;
         }
       }
     }
@@ -1225,7 +1228,7 @@ for (const relPath of TARGET_FILES) {
     return out;
   }
 
-  const drawerHtml = renderNav(NAV_STRUCTURE);
+  const drawerHtml = renderNav(navModel.nodes);
 
   // Render Frontmatter Meta Chips
   // 状态**不读 frontmatter**（2026-10-11 定案）：从 README 的课程状态表继承。
@@ -1546,6 +1549,9 @@ for (const relPath of TARGET_FILES) {
   <script src="${rootRel}${assetUrl('assets/theme/shirone-reader.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/disclosure-anchor.js')}" defer></script>
   <script type="application/json" id="sym-glossary-json">${JSON.stringify(glossaryJsonPayload).replace(/<\//g, '<\\/')}</script>
+  <!-- 侧栏形状烘焙（阶段一）：nav-structure.mjs（buildNavModel）产出的归一化树 + 判定结果。
+       site_index / site_navigate / drawer-sync 三个消费者都读这一份，不再爬侧栏 DOM。 -->
+  <script type="application/json" id="nav-structure-json">${JSON.stringify(navJsonPayload).replace(/<\//g, '<\\/')}</script>
   <script src="${rootRel}${assetUrl('assets/plugins/math-glossary.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/site-search.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/webmcp-loader.js')}" defer></script>
@@ -1557,6 +1563,8 @@ for (const relPath of TARGET_FILES) {
        （drawer-sync / spa-router / chat-panel / loader），否则它们拿到错误的相对根。 -->
   <script src="${rootRel}${assetUrl('assets/plugins/site-root.js')}"></script>
   <script>try { fixSiteRoot(); } catch (e) { /* 探测失败保持构建期相对路径 */ }</script>
+  <!-- 侧栏形状运行时：先于 drawer-sync，暴露 window.__navStructure（读 JSON + 共享判定）。 -->
+  <script src="${rootRel}${assetUrl('assets/plugins/nav-structure.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/drawer-sync.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/chat-panel.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/spa-router.js')}" defer></script>

@@ -718,6 +718,29 @@ body.sidebar-resizing .m3-drawer {
   flex: 1;
 }
 
+/* 组节点索引入口（阶段一，2026-10-21）：与折叠标题同一行右侧的小图标链接。
+   点它进该组的 index.md 索引页；点标题仍是折叠。不用 .drawer-nav-link 类、
+   不带 data-path ⇒ active 判定不命中它，父子双亮结构上不可能。 */
+.nav-index-link {
+  flex-shrink: 0;
+  margin-left: 0.35rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  color: var(--md-sys-color-outline);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.nav-index-link:hover {
+  background-color: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-primary);
+}
+
 .drawer-nav-link {
   display: flex;
   align-items: center;
