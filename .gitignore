@@ -350,9 +350,11 @@
 !/站点/plugins/chat-render.mjs
 !/站点/plugins/chat-render.test.mjs
 !/站点/plugins/site-root.mjs
+!/站点/plugins/site-root.test.mjs
 !/站点/plugins/nav-structure.mjs
 !/站点/plugins/nav-structure.test.mjs
 !/站点/plugins/webmcp-loader.mjs
+!/站点/plugins/webmcp-loader.test.mjs
 !/站点/plugins/webmcp-shim.mjs
 !/站点/plugins/webmcp-shim.test.mjs
 !/站点/plugins/webmcp-tools.mjs
