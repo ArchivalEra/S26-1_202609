@@ -1676,6 +1676,56 @@ export function registerTools(doc, nav) {
 }
 
 /**
+ * 在页面里执行一个已注册的工具（阶段二 T11 新增）。
+ *
+ * 这是站点侧工具循环的 `invoke` 实现——T10 搬来的 `createAssistantClient`
+ * 需要它把模型的工具调用落到真实页面上。
+ *
+ * 为什么放在本模块：它和 `registerTools` 共用同一套 `createPageView` /
+ * `buildToolDefs`，是同一个 module 的两面（注册 ↔ 执行）。放在别处会造成
+ * 「注册用一套、执行用另一套」——那正是探察报告里 page-bridge / roleA /
+ * 页面桥.js 三份重复的成因。
+ *
+ * @param {Document} doc
+ * @param {string} name  工具名（site_index 等）
+ * @param {object} args  参数
+ * @returns {Promise<{ok:boolean, value?:any, effect?:object, error?:string}>}
+ *   恒 resolve——失败也回 `{ok:false, error}`，由工具循环按「失败也回喂」消费。
+ */
+export async function runTool(doc, name, args) {
+  const view = createPageView(doc, null, null);
+  // 直接调 view 的具名方法（与 buildToolDefs 里的 execute 是同一批实现）——
+  // 不经 modelContext.executeTool，避免 polyfill 把异常压成
+  // "Tool execution failed"（page-bridge.mjs 2026-10-19 吃过这个亏）。
+  const MAP = {
+    site_get_page_info: () => view.pageInfo(),
+    site_read: (a) => view.readContent(a || {}),
+    site_index: (a) => view.siteIndex(a || {}),
+    site_navigate: (a) => view.navigate(a || {}),
+    site_search: (a) => {
+      const q = String((a && a.query) || '').trim();
+      if (!q) return { ok: false, reason: 'empty_query' };
+      if ((a && a.scope) === 'page') return view.findInPage(q);
+      return view.searchIndex(q, { limit: a && a.limit, includeHeadings: true });
+    },
+    site_show_symbol: (a) => view.findSymbol(a || {}),
+    site_panels: (a) => view.togglePanels(a || {}),
+    site_view: (a) => view.setView(a || {}),
+    site_list_images: (a) => view.listImages(a || {}),
+    site_image: (a) => view.imageToDataUrl(a || {}),
+    site_capture_view: (a) => view.captureView(a || {}),
+  };
+  const fn = MAP[name];
+  if (!fn) return { ok: false, error: '页面没有工具 ' + String(name) };
+  try {
+    const value = await fn(args);
+    return { ok: !(value && typeof value === 'object' && value.ok === false), value };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+}
+
+/**
  * 把「含 RegExp 的配置对象」序列化成**可还原的 JS 源码**。
  * `JSON.stringify` 会把 `RegExp` 变成 `{}`——所以 `hitCountRe` 得显式写成
  * `new RegExp("...")` 的字面，才能在页面里还原成真正则。
@@ -1707,5 +1757,14 @@ var renderMarkdown = ${renderMarkdown.toString()};
 var createPageView = ${createPageView.toString()};
 var buildToolDefs = ${buildToolDefs.toString()};
 var registerTools = ${registerTools.toString()};
+// 阶段二 T11：站点侧协议栈的 invoke 入口（runTool 依赖 createPageView，已在上面）
+var runTool = ${runTool.toString()};
 registerTools(document, typeof navigator !== "undefined" ? navigator : null);
+
+// 阶段二 T11：把工具执行器暴露给站点侧协议栈（assistant-bundle.js 的 invoke）。
+// 为什么是 window：bundle 与 tools 是两个独立写盘的 IIFE，没有模块系统可共享。
+// 为什么只暴露 runTool：注册（modelContext）已有标准接口，执行才是站点侧需要的。
+window.__mcpTools = {
+  runTool: function (name, args) { return runTool(document, name, args); },
+};
 })();`;
