@@ -1576,7 +1576,13 @@ function resetSendButton() {
  */
 function describeFailure(e) {
   var msg = String((e && e.message) || e);
-  var m = msg.match(/^HTTP (\d{3})$/);
+  // ⚠️ 2026-10-22 修：这里原来写 /^HTTP (\\d{3})$/ 的单反斜杠形态。本文件整体是一个
+  // **普通模板字符串**（CHAT_JS 由反引号包住），模板串会把单个反斜杠 d 当成转义吃掉
+  // ⇒ 产物里变成 /^HTTP (d{3})$/，永远匹配不上「HTTP 429」这类消息 ⇒ 下面四个分支
+  // （401/403/404/413/429）全是死代码。修法：写双反斜杠，让模板串求值后得到单反斜杠 d。
+  // **这是本仓第五次踩模板串的坑**（前四次：drawer-sync 正则、注释里的反引号 ×3）。
+  // 改这里务必在产物里验证，注释里也不能出现反引号。
+  var m = msg.match(/^HTTP (\\d{3})$/);
   if (m) {
     var code = Number(m[1]);
     if (code === 401 || code === 403) return "本地桥拒绝了这次请求，刷新页面再试（token 可能已更换）";
