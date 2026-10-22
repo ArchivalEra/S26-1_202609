@@ -289,17 +289,26 @@ export function createAssistant(opts = {}) {
 
   async function jfetch(path, { method = 'GET', body, timeoutMs = 30000 } = {}) {
     // 2026-10-19 修 P1-11：裸 fetch 无超时 ⇒ 半开 TCP 可挂几分钟。
-    // 浏览器化：AbortSignal.timeout → withTimeout（finally 清定时器）；
-    // 请求头只留 Accept/Content-Type——UA/来源由同源浏览器自动带，不伪造。
+    // 浏览器化：AbortSignal.timeout → withTimeout（finally 清定时器）。
+    //
+    // ⚠️ 2026-10-22 修「Node 桥必挂」：这里原来只带 Accept/Content-Type，注释说
+    // 「UA/来源由同源浏览器自动带，不伪造」——那句话在**浏览器里**成立（同源 iframe
+    // 的 fetch 自动带 Referer），但在 **Node 里不成立**：Node 的 fetch 不加 Referer，
+    // 上游直接回 `{"msg":"请求异常","code":"-1"}`（实测：无 Referer 必挂、带 Referer
+    // 立刻成功）。所以这里显式带 Referer（值就是本连接对应的页面地址，不是伪造的
+    // 第三方来源）。浏览器里显式设置 Referer 会被禁止，因此只在能设的环境里加。
     const to = withTimeout(timeoutMs);
     try {
+      const headers = {
+        Accept: 'application/json, text/plain, */*',
+        ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      };
+      // 浏览器禁止脚本设置 Referer（会被静默忽略，不会报错），所以这段对浏览器无副作用。
+      try { headers.Referer = referer; } catch { /* 只读头 */ }
       const res = await fetch(path.startsWith('http') ? path : base + path, {
         method,
         signal: to.signal,
-        headers: {
-          Accept: 'application/json, text/plain, */*',
-          ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
-        },
+        headers,
         body: body === undefined ? undefined : JSON.stringify(body),
       });
       const text = await res.text();
