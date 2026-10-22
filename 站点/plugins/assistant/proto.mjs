@@ -92,16 +92,33 @@ export function parseToolCalls(rawText, knownTools) {
   //    误判防护：① 整段必须很短（≤80 字，正常回答不会这么短还提工具名）；
   //              ② 工具名可以带短前缀（模型常写「检索登记site_search，query=…」）。
   //              ③ 支持 `key=value, key=value` 形态（2026-10-19 话术改版后的主力格式）。
-  const t = text.trim();
-  if (Array.isArray(knownTools) && knownTools.length && t.length <= 80) {
+  // 2026-10-22（Node 桥实测）：退化形态的实际输出常把标记包在代码围栏里——
+  //   「…所在页面：\n\n```\nsite_search，query=工程数学作业2\n```」
+  // 围栏只是排版。这里先剥围栏再解析（剥完内容不变，长度变短）。
+  const deFenced = text
+    .replace(/^\s*```[a-zA-Z0-9_-]*\s*$/gm, '')
+    .replace(/```/g, '')
+    .trim();
+  const t = deFenced || text.trim();
+  if (Array.isArray(knownTools) && knownTools.length && t.length <= 160) {
     for (const name of knownTools) {
       const at = t.indexOf(name);
       if (at < 0) continue;
-      // 前缀必须是**纯引导语**（不含逗号/等号/换行，≤40 字）——
+      // 前缀必须是**纯引导语**。
       // 2026-10-19 实测：模型会写「浙江水利水电学院电路原理习题册电机学课堂笔记检索site_search，…」，
       // 前缀 32 字全是铺垫。按「前缀里有没有参数语法」判断比按长度更准。
-      const prefix = t.slice(0, at);
-      if (prefix.length > 40 || /[,，=：:\n]/.test(prefix)) continue;
+      //
+      // ⚠️ 2026-10-22 修（Node 桥实测三轮，每轮都被真实输出打脸）：
+      //   ① 换行只是排版，不算参数语法。
+      //   ② 中文冒号「：」和中文逗号「，」是**句子标点**——实测输出
+      //      「先查全站目录，定位…所在页面：」正好两者都有 ⇒ 整条调用被丢弃。
+      //   ③ **判据收窄到只看英文等号 `=`**：参数语法的唯一可靠标志是 `key=value`。
+      //      唯一的漏网是「引导语里写了 foo=bar」——但那本来就是模型在解释参数，
+      //      不是纯引导语，拒掉是对的（下面的误判防护用例守着这条）。
+      //   ④ 前缀上限 40 → 60（带一句完整引导语很容易到 50 字）。
+      //   ⑤ 整段上限 80 → 160（含引导语 + 代码围栏）。
+      const prefix = t.slice(0, at).replace(/[\r\n]+/g, ' ');
+      if (prefix.trim().length > 60 || prefix.includes('=')) continue;
       const rest = t.slice(at + name.length)
         .replace(/^[\s:：,，、的]+/, '')
         .replace(/[。.]\s*$/, '')

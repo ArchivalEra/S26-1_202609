@@ -195,11 +195,37 @@ fs.writeFileSync(path.join(searchPluginDir, 'site-search.css'), SEARCH_CSS);
 //   loader 按形态决定是否加载 polyfill，再**按顺序**注入 shim 与 tools——
 //   顺序神圣：shim 必须在任何工具注册之前包好两个注册表，否则抓不到已注册的工具。
 //   polyfill（281 KB）**绝不无条件加载**：没有 WebMCP 环境的浏览器一个字节都不拉。
+// 资产版本戳（2026-10-12）：页面里的样式表与脚本引用一律追加 `?v=<内容哈希前 10 位>`。
+// 为什么必须做：这些资产不发指纹文件名、服务器按 mtime 走 304，**改完内容浏览器仍可能用旧副本**
+// （本仓已踩过「改了 JS/CSS 浏览器不见效」的负缓存坑）。内容哈希进 URL ⇒ 内容变、URL 才变，
+// 新旧副本共存无关紧要，且不变时 URL 稳定、缓存照常命中。
+// 只哈希**站点自己的**资产（主题/插件）：katex 是第三方 vendored，改它就该整份换版本。
+const assetVersion = (relFromDist) => {
+  try {
+    return createHash('sha256').update(fs.readFileSync(path.join(DIST_DIR, relFromDist))).digest('hex').slice(0, 10);
+  } catch (_) { return ''; }
+};
+const assetUrl = (relFromDist) => {
+  const v = assetVersion(relFromDist);
+  return v ? `${relFromDist}?v=${v}` : relFromDist;
+};
+
 const webmcpDir = path.join(DIST_DIR, 'assets', 'plugins');
 fs.mkdirSync(webmcpDir, { recursive: true });
-fs.writeFileSync(path.join(webmcpDir, 'webmcp-loader.js'), WEBMCP_LOADER_JS);
+// ⚠️ 2026-10-23 修（Node 桥实测抓到）：loader 动态注入 shim/tools 时**不带缓存戳**，
+// 改了 webmcp-tools.js 浏览器一直用旧副本（工具行为怎么改都不生效，只能手动硬刷）。
+// 现在先写 shim/tools，算出内容哈希，再把它替换进 loader 源码里的 __SHIM_VER__/__TOOLS_VER__。
+// 顺序必须是这样（先写被注入方、后写注入方），否则哈希算的是上一轮的旧内容。
 fs.writeFileSync(path.join(webmcpDir, 'webmcp-shim.js'), WEBMCP_SHIM_JS);
 fs.writeFileSync(path.join(webmcpDir, 'webmcp-tools.js'), WEBMCP_TOOLS_JS);
+{
+  const shimVer = assetVersion('assets/plugins/webmcp-shim.js');
+  const toolsVer = assetVersion('assets/plugins/webmcp-tools.js');
+  const loaderSrc = WEBMCP_LOADER_JS
+    .split('__SHIM_VER__').join(shimVer)
+    .split('__TOOLS_VER__').join(toolsVer);
+  fs.writeFileSync(path.join(webmcpDir, 'webmcp-loader.js'), loaderSrc);
+}
 fs.writeFileSync(path.join(webmcpDir, 'webmcp-relay.js'), WEBMCP_RELAY_JS);
 // 页面桥（2026-10-19 植入）：打开页面自动连本机桥，不再手工注入
 fs.writeFileSync(path.join(webmcpDir, 'webmcp-bridge.js'), PAGE_BRIDGE_JS);
@@ -236,21 +262,6 @@ const swSrc = fs.readFileSync(path.join(SITE_DIR, 'plugins', 'sw-template.js'), 
   .replace('ASSETS_LIST', JSON.stringify(swAssets));
 fs.writeFileSync(path.join(DIST_DIR, 'sw.js'), swSrc);
 console.log('[build] Wrote spa-router.js + sw.js (assets: ' + swAssets.length + ')');
-
-// 资产版本戳（2026-10-12）：页面里的样式表与脚本引用一律追加 `?v=<内容哈希前 10 位>`。
-// 为什么必须做：这些资产不发指纹文件名、服务器按 mtime 走 304，**改完内容浏览器仍可能用旧副本**
-// （本仓已踩过「改了 JS/CSS 浏览器不见效」的负缓存坑）。内容哈希进 URL ⇒ 内容变、URL 才变，
-// 新旧副本共存无关紧要，且不变时 URL 稳定、缓存照常命中。
-// 只哈希**站点自己的**资产（主题/插件）：katex 是第三方 vendored，改它就该整份换版本。
-const assetVersion = (relFromDist) => {
-  try {
-    return createHash('sha256').update(fs.readFileSync(path.join(DIST_DIR, relFromDist))).digest('hex').slice(0, 10);
-  } catch (_) { return ''; }
-};
-const assetUrl = (relFromDist) => {
-  const v = assetVersion(relFromDist);
-  return v ? `${relFromDist}?v=${v}` : relFromDist;
-};
 
 // 检索语料：渲染循环里逐页填，循环结束后统一建索引。
 const searchDocs = [];
