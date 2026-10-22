@@ -2,9 +2,9 @@
  * 锚点反推契约测试（设计文档第 5 步判据）：遍历真实全部页面，
  * 断言「源侧切出的小节标题序列」与产物 `headings` 对齐；不一致报 `section_mismatch`。
  *
- * 实测基线（2026-10-15）：114 页里 **113 页对齐**，唯一例外是符号包页
+ * 实测基线（2026-10-15）：115 页里 **114 页对齐**，唯一例外是符号包页
  * （`站点/符号包/通用.md`——`:::glossary-dict` 围栏内的 `###` 不渲染成标题）。
- * 所以这条测试把「113 对齐 + 1 已知例外」写死：**将来谁改坏了会立刻红**。
+ * 所以这条测试把「114 对齐 + 1 已知例外」写死：**将来谁改坏了会立刻红**。
  */
 
 import { test } from 'node:test';
@@ -32,7 +32,7 @@ function loadProductHeadings() {
   return byPath;
 }
 
-test('锚点反推：113/114 页源侧标题序列与产物 headings 对齐（1 页已知例外）', () => {
+test('锚点反推：114/115 页源侧标题序列与产物 headings 对齐（1 页已知例外）', () => {
   const catalog = createCatalog({ root: ROOT, targetFiles: TARGET_FILES });
   const byPath = loadProductHeadings();
   const mismatches = [];
@@ -45,7 +45,7 @@ test('锚点反推：113/114 页源侧标题序列与产物 headings 对齐（1 
     else if (!KNOWN_EXCEPTIONS.has(rel)) mismatches.push(`${rel}: src=${chk.srcCount} prod=${chk.prodCount}`);
   }
   assert.deepEqual(mismatches, [], '锚点反推不一致（section_mismatch）：\n' + mismatches.join('\n'));
-  assert.equal(aligned, 113, `对齐页数应为 113，实际 ${aligned}`);
+  assert.equal(aligned, 114, `对齐页数应为 114，实际 ${aligned}`);
 });
 
 test('headings() 返回的锚点与产物逐个相同（对齐页）', () => {
@@ -63,7 +63,7 @@ test('headings() 返回的锚点与产物逐个相同（对齐页）', () => {
     }
     checked++;
   }
-  assert.equal(checked, 113);
+  assert.equal(checked, 114);
 });
 
 test('scanHeadings 跳过代码围栏内的 # 与 frontmatter', () => {
@@ -91,7 +91,7 @@ test('scanHeadings 跳过代码围栏内的 # 与 frontmatter', () => {
 test('pages() 的 url 规则与构建期一致（README → index.html）', () => {
   const catalog = createCatalog({ root: ROOT, targetFiles: TARGET_FILES });
   const pages = catalog.pages();
-  assert.equal(pages.length, 114);
+  assert.equal(pages.length, 115);
   assert.equal(pages[0].path, 'README.md');
   assert.equal(pages[0].url, 'index.html');
   assert.equal(pages[1].url, '课程/index.html');

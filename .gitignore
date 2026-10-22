@@ -33,6 +33,7 @@
 # 学期与课程索引
 !/课程/index.md
 !/课程/工程数学/index.md
+!/课程/工程数学/技法库.md
 !/课程/工程数学/作业/index.md
 !/课程/工程数学/教材解析/index.md
 !/课程/工程数学/教材解析/0.0-符号入门.md
@@ -349,11 +350,29 @@
 !/站点/plugins/chat-render.mjs
 !/站点/plugins/chat-render.test.mjs
 !/站点/plugins/site-root.mjs
+!/站点/plugins/site-root.test.mjs
+!/站点/plugins/nav-structure.mjs
+!/站点/plugins/nav-structure.test.mjs
 !/站点/plugins/webmcp-loader.mjs
+!/站点/plugins/webmcp-loader.test.mjs
 !/站点/plugins/webmcp-shim.mjs
 !/站点/plugins/webmcp-shim.test.mjs
 !/站点/plugins/webmcp-tools.mjs
 !/站点/plugins/webmcp-tools.test.mjs
+# 助手协议栈（T10：从 userscript/proto 搬来，函数体逐字保留；测试随代码同目录）
+!/站点/plugins/assistant/index.mjs
+!/站点/plugins/assistant/index.test.mjs
+!/站点/plugins/assistant/proto.mjs
+!/站点/plugins/assistant/toolcycle.mjs
+!/站点/plugins/assistant/toolcycle.test.mjs
+!/站点/plugins/assistant/chatsvc.mjs
+!/站点/plugins/assistant/chatsvc.test.mjs
+!/站点/plugins/assistant/session.mjs
+!/站点/plugins/assistant/session.test.mjs
+!/站点/plugins/assistant/context.mjs
+!/站点/plugins/assistant/context.test.mjs
+!/站点/plugins/assistant-wire.mjs
+!/站点/plugins/assistant-bundle.mjs
 !/站点/assets/vendor/webmcp/README.md
 !/站点/assets/vendor/webmcp/polyfill.iife.js
 !/站点/assets/vendor/webmcp/relay-embed.js
@@ -451,6 +470,7 @@
 !/工具/mcp-端点/test/parity.mjs
 !/工具/mcp-端点/test/parity-assert.mjs
 !/工具/mcp-端点/test/parity-browser.snapshot.json
+!/工具/mcp-端点/test/parity-browser.mjs
 
 # 事实系统（Einfacht 机制层 + 本仓数据层 + 钩子 + 规格）
 !/zreflect/__init__.py
