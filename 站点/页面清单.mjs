@@ -16,6 +16,7 @@ export const TARGET_FILES = [
   '课程/index.md',
   '课程/工程数学/index.md',
   '课程/工程数学/Walkthrough.md',
+  '课程/工程数学/技法库.md',
   '课程/工程数学/作业/index.md',
   '课程/工程数学/作业/2026-09-17-作业1.md',
   '课程/工程数学/作业/2026-10-08-作业2.md',
