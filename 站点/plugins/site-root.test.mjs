@@ -6,7 +6,9 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const src = readFileSync(new URL('./site-root.mjs', import.meta.url), 'utf8');
 const fns = src.slice(src.indexOf('function detectSiteRoot'), src.indexOf('/** 惰性缓存'));
@@ -59,4 +61,152 @@ test('源码契约：重写只动构建期知道语义的三类元素', () => {
   assert.match(rw, /m3-breadcrumb a/, '面包屑');
   // 不许批量改所有链接
   assert.doesNotMatch(rw, /querySelectorAll\('a'\)/);
+});
+
+// ══════════ rewriteLinks 双前缀回归（票 A 遗留修复，2026-10-22）══════════
+// 票 A 给面包屑/分页卡埋了 data-path 后，rewriteLinks 第 1 分支先把它们的 href
+// 改写成「root + 仓库相对」；第 2 分支的旧选择器（.m3-breadcrumb a、.paging-card）
+// 会再命中同一批元素，镜像入口（actual≠canonical）场景下「剥掉实际根再拼正式根」
+// 对已拼好的前缀二次操作，产出双前缀 /repo/S26-1_202609/repo/S26-1_202609/课程/index.html。
+// 修法 = 第 2 分支选择器 :not([data-path]) 排除。这里用函数级模拟钉住分工。
+
+test('rewriteLinks：带 data-path 的元素只走第 1 分支，不被第 2 分支二次拼前缀', () => {
+  const rw = src.slice(src.indexOf('function rewriteLinks'), src.indexOf('// 全局暴露'));
+  // 用 new Function 在假 DOM 上真跑 rewriteLinks（与上方 detect 同款手法）。
+  // 假 DOM 的选择器语义按「rewriteLinks 实际用的两个查询」建模：
+  //   'a[data-path]' → 有 data-path 的元素；CSS 类选择器 → 按类名匹配，
+  //   且 :not([data-path]) 把有 data-path 的元素排除（这正是被测的分工规则——
+  //   真浏览器里由选择器引擎保证，这里由 fakeDoc 实现同一语义，钉住契约）。
+  const fn = new Function('document', 'siteRoot', 'location', rw + '\n return rewriteLinks;');
+  const location = { href: 'https://x.test/课程/index.html', origin: 'https://x.test' };
+  const run = (els, root, actual) => fn(fakeDoc(els), () => actual, location)(root);
+
+  // 镜像入口场景：actual='/' ≠ canonical='/repo/S26-1_202609/'
+  // · 面包屑 <a>（带 data-path，第 1 分支已拼好 href="/repo/S26-1_202609/课程/index.html"）
+  // · 品牌 <a>（无 data-path，href 是相对值 '../../index.html'）
+  const crumb = {
+    sel: 'm3-breadcrumb a',
+    attrs: { 'data-path': '课程/index.html' },
+    href: '/repo/S26-1_202609/课程/index.html', // 第 1 分支刚改写过的值
+  };
+  const brand = {
+    sel: 'sidebar-brand',
+    attrs: {},
+    href: '../../index.html',
+  };
+  run([crumb, brand], '/repo/S26-1_202609/', '/');
+
+  // 带 data-path 的元素：href 必须仍是「root + data-path」单前缀（第 2 分支没碰它）
+  assert.equal(crumb.href, '/repo/S26-1_202609/课程/index.html',
+    `面包屑 href 不得被二次拼接（实际值：${crumb.href}）`);
+  assert.ok(!crumb.href.includes('/repo/S26-1_202609/repo'),
+    '双前缀回归：/repo/S26-1_202609/repo/… 不得出现');
+  // 无 data-path 的元素照旧被第 2 分支规范化（剥实际根 → 拼正式根）
+  assert.equal(brand.href, '/repo/S26-1_202609/index.html',
+    `品牌 href 应被规范化到正式根（实际值：${brand.href}）`);
+});
+
+/** 极简假 DOM：只实现 rewriteLinks 用到的接口。
+ *  选择器语义按被测的两个查询建模：'a[data-path]' 命中有 data-path 的元素；
+ *  类选择器按类名命中、':not([data-path])' 排除有 data-path 的——与真浏览器
+ *  选择器引擎对这两个查询的行为一致，契约钉在这里。 */
+function fakeDoc(els) {
+  const matches = (e, part) => {
+    part = part.trim();
+    if (part === 'a[data-path]') return Boolean(e.attrs['data-path']);
+    const notDp = /\[data-path\]\)$/.test(part) && /:not\(/.test(part);
+    const cls = part.replace(/^\.|:not\(\[data-path\]\)$/g, '');
+    if (!e.sel.includes(cls)) return false;
+    if (notDp && e.attrs['data-path']) return false;
+    return true;
+  };
+  return {
+    querySelectorAll: (sel) => els.filter((e) => sel.split(',').some((p) => matches(e, p))).map(fakeEl),
+  };
+}
+const fakeEl = (e) => ({
+  getAttribute: (k) => (k === 'data-path' ? e.attrs['data-path'] : (k === 'href' ? e.href : null)),
+  setAttribute: (k, v) => { if (k === 'href') e.href = v; },
+});
+
+// ══════════ 产物级（票 A：导航链接三处 data-path 化，2026-10-22）══════════
+// 面包屑两份（顶栏 .top-bar-breadcrumbs / 正文 .m3-breadcrumb）与分页卡
+// .paging-card 都在 .article-content 之外——SPA 换页（spa-router 只换正文块）
+// 后它们仍是首屏页按本页深度烘焙的相对 href，深→浅方向剥过头即丢 SPA（spec
+// 病根）。埋 data-path 后点击委托走「data-root + data-path」拼接，与侧栏同款。
+// 前置约定与 nav-structure.test.mjs 一致：dist 必须已构建（构建由收尾四连跑
+// 保证），缺产物给明确失败信息，不静默跳过。
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const DIST = path.join(HERE, '..', 'dist');
+
+const needDist = (rel) => {
+  const p = path.join(DIST, rel);
+  assert.ok(existsSync(p), `产物缺失：${rel}——先跑 cd 站点 && node build.mjs`);
+  return readFileSync(p, 'utf8');
+};
+
+// 从一段面包屑 HTML 里收全部 <a> 的 data-path（span 的 current-crumb 不算链接）
+const crumbDataPaths = (html, navClass) => {
+  const m = html.match(new RegExp(`<nav class="${navClass}"[^>]*>([\\s\\S]*?)</nav>`));
+  assert.ok(m, `页面缺 .${navClass}`);
+  return [...m[1].matchAll(/<a [^>]*data-path="([^"]+)"/g)].map((x) => x[1]);
+};
+
+test('票 A：深层页两份面包屑的 <a> 全带 data-path，值为仓库相对路径', () => {
+  const rel = '课程/工程数学/教材解析/0.0-符号入门.html';
+  const html = needDist(rel);
+  for (const navClass of ['top-bar-breadcrumbs', 'm3-breadcrumb']) {
+    const dps = crumbDataPaths(html, navClass);
+    // 首页/课程总览/工程数学/教材解析 = 4 条真链接（当前页 crumb 是 span）
+    assert.equal(dps.length, 4, `${navClass}: 4 条链接都该带 data-path`);
+    for (const dp of dps) {
+      assert.ok(dp.length > 0, `${navClass}: data-path 非空`);
+      assert.ok(!dp.startsWith('../'), `${navClass}: data-path 不得以 ../ 开头（${dp}）`);
+      assert.ok(!dp.startsWith('/'), `${navClass}: data-path 不得以 / 开头（${dp}）`);
+    }
+  }
+  // 具体锚点：SPA 丢页的那条「课程总览」链接
+  assert.ok(html.includes('data-path="课程/index.html"'), '课程总览 crumb 带裸路径 data-path');
+});
+
+test('票 A：浅层页两份面包屑的 <a> 全带 data-path', () => {
+  const rel = '课程/工程数学/index.html';
+  const html = needDist(rel);
+  for (const navClass of ['top-bar-breadcrumbs', 'm3-breadcrumb']) {
+    const dps = crumbDataPaths(html, navClass);
+    assert.equal(dps.length, 3, `${navClass}: 3 条链接都该带 data-path`);
+    for (const dp of dps) {
+      assert.ok(dp.length > 0 && !dp.startsWith('../') && !dp.startsWith('/'),
+        `${navClass}: data-path 形态（${dp}）`);
+    }
+  }
+});
+
+test('票 A：分页卡带 data-path（在场时），值为仓库相对路径', () => {
+  // 教材解析顺序页有 prev/next；0.0-符号入门是首篇只有 next
+  const html = needDist('课程/工程数学/教材解析/0.0-符号入门.html');
+  const cards = [...html.matchAll(/<a class="paging-card[^>]*data-path="([^"]+)"/g)].map((x) => x[1]);
+  assert.ok(cards.length >= 1, '该页应至少有一张分页卡');
+  for (const dp of cards) {
+    assert.ok(dp.length > 0 && !dp.startsWith('../') && !dp.startsWith('/'),
+      `paging-card data-path 形态（${dp}）`);
+  }
+  // 课堂笔记顺序页 prev/next 双卡
+  const html2 = needDist('课程/工程数学/课堂笔记/2026-09-17-determinants-transcript-notes.html');
+  const cards2 = [...html2.matchAll(/<a class="paging-card[^>]*data-path="([^"]+)"/g)].map((x) => x[1]);
+  assert.equal(cards2.length, 2, '笔记中间页应有 prev/next 两张卡都带 data-path');
+});
+
+test('票 A：href:# 的章节 crumb 与当前页 crumb 不渲染成链接、不带 data-path', () => {
+  // 第01章-行列式 目录下的页：章节 crumb（第01章 行列式）在构建里是 href:'#'，
+  // 渲染成 current-crumb 前的 span——不该出现 data-path="#" 这类脏值
+  const html = needDist('课程/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.1-二阶与三阶行列式.html');
+  assert.ok(!html.includes('data-path="#"'), 'href:# 的 crumb 不得带 data-path');
+  const m = html.match(/<nav class="m3-breadcrumb"[^>]*>([\s\S]*?)<\/nav>/);
+  assert.ok(m, '页面缺 .m3-breadcrumb');
+  // 非最后一条也不是链接的（章节 crumb）在这个构建分支里其实并入 current-crumb 逻辑——
+  // 判据收敛为：面包屑 nav 里所有 <a> 都带 data-path，无一例外
+  const anchorsNoDp = [...m[1].matchAll(/<a (?![^>]*data-path=)[^>]*>/g)];
+  assert.equal(anchorsNoDp.length, 0, '面包屑里的 <a> 要么带 data-path 要么根本不该是 <a>');
 });
