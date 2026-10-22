@@ -84,7 +84,8 @@ TABLE = [
      # 贵事实：值 = 完整跑一遍测试套件（>10s，超复跑闸门超时）。按三档设计挂便宜
      # 见证——来源是「测试文件里声明了多少项」，命令活着、数量对了才算数。
      {"replay": False, "witness": HOOKTESTS_WITNESS,
-      "witness_expect": "25"}),
+      # 2026-10-21：25 → 28（阶段一加了 3 项导航覆盖率测试）
+      "witness_expect": "28"}),
     ("plugin_tests", PLUGIN_TESTS_CMD, "站点/plugins/", "站点插件测试项数"),
     # handoff 体量：见 HANDOFF_LINES_CMD 处的注释。「读不完」本身就是要量的事实。
     ("handoff_lines", HANDOFF_LINES_CMD, ".zcode/handoff.md",
