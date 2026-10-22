@@ -33,7 +33,10 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22
+          # node 26（26.12.1 起）：2026-10 安全修复线（Brotli RCE / DNS /
+          # TLS ×2 四项全修）；check-latest 防 runner 镜像缓存滞后。
+          node-version: 26
+          check-latest: true
 
       - name: Materialize assistant secrets
         # 学习助手激活材料（2026-10-20 单向锁模型）：构建期往每页埋 data-assistant-key。
