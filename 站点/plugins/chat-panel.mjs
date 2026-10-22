@@ -629,9 +629,15 @@ export function applyOps(doc, el, ops, katex) {
       }
       case 'list': {
         node = mk(op.ordered ? 'ol' : 'ul');
+        // 2026-10-22：items 是 {ops, depth}，depth>0 的项按层级缩进（上游回答里
+        // 编号项下面跟缩进子项很常见）。用 marginLeft 表达层级而不重建嵌套 DOM
+        // ——结构保持扁平，复制成纯文本时也不会多出层级噪音。
         for (const item of op.items) {
           const li = mk('li');
-          for (const c of inlineNodes(item)) li.appendChild(c);
+          const childOps = item && item.ops ? item.ops : (Array.isArray(item) ? item : []);
+          const depth = (item && item.depth) || 0;
+          if (depth > 0) li.style.marginLeft = (depth * 1.1) + 'em';
+          for (const c of inlineNodes(childOps)) li.appendChild(c);
           node.appendChild(li);
         }
         break;

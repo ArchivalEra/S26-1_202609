@@ -168,7 +168,12 @@ export function parseIncremental(buffer) {
     }
 
     // ⑦ 列表：连续的行以 `- `/`* `/`N. ` 开头
-    const li0 = text.slice(i).match(/^(?:[-*]|\d+\.)[ \t]+/);
+    // ⚠️ 2026-10-22 修：必须允许**前导缩进**。上游模型的回答里嵌套子列表很常见
+    // （`1. **最紧急**：…` 下面跟 `   - 子项 A`），旧正则 `^(?:[-*]|\d+\.)`
+    // 匹配不到缩进行 ⇒ 列表提前 terminated ⇒ 后续内容全被吞进段落，
+    // 面板上会看到字面的 "   - 子项 A\n   - 子项 B\n3. "。
+    // 现在记录每项的缩进层级（depth），渲染侧据此嵌套。
+    const li0 = text.slice(i).match(/^([ \t]*)(?:[-*]|\d+\.)[ \t]+/);
     if (li0) {
       const items = [];
       let j = i;
@@ -176,13 +181,16 @@ export function parseIncremental(buffer) {
       while (j < n) {
         const l = readLine(j);
         if (!l.complete) { j = -1; break; }             // 最后一行未结束 → 等
-        const m = l.line.match(/^(?:[-*]|\d+\.)[ \t]+(.*)$/);
+        const m = l.line.match(/^([ \t]*)(?:[-*]|\d+\.)[ \t]+(.*)$/);
         if (!m) { terminated = true; break; }
-        items.push(m[1]);
+        // 缩进 → 层级（每 2 空格或 1 tab 算一级，上限 4 级防跑飞）
+        const indent = m[1].replace(/\t/g, '  ').length;
+        const depth = Math.min(4, Math.floor(indent / 2));
+        items.push({ text: m[2], depth });
         j = l.next;
       }
       if (j < 0 || (!terminated && j >= n)) return { blocks, rest: text.slice(i), restStart: i };
-      blocks.push({ kind: 'list', ordered: /^\d/.test(li0[0]), items });
+      blocks.push({ kind: 'list', ordered: /^\d/.test(li0[0].trim()), items });
       i = j;
       continue;
     }
@@ -411,7 +419,12 @@ export function renderBlockToOps(block) {
       return [{
         kind: 'list',
         ordered: !!block.ordered,
-        items: block.items.map((it) => parseInline(it).ops),
+        // items 现为 {text, depth}（2026-10-22 嵌套支持）；兼容旧形态的纯字符串
+        items: block.items.map((it) => {
+          const text = typeof it === 'string' ? it : it.text;
+          const depth = typeof it === 'string' ? 0 : (it.depth || 0);
+          return { ops: parseInline(text).ops, depth };
+        }),
       }];
     case 'code':
       return [{ kind: 'codeblock', lang: block.lang || '', text: block.text }];
@@ -443,7 +456,11 @@ export function opsToText(ops) {
   };
   return (ops || []).map((o) => {
     if (o.kind === 'heading' || o.kind === 'para') return o.ops.map(one).join('');
-    if (o.kind === 'list') return o.items.map((it) => it.map(one).join('')).join(' | ');
+    if (o.kind === 'list') return o.items.map((it) => {
+      // 2026-10-22：items 是 {ops, depth}；兼容旧的纯 op 数组形态
+      const arr = it && it.ops ? it.ops : (Array.isArray(it) ? it : []);
+      return arr.map(one).join('');
+    }).join(' | ');
     if (o.kind === 'codeblock') return '```' + o.lang + '\n' + o.text + '\n```';
     if (o.kind === 'mathblock') return '$$' + o.tex + '$$';
     if (o.kind === 'table') return [o.header, ...o.rows].map((r) => r.map((c) => c.map(one).join('')).join(' | ')).join(' / ');
