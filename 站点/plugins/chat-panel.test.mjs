@@ -363,6 +363,24 @@ test('CHAT_CSS：过程提示在视觉上与正文分开', () => {
   assert.match(CHAT_CSS, /\.chat-status[\s\S]*?on-surface-variant/, '过程提示要用弱化色');
 });
 
+test('CHAT_JS：状态码正则没有被模板串吃掉（2026-10-22，第五次同类坑）', () => {
+  // CHAT_JS 是普通模板字符串：源码里写单个反斜杠 d，求值时会被当成转义吃掉，
+  // 产物变成 /^HTTP (d{3})$/ ⇒ 「HTTP 429」永远匹配不上 ⇒ 401/403/404/413/429
+  // 四个分支全是死代码。判据只看**代码行**（排除注释——注释里有意保留旧形态作考古）。
+  const BS = String.fromCharCode(92);
+  const GOOD = 'HTTP (' + BS + 'd{3})';
+  const BAD = 'HTTP (' + 'd{3})';
+  const codeLines = CHAT_JS.split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+  assert.ok(codeLines.includes(GOOD), '代码里状态码正则应保留反斜杠 d');
+  assert.equal(codeLines.includes(BAD), false, '代码里不得出现无反斜杠的 d{3} 形态');
+  // 行为验证：抠出那段正则真跑一次
+  const m = codeLines.match(/msg\.match\((\/\^HTTP[^)]*\)\$?\/)\)/);
+  assert.ok(m, '应能抠出状态码正则');
+  const re = new RegExp(m[1].slice(1, -1));
+  assert.equal(re.test('HTTP 429'), true, '必须能匹配 HTTP 429');
+  assert.equal(re.test('HTTP 401'), true, '必须能匹配 HTTP 401');
+});
+
 test('CHAT_JS：失败原因翻译成人话', () => {
   assert.match(CHAT_JS, /function describeFailure/);
   // 2026-10-22 更正：旧断言钉的是「本地桥没在运行（跑 node bridge.mjs）」，
