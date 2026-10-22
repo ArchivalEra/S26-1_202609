@@ -177,8 +177,11 @@ export function createChatService({
 
     // 传输层故障：工具会话已经如实返回 status，这里翻译成 error 事件
     if (result.status && result.status !== 'ok' && result.status !== 'blocked' && result.status !== 'unresolved') {
-      say({ type: 'error', reason: result.status });
-      return { status: result.status, text: result.text || '', calls: result.calls || [] };
+      // 2026-10-22：reason 优先用真实错误（result.error），枚举值只作兜底。
+      // 之前恒发 status（'transport' 之类），面板再翻译一层就变成「未知错误」，
+      // 连通故障完全无法诊断。
+      say({ type: 'error', reason: String(result.error || result.status) });
+      return { status: result.status, error: result.error, text: result.text || '', calls: result.calls || [] };
     }
 
     // 若模型没走流式（例如答案很短、或者非流式通道），把完整答案当作一个 delta 补发，

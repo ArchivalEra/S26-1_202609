@@ -375,6 +375,7 @@
 !/站点/plugins/assistant/context.mjs
 !/站点/plugins/assistant/context.test.mjs
 !/站点/plugins/assistant-wire.mjs
+!/站点/plugins/assistant-wire.test.mjs
 !/站点/plugins/assistant-bundle.mjs
 !/站点/assets/vendor/webmcp/README.md
 !/站点/assets/vendor/webmcp/polyfill.iife.js

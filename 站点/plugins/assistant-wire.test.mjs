@@ -1,0 +1,129 @@
+// assistant-wire.test.mjs —— 接线器的契约测试（2026-10-22 新增）。
+//
+// ## 为什么现在才补
+//
+// 这个模块是「插件薄桥 ↔ 站点协议栈 ↔ 面板」的装配缝，之前**一条测试都没有**。
+// 结果一个字段名写错（`r.ok` vs `r.status`）活了很久，症状是**每次回答都显示
+// 「（未知错误）」**——用户以为连不上，其实是判据读错了字段。
+//
+// 这类 bug 的特征：单测全绿（模块本身没测）、功能全坏、错误信息误导。
+// 所以这里钉的不是「能连上」，而是**契约**：
+//   ① client.ask 返回 `{status, text}`（没有 ok 字段）⇒ 成功必须判成 ok
+//   ② 失败必须把真实 error 带出去，不许退化成「未知错误」
+//   ③ 上一次没结束时的并发保护仍然生效
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { wireAssistant } from './assistant-wire.mjs';
+
+/** 假 client：按给定 status 返回 chatsvc 的真实契约形态 `{status, text, calls}`。 */
+function fakeClient({ status = 'ok', text = '答案', error = undefined } = {}) {
+  return {
+    async ask(_text, _onEvent) {
+      if (status === 'ok') return { status: 'ok', text, calls: [] };
+      return { status, error, text: text || '', calls: [] };
+    },
+    cancel() { return { cancelled: true }; },
+    upload() { return null; },
+    setTools() {},
+    snapshot() { return null; },
+    close() {},
+  };
+}
+
+/** 造一个已就绪的假 window（bridge + panel 都在场，wire 立刻 attach）。 */
+function fakeWin({ client }) {
+  const transportRef = { current: null };
+  return {
+    __assistantBridge: { ask: async () => ({ ok: true, text: '' }), cancel() {} },
+    __chatPanel: {
+      setTransport(t) { transportRef.current = t; },
+    },
+    transportRef,
+    __client: client,
+  };
+}
+
+test('契约①：client 返回 {status:"ok"} ⇒ transport 判成功（不是「未知错误」）', async () => {
+  const win = fakeWin({ client: fakeClient({ status: 'ok', text: '这是答案' }) });
+  const w = wireAssistant({
+    win,
+    createAssistantClient: () => win.__client,
+    runTool: async () => ({ ok: true }),
+    pollMs: 1,
+  });
+  assert.equal(await w.promise, 'attached');
+  assert.ok(win.transportRef.current, 'transport 必须已装上面板');
+
+  const r = await win.transportRef.current.ask({ text: '问一句' });
+  assert.equal(r.ok, true, 'status=ok 必须判成成功（旧版判 r.ok 恒假，症状是「未知错误」）');
+  assert.equal(r.text, '这是答案');
+});
+
+test('契约②：传输失败必须带真实 error，不许退化成「未知错误」', async () => {
+  const win = fakeWin({ client: fakeClient({ status: 'transport', error: '密文解不开' }) });
+  const w = wireAssistant({
+    win, createAssistantClient: () => win.__client, runTool: async () => ({}), pollMs: 1,
+  });
+  await w.promise;
+
+  const r = await win.transportRef.current.ask({ text: '问一句' });
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, '密文解不开', '必须透传真实原因');
+  assert.ok(!/未知错误/.test(r.reason), '不得出现「未知错误」这种无信息兜底');
+});
+
+test('契约②b：连 error 都没有时，至少带出 status 枚举（不是「未知错误」）', async () => {
+  const win = fakeWin({ client: fakeClient({ status: 'deadline' }) });
+  const w = wireAssistant({
+    win, createAssistantClient: () => win.__client, runTool: async () => ({}), pollMs: 1,
+  });
+  await w.promise;
+
+  const r = await win.transportRef.current.ask({ text: '问一句' });
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'deadline', 'status 是最低限度的诊断信息，比「未知错误」有用');
+});
+
+test('契约②c：cancelled/partial 按成功交回（保留半截正文）', async () => {
+  for (const status of ['cancelled', 'partial']) {
+    const win = fakeWin({ client: fakeClient({ status, text: '半截' }) });
+    const w = wireAssistant({
+      win, createAssistantClient: () => win.__client, runTool: async () => ({}), pollMs: 1,
+    });
+    await w.promise;
+    const r = await win.transportRef.current.ask({ text: '问一句' });
+    assert.equal(r.ok, true, `${status} 是用户主动停的，不是故障`);
+    assert.equal(r.text, '半截');
+  }
+});
+
+test('契约③：上一问未结束时并发保护仍生效', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const win = fakeWin({
+    client: { async ask() { await gate; return { status: 'ok', text: '慢答案' }; }, cancel() {}, upload() {}, setTools() {}, snapshot() {}, close() {} },
+  });
+  const w = wireAssistant({
+    win, createAssistantClient: () => win.__client, runTool: async () => ({}), pollMs: 1,
+  });
+  await w.promise;
+
+  const first = win.transportRef.current.ask({ text: '第一问' });
+  const second = await win.transportRef.current.ask({ text: '第二问' });
+  assert.equal(second.ok, false);
+  assert.match(second.reason, /上一问还没结束/);
+
+  release();
+  const r1 = await first;
+  assert.equal(r1.ok, true);
+  assert.equal(win.transportRef.current.busy, false, '终态后 busy 必须落回 false');
+});
+
+test('wire 超时：桥不在场时返回 timeout，不抛异常', async () => {
+  const win = { __chatPanel: { setTransport() {} } };   // 没有 bridge
+  const w = wireAssistant({
+    win, createAssistantClient: () => fakeClient(), runTool: async () => ({}), pollMs: 1, deadlineMs: 30,
+  });
+  assert.equal(await w.promise, 'timeout');
+});

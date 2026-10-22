@@ -237,7 +237,10 @@ export function createManager(opts = {}) {
             }
           } else if (attempt > reconnectAttempts || Date.now() - t0 > deadlineMs) {
             s.transcript.add(text, '', 'frozen');
-            return { text: '', calls: [], attempts: attempt, error: st,
+            // 2026-10-22：优先带 adapter 给的**真实原因**（r.error），没有才退回枚举值。
+            // 之前恒写 st，于是「桥没起」「密文解不开」「上游拒答」在面板上全显示成
+            // 「未知错误」——查连通问题时等于没有诊断信息。
+            return { text: '', calls: [], attempts: attempt, error: (r && r.error) || st,
                      generation: s.generation, restored: hasGap, status: st };
           }
           continue;   // 换线重试

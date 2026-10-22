@@ -385,7 +385,10 @@ export function createToolSession({
 
       // 传输层故障：如实上抛（管理器已按策略换线重试过，仍失败才算真故障）
       if (r.status !== 'ok' && r.status !== 'blocked') {
-        return { answer: '', calls, effects, images, status: r.status, text: txt, timings };
+        // 2026-10-22：把原始错误（r.error）一起带出去。以前只传 status 枚举，
+        // 面板上最终显示「未知错误」——查连通问题时分不清是桥没起、密文解不开
+        // 还是上游拒答，等于没有诊断信息。
+        return { answer: '', calls, effects, images, status: r.status, error: r.error, text: txt, timings };
       }
       // 退化形态也要认（2026-10-19：上游某些时段只回「site_read读选3」这种裸文本）。
       //

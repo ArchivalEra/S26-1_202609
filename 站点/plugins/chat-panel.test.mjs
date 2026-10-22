@@ -365,7 +365,16 @@ test('CHAT_CSS：过程提示在视觉上与正文分开', () => {
 
 test('CHAT_JS：失败原因翻译成人话', () => {
   assert.match(CHAT_JS, /function describeFailure/);
-  assert.match(CHAT_JS, /本地桥没在运行/, '连不上要说清是桥没起');
+  // 2026-10-22 更正：旧断言钉的是「本地桥没在运行（跑 node bridge.mjs）」，
+  // 而那个脚本在两阶段重构后已不存在——断言把一句**做不到的指引**钉成了契约。
+  // 现在钉的是：连不上时要指向用户真能做到的动作（检查油猴脚本）。
+  assert.match(CHAT_JS, /连不上助手[^"'\n]*油猴/, '连不上要指向可执行动作（检查油猴脚本）');
+  // 只查**用户看得到的字符串**（return/ textContent 那几句），不查注释——
+  // 注释里保留「以前写 node bridge.mjs」是有意为之的考古说明。
+  const userFacing = CHAT_JS.split('\n')
+    .filter((l) => /return\s+["']|textContent\s*=/.test(l))
+    .join('\n');
+  assert.ok(!/node bridge\.mjs/.test(userFacing), '不得再向用户提示跑已废弃的 bridge.mjs');
   assert.match(CHAT_JS, /刷新页面再试/, '401/403 要给出可执行动作');
 });
 
