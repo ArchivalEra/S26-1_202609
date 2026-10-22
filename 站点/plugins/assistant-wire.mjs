@@ -139,10 +139,26 @@ function makeTransport({ win, bridge, createAssistantClient, runTool, serializeT
         };
         try {
           const client = clientFor(sid);
+          // ⚠️ 2026-10-22 修：client.ask 返回的是 `{status, text, calls}`，
+          // **没有 ok 字段**（chatsvc.mjs 的契约）。旧代码判 `r.ok` ⇒ 恒为假 ⇒
+          // 每次成功回答都落到 `{ok:false, reason:'未知错误'}`——面板上看到的
+          // 「（未知错误）」就是这么来的。改为按 status 判定：
+          //   ok / blocked / unresolved → 有答案（blocked 是内容层拦截，也要把话说给用户）
+          //   cancelled / partial       → 用户停的，按成功交回（保留半截正文）
+          //   其余（transport/deadline/empty/frozen）→ 真失败，带上 error 原文
+          const OK_STATUS = ['ok', 'blocked', 'unresolved', 'cancelled', 'partial'];
           client.ask(String(payload.text ?? ''), onEvent)
-            .then((r) => settle(r && r.ok
-              ? { ok: true, text: String(r.text ?? '') }
-              : { ok: false, reason: String((r && r.reason) || '未知错误') }))
+            .then((r) => {
+              const st = String((r && r.status) || '');
+              if (OK_STATUS.includes(st)) {
+                settle({ ok: true, text: String((r && r.text) ?? '') });
+                return;
+              }
+              settle({
+                ok: false,
+                reason: String((r && r.error) || st || '未收到上游响应'),
+              });
+            })
             .catch((e) => settle({ ok: false, reason: String((e && e.message) || e) }));
         } catch (e) {
           settle({ ok: false, reason: String((e && e.message) || e) });

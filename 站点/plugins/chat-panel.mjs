@@ -761,8 +761,8 @@ var BRIDGE = "http://127.0.0.1:9345";
  *   ② 站点部署域名（isui.ren / GitHub Pages）——同学在公网上打开时会命中
  *   ③ 用户显式开关（?assistant=1 / localStorage.webmcp_bridge=on）
  *
- * 注意「允许打开面板」不等于「能连上」：真正连不上时（没跑桥）会走
- * 已有的失败提示「本地桥没在运行」。
+ * 注意「允许打开面板」不等于「能连上」：真正连不上时（油猴脚本没生效）
+ * 会走 describeFailure 的提示（2026-10-22 更正：不再指向已废弃的 bridge.mjs）。
  */
 var SITE_HOSTS = ["isui.ren", "archivalera.github.io"];
 var LOCAL_ONLY = (function () {
@@ -1586,7 +1586,11 @@ function describeFailure(e) {
     if (code === 429) return "发得太快了，等几秒再问";
   }
   if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) {
-    return "本地桥没在运行（先在电脑上跑 node bridge.mjs）";
+    // 2026-10-22 更正：这句以前写「先在电脑上跑 node bridge.mjs」——两阶段重构后
+    // 那个文件已不存在，提示指向一个做不到的动作，把用户带偏。
+    // 现在链路是「油猴脚本 → 跨 origin 通道 → 上游」，失败的真实原因通常是
+    // 脚本没装/没生效，或两环密文解不开（AES-GCM 认证失败 ⇒ 脚本静默休眠）。
+    return "连不上助手：检查油猴脚本是否已安装并启用（脚本没生效时不会建立通道）";
   }
   return msg;
 }
@@ -1931,9 +1935,9 @@ function showLocalOnlyNotice() {
   var box = document.createElement("div");
   box.className = "chat-empty chat-local-only";
   var p1 = document.createElement("p");
-  p1.textContent = "学习助手要连你电脑上的本地桥进程，所以只在你自己电脑上打开本站时可用。";
+  p1.textContent = "学习助手要连你电脑上的油猴脚本，所以只在你自己电脑上打开本站时可用。";
   var p2 = document.createElement("p");
-  p2.textContent = "在线版可以正常阅读全部课程资料；需要用助手时，在本机跑 node bridge.mjs 后从 127.0.0.1 打开站点。";
+  p2.textContent = "在线版可以正常阅读全部课程资料；需要用助手时，先安装并启用学习助手脚本（油猴），再打开本站。";
   box.appendChild(p1); box.appendChild(p2);
   logEl.appendChild(box);
 }
