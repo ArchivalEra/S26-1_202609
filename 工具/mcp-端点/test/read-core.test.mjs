@@ -120,7 +120,7 @@ test('symbol：包链覆盖——后者覆盖前者同名', () => {
 test('stat：台账出口（页数/源 hash/stale/课程清单）', () => {
   const core = realCore();
   const r = core.stat();
-  assert.equal(r.pages, 114);
+  assert.equal(r.pages, 115);
   assert.equal(typeof r.sourceHash, 'string');
   assert.equal(r.stale, false);
   assert.ok(r.courses.length >= 6);

@@ -63,6 +63,9 @@ export const PAGE_SELECTORS = {
   tocActive: '.toc-item.active',
   navLink: 'a.drawer-nav-link',
   navGroup: 'li.drawer-nav-group',
+  /** 侧栏形状烘焙（阶段一）：nav-structure.mjs 产出的 JSON 的脚本 id。
+   *  site_index / site_navigate 都读它，不再爬侧栏 DOM。 */
+  navJson: 'nav-structure-json',
   pagingPrev: 'a.paging-prev',
   pagingNext: 'a.paging-next',
   brand: 'a.sidebar-brand',
@@ -583,6 +586,40 @@ export function createPageView(doc, loc, winOverride) {
     try { return JSON.parse(tag.textContent || '{}'); } catch (e) { return null; }
   }
 
+  /**
+   * 读页内嵌的**侧栏形状**（阶段一）：`#nav-structure-json`，由 nav-structure.mjs
+   * 构建期烘焙。这是 site_index / site_navigate 的**唯一数据源**——不再爬侧栏 DOM。
+   * 返回 `{v, current, activeIds, expandedIds, nodes}`；缺失/损坏返回 null（调用方给明确 reason）。
+   */
+  function navStructure() {
+    const tag = byId(S.navJson);
+    if (!tag) return null;
+    try {
+      const data = JSON.parse(tag.textContent || '');
+      if (!data || !Array.isArray(data.nodes)) return null;
+      return data;
+    } catch (e) { return null; }
+  }
+
+  /**
+   * JSON 里**全部可导航的 html 目标**：叶子节点的 href + 有索引页的组节点的 indexHref。
+   * site_navigate 的白名单用（不再爬 `a[data-path]`）。
+   */
+  function navTargets(navData) {
+    const out = [];
+    (function walk(arr) {
+      for (const n of arr || []) {
+        if (n.children && n.children.length) {
+          if (n.indexHref) out.push(n.indexHref); // 组节点：索引页可达
+          walk(n.children);
+        } else if (n.href) {
+          out.push(n.href);
+        }
+      }
+    })(navData.nodes);
+    return out;
+  }
+
   /** 搜索面板里的命中列表与总数（读 DOM，不重跑检索）。 */
   function searchResults() {
     const hits = all(S.searchHit).map((a) => ({
@@ -838,18 +875,14 @@ export function createPageView(doc, loc, winOverride) {
       const hash = String(opt.hash || '').trim();
       if (!path) return { ok: false, reason: 'empty_path' };
 
-      // 侧栏校验（2026-10-19 grill Q16）：90 个 data-path 是「确定存在」的集合；
-      // 不在其中不一定是错——23 个索引页本来就没有侧栏链接（build.mjs:1152-1154）。
-      // 所以：命中 ⇒ 放行；未命中 ⇒ 也放行，但把同课程的合法路径一并返回，
-      // 让模型一次看对，不用瞎试三轮。
-      const navPaths = all(S.navLink)
-        .map((a) => (a.getAttribute ? String(a.getAttribute('data-path') || '') : ''))
-        .filter(Boolean);
+      // 侧栏校验（阶段一，2026-10-21）：白名单改从**侧栏形状 JSON**取（不再爬 data-path）。
+      // 命中 ⇒ 放行；未命中 ⇒ 也放行，但把同课程的合法路径一并返回，
+      // 让模型一次看对，不用瞎试三轮。**索引页本就在白名单里**（组节点带 indexHref）。
+      const navData = navStructure();
+      const navPaths = navData ? navTargets(navData) : [];
       const normalized = path.replace(/^\.\//, '').replace(/^\//, '');
       if (!navPaths.includes(normalized)) {
-        // 索引页（…/index.html）本来就没有侧栏链接（build.mjs:1152-1154 定案），
-        // 所以**不拦**——只在返回值里标记 via:'unverified'，让调用方知道这是未经校验的跳转。
-        // 真正的拼错由跳转后的 404/标题变化暴露，比在这里猜更可靠。
+        // 索引页（…/index.html）即使没进白名单（数据缺失时）也不拦——跳转靠 404/标题变化暴露。
         const isIndexPage = /\/index\.html$/.test(normalized);
         if (!isIndexPage) {
           const bodyEl = (doc && doc.body) || null;
@@ -1167,14 +1200,14 @@ export function createPageView(doc, loc, winOverride) {
   }
 
   /**
-   * 站点索引：从**侧栏导航树**重建层级（2026-10-19 grill Q13 定案）。
+   * 站点索引：读页内烘焙的**侧栏形状 JSON**（`#nav-structure-json`，阶段一，2026-10-21）。
    *
-   * 为什么不读目录页：实测侧栏能重建出 **118 个节点**，与构建期 NAV_STRUCTURE 逐字一致；
-   * 而目录页只有三层、每层几十条，且要先跳过去（每次往返 40-90 秒）。
-   * 侧栏每页都有、零网络、结构完整——它才是导航的真相源。
+   * 为什么不爬侧栏 DOM：形状的唯一真相源现在是 nav-structure.mjs（构建期产出 JSON），
+   * DOM 只是它的渲染产物。读 JSON ⇒ 工具与渲染解耦（DOM class 改名不再波及工具），
+   * 且组节点能带出**索引页 path**（DOM 里组节点是纯标题，爬不到）。
    *
    * 默认只给**当前课程**（按 body[data-site-path] 判），`scope='all'` 才给全站。
-   * 当前课程最多 28 节点，安全；全站 118 节点约 1500 字，贴着上游单条上限。
+   * 全站节点数不写死——按实际 JSON 计。
    *
    * @param {object} [o]
    * @param {'course'|'all'} [o.scope='course']
@@ -1185,61 +1218,24 @@ export function createPageView(doc, loc, winOverride) {
     const scope = opt.scope === 'all' ? 'all' : 'course';
     const max = Math.max(1, Number(opt.max) || (scope === 'all' ? 140 : 60));
 
-    // 侧栏根 ul（每页都渲染同一份）
-    let rootUl = null;
-    try {
-      rootUl = doc.querySelector('.drawer-nav-scroll-area > ul')
-        || doc.querySelector('#m3-drawer ul.drawer-nav-list')
-        || first('ul.drawer-nav-list');
-    } catch (e) { /* 无侧栏 */ }
-    if (!rootUl) {
-      return { ok: false, reason: 'no_sidebar', hint: '本页没有侧栏导航树' };
+    const navData = navStructure();
+    if (!navData) {
+      return { ok: false, reason: 'no_sidebar', hint: '本页没有侧栏导航数据（#nav-structure-json 缺失或损坏）' };
     }
 
-    // 递归重建：group 节点取标题文字，叶子节点取 data-path
-    const nodes = [];
-    (function walk(nodes_ul, depth, out) {
-      const kids = childrenOf(nodes_ul).filter((c) => !isTextNode(c));
-      for (const li of kids) {
-        if (out.length >= max) return;
-        const tag = String(li.tagName || '').toUpperCase();
-        if (tag !== 'LI') continue;
-        // group：header 里有 .drawer-section-title-text
-        let head = null, nested = null, link = null;
-        for (const c of childrenOf(li)) {
-          if (isTextNode(c)) continue;
-          const ct = String(c.tagName || '').toUpperCase();
-          if (hasClass(c, 'nav-group-header') || hasClass(c, 'nav-header-clickable')) head = c;
-          else if (hasClass(c, 'nav-nested-wrapper')) nested = c;
-          else if (ct === 'A') link = c;
-        }
-        if (!head && !nested) {
-          // 再试一层：有些结构把 header 包在 div 里
-          head = li.querySelector ? li.querySelector('.nav-group-header') : null;
-          nested = li.querySelector ? li.querySelector('.nav-nested-wrapper') : null;
-        }
-        if (head) {
-          const titleEl = head.querySelector ? head.querySelector('.drawer-section-title-text') : null;
-          const name = textOf(titleEl) || textOf(head);
-          if (!name) continue;
-          const node = { name, depth };
-          out.push(node);
-          const innerUl = nested && nested.querySelector ? nested.querySelector('ul') : null;
-          if (innerUl) {
-            node.children = [];
-            walk(innerUl, depth + 1, node.children);
-            if (!node.children.length) delete node.children;
-          }
-        } else if (link) {
-          const a = link;
-          out.push({
-            name: textOf(a),
-            depth,
-            path: a.getAttribute ? a.getAttribute('data-path') : '',
-          });
-        }
+    // JSON 节点 → site_index 输出形态：组节点带 indexHref（若有）作 path，叶子带 href。
+    const toNode = (n) => {
+      const isGroup = !!(n.children && n.children.length);
+      const node = { name: n.label, depth: n.depth };
+      if (isGroup) {
+        if (n.indexHref) node.path = n.indexHref;
+        node.children = n.children.map(toNode);
+      } else if (n.href) {
+        node.path = n.href;
       }
-    })(rootUl, 0, nodes);
+      return node;
+    };
+    const nodes = navData.nodes.map(toNode);
 
     // 当前课程：从 body[data-site-path] 取第二段
     const body = (doc && doc.body) || null;
@@ -1264,7 +1260,7 @@ export function createPageView(doc, loc, winOverride) {
       for (const n of arr) {
         if (lines.length >= max) { lines.push(indent + '…（已达上限）'); return; }
         if (n.children && n.children.length) {
-          lines.push(indent + n.name);
+          lines.push(indent + n.name + (n.path ? '  `' + n.path + '`' : ''));
           flatten(n.children, indent + '  ');
         } else {
           lines.push(indent + '- ' + n.name + (n.path ? '  `' + n.path + '`' : ''));
@@ -1487,7 +1483,7 @@ export function buildToolDefs(doc, win) {
     },
     {
       name: 'site_index',
-      description: '站点地图：从侧栏导航树返回层级结构（课程 → 分类 → 页面，带路径）。默认给当前课程的全部页面；scope="all" 给全站 118 节点。先看地图，再决定读哪页。',
+      description: '站点地图：从页内烘焙的侧栏形状返回层级结构（课程 → 分类 → 页面，带路径）。默认给当前课程的全部页面；scope="all" 给全站。先看地图，再决定读哪页。',
       inputSchema: {
         type: 'object',
         properties: {
@@ -1680,6 +1676,56 @@ export function registerTools(doc, nav) {
 }
 
 /**
+ * 在页面里执行一个已注册的工具（阶段二 T11 新增）。
+ *
+ * 这是站点侧工具循环的 `invoke` 实现——T10 搬来的 `createAssistantClient`
+ * 需要它把模型的工具调用落到真实页面上。
+ *
+ * 为什么放在本模块：它和 `registerTools` 共用同一套 `createPageView` /
+ * `buildToolDefs`，是同一个 module 的两面（注册 ↔ 执行）。放在别处会造成
+ * 「注册用一套、执行用另一套」——那正是探察报告里 page-bridge / roleA /
+ * 页面桥.js 三份重复的成因。
+ *
+ * @param {Document} doc
+ * @param {string} name  工具名（site_index 等）
+ * @param {object} args  参数
+ * @returns {Promise<{ok:boolean, value?:any, effect?:object, error?:string}>}
+ *   恒 resolve——失败也回 `{ok:false, error}`，由工具循环按「失败也回喂」消费。
+ */
+export async function runTool(doc, name, args) {
+  const view = createPageView(doc, null, null);
+  // 直接调 view 的具名方法（与 buildToolDefs 里的 execute 是同一批实现）——
+  // 不经 modelContext.executeTool，避免 polyfill 把异常压成
+  // "Tool execution failed"（page-bridge.mjs 2026-10-19 吃过这个亏）。
+  const MAP = {
+    site_get_page_info: () => view.pageInfo(),
+    site_read: (a) => view.readContent(a || {}),
+    site_index: (a) => view.siteIndex(a || {}),
+    site_navigate: (a) => view.navigate(a || {}),
+    site_search: (a) => {
+      const q = String((a && a.query) || '').trim();
+      if (!q) return { ok: false, reason: 'empty_query' };
+      if ((a && a.scope) === 'page') return view.findInPage(q);
+      return view.searchIndex(q, { limit: a && a.limit, includeHeadings: true });
+    },
+    site_show_symbol: (a) => view.findSymbol(a || {}),
+    site_panels: (a) => view.togglePanels(a || {}),
+    site_view: (a) => view.setView(a || {}),
+    site_list_images: (a) => view.listImages(a || {}),
+    site_image: (a) => view.imageToDataUrl(a || {}),
+    site_capture_view: (a) => view.captureView(a || {}),
+  };
+  const fn = MAP[name];
+  if (!fn) return { ok: false, error: '页面没有工具 ' + String(name) };
+  try {
+    const value = await fn(args);
+    return { ok: !(value && typeof value === 'object' && value.ok === false), value };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+}
+
+/**
  * 把「含 RegExp 的配置对象」序列化成**可还原的 JS 源码**。
  * `JSON.stringify` 会把 `RegExp` 变成 `{}`——所以 `hitCountRe` 得显式写成
  * `new RegExp("...")` 的字面，才能在页面里还原成真正则。
@@ -1711,5 +1757,14 @@ var renderMarkdown = ${renderMarkdown.toString()};
 var createPageView = ${createPageView.toString()};
 var buildToolDefs = ${buildToolDefs.toString()};
 var registerTools = ${registerTools.toString()};
+// 阶段二 T11：站点侧协议栈的 invoke 入口（runTool 依赖 createPageView，已在上面）
+var runTool = ${runTool.toString()};
 registerTools(document, typeof navigator !== "undefined" ? navigator : null);
+
+// 阶段二 T11：把工具执行器暴露给站点侧协议栈（assistant-bundle.js 的 invoke）。
+// 为什么是 window：bundle 与 tools 是两个独立写盘的 IIFE，没有模块系统可共享。
+// 为什么只暴露 runTool：注册（modelContext）已有标准接口，执行才是站点侧需要的。
+window.__mcpTools = {
+  runTool: function (name, args) { return runTool(document, name, args); },
+};
 })();`;

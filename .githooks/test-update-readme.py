@@ -503,6 +503,87 @@ class ReadmeHookTest(unittest.TestCase):
         self.stage()
         self.git('commit', '-m', '清单与资料对齐')
 
+    # ── 侧栏覆盖（2026-10-21 新增）───────────────────────────────────────────────
+    # TARGET_FILES 决定「哪些 md 渲染成页面」，NAV_STRUCTURE 决定「侧栏怎么摆」，
+    # 两者原本无一致性校验——漏加导航永远不报错，页面「存在但不可达」。
+    def nav_site(self, targets, nav):
+        """写一份 `页面清单.mjs` + `build.mjs`（NAV_STRUCTURE），返回 build.mjs 路径。
+
+        NAV_STRUCTURE 写成嵌套结构并带注释，顺带验证解析器不是正则硬解。
+        """
+        self.write('站点/页面清单.mjs',
+                   'export const TARGET_FILES = [\n'
+                   + ''.join(f"  '{p}',\n" for p in targets)
+                   + '];\n')
+        children = [p for p in nav if p not in ('README.md', '课程/index.md')]
+        build = ('// 站点构建脚本（测试夹具）\n'
+                 'const NAV_STRUCTURE = [\n'
+                 '  { label: "首页", path: "README.md" },\n'
+                 '  {\n'
+                 '    label: "课程总览",\n'
+                 '    path: "课程/index.md",\n'
+                 '    children: [\n'
+                 + ''.join(f'      // 内联注释：{p}\n'
+                           f'      {{ label: "{p}", path: "{p}" }},\n' for p in children)
+                 + '    ]\n'
+                 '  }\n'
+                 '];\n')
+        return self.write('站点/build.mjs', build)
+
+    def test_nav_coverage_aligned_passes(self):
+        """侧栏覆盖齐全时放行；白名单豁免的页面可不进侧栏。"""
+        targets = self.target_list() + ['站点/符号包/通用.md']
+        self.write('站点/符号包/通用.md', '# 通用符号\n')
+        # NAV_STRUCTURE 不列「站点/符号包/通用.md」（白名单豁免）
+        nav = [p for p in targets if p != '站点/符号包/通用.md']
+        self.nav_site(targets, nav)
+        self.stage()
+        self.git('commit', '-m', '侧栏覆盖齐全 + 白名单页不进侧栏')
+
+    def test_nav_coverage_missing_entry_rejected(self):
+        """渲染成页面的 md 不在 NAV_STRUCTURE 里时拒绝提交（漏加导航不再静默）。
+
+        手工演示同款：把一个 path 从 NAV_STRUCTURE 里去掉，钩子必须点名报错。
+        """
+        targets = self.target_list()
+        victim = '课程/工程数学/课堂笔记/2026-09-17-test.md'
+        # 该页「渲染成页面」但侧栏没列它 → 拒绝，且报错点名该页
+        self.nav_site(targets, [p for p in targets if p != victim])
+        self.stage()
+        result = self.git('commit', '-m', '侧栏漏入口', success=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('没有侧栏入口', result.stdout.decode())
+        self.assertIn(victim, result.stdout.decode())
+
+        # 补回该节点后放行
+        self.nav_site(targets, targets)
+        self.stage()
+        self.git('commit', '-m', '补回侧栏入口')
+
+    def test_nav_coverage_whitelist_is_not_blanket(self):
+        """白名单只豁免登记在案的页面——同一次提交里其它漏项仍会被拦。"""
+        targets = self.target_list() + ['站点/符号包/通用.md']
+        self.write('站点/符号包/通用.md', '# 通用符号\n')
+        victim = '课程/工程数学/作业/index.md'
+        # 白名单页缺席（允许）+ 另一个未豁免的页也缺席（应报错，且只点名后者）
+        nav = [p for p in targets
+               if p not in ('站点/符号包/通用.md', victim)]
+        self.nav_site(targets, nav)
+        self.stage()
+        result = self.git('commit', '-m', '白名单不是全面豁免', success=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(victim, result.stdout.decode())
+        self.assertNotIn('站点/符号包/通用.md', result.stdout.decode())
+
+    def target_list(self):
+        """与 setUp 仓库实况对齐的 TARGET_FILES（含 4 个非课程页）。"""
+        return ['README.md', '维护条例.md', '维护细则.md',
+                '课程/index.md', '课程/工程数学/index.md',
+                '课程/工程数学/作业/index.md', '课程/工程数学/教材解析/index.md',
+                '课程/工程数学/课堂笔记/index.md',
+                '课程/工程数学/课堂笔记/2026-09-17-test.md',
+                '课程/工程数学/原始资料/index.md', '课程/工程数学/音频/index.md']
+
     def test_move_and_index_links(self):
         moved = self.note.with_name('2026-09-17-移动.md')
         self.note.rename(moved)

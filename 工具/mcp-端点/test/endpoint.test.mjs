@@ -44,7 +44,7 @@ test('Direct endpoint：call 返回 content + structuredContent', async () => {
   const ep = createDirectEndpoint(core());
   const r = await ep.call('course_stat', {});
   assert.ok(!r.isError);
-  assert.ok(r.structuredContent.pages === 114);
+  assert.ok(r.structuredContent.pages === 115);
   assert.ok(r.content[0].type === 'text');
 });
 

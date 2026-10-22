@@ -11,6 +11,7 @@
 """
 import datetime
 import hashlib
+import json
 import os
 from pathlib import Path, PurePosixPath
 import posixpath
@@ -366,6 +367,7 @@ def validate(files):
             if index not in files or index not in links(course_index, files[course_index]):
                 raise ValueError(f'课程入口缺少分类链接：{index}')
     check_build_targets(files)
+    check_nav_coverage(files)
     check_readme_documents_ui(files)
     check_exam_prep(files)
 
@@ -604,6 +606,123 @@ def check_build_targets(files):
     if stale:
         raise ValueError(f'{BUILD_SCRIPT} 的 TARGET_FILES 列了仓库中不存在的文件：'
                          + '、'.join(stale))
+
+
+# 侧栏覆盖：渲染成页面的 md 必须有侧栏入口。
+# 为什么需要这条：`页面清单.mjs` 的 TARGET_FILES 决定「哪些 md 渲染成页面」，
+# `build.mjs` 的 NAV_STRUCTURE 决定「侧栏怎么摆」——两者独立、无一致性校验。
+# 于是漏加导航**永远不会报错**：页面渲染出来、侧栏没入口、`site_index` 也看不到，
+# 资料「存在但不可达」。这条把两个清单对齐：TARGET_FILES − NAV_STRUCTURE 非空即失败。
+#
+# 有意旁路的页面必须**逐条写清原因**登记在此（与 COURSE_SKIPPED_KINDS 同款白名单纪律）：
+# 明确声明「本页不进侧栏」，而不是让差集检查对它们沉默。
+NAV_COVERAGE_EXEMPT = {
+    '站点/符号包/通用.md': '跨课程共用的符号定义页，只作为气泡「详细 ↗」的落点被引用，'
+                          '不属于任何课程的导航层级，故不挂侧栏入口。',
+}
+
+
+def _balanced_array(text, marker):
+    """从 `marker` 之后的首个 `[` 起，按括号配对截出整个数组字面量（返回 None 表示找不到）。
+
+    不用正则硬解：NAV_STRUCTURE 是嵌套的 JS 字面量（内含注释、字符串、模板串），
+    正则会在第一个 `]` 或字符串里的括号处截断。这里逐字符配对，跳过注释与字符串。
+    """
+    start = text.find(marker)
+    if start < 0:
+        return None
+    start = text.find('[', start + len(marker))
+    if start < 0:
+        return None
+    depth, i, quote, escaped = 0, start, None, False
+    while i < len(text):
+        ch = text[i]
+        if quote:
+            if escaped:
+                escaped = False
+            elif ch == '\\':
+                escaped = True
+            elif ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in '"\'':
+            quote = ch
+        elif ch == '`':
+            quote = ch
+        elif ch == '/' and text.startswith('//', i):
+            nl = text.find('\n', i)
+            i = len(text) if nl < 0 else nl
+            continue
+        elif ch == '/' and text.startswith('/*', i):
+            end = text.find('*/', i)
+            i = len(text) if end < 0 else end + 2
+            continue
+        elif ch == '[':
+            depth += 1
+        elif ch == ']':
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+        i += 1
+    return None
+
+
+def _nav_paths(script_text):
+    """在 node 里求值 NAV_STRUCTURE，收集所有节点的 path（去重前）。
+
+    用子进程求值而非正则：结构是嵌套 JS，交给 JS 引擎解析才可靠。
+    """
+    literal = _balanced_array(script_text, 'const NAV_STRUCTURE =')
+    if literal is None:
+        return None
+    program = (
+        'const NAV = ' + literal + ';\n'
+        'const out = [];\n'
+        '(function walk(nodes) {\n'
+        '  for (const node of nodes || []) {\n'
+        "    if (typeof node.path === 'string') out.push(node.path);\n"
+        '    if (Array.isArray(node.children)) walk(node.children);\n'
+        '  }\n'
+        '})(NAV);\n'
+        'process.stdout.write(JSON.stringify(out));'
+    )
+    try:
+        result = subprocess.run(['node', '-e', program],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except FileNotFoundError:
+        raise ValueError('未找到 node，无法求值 NAV_STRUCTURE——钩子校验侧栏覆盖需要 node。')
+    if result.returncode != 0:
+        raise ValueError(f'求值 {BUILD_SCRIPT} 的 NAV_STRUCTURE 失败：'
+                         + result.stderr.decode().strip())
+    return json.loads(result.stdout.decode())
+
+
+def check_nav_coverage(files):
+    """站点渲染的页面必须都有侧栏入口（TARGET_FILES − NAV_STRUCTURE 非空即失败）。
+
+    资料「存在但不可达」是静默故障：页面照渲染、侧栏无入口、`site_index` 也查不到。
+    这里让两个清单（渲染范围 / 侧栏形状）在提交时对齐——有意旁路的页面走
+    NAV_COVERAGE_EXEMPT 显式豁免，不豁免的漏项一律报出。
+    """
+    if BUILD_SCRIPT not in files or PAGE_MANIFEST not in files:
+        return
+    targets = build_targets(files)
+    if targets is None:
+        return
+    nav = _nav_paths(files[BUILD_SCRIPT].decode())
+    if nav is None:
+        # 找不到 NAV_STRUCTURE 定义（脚本被替换/改名）时跳过本校验：yaml 结构本就可能变，
+        # 真正该拦的是「清单里的页面没有侧栏入口」，别在定义缺失时误伤。
+        return
+    covered = set(nav) | set(NAV_COVERAGE_EXEMPT)
+    missing = sorted(set(targets) - covered)
+    if missing:
+        raise ValueError(
+            f'{BUILD_SCRIPT} 的 NAV_STRUCTURE 漏了以下页面——它们会渲染成页面却没有侧栏入口'
+            '（站点上看不到、site_index 也搜不到）：' + '、'.join(missing)
+            + '。请为该页补一个导航节点；若确实有意不进侧栏，'
+            '在 hook_lib.py 的 NAV_COVERAGE_EXEMPT 里逐条写明原因豁免。')
 
 
 # README 手写区里的「网页版怎么看」按钮表，与站点顶栏实际按钮必须对得上。

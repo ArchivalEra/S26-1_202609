@@ -1,0 +1,169 @@
+// assistant-wire.mjs —— 站点侧接线器（阶段二 T11）
+//
+// 把三样东西接成面板认识的 transport：
+//   ① `window.__assistantBridge`  ← 插件暴露的跨 origin 通道（薄桥）
+//   ② `createAssistantClient`     ← T10 从 userscript/proto 搬来的协议栈
+//   ③ `runTool`                   ← 本目录 webmcp-tools.mjs 的页面工具执行
+//
+// 结果：工具循环（提示词 → ask → 解析 → 执行工具 → 回喂 → 再 ask）**在站点侧跑**，
+// 插件只剩「握手 + 跨 origin 通道」。这是两阶段重构的目标形态。
+//
+// ## 为什么要这一层
+//
+// 面板（chat-panel.mjs）只认 `setTransport(fn)`，`fn = {ask, cancel, upload}`。
+// 而 `createAssistantClient` 的内部形态是「manager + chatService」——两者之间
+// 需要一个 adapter。放这里而不是塞进面板：面板不该知道协议栈的存在，
+// 就像它今天不知道 bridge 是怎么实现的（interface 要小）。
+//
+// ## 时序
+//
+// 插件注入晚于站点脚本是常态（油猴 document-end）。所以本模块**轮询等待**
+// `window.__assistantBridge`，出现后才组装 transport 并调 `setTransport`。
+// 超时（默认 20s）则保持面板原有的「连本机桥」形态——不报错、不阻塞。
+
+/**
+ * @param {object} p
+ * @param {object} [p.win=window]          页面 window（测试注入）
+ * @param {function} p.createAssistantClient  T10 的入口（由调用方 import，避免本模块硬依赖）
+ * @param {function} p.runTool             工具执行器（webmcp-tools.mjs 的 runTool 绑定 doc）
+ * @param {function} [p.serializeTools]    取当前页工具清单（默认从 modelContext 读）
+ * @param {number} [p.pollMs=400]
+ * @param {number} [p.deadlineMs=20000]
+ * @returns {{ cancel(): void, promise: Promise<'attached'|'timeout'|'no-panel'> }}
+ */
+export function wireAssistant({
+  win = (typeof window !== 'undefined' ? window : null),
+  createAssistantClient,
+  runTool,
+  serializeTools = null,
+  pollMs = 400,
+  deadlineMs = 20000,
+} = {}) {
+  if (!win) throw new Error('wireAssistant: 需要 window');
+  if (typeof createAssistantClient !== 'function')
+    throw new Error('wireAssistant: 需要 createAssistantClient');
+
+  let stopped = false;
+  let pollTimer = null;
+
+  const p = (async () => {
+    const t0 = Date.now();
+    for (;;) {
+      if (stopped) return 'timeout';
+      const bridge = win.__assistantBridge;
+      const panel = win.__chatPanel;
+      if (bridge && panel && typeof panel.setTransport === 'function') {
+        const transport = makeTransport({ win, bridge, createAssistantClient, runTool, serializeTools });
+        panel.setTransport(transport);
+        return 'attached';
+      }
+      if (Date.now() - t0 > deadlineMs) return 'timeout';
+      await new Promise((r) => { pollTimer = setTimeout(r, pollMs); pollTimer = null; });
+    }
+  })();
+
+  return {
+    promise: p,
+    cancel() {
+      stopped = true;
+      if (pollTimer !== null) { clearTimeout(pollTimer); pollTimer = null; }
+    },
+  };
+}
+
+/**
+ * 组装 transport。三个方法正好对上面板契约。
+ *
+ * 关键：`ask` 里**每问现取工具清单**——页面导航后工具可能变化（站点是 SPA），
+ * 沿用上一问的清单会让模型调用已经不存在的工具。这与旧 roleA 的
+ * `toolsProvider` 是同一个理由。
+ */
+function makeTransport({ win, bridge, createAssistantClient, runTool, serializeTools }) {
+  let activeSid = null;
+  let seq = 0;
+
+  const toolList = () => {
+    if (typeof serializeTools === 'function') {
+      try { return serializeTools(); } catch { return []; }
+    }
+    // 默认：从页面注册表读（与 webmcp-tools 的 registerTools 同一个源）
+    try {
+      const mc = (win.document && win.document.modelContext)
+        || (win.navigator && win.navigator.modelContext) || null;
+      if (!mc || typeof mc.getTools !== 'function') return [];
+      const list = mc.getTools();
+      if (!Array.isArray(list)) return [];
+      // 只留模型需要知道的三样（实现细节不过通道）
+      return list.map((t) => ({
+        name: t.name,
+        description: t.description || t.desc || '',
+        inputSchema: t.inputSchema || { type: 'object', properties: {} },
+      }));
+    } catch { return []; }
+  };
+
+  // 每个 sid 一个 client（保留各自的会话历史）
+  const clients = new Map();
+
+  const clientFor = (sid) => {
+    let c = clients.get(sid);
+    if (c) return c;
+    c = createAssistantClient({
+      bridge: {
+        ask: (payload, onEvent) => bridge.ask(payload, onEvent),
+        cancel: () => bridge.cancel(),
+      },
+      tools: toolList(),
+      invoke: (name, args) => runTool(name, args),
+      contextProvider: null,
+    });
+    clients.set(sid, c);
+    return c;
+  };
+
+  return {
+    ask(payload = {}, onEvent = () => {}) {
+      return new Promise((resolve) => {
+        if (activeSid !== null) {
+          resolve({ ok: false, reason: '上一问还没结束（先停止或等终态）' });
+          return;
+        }
+        const sid = 'site-' + (++seq);
+        activeSid = sid;
+        let settled = false;
+        const settle = (r) => {
+          if (settled) return;
+          settled = true;
+          activeSid = null;
+          resolve(r);
+        };
+        try {
+          const client = clientFor(sid);
+          client.ask(String(payload.text ?? ''), onEvent)
+            .then((r) => settle(r && r.ok
+              ? { ok: true, text: String(r.text ?? '') }
+              : { ok: false, reason: String((r && r.reason) || '未知错误') }))
+            .catch((e) => settle({ ok: false, reason: String((e && e.message) || e) }));
+        } catch (e) {
+          settle({ ok: false, reason: String((e && e.message) || e) });
+        }
+      });
+    },
+
+    cancel() {
+      if (activeSid === null) return;
+      try { bridge.cancel(); } catch { /* 无事可停 */ }
+    },
+
+    abandon(reason) {
+      if (activeSid === null) return false;
+      const sid = activeSid;
+      activeSid = null;
+      const c = clients.get(sid);
+      if (c && typeof c.abandon === 'function') { try { c.abandon(reason); } catch { /* 已收 */ } }
+      return true;
+    },
+
+    get busy() { return activeSid !== null; },
+  };
+}

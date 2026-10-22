@@ -14,8 +14,10 @@ import { PAGE_BRIDGE_JS } from './plugins/page-bridge.mjs';
 import { CHAT_JS, CHAT_CSS } from './plugins/chat-panel.mjs';
 import { SPA_ROUTER_JS } from './plugins/spa-router.mjs';
 import { DRAWER_SYNC_JS } from './plugins/drawer-sync.mjs';
+import { buildNavModel, isActive, isExpanded, NAV_STRUCTURE_JS } from './plugins/nav-structure.mjs';
 import { WEBMCP_SHIM_JS } from './plugins/webmcp-shim.mjs';
 import { WEBMCP_TOOLS_JS } from './plugins/webmcp-tools.mjs';
+import { buildAssistantBundleJS } from './plugins/assistant-bundle.mjs';
 import { TARGET_FILES } from './页面清单.mjs';
 import { computeSourceHash } from './源树hash.mjs';
 
@@ -32,31 +34,38 @@ const argvCanonical = process.argv.includes('--canonical-root')
   ? process.argv[process.argv.indexOf('--canonical-root') + 1] : null;
 const CANONICAL_ROOT = argvCanonical ? (argvCanonical.endsWith('/') ? argvCanonical : argvCanonical + '/') : '/';
 
-// 学习助手激活材料（2026-10-20 单向锁模型，方案 F）：
-//   <html data-assistant-key> = K_page 钥匙（32 字节随机数的 b64）
-// 站点只埋这一件。它单独存在时无处可用——没有密文，它就是一串随机字节。
-// 脚本侧才持有 C_upstream（密文）；脚本用它解自己的锁，解不开即休眠。
-// 两边都不知道对方是谁：站点不知道自己被谁服务，脚本不知道自己在哪个站生效。
+// 学习助手激活材料（2026-10-22 两环密文链。方案见 .zcode/plans/refactor-助手-两阶段.md）：
+//   <html data-assistant-key>      = K_page   明文钥匙（32 字节随机数的 b64）
+//   <html data-assistant-content>  = C_content = seal(K_dedicated, {base,unitId,robotId})
+// 站点只埋这两件。各自单独都无处可用：
+//   · K_page 解不开 C_content——中间还差 K_dedicated，而它只以密文 C_dedicated
+//     存在插件源码里（第一环），站点手里没有；
+//   · 反过来，C_content 对站点自己就是死字节：没有 K_dedicated 打不开。
+// 只有「站点出示 K_page」+「插件出示 C_dedicated」两件同时在场，第一环才出
+// K_dedicated，第二环才开得动本站的 C_content。两边都不知道对方是谁。
 //
 // 材料由 /mnt/hdd/study/userscript/build-user-script.mjs 的 makeSecrets 产出
-// （secrets.json，形如 {kPage, cUpstream}）——站点拿 kPage，脚本拿 cUpstream。
-// ⚠️ 不传 --assistant-secrets 时**不埋**（脚本在该站拿不到钥匙 → 静默休眠）——
+// （secrets.json，形如 {kPage, cDedicated, cContent}）——站点拿 kPage + cContent。
+// ⚠️ 不传 --assistant-secrets 时**不埋**（插件在该站解不开第一环 → 静默休眠）——
 // 这样裸构建（CI 未配密钥）不引入未定稿材料。
 // 传法：--assistant-secrets /mnt/hdd/study/userscript/secrets.json
 const argvSecrets = process.argv.includes('--assistant-secrets')
   ? process.argv[process.argv.indexOf('--assistant-secrets') + 1] : null;
-let ASSISTANT_KEY = null;    // K_page 钥匙（b64）
+let ASSISTANT_KEY = null;      // K_page 钥匙（b64）
+let ASSISTANT_CONTENT = null;  // C_content 内容密文（b64）
 if (argvSecrets) {
   const sec = JSON.parse(fs.readFileSync(argvSecrets, 'utf8'));
   if (!sec.kPage) throw new Error('--assistant-secrets 文件缺 kPage');
+  if (!sec.cContent) throw new Error('--assistant-secrets 文件缺 cContent');
   ASSISTANT_KEY = sec.kPage;
+  ASSISTANT_CONTENT = sec.cContent;
 }
 
 console.log(`[build] Starting static site generation...`);
 console.log(`[build] Repo Root: ${ROOT}`);
 console.log(`[build] Output: ${DIST_DIR}`);
 console.log(`[build] Canonical Root: ${CANONICAL_ROOT}`);
-console.log(`[build] Assistant: ${ASSISTANT_KEY ? '埋入页面钥匙' : '未埋（无 --assistant-secrets）'}`);
+console.log(`[build] Assistant: ${ASSISTANT_KEY && ASSISTANT_CONTENT ? '埋入页面钥匙 + 内容密文' : '未埋（无 --assistant-secrets）'}`);
 
 // 1. 页面清单：唯一真相源在 ./页面清单.mjs（build 与 MCP 读层共用），此处 import
 
@@ -184,6 +193,9 @@ fs.writeFileSync(path.join(webmcpDir, 'webmcp-bridge.js'), PAGE_BRIDGE_JS);
 // 学习助手面板（2026-10-19）：JS + CSS 都是构建期写盘，SW 会自动预缓存
 fs.writeFileSync(path.join(webmcpDir, 'chat-panel.js'), CHAT_JS);
 fs.writeFileSync(path.join(webmcpDir, 'chat-panel.css'), CHAT_CSS);
+// 站点侧助手协议栈（2026-10-22 阶段二 T11）：把 plugins/assistant/ 的 ES module
+// 与 assistant-wire.mjs 打成一个自包含 IIFE——工具循环在站点内跑，插件只剩通道。
+fs.writeFileSync(path.join(webmcpDir, 'assistant-bundle.js'), buildAssistantBundleJS(SITE_DIR));
 // 部署根探测（2026-10-20）：修「无前缀入口下相对链接退到域名根」的线上 404。
 // 原样拷贝源文件（内含全局暴露，模板里同步加载并立即调用 fixSiteRoot()）。
 fs.writeFileSync(path.join(webmcpDir, 'site-root.js'), fs.readFileSync(path.join(SITE_DIR, 'plugins', 'site-root.mjs'), 'utf8'));
@@ -195,6 +207,9 @@ console.log('[build] Wrote WebMCP plugins + copied vendor assets (polyfill + rel
 //   document 不销毁 ⇒ WebMCP 工具注册一次永久有效。SW 双策略：资产 cache-first、页面 SWR。
 //   可拆卸：删掉本段与模板里 spa-router 一行 + dist/sw.js 即回退。
 fs.writeFileSync(path.join(webmcpDir, 'spa-router.js'), SPA_ROUTER_JS);
+// 侧栏形状运行时（阶段一，2026-10-21）：读 #nav-structure-json + 共享判定。
+// 由 nav-structure.mjs 的真函数派生（浏览器跑的就是测试跑的）。drawer-sync 依赖它。
+fs.writeFileSync(path.join(webmcpDir, 'nav-structure.js'), NAV_STRUCTURE_JS);
 fs.writeFileSync(path.join(webmcpDir, 'drawer-sync.js'), DRAWER_SYNC_JS);
 
 // SW：模板 + 本版资产清单（预缓存）注入，写到 dist 根（注册 scope ./ 覆盖全站）
@@ -300,6 +315,7 @@ const NAV_STRUCTURE = [
         path: "课程/工程数学/index.md",
         children: [
           { label: "Walkthrough", path: "课程/工程数学/Walkthrough.md" },
+          { label: "技法库", path: "课程/工程数学/技法库.md" },
           {
             label: "作业",
             path: "课程/工程数学/作业/index.md",
@@ -1170,33 +1186,34 @@ for (const relPath of TARGET_FILES) {
     if (idx < NOTES_ORDER.length - 1) nextPage = pageMetaMap.get(NOTES_ORDER[idx + 1]);
   }
 
-  // Helper to check if node or any descendant is active
-  function isNodeOrDescendantActive(node, targetPath) {
-    if (node.path === targetPath) return true;
-    if (node.children) {
-      return node.children.some(child => isNodeOrDescendantActive(child, targetPath));
-    }
-    return false;
-  }
+  // 侧栏形状 = 唯一真相源 nav-structure.mjs（阶段一，2026-10-21）。
+  // buildNavModel 产出归一化节点树 + 烘焙 JSON；本处只负责出 HTML。
+  const navModel = buildNavModel(NAV_STRUCTURE, relPath);
+  const navJsonPayload = navModel.json;
 
   // Render Sidebar Tree HTML with Collapsible Groups
+  // 每个 <li> 带 data-node-id（归一化节点 id）：SPA 换页后 drawer-sync 据此对齐 active。
+  const attrEsc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
   function renderNav(nodes, depth = 0) {
     let out = '<ul class="drawer-nav-list">';
     for (const node of nodes) {
       const hasChildren = node.children && node.children.length > 0;
-      const isActive = node.path === relPath;
-      const isDescendantActive = isNodeOrDescendantActive(node, relPath);
+      const nodeActive = isActive(node, relPath);
+      const nodeExpanded = isExpanded(node, relPath)
+        || (depth === 0 && node.label === "课程总览");
 
-      // Default expanded if active, or any descendant is active, or top-level "课程总览"
-      const isExpanded = isDescendantActive || (depth === 0 && node.label === "课程总览");
-
-      // 有子节点的组节点：一律纯标题（可点开折叠，不跳页）。它的 path 不再出链接——
-      // 若组节点链接指向「下级第一页」（电机学章节点就是这种写法），URL 与子项相同，
-      // 强调判定会父子一起亮；组节点自身没有独立页面内容，链接是空转（2026-10-18 定案）。
+      // 有子节点的组节点：标题仍只负责折叠；**有索引页时**额外给一个独立图标链接
+      // （`.nav-index-link`）——它不带 data-path、不用 drawer-nav-link 类，
+      // 所以 drawer-sync/active 判定天然不命中它，父子双亮结构上不可能（架构评审候选 2）。
+      // 无 indexHref（无 path 的组、path 与子项重复的电机学章节点）则不出图标。
       if (hasChildren) {
-        out += `<li class="drawer-nav-group ${isExpanded ? 'expanded' : 'collapsed'}">
+        const indexLink = node.indexHref
+          ? `<a class="nav-index-link" href="${rootRel}${node.indexHref}" title="打开 ${node.label} 索引页">索引 ›</a>`
+          : '';
+        out += `<li class="drawer-nav-group ${nodeExpanded ? 'expanded' : 'collapsed'}" data-node-id="${attrEsc(node.id)}">
           <div class="nav-group-header nav-header-clickable">
             <span class="drawer-section-title-text">${node.label}</span>
+            ${indexLink}
             <button class="nav-collapse-btn" aria-label="折叠或展开 ${node.label}" title="折叠/展开">
               <svg class="chevron-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
             </button>
@@ -1208,16 +1225,14 @@ for (const relPath of TARGET_FILES) {
           </div>
         </li>`;
       } else {
-        if (node.path) {
-          const itemMeta = pageMetaMap.get(node.path);
-          const itemHref = `${rootRel}${itemMeta ? itemMeta.htmlRelPath : node.path}`;
-          out += `<li class="drawer-nav-item ${isActive ? 'active' : ''}">
-            <a href="${itemHref}" data-path="${itemMeta ? itemMeta.htmlRelPath : node.path}" class="drawer-nav-link">
+        if (node.href) {
+          out += `<li class="drawer-nav-item ${nodeActive ? 'active' : ''}" data-node-id="${attrEsc(node.id)}">
+            <a href="${rootRel}${node.href}" data-path="${node.href}" class="drawer-nav-link">
               <span>${node.label}</span>
             </a>
           </li>`;
         } else {
-          out += `<li class="drawer-section-title">${node.label}</li>`;
+          out += `<li class="drawer-section-title" data-node-id="${attrEsc(node.id)}">${node.label}</li>`;
         }
       }
     }
@@ -1225,7 +1240,7 @@ for (const relPath of TARGET_FILES) {
     return out;
   }
 
-  const drawerHtml = renderNav(NAV_STRUCTURE);
+  const drawerHtml = renderNav(navModel.nodes);
 
   // Render Frontmatter Meta Chips
   // 状态**不读 frontmatter**（2026-10-11 定案）：从 README 的课程状态表继承。
@@ -1302,7 +1317,7 @@ for (const relPath of TARGET_FILES) {
 
   // Final HTML Document
   const finalHtml = `<!DOCTYPE html>
-<html lang="zh-CN" data-depth="${rootRel === './' ? 0 : rootRel.split('../').length - 1}" data-root="${rootRel}" data-canonical-root="${CANONICAL_ROOT}"${ASSISTANT_KEY ? ` data-assistant-key="${ASSISTANT_KEY}"` : ''}>
+<html lang="zh-CN" data-depth="${rootRel === './' ? 0 : rootRel.split('../').length - 1}" data-root="${rootRel}" data-canonical-root="${CANONICAL_ROOT}"${ASSISTANT_KEY ? ` data-assistant-key="${ASSISTANT_KEY}"` : ''}${ASSISTANT_CONTENT ? ` data-assistant-content="${ASSISTANT_CONTENT}"` : ''}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1546,6 +1561,9 @@ for (const relPath of TARGET_FILES) {
   <script src="${rootRel}${assetUrl('assets/theme/shirone-reader.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/disclosure-anchor.js')}" defer></script>
   <script type="application/json" id="sym-glossary-json">${JSON.stringify(glossaryJsonPayload).replace(/<\//g, '<\\/')}</script>
+  <!-- 侧栏形状烘焙（阶段一）：nav-structure.mjs（buildNavModel）产出的归一化树 + 判定结果。
+       site_index / site_navigate / drawer-sync 三个消费者都读这一份，不再爬侧栏 DOM。 -->
+  <script type="application/json" id="nav-structure-json">${JSON.stringify(navJsonPayload).replace(/<\//g, '<\\/')}</script>
   <script src="${rootRel}${assetUrl('assets/plugins/math-glossary.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/site-search.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/webmcp-loader.js')}" defer></script>
@@ -1557,8 +1575,11 @@ for (const relPath of TARGET_FILES) {
        （drawer-sync / spa-router / chat-panel / loader），否则它们拿到错误的相对根。 -->
   <script src="${rootRel}${assetUrl('assets/plugins/site-root.js')}"></script>
   <script>try { fixSiteRoot(); } catch (e) { /* 探测失败保持构建期相对路径 */ }</script>
+  <!-- 侧栏形状运行时：先于 drawer-sync，暴露 window.__navStructure（读 JSON + 共享判定）。 -->
+  <script src="${rootRel}${assetUrl('assets/plugins/nav-structure.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/drawer-sync.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/chat-panel.js')}" defer></script>
+  <script src="${rootRel}${assetUrl('assets/plugins/assistant-bundle.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/spa-router.js')}" defer></script>
   <script>if ('serviceWorker' in navigator) { addEventListener('load', function () { navigator.serviceWorker.register('${rootRel}sw.js'); }); }</script>
 </body>
