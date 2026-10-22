@@ -322,6 +322,9 @@
 !/站点/vendor.mjs
 !/站点/package-lock.json
 !/站点/build.mjs
+# 工具清单（给学习通助手读的 Skill.md；build.mjs 原样复制到 dist 根，
+# 线上地址 /repo/S26-1_202609/Skill.md。2026-10-22 用户定案）
+!/站点/Skill.md
 # 折叠块模块（build.mjs 导入它；漏加白名单会导致 CI 构建失败——
 # 本地磁盘有文件所以本地能过，CI 上 checkout 拿不到文件）
 !/站点/plugins/collapse.mjs

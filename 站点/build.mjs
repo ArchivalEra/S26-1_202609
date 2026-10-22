@@ -104,6 +104,19 @@ function copyFileAtomic(srcPath, destPath) {
 copyDir(path.join(SITE_DIR, 'assets'), path.join(DIST_DIR, 'assets'));
 console.log(`[build] Copied offline assets to dist/assets/`);
 
+// 工具清单（2026-10-22）：给学习通助手读的 Skill.md，原样复制到 dist 根。
+// 为什么复制而不是渲染：它是**纯文本契约**，给模型读的，不是给人看的页面——
+// 走 markdown 渲染管线反而会加导航/样式噪音。线上地址 /repo/.../Skill.md。
+// 可拆卸：删掉本段与 .gitignore 的那行白名单即回退（提示词里的 URL 会 404，
+// 但提示词本身仍内联工具名，功能降级不中断）。
+{
+  const skillSrc = path.join(SITE_DIR, 'Skill.md');
+  if (fs.existsSync(skillSrc)) {
+    copyFileAtomic(skillSrc, path.join(DIST_DIR, 'Skill.md'));
+    console.log(`[build] Copied Skill.md to dist/Skill.md`);
+  }
+}
+
 // 课程目录内的配图目录（figures/）原样拷进 dist，路径保持相对仓库根。
 for (const course of fs.readdirSync(path.join(ROOT, '课程'), { withFileTypes: true })) {
   if (!course.isDirectory()) continue;
