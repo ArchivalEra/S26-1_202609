@@ -281,12 +281,17 @@ for (const relPath of TARGET_FILES) {
 
   const fmMatch = content.match(/^---\r?\n([\s\S]+?)\r?\n---/);
   if (fmMatch) {
+    // frontmatter 解析失败 = 硬失败（2026-10-22 悬案 Q1 结算）：这里曾用 console.warn
+    // 静默吞掉，字段全空、页面照常生成、全部闸门绿——2026-10-12 实弹：frontmatter 写进
+    // 非 YAML 行（注：…），「符号排除」清单静默失效，只有浏览器里逐页点才看得出来。
+    // 构建（node build.mjs）对 课程/**/*.md 与其余全部目标文件逐个走到这里，
+    // 坏 YAML 使构建 rc≠0 并指出文件（裸抛只给 vendor 栈，不带文件名——所以要包一层）。
     try {
       frontmatter = yaml.load(fmMatch[1]) || {};
-      if (frontmatter.name) title = frontmatter.name;
     } catch (e) {
-      console.warn(`[warn] Failed to parse frontmatter in ${relPath}: ${e.message}`);
+      throw new Error(`frontmatter 解析失败（元数据遍） ${relPath}: ${e.message}`);
     }
+    if (frontmatter.name) title = frontmatter.name;
   } else {
     // Check first H1
     const h1Match = content.match(/^#\s+(.+)$/m);
@@ -794,9 +799,14 @@ for (const relPath of TARGET_FILES) {
   let frontmatter = {};
   const fmMatch = raw.match(/^---\r?\n([\s\S]+?)\r?\n---/);
   if (fmMatch) {
+    // 同 Step 3 的 frontmatter 硬失败（悬案 Q1）：此处曾 catch(_){} 全静默，
+    // 字段全空导致「符号强制/符号排除」等行为悄悄失效。同一份解析在 Step 3 已
+    // 校验过一次，这里再显式抛出带文件名的错误——不依赖两个循环间的隐式不变量。
     try {
       frontmatter = yaml.load(fmMatch[1]) || {};
-    } catch (_) {}
+    } catch (e) {
+      throw new Error(`frontmatter 解析失败（渲染遍） ${relPath}: ${e.message}`);
+    }
     raw = raw.slice(fmMatch[0].length).trim();
   }
 
@@ -1154,20 +1164,25 @@ for (const relPath of TARGET_FILES) {
   });
 
   // Compute Breadcrumbs
+  // dataPath：仓库相对 html 路径（href 去掉 rootRel 前缀）——面包屑/分页卡都在
+  // .article-content 之外（SPA 换页不替换），带 data-path 后点击委托与侧栏同款
+  // 走「data-root + data-path」拼接，换页后不再被本页深度烘焙的相对 href 绊倒
+  // （2026-10-22 面包屑偶发丢 SPA 的病根，spec 票 A）。
   const breadcrumbs = [
-    { label: "首页", href: `${rootRel}index.html` }
+    { label: "首页", href: `${rootRel}index.html`, dataPath: 'index.html' }
   ];
   if (relPath === '课程/index.md') {
     // Top-level course index
   } else if (relPath.startsWith('课程/工程数学/')) {
-    breadcrumbs.push({ label: "课程总览", href: `${rootRel}课程/index.html` });
-    breadcrumbs.push({ label: "工程数学", href: `${rootRel}课程/工程数学/index.html` });
+    breadcrumbs.push({ label: "课程总览", href: `${rootRel}课程/index.html`, dataPath: '课程/index.html' });
+    breadcrumbs.push({ label: "工程数学", href: `${rootRel}课程/工程数学/index.html`, dataPath: '课程/工程数学/index.html' });
     if (relPath.includes('/教材解析/')) {
-      breadcrumbs.push({ label: "教材解析", href: `${rootRel}课程/工程数学/教材解析/index.html` });
+      breadcrumbs.push({ label: "教材解析", href: `${rootRel}课程/工程数学/教材解析/index.html`, dataPath: '课程/工程数学/教材解析/index.html' });
+      // 章节与当前页 crumb（href:'#'）不渲染成链接，无需 data-path
       if (relPath.includes('/第01章-行列式/')) breadcrumbs.push({ label: "第01章 行列式", href: '#' });
       if (relPath.includes('/第02章-矩阵/')) breadcrumbs.push({ label: "第02章 矩阵", href: '#' });
     } else if (relPath.includes('/课堂笔记/')) {
-      breadcrumbs.push({ label: "课堂笔记", href: `${rootRel}课程/工程数学/课堂笔记/index.html` });
+      breadcrumbs.push({ label: "课堂笔记", href: `${rootRel}课程/工程数学/课堂笔记/index.html`, dataPath: '课程/工程数学/课堂笔记/index.html' });
     }
   }
   breadcrumbs.push({ label: pageMeta.title, href: '#' });
@@ -1279,7 +1294,7 @@ for (const relPath of TARGET_FILES) {
     pagingHtml = '<div class="m3-paging-container">';
     if (prevPage) {
       const p = formatPagingCard(prevPage);
-      pagingHtml += `<a class="paging-card paging-prev" href="${rootRel}${prevPage.htmlRelPath}">
+      pagingHtml += `<a class="paging-card paging-prev" href="${rootRel}${prevPage.htmlRelPath}" data-path="${prevPage.htmlRelPath}">
         <div class="paging-label-row">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
           <span class="paging-label">上一节</span>
@@ -1290,7 +1305,7 @@ for (const relPath of TARGET_FILES) {
     }
     if (nextPage) {
       const p = formatPagingCard(nextPage);
-      pagingHtml += `<a class="paging-card paging-next" href="${rootRel}${nextPage.htmlRelPath}">
+      pagingHtml += `<a class="paging-card paging-next" href="${rootRel}${nextPage.htmlRelPath}" data-path="${nextPage.htmlRelPath}">
         <div class="paging-label-row paging-label-row-next">
           <div class="paging-label-group">
             <span class="paging-label">下一节</span>
@@ -1394,7 +1409,7 @@ for (const relPath of TARGET_FILES) {
             <span>S26-1 课程知识库</span>
           </a>
           <nav class="top-bar-breadcrumbs" aria-label="当前路径">
-            ${breadcrumbs.map((b, i) => i === breadcrumbs.length - 1 ? `<span class="current-crumb">${b.label}</span>` : `<a href="${b.href}">${b.label}</a><span class="m3-breadcrumb-sep">/</span>`).join('')}
+            ${breadcrumbs.map((b, i) => i === breadcrumbs.length - 1 ? `<span class="current-crumb">${b.label}</span>` : `<a href="${b.href}"${b.dataPath ? ` data-path="${b.dataPath}"` : ''}>${b.label}</a><span class="m3-breadcrumb-sep">/</span>`).join('')}
           </nav>
         </div>
 
@@ -1527,7 +1542,7 @@ for (const relPath of TARGET_FILES) {
           <article class="article-container">
             <!-- Breadcrumb in page body -->
             <nav class="m3-breadcrumb">
-              ${breadcrumbs.map((b, i) => i === breadcrumbs.length - 1 ? `<span>${b.label}</span>` : `<a href="${b.href}">${b.label}</a><span class="m3-breadcrumb-sep">/</span>`).join('')}
+              ${breadcrumbs.map((b, i) => i === breadcrumbs.length - 1 ? `<span>${b.label}</span>` : `<a href="${b.href}"${b.dataPath ? ` data-path="${b.dataPath}"` : ''}>${b.label}</a><span class="m3-breadcrumb-sep">/</span>`).join('')}
             </nav>
 
             ${metaChipsHtml ? `<div class="meta-chip-bar">${metaChipsHtml}</div>` : ''}
