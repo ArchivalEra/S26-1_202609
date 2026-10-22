@@ -168,12 +168,19 @@ test('T5b-② JSON 的 current 与该页 data-site-path 一致（防「埋了但
   assert.equal(json.current, m[1], 'JSON.current 必须等于本页 data-site-path');
 });
 
-test('T5b-③ 索引图标在应有处出现、在重复 path 组处不出现', () => {
-  // 应有：作业索引页里，「工程数学」组（path 指向 index.md 且无重复）出图标
-  const withIcon = needDist('课程/工程数学/作业/index.html');
-  assert.ok(withIcon.includes('nav-index-link'), '应有 nav-index-link');
+test('T5b-③ 组标题链接在应有处出现、在重复 path 组处不出现（纯标题 + 整行点击）', () => {
+  // 票 B（2026-10-22 回归 530427c 始冀形态）：有索引页的组，标题本身是
+  // drawer-nav-link（带 data-path）；无索引页的组（重复 path / 无 path）是
+  // 纯标题 + nav-header-clickable。nav-index-link 小图标已全站删除。
 
-  // 不应有：电机学第01章（path == 子项 path）在 JSON 里 indexHref 必须是 null
+  // 应有：作业索引页里，「工程数学」组（indexHref 非空）标题是带 data-path 的链接
+  const withIcon = needDist('课程/工程数学/作业/index.html');
+  assert.ok(!withIcon.includes('nav-index-link'), 'nav-index-link 应已全站清零');
+  const gongcheng = withIcon.match(
+    /<li class="drawer-nav-group [^"]*" data-node-id="课程\/工程数学\/index\.html">\s*<div class="nav-group-header ">\s*<a href="[^"]*课程\/工程数学\/index\.html" data-path="课程\/工程数学\/index\.html" class="drawer-nav-link"><span>工程数学<\/span><\/a>/);
+  assert.ok(gongcheng, '工程数学组标题应是 drawer-nav-link 链接（header 无 nav-header-clickable）');
+
+  // 不应有：电机学第01章（path == 子项 path）——纯标题 span + nav-header-clickable
   const motor = navJsonOf(needDist('课程/电机学/教材解析/第01章-概述/1.1-电机的分类.html'));
   const walk = (ns, out = []) => {
     for (const n of ns) {
@@ -187,6 +194,14 @@ test('T5b-③ 索引图标在应有处出现、在重复 path 组处不出现', 
   for (const g of dupGroups) {
     assert.equal(g.indexHref, null, `${g.label}: 重复 path 组不得有 indexHref`);
   }
+  // 产物侧：该页侧栏里「第01章 概述」组是纯标题（无 <a>）且 header 可整行点击折叠
+  const motorHtml = needDist('课程/电机学/教材解析/第01章-概述/1.1-电机的分类.html');
+  const ch1 = motorHtml.match(
+    /<li class="drawer-nav-group [^"]*" data-node-id="[^"]*">\s*<div class="nav-group-header nav-header-clickable">\s*<span class="drawer-section-title-text">第01章 概述<\/span>/);
+  assert.ok(ch1, '电机学第01章组应是纯标题 + nav-header-clickable（标题不是链接）');
+  // 断言对象是组 header 匹配片段本身（ch1[0] 到 </span> 为止无 <a>）——
+  // 不是全文档：1.1 是叶子节点，它自己的链接当然带这个 data-path（票 B 之前就有）。
+  assert.ok(!/<a[\s>]/.test(ch1[0]), '重复 path 组标题区不得渲染 <a>（纯标题）');
 });
 
 test('T5b-④ drawer-sync 产物靠 nav JSON 判定，不再有 data-path 全等收集循环', () => {

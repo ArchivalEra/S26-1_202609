@@ -1217,18 +1217,22 @@ for (const relPath of TARGET_FILES) {
       const nodeExpanded = isExpanded(node, relPath)
         || (depth === 0 && node.label === "课程总览");
 
-      // 有子节点的组节点：标题仍只负责折叠；**有索引页时**额外给一个独立图标链接
-      // （`.nav-index-link`）——它不带 data-path、不用 drawer-nav-link 类，
-      // 所以 drawer-sync/active 判定天然不命中它，父子双亮结构上不可能（架构评审候选 2）。
-      // 无 indexHref（无 path 的组、path 与子项重复的电机学章节点）则不出图标。
+      // 有子节点的组节点（票 B，2026-10-22 回归 530427c 始冀形态）：
+      // · 有索引页（indexHref 非空）→ 标题本身就是 drawer-nav-link 链接（点击进索引页），
+      //   header **不带** nav-header-clickable——shirone-reader 的 clickableHeader 绑定
+      //   只命中带该类的 header，点击只走 spa-router 的 data-path 拼接，不折叠；
+      //   折叠由 chevron 按钮单独负责（530427c 原版同款天然分离，零事件机关）。
+      // · 无索引页（无 path 的组、path 与子项重复的电机学章节点）→ 纯标题 +
+      //   nav-header-clickable（整行点击 = 折叠），现状不变。
+      // indexHref 判据零改动（nav-structure.mjs 的 indexHrefOf 是唯一真相源），
+      // 本处只把它的输出从「小图标链接」改接到「标题链接」上。
       if (hasChildren) {
-        const indexLink = node.indexHref
-          ? `<a class="nav-index-link" href="${rootRel}${node.indexHref}" title="打开 ${node.label} 索引页">索引 ›</a>`
-          : '';
+        const titleHtml = node.indexHref
+          ? `<a href="${rootRel}${node.indexHref}" data-path="${node.indexHref}" class="drawer-nav-link"><span>${node.label}</span></a>`
+          : `<span class="drawer-section-title-text">${node.label}</span>`;
         out += `<li class="drawer-nav-group ${nodeExpanded ? 'expanded' : 'collapsed'}" data-node-id="${attrEsc(node.id)}">
-          <div class="nav-group-header nav-header-clickable">
-            <span class="drawer-section-title-text">${node.label}</span>
-            ${indexLink}
+          <div class="nav-group-header ${node.indexHref ? '' : 'nav-header-clickable'}">
+            ${titleHtml}
             <button class="nav-collapse-btn" aria-label="折叠或展开 ${node.label}" title="折叠/展开">
               <svg class="chevron-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
             </button>

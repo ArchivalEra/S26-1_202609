@@ -63,6 +63,72 @@ test('源码契约：重写只动构建期知道语义的三类元素', () => {
   assert.doesNotMatch(rw, /querySelectorAll\('a'\)/);
 });
 
+// ══════════ rewriteLinks 双前缀回归（票 A 遗留修复，2026-10-22）══════════
+// 票 A 给面包屑/分页卡埋了 data-path 后，rewriteLinks 第 1 分支先把它们的 href
+// 改写成「root + 仓库相对」；第 2 分支的旧选择器（.m3-breadcrumb a、.paging-card）
+// 会再命中同一批元素，镜像入口（actual≠canonical）场景下「剥掉实际根再拼正式根」
+// 对已拼好的前缀二次操作，产出双前缀 /repo/S26-1_202609/repo/S26-1_202609/课程/index.html。
+// 修法 = 第 2 分支选择器 :not([data-path]) 排除。这里用函数级模拟钉住分工。
+
+test('rewriteLinks：带 data-path 的元素只走第 1 分支，不被第 2 分支二次拼前缀', () => {
+  const rw = src.slice(src.indexOf('function rewriteLinks'), src.indexOf('// 全局暴露'));
+  // 用 new Function 在假 DOM 上真跑 rewriteLinks（与上方 detect 同款手法）。
+  // 假 DOM 的选择器语义按「rewriteLinks 实际用的两个查询」建模：
+  //   'a[data-path]' → 有 data-path 的元素；CSS 类选择器 → 按类名匹配，
+  //   且 :not([data-path]) 把有 data-path 的元素排除（这正是被测的分工规则——
+  //   真浏览器里由选择器引擎保证，这里由 fakeDoc 实现同一语义，钉住契约）。
+  const fn = new Function('document', 'siteRoot', 'location', rw + '\n return rewriteLinks;');
+  const location = { href: 'https://x.test/课程/index.html', origin: 'https://x.test' };
+  const run = (els, root, actual) => fn(fakeDoc(els), () => actual, location)(root);
+
+  // 镜像入口场景：actual='/' ≠ canonical='/repo/S26-1_202609/'
+  // · 面包屑 <a>（带 data-path，第 1 分支已拼好 href="/repo/S26-1_202609/课程/index.html"）
+  // · 品牌 <a>（无 data-path，href 是相对值 '../../index.html'）
+  const crumb = {
+    sel: 'm3-breadcrumb a',
+    attrs: { 'data-path': '课程/index.html' },
+    href: '/repo/S26-1_202609/课程/index.html', // 第 1 分支刚改写过的值
+  };
+  const brand = {
+    sel: 'sidebar-brand',
+    attrs: {},
+    href: '../../index.html',
+  };
+  run([crumb, brand], '/repo/S26-1_202609/', '/');
+
+  // 带 data-path 的元素：href 必须仍是「root + data-path」单前缀（第 2 分支没碰它）
+  assert.equal(crumb.href, '/repo/S26-1_202609/课程/index.html',
+    `面包屑 href 不得被二次拼接（实际值：${crumb.href}）`);
+  assert.ok(!crumb.href.includes('/repo/S26-1_202609/repo'),
+    '双前缀回归：/repo/S26-1_202609/repo/… 不得出现');
+  // 无 data-path 的元素照旧被第 2 分支规范化（剥实际根 → 拼正式根）
+  assert.equal(brand.href, '/repo/S26-1_202609/index.html',
+    `品牌 href 应被规范化到正式根（实际值：${brand.href}）`);
+});
+
+/** 极简假 DOM：只实现 rewriteLinks 用到的接口。
+ *  选择器语义按被测的两个查询建模：'a[data-path]' 命中有 data-path 的元素；
+ *  类选择器按类名命中、':not([data-path])' 排除有 data-path 的——与真浏览器
+ *  选择器引擎对这两个查询的行为一致，契约钉在这里。 */
+function fakeDoc(els) {
+  const matches = (e, part) => {
+    part = part.trim();
+    if (part === 'a[data-path]') return Boolean(e.attrs['data-path']);
+    const notDp = /\[data-path\]\)$/.test(part) && /:not\(/.test(part);
+    const cls = part.replace(/^\.|:not\(\[data-path\]\)$/g, '');
+    if (!e.sel.includes(cls)) return false;
+    if (notDp && e.attrs['data-path']) return false;
+    return true;
+  };
+  return {
+    querySelectorAll: (sel) => els.filter((e) => sel.split(',').some((p) => matches(e, p))).map(fakeEl),
+  };
+}
+const fakeEl = (e) => ({
+  getAttribute: (k) => (k === 'data-path' ? e.attrs['data-path'] : (k === 'href' ? e.href : null)),
+  setAttribute: (k, v) => { if (k === 'href') e.href = v; },
+});
+
 // ══════════ 产物级（票 A：导航链接三处 data-path 化，2026-10-22）══════════
 // 面包屑两份（顶栏 .top-bar-breadcrumbs / 正文 .m3-breadcrumb）与分页卡
 // .paging-card 都在 .article-content 之外——SPA 换页（spa-router 只换正文块）

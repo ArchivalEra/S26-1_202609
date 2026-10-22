@@ -61,7 +61,9 @@ function recompute() {
       li.classList.toggle("expanded", liExpanded);
       li.classList.toggle("collapsed", !liExpanded);
     }
-    if (liActive && !hit) hit = li.querySelector("a.drawer-nav-link") || li.querySelector("a.nav-index-link");
+    // 组标题链接化后（票 B，2026-10-22）组与叶子同用 a.drawer-nav-link，
+    // 第一条查询已覆盖全部形态，不再需要第二选择器兜底。
+    if (liActive && !hit) hit = li.querySelector("a.drawer-nav-link");
   }
   return hit;
 }
