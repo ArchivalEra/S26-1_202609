@@ -862,10 +862,73 @@ export function createPageView(doc, loc, winOverride) {
       const needle = String(opt.query || '').trim();
       if (!needle) return { ok: false, reason: 'empty_query' };
       const links = all(S.navLink);
-      const el = links.filter((a) => textOf(a).indexOf(needle) >= 0)[0];
-      if (!el) {
-        return { ok: false, reason: 'not_found', available: links.map((a) => textOf(a)).filter(Boolean).slice(0, 40) };
+      const labels = links.map((a) => textOf(a));
+
+      // 2026-10-23 修（Node 桥实测）：模型给的是**带课程名的完整说法**
+      // （「工程数学作业2」），而侧栏链接文本只有「作业2」——单向 indexOf 匹配不上，
+      // 于是 navigate 返回 not_found、页面纹丝不动（用户看到「跳转没反应」）。
+      //
+      // 匹配按「候选池收窄 → 精确优先」两段走：
+      //   ① 候选池：**当前课程子树里的链接优先**（侧栏有 6 门课，每门都有「作业」
+      //      「课堂笔记」等同名项；不收窄会命中 4 个「作业」判成 ambiguous）。
+      //      当前课程从 body[data-site-path] 取；拿不到就用全量。
+      //   ② 在池内按三级强度取：文本包含 query > query 包含文本 > 去掉课程名后再比。
+      const courseName = (function () {
+        const bodyEl = (doc && doc.body) || null;
+        const p = bodyEl && bodyEl.getAttribute ? (bodyEl.getAttribute('data-site-path') || '') : '';
+        return p.split('/')[1] || '';
+      })();
+      // 当前课程作用域：链接的 data-path 以「课程/<当前课>/」开头。
+      // ⚠️ 2026-10-23 补：在**首页/课程总览页**上 body[data-site-path] 里没有课程名
+      // （README.html），此时「当前课程」不成立——但 query 自己可能带着课程名
+      // （「工程数学作业2」）。所以再补一条：**query 里出现的课程名**也当作作用域。
+      // 两条都不成立才用全量池（这时多命中就是真歧义，该让模型自己选）。
+      const COURSE_NAMES = ['工程数学', '电力大数据与人工智能', '形势与政策', '电路原理', '电子技术', '电机学'];
+      const courseFromQuery = COURSE_NAMES.filter((c) => needle.indexOf(c) >= 0)[0] || '';
+      const scopeCourse = courseName || courseFromQuery;
+      const inCourse = links.map((a, i) => ({ a, i, path: a.getAttribute ? (a.getAttribute('data-path') || '') : '' }))
+        .filter((x) => scopeCourse && x.path.indexOf('课程/' + scopeCourse + '/') === 0);
+      const pools = inCourse.length ? [inCourse, links.map((a, i) => ({ a, i }))] : [links.map((a, i) => ({ a, i }))];
+
+      const tier1 = (pool) => pool.filter((x) => labels[x.i].indexOf(needle) >= 0);
+      const tier2 = (pool) => pool.filter((x) => labels[x.i] && needle.indexOf(labels[x.i]) >= 0);
+      const bare = scopeCourse ? needle.split(scopeCourse).join('') : needle;
+      const tier3 = (pool) => (bare && bare !== needle
+        ? pool.filter((x) => labels[x.i] && labels[x.i].indexOf(bare) >= 0)
+        : []);
+
+      let hits = [];
+      for (const pool of pools) {
+        // 强度顺序（2026-10-23 调整）：tier1 文本含 query > tier3 **去掉课程名后精确**
+        // > tier2 query 含文本。tier2 最宽松——它会把「工程数学」也算命中
+        // （「工程数学作业2」包含「工程数学」），排前面会让真目标「作业2」被歧义化。
+        // tier3 剥掉课程名后是「作业2」，与侧栏文本精确对上，更该优先。
+        for (const fn of [tier1, tier3, tier2]) {
+          hits = fn(pool);
+          if (hits.length) break;
+        }
+        if (hits.length) break;
       }
+
+      if (!hits.length) {
+        return { ok: false, reason: "not_found", query: needle, course: scopeCourse || undefined,
+                 available: labels.filter(Boolean).slice(0, 40) };
+      }
+      // 同一目标出现多次（侧栏父子都指向同一页）时按 data-path 去重，避免假 ambiguous
+      const uniq = [];
+      const seen = {};
+      for (const x of hits) {
+        const key = (x.a.getAttribute ? x.a.getAttribute('data-path') : '') || labels[x.i];
+        if (seen[key]) continue;
+        seen[key] = 1;
+        uniq.push(x);
+      }
+      if (uniq.length > 1) {
+        return { ok: false, reason: "ambiguous", query: needle, course: scopeCourse || undefined,
+                 candidates: uniq.map((x) => labels[x.i]).slice(0, 20),
+                 hint: '侧栏里有多个匹配项，把 query 写得更具体（或改用 to=page 直接给路径）。' };
+      }
+      const el = uniq[0].a;
       return click(el) ? { ok: true, to, title: textOf(el), path: el.getAttribute ? el.getAttribute('data-path') : '' }
                        : { ok: false, reason: 'click_failed' };
     }
