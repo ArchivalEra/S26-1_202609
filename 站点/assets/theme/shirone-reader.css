@@ -718,29 +718,6 @@ body.sidebar-resizing .m3-drawer {
   flex: 1;
 }
 
-/* 组节点索引入口（阶段一，2026-10-21）：与折叠标题同一行右侧的小图标链接。
-   点它进该组的 index.md 索引页；点标题仍是折叠。不用 .drawer-nav-link 类、
-   不带 data-path ⇒ active 判定不命中它，父子双亮结构上不可能。 */
-.nav-index-link {
-  flex-shrink: 0;
-  margin-left: 0.35rem;
-  padding: 0.1rem 0.4rem;
-  border-radius: 6px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  line-height: 1.4;
-  letter-spacing: 0.02em;
-  color: var(--md-sys-color-outline);
-  text-decoration: none;
-  white-space: nowrap;
-  transition: background-color 0.2s, color 0.2s;
-}
-
-.nav-index-link:hover {
-  background-color: var(--md-sys-color-primary-container);
-  color: var(--md-sys-color-primary);
-}
-
 .drawer-nav-link {
   display: flex;
   align-items: center;
@@ -766,7 +743,11 @@ body.sidebar-resizing .m3-drawer {
 }
 
 .drawer-nav-link.active,
-.drawer-nav-item.active .drawer-nav-link {
+.drawer-nav-item.active .drawer-nav-link,
+/* 组节点 active（票 B，2026-10-22）：有索引页的组标题就是 drawer-nav-link，
+   停在该组索引页时 drawer-sync 给 li.drawer-nav-group 打 active——这里补命中，
+   让组标题与叶子同款强调（primary-container 背景 + 600 字重）。 */
+.drawer-nav-group.active .drawer-nav-link {
   background-color: var(--md-sys-color-primary-container);
   color: var(--md-sys-color-on-primary-container);
   font-weight: 600;

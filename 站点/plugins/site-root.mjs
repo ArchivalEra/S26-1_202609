@@ -122,10 +122,18 @@ function rewriteLinks(root) {
     var dp = links[i].getAttribute('data-path');
     if (dp) links[i].setAttribute('href', root + dp);
   }
-  // 2) 无 data-path 的站内导航（品牌/移动标题/面包屑/分页卡）：
+  // 2) 无 data-path 的站内导航（品牌/移动标题/旧式链接）：
   //    它们的 href 是 data-root 相对值（如 ../../index.html），先解析成
   //    绝对 URL，剥掉实际根得到仓库路径，再拼正式根。
-  var navs = document.querySelectorAll('.sidebar-brand, .top-bar-mobile-title, .m3-breadcrumb a, .paging-card');
+  //    ⚠️ 分工（票 A 引入，2026-10-22 补丁）：带 data-path 的元素（侧栏、面包屑、
+  //    分页卡）由上面第 1 分支负责——它们的 href 已被改写成「root + 仓库相对」
+  //    绝对路径；若本分支再命中它们，「剥掉实际根再拼正式根」会把已拼好的前缀
+  //    重复叠加（镜像入口场景 actual≠canonical 时出双前缀
+  //    /repo/S26-1_202609/repo/S26-1_202609/课程/index.html）。所以选择器用
+  //    :not([data-path]) 把它们排除，本分支只管无 data-path 的站内导航
+  //    （品牌/移动标题/将来漏埋 data-path 的旧式链接）。:not([attr]) 属性选择器
+  //    形态现代浏览器均支持，无兼容顾虑。
+  var navs = document.querySelectorAll('.sidebar-brand, .top-bar-mobile-title, .m3-breadcrumb a:not([data-path]), .paging-card:not([data-path])');
   var actual = siteRoot();
   for (var j = 0; j < navs.length; j++) {
     var a = navs[j];

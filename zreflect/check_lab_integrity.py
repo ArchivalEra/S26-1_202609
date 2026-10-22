@@ -31,6 +31,7 @@ from gate import meta, main_selftest_or
 ALIVE_FILES = (
     "chaoxing.mjs",      # 传输 + parseToolCalls + terminalKind/extractChunks + 类型化 status
     "chaoxing.test.mjs", # 传输层帧回放测试（终止表/正文抽取，20 项）
+    "守卫.test.mjs",      # 结构守卫：薄适配器形态 + 明文禁词 + tools 传递（6 项，2026-10-22 入单）
     "会话.mjs",           # 多会话管理器（open/ask/close/rotate/snapshot）
     "会话.test.mjs",      # 管理器接口测试（20 项）
     "工具会话.mjs",        # 「模型 ⇄ 工具」闭环唯一实现（ask/invoke 双接缝，2026-10-19）
