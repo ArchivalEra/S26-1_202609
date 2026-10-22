@@ -85,7 +85,30 @@ test('列表：连续项一组；最后一项未结束时等待', () => {
   const full = parseIncremental('- 第一项\n- 第二项\n\n');
   assert.equal(full.blocks.length, 1);
   assert.equal(full.blocks[0].kind, 'list');
-  assert.deepEqual(full.blocks[0].items, ['第一项', '第二项']);
+  // 2026-10-22 起 items 是 {text, depth}（支持嵌套子列表）；depth=0 是顶层
+  assert.deepEqual(full.blocks[0].items, [
+    { text: '第一项', depth: 0 },
+    { text: '第二项', depth: 0 },
+  ]);
+});
+
+test('嵌套列表：缩进子项保留层级，不被吞进段落（2026-10-22 上游真实样本）', () => {
+  // 真实上游回答里很常见：编号项下面跟缩进子项
+  const src = '1. **最紧急**：只剩 2 小时\n   - 子项 A\n   - 子项 B\n2. **时间充裕**\n\n';
+  const r = parseIncremental(src);
+  assert.equal(r.blocks.length, 1, '整段应是一个列表块，不是列表+段落');
+  assert.equal(r.blocks[0].kind, 'list');
+  assert.deepEqual(r.blocks[0].items, [
+    { text: '**最紧急**：只剩 2 小时', depth: 0 },
+    { text: '子项 A', depth: 1 },
+    { text: '子项 B', depth: 1 },
+    { text: '**时间充裕**', depth: 0 },
+  ]);
+  // 渲染侧：depth 透传，ops 是结构化数据不是字面缩进文本
+  const ops = renderBlockToOps(r.blocks[0]);
+  assert.equal(ops[0].kind, 'list');
+  assert.deepEqual(ops[0].items.map((x) => x.depth), [0, 1, 1, 0]);
+  assert.ok(!JSON.stringify(ops).includes('   - 子项'), '缩进标记不得作为字面文本出现');
 });
 
 test('有序列表识别', () => {
