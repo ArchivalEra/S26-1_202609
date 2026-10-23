@@ -671,6 +671,35 @@ export function createPageView(doc, loc, winOverride) {
   }
 
   /**
+   * 宽容类型转换 + 语义严格（2026-10-23，Coze MCP-Builder Phase 2 定案 ③）。
+   *
+   * 原则：**能无歧义转换的就转，有歧义的直接拒**。
+   *   · "6000" → 6000        转（模型明显想要数字，省一轮重试）
+   *   · "abc"  → 拒           歧义（不是数字）
+   *   · -5     → 拒           语义错误（offset 不能为负）
+   *   · 50000  → 拒           超硬上限，hint 写明上限
+   * 宽容是安全网，不替代 schema——枚举/范围/必填仍在 schema 里。
+   */
+  function asInt(raw, opt) {
+    const o = opt || {};
+    if (raw === undefined || raw === null || raw === '') return { ok: true, value: o.def };
+    const n = typeof raw === 'number' ? raw : Number(String(raw).trim());
+    if (!Number.isFinite(n)) {
+      return { ok: false, reason: 'bad_type', hint: o.name + ' 必须是数字，收到的是「' + raw + '」' };
+    }
+    if (!Number.isInteger(n)) {
+      return { ok: false, reason: 'bad_type', hint: o.name + ' 必须是整数，收到的是 ' + n };
+    }
+    if (o.min !== undefined && n < o.min) {
+      return { ok: false, reason: 'out_of_range', hint: o.name + ' 不能小于 ' + o.min + '，收到的是 ' + n };
+    }
+    if (o.max !== undefined && n > o.max) {
+      return { ok: false, reason: 'out_of_range', hint: o.name + ' 上限是 ' + o.max + '，收到的是 ' + n + '（请用 offset 分页读）' };
+    }
+    return { ok: true, value: n };
+  }
+
+  /**
    * 读正文。
    * @param {object} [o]
    * @param {'page'|'outline'|'section'|'panel'|'symbols'} [o.what='page']
@@ -683,8 +712,14 @@ export function createPageView(doc, loc, winOverride) {
     const opt = o || {};
     const what = opt.what || 'page';
     // 硬上限 12000（Coze MCP-Builder 定案：中文 1 字≈1 token，12k 字符不爆上下文）
-    const maxChars = Math.min(12000, Math.max(1, Number(opt.maxChars) || 8000));
-    const offset = Math.max(0, Number(opt.offset) || 0);
+    // 2026-10-23：改用 asInt 做「宽容类型转换 + 语义严格」——
+    // "6000" 能转就转，"abc" / -5 / 50000 拒并给可落地 hint（Phase 2 定案 ③）。
+    const mc = asInt(opt.maxChars, { name: 'maxChars', def: 8000, min: 1, max: 12000 });
+    if (!mc.ok) return { ok: false, reason: mc.reason, hint: mc.hint, param: 'maxChars' };
+    const of = asInt(opt.offset, { name: 'offset', def: 0, min: 0 });
+    if (!of.ok) return { ok: false, reason: of.reason, hint: of.hint, param: 'offset' };
+    const maxChars = mc.value;
+    const offset = of.value;
     const article = first(S.article) || (doc && doc.body) || doc;
 
     // ⭐ 2026-10-23 分页（Coze MCP-Builder Phase 1 定案的 offset+limit 口径）：
@@ -1572,7 +1607,28 @@ export function createPageView(doc, loc, winOverride) {
 // ② 工具定义（在 page-view 之上；不含任何 querySelector）
 // ════════════════════════════════════════════════════════════════
 
-/** 把「注入的 DOM 环境」变成 8 个工具定义。 */
+/**
+ * 把「注入的 DOM 环境」变成工具定义。
+ *
+ * ## annotations（2026-10-23，按 MCP 规范 ToolAnnotations）
+ *
+ * 每个工具带 `readOnlyHint / destructiveHint / idempotentHint / openWorldHint`。
+ * 语义（Coze MCP-Builder Phase 2 定案 ②）：
+ *   · 只读工具（get_page_info / read / index / search / list_images / image / capture）：
+ *     readOnly=true、idempotent=true
+ *   · site_navigate：readOnly=false（改了「当前页」这个状态）、destructive=false、idempotent=true
+ *   · site_panels / site_view / site_show_symbol：idempotent=**false**
+ *     （toggle 调两次回到原状态；改主题/侧栏同理）
+ *   · openWorldHint 恒 false：全程本地，不碰外部系统
+ *
+ * ⚠️ **诚实边界（实测）**：浏览器侧 WebMCP polyfill 注册后只保留
+ * `readOnlyHint`（映射成它自己的 `consequentialHint` 的补集）与
+ * `untrustedContentHint`，**丢掉了 destructive/idempotent/openWorld 三个**。
+ * 所以这三个 hint 在我们当前链路里**不生效**——写在这里是为：
+ *   ① 将来若改走真 MCP SDK（stdio server）时直接可用；
+ *   ② 让读代码的人知道「哪些语义是声明过但未落地的」，别以为它们在起作用。
+ */
+
 export function buildToolDefs(doc, win) {
   const w = win || (doc && doc.defaultView) || null;
   const view = createPageView(doc, null, w);
@@ -1580,12 +1636,14 @@ export function buildToolDefs(doc, win) {
   return [
     {
       name: 'site_get_page_info',
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       description: '我在哪：当前页标题、所属课程、URL、小节清单（含锚点）、当前高亮目录项、折叠面板开合数、显示设置（主题/色相/侧栏）、阅读进度。',
       inputSchema: { type: 'object', properties: {} },
       execute: () => view.pageInfo(),
     },
     {
       name: 'site_read',
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       description: '读页面内容（Markdown）。what=page 读整页正文（长页用 offset+maxChars 分页，返回带 total_chars/offset/limit/has_more，按 has_more 继续翻）；outline 只列小节标题；section 读某一节（给 query 标题片段；找不到时返回 candidates 供重试）；panel 读某个折叠面板；symbols 列出本页所有可查符号。',
       inputSchema: {
         type: 'object',
@@ -1602,6 +1660,7 @@ export function buildToolDefs(doc, win) {
     },
     {
       name: 'site_index',
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       description: '站点地图：从页内烘焙的侧栏形状返回层级结构（课程 → 分类 → 页面，带路径）。默认给当前课程的全部页面；scope="all" 给全站。先看地图，再决定读哪页。',
       inputSchema: {
         type: 'object',
@@ -1614,6 +1673,7 @@ export function buildToolDefs(doc, win) {
     },
     {
       name: 'site_navigate',
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       description: '去别处。to=section 跳到本页某小节（query 或 anchor）；link 点侧栏某页（query 页面名）；page 按仓库相对路径打开（path）；prev/next 上一节/下一节；home 回首页；back 浏览器后退；top/bottom 到页首/页尾。',
       inputSchema: {
         type: 'object',
@@ -1629,6 +1689,7 @@ export function buildToolDefs(doc, win) {
     },
     {
       name: 'site_search',
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       description: '找内容。scope=site（默认）直读全站索引，返回命中页面的标题、路径、以及页内命中小节（含锚点）；scope=page 在本页内文里找（像 Ctrl+F），返回片段与所在小节。',
       inputSchema: {
         type: 'object',
@@ -1650,6 +1711,7 @@ export function buildToolDefs(doc, win) {
     },
     {
       name: 'site_show_symbol',
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
       description: '查本页某个符号的含义：点开它的气泡，返回标题、解释、全部义项（当前语境标 is-here）与「详细」链接。给 term 可用符号 id（如 sym-U）或显示文字（如 U）。',
       inputSchema: { type: 'object', properties: { term: { type: 'string' } }, required: ['term'] },
       execute: (a) => {
@@ -1699,6 +1761,7 @@ export function buildToolDefs(doc, win) {
     },
     {
       name: 'site_panels',
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
       description: '折叠面板：action=open/close/toggle 全部（或只作用于 match 匹配标题的那些）。返回命中数、实际改变数与最新开合统计。',
       inputSchema: {
         type: 'object',
@@ -1715,6 +1778,7 @@ export function buildToolDefs(doc, win) {
     },
     {
       name: 'site_view',
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
       description: '显示设置：theme=light/dark 切明暗；hue=0-360 改主题色相；sidebar=open/closed/toggle 开合侧栏。只给想改的字段，返回改后状态。',
       inputSchema: {
         type: 'object',
@@ -1728,6 +1792,7 @@ export function buildToolDefs(doc, win) {
     },
     {
       name: 'site_list_images',
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       description: '列出本页正文里的图片（下标、地址、格式、alt、尺寸、是否可直接上传）。本站配图是 webp，学习通只收 jpg/png——uploadable=false 的先用 site_image 转码。',
       inputSchema: {
         type: 'object',
@@ -1740,6 +1805,7 @@ export function buildToolDefs(doc, win) {
     },
     {
       name: 'site_image',
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       description: '把页面图片转成 JPEG/PNG 的 dataURL（浏览器 canvas 解码，webp/jxl 都能转）。给 index（先用 site_list_images 取）或 src；自动限宽限体积（默认 1400px / 120KB，超了逐档降质量）。返回可直接交给上传通道的 dataUrl 与字节数。',
       inputSchema: {
         type: 'object',
@@ -1756,6 +1822,7 @@ export function buildToolDefs(doc, win) {
     },
     {
       name: 'site_capture_view',
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       description: '把当前页面截成 JPEG 图片（宿主注入能力），供看不见页面的模型查看版面与图表。可给 selector 只截某个元素、或给 rect 只截一块区域。',
       inputSchema: {
         type: 'object',
