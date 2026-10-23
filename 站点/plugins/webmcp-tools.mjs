@@ -506,15 +506,18 @@ export function createPageView(doc, loc, winOverride) {
   function openSection(byTitle, byAnchor, win2) {
     const list = headings();
     let target = null;
+    const needle = byTitle ? String(byTitle).trim() : '';
     if (byAnchor) {
       target = byId(byAnchor);
     } else if (byTitle) {
-      const needle = String(byTitle).trim();
       const hit = list.filter((h) => h.title.indexOf(needle) >= 0)[0];
       if (hit) target = byId(hit.anchor);
     }
     if (!target) {
-      return { ok: false, reason: 'not_found', available: list.map((h) => h.title).slice(0, 30) };
+      return { ok: false, reason: 'not_found', query: needle,
+               candidates: nearestTitles(needle, list.map((h) => h.title)),
+               hint: '标题里没有完全匹配。从 candidates 里挑一个最近的重试，或先调 site_read（what=outline）看全量标题。',
+               available: list.map((h) => h.title).slice(0, 30) };
     }
     for (let node = target; node; node = node.parentElement) {
       if (String(node.tagName || '').toUpperCase() === 'DETAILS' && !node.open) node.open = true;
@@ -620,6 +623,37 @@ export function createPageView(doc, loc, winOverride) {
     return out;
   }
 
+
+  /**
+   * 给「找不到」找最近候选（2026-10-23，Coze MCP-Builder 的「错误要可落地」口径）：
+   * 返回 candidates = 按相似度排序的最近标题，模型下一轮直接拿候选值重试，
+   * 不用把全部 30 个标题读完再猜。
+   * 相似度 = query 的字在标题里出现的比例（中文按字，拉丁按词），≥0.34 才入选。
+   */
+  function nearestTitles(needle, titles, max) {
+    const n = String(needle || '').trim();
+    if (!n) return [];
+    // 归一化：去空白与标点（中文标题里「习题 2.2」与 query「习题2.2」应算同形）
+    const norm = (x) => String(x || '').replace(/[\s\p{P}\p{S}]/gu, '');
+    const nn = norm(n);
+    const chars = Array.from(new Set(nn));
+    const scored = titles.map((t) => {
+      const s = String(t || '');
+      const ns = norm(s);
+      let score = 0;
+      if (ns.indexOf(nn) >= 0) score = 1;                 // 子串命中（最强）
+      else if (nn.indexOf(ns) >= 0 && ns) score = 0.95;   // query 是标题的超集
+      else if (chars.length) {                            // 逐字覆盖
+        let hit = 0;
+        for (const c of chars) if (ns.indexOf(c) >= 0) hit += 1;
+        score = hit / chars.length;
+      }
+      return { t: s, score };
+    }).filter((x) => x.score >= 0.34);
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, max || 5).map((x) => x.t);
+  }
+
   /** 搜索面板里的命中列表与总数（读 DOM，不重跑检索）。 */
   function searchResults() {
     const hits = all(S.searchHit).map((a) => ({
@@ -642,19 +676,37 @@ export function createPageView(doc, loc, winOverride) {
    * @param {'page'|'outline'|'section'|'panel'|'symbols'} [o.what='page']
    * @param {string} [o.query]     section/panel 用：标题片段
    * @param {number} [o.maxChars=8000]
+   * @param {number} [o.offset=0]  字符偏移（2026-10-23：分页读长页）
    * @param {boolean} [o.includeCollapsed=true]
    */
   function readContent(o) {
     const opt = o || {};
     const what = opt.what || 'page';
-    const maxChars = Math.max(1, Number(opt.maxChars) || 8000);
+    // 硬上限 12000（Coze MCP-Builder 定案：中文 1 字≈1 token，12k 字符不爆上下文）
+    const maxChars = Math.min(12000, Math.max(1, Number(opt.maxChars) || 8000));
+    const offset = Math.max(0, Number(opt.offset) || 0);
     const article = first(S.article) || (doc && doc.body) || doc;
 
+    // ⭐ 2026-10-23 分页（Coze MCP-Builder Phase 1 定案的 offset+limit 口径）：
+    // 旧版超 maxChars 直接截断，**没有翻页手段**——19,735 字的攻略页整页读会丢
+    // 后半段（调查 C 的盲区 4）。现在 offset+limit 切窗，返回带元数据
+    // total_chars / offset / limit / has_more，模型自己判断要不要继续翻。
+    // 用 offset 不用 cursor：每次调用都重读 DOM（零缓存），cursor 编码的偏移在
+    // DOM 变化后同样失效，反而多一层状态。
     const clip = (s) => {
       const t = String(s || '');
-      return t.length > maxChars
-        ? { text: t.slice(0, maxChars), truncated: true, totalChars: t.length }
-        : { text: t, truncated: false, totalChars: t.length };
+      const total = t.length;
+      const from = Math.min(offset, total);
+      const slice = t.slice(from, from + maxChars);
+      return {
+        text: slice,
+        totalChars: total,
+        total_chars: total,          // 双写：snake_case 是 MCP 侧惯用名
+        offset: from,
+        limit: maxChars,
+        has_more: from + slice.length < total,
+        truncated: from + slice.length < total,
+      };
     };
 
     if (what === 'outline') {
@@ -674,7 +726,10 @@ export function createPageView(doc, loc, winOverride) {
       if (what === 'section') {
         const hs = headings();
         const hit = hs.filter((h) => h.title.indexOf(needle) >= 0 || h.anchor === needle)[0];
-        if (!hit) return { ok: false, reason: 'not_found', available: hs.map((h) => h.title).slice(0, 30) };
+        if (!hit) return { ok: false, reason: 'not_found', query: needle,
+          candidates: nearestTitles(needle, hs.map((h) => h.title)),
+          hint: '小节标题里没有匹配。从 candidates 里挑最近的一个重试。',
+          available: hs.map((h) => h.title).slice(0, 30) };
         const target = byId(hit.anchor);
         if (!target) return { ok: false, reason: 'anchor_missing', anchor: hit.anchor };
 
@@ -1531,13 +1586,14 @@ export function buildToolDefs(doc, win) {
     },
     {
       name: 'site_read',
-      description: '读页面内容（Markdown）。what=page 读整页正文；outline 只列小节标题；section 读某一节（给 query 标题片段）；panel 读某个折叠面板；symbols 列出本页所有可查符号。长内容按 maxChars 截断并标记 truncated。',
+      description: '读页面内容（Markdown）。what=page 读整页正文（长页用 offset+maxChars 分页，返回带 total_chars/offset/limit/has_more，按 has_more 继续翻）；outline 只列小节标题；section 读某一节（给 query 标题片段；找不到时返回 candidates 供重试）；panel 读某个折叠面板；symbols 列出本页所有可查符号。',
       inputSchema: {
         type: 'object',
         properties: {
           what: { type: 'string', enum: ['page', 'outline', 'section', 'panel', 'symbols'] },
           query: { type: 'string' },
-          maxChars: { type: 'number' },
+          maxChars: { type: 'number', description: '单次返回上限（默认 8000，硬上限 12000）' },
+          offset: { type: 'number', description: '字符偏移（默认 0）。长页分页：先读 0，看 has_more 再按 offset 续读' },
           includeCollapsed: { type: 'boolean' },
           links: { type: 'boolean' },
         },
