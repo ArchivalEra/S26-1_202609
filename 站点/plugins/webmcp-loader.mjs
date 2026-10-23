@@ -76,7 +76,11 @@ function inject(rel) {
   // 结果：改了 webmcp-tools.js 之后浏览器一直用旧副本——工具行为怎么改都不生效，
   // 只有手动硬刷新（或换浏览器）才看得见。__TOOLS_VER__ / __SHIM_VER__ 是
   // build 期替换的内容哈希（空串 = 未替换，退化为原行为，不报错）。
-  var VERS = { "webmcp-shim.js": "__SHIM_VER__", "webmcp-tools.js": "__TOOLS_VER__" };
+  // ⚠️ 2026-10-23（审计二抓到）：原来只列了 shim/tools，**漏了 webmcp-bridge.js**——
+  // 它同样由 loader 动态注入，URL 无 ?v=，还配 fetch(cache:"force-cache")。
+  // 实测改 page-bridge.mjs 后产物内容变了、请求 URL 一个字节没变 ⇒ 浏览器用旧副本。
+  // 三个动态注入的脚本必须都在这里。
+  var VERS = { "webmcp-shim.js": "__SHIM_VER__", "webmcp-tools.js": "__TOOLS_VER__", "webmcp-bridge.js": "__BRIDGE_VER__" };
   var v = VERS[rel] || "";
   el.src = baseDir() + rel + (v && v.indexOf("__") !== 0 ? "?v=" + v : "");
   el.async = false;

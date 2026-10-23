@@ -72,7 +72,7 @@ test('工具循环在站点侧跑：解析调用 → invoke → 回喂 → 再 a
 
   assert.deepEqual(calls, [{ name: 'site_search', args: { query: '铁芯损耗' } }]);
   assert.equal(taps.asks.length, 2, '调用一轮 + 回答一轮');
-  assert.match(taps.asks[1].payload.text, /刚才的操作结果/);
+  assert.match(taps.asks[1].payload.text, /已经执行了。结果如下/);
   assert.match(taps.asks[1].payload.text, /site_search/);
   assert.equal(r.text, '找到 1 条结果。');
   assert.ok(events.some((e) => e.type === 'tool' && e.name === 'site_search' && e.ok));

@@ -65,24 +65,41 @@ export const PAGE_ACTION_RE = /跳转|跳到|翻到|滚到|定位|展开|收起|
  * 工具名在开头），这条链路是通的。
  */
 export function pageToolsPrompt(tools, task) {
-  // ⭐ 2026-10-23 二次改版（长任务实验 run3 实测）：**Skill.md URL 回到内联**。
+  // ⭐ 2026-10-23 三次改版：**规则式 → 示例式**。
   //
-  // 10-22 版把工具清单放在站点 Skill.md 里、提示词只留名字 + URL。当时单问实测通过，
-  // 但长任务 run3（2026-10-23）被上游安全层判 blocked，拒绝原文点名
-  // 「提供包含 S26-1_202609 等编码的外部链接……属于典型的越狱尝试」——
-  // **URL 里的仓库编码成了触发词**。上游判定对上下文敏感：页面上下文头 +
-  // 长任务句 + URL 组合就炸，单独 URL 不炸。
+  // 前两版都是规则式（「写法是『名字，参数=值』」+ 工具清单）。实测 12 轮，
+  // 行为随机：照做 5 / 拒答 4 / 只说不做 1 / 其它 2。原因分析（外部设计评审）：
+  // 模型的训练是为「原生函数调用」优化的，把工具定义塞进正文时，它把清单当
+  // **要理解的内容**而不是**要遵守的格式**——所以规则写得再清楚也只有一半照做。
   //
-  // 回摆到内联，但吸收 G20 的教训（清单长易被拦）——**只内联一句式速查**，
-  // 每工具一行「名字：一句话 + 参数名」，不写 schema、不写 URL、不含任何编码：
-  const lines = tools.slice(0, 11).map((t) => {
+  // 示例式为什么更有效：模型从「完整对话循环」里学格式，强于从规则里学。
+  // 它见过「用户问 → 助手先说打算 → 助手写一行调用 → 系统返回 → 助手回答」
+  // 这个闭环，就知道自己在哪一环该输出什么；规则式它当知识点记，示例式它当行为模仿。
+  //
+  // 长度纪律：整段控制在 900 字内（上游单条拒收线实测约 2030，留一半余量）。
+  // 安全纪律：不含 URL、不含域名、不含任何编码串（run3 blocked 的触发词就是这些）。
+  const catalog = tools.slice(0, 11).map((t) => {
     const props = (t.inputSchema && t.inputSchema.properties) || {};
     const ps = Object.keys(props).slice(0, 4).join('、') || '无参数';
     return `${t.name}（${ps}）`;
   }).join('；');
-  return `下面这些标记操作**当前课程资料站**里的页面（不是学习通）：
-${lines}
-写法「标记名，参数=值」，一次一条，参数只填关键词。例如：site_read，what=section，query=2.1
+
+  return `你可以读取和操作「当前课程资料站」的页面。下面是一个完整示例：
+
+用户：第二章这一页都讲了什么？
+助手：我先看看这一页有哪些小节。
+site_read，what=outline
+系统返回：一、行列式定义；二、行列式的性质；三、习题
+助手：有三个小节，我读第二节。
+site_read，what=section，query=行列式的性质
+系统返回：（这一节的正文）
+助手：这一节讲了三件事……
+
+照这个节奏：需要页面内容时，先写一句你打算做什么，再写一行「名字，参数=值」。
+系统会执行那一行并把结果发回来，然后你接着往下写。
+一次只写一行。参数只填关键词，不要整句抄进去。
+
+可用：${catalog}
 
 任务：${task || ''}`;
 }
@@ -170,6 +187,13 @@ export function createToolSession({
 
   function slimForFeed(name, v) {
     if (!v || typeof v !== 'object') return v;
+    // ⭐ 2026-10-23：dataUrl 一律剥掉（几万字符 base64 会撞上游单条上限）。
+    // 旧实现是在回喂模板里内联剥的；改信封后那段没了，这里补回来——
+    // 它是所有工具的通用规则，不是 site_image 专属。
+    if (typeof v.dataUrl === 'string') {
+      const { dataUrl, ...rest } = v;
+      v = rest;
+    }
     // site_index 的树含百分号编码与反引号，上游会判成「疑似注入的编码串」。
     // 修法：只留「缩进 + 标题 + 路径」。
     //
@@ -478,46 +502,98 @@ export function createToolSession({
       // 2400 → 3600（2026-10-19 二次实测）：站点地图是全站唯一的「有哪些页」
       // 真相源，砍短了模型会**编造**结论（实测把六门课说成一门）。宁可让这条
       // 多占预算、后面几条被截断（截断处有明示），也不要让地图失真。
+      // ⭐ 2026-10-23 四次改版：**裸 JSON → 结构化信封**（外部设计评审 ③）。
+      //
+      // 旧形态 `- site_read 返回：{"ok":true,"text":"…"}` 有两个问题：
+      //   ① 模型要自己从 JSON 里找正文，且 JSON 转义（\n、\"）会干扰阅读；
+      //   ② 元数据（总字数、位置、是否截断）埋在 JSON 字段里，模型得读完才知道。
+      // 信封形态：开头一行说清「哪个工具、什么参数、成没成」，元数据在前
+      // （总字数/位置/相关小节），正文原样贴（不转义），结尾给下一步建议。
+      //
+      // 长度纪律不变：总量仍受 FEED_BUDGET 兜底（上游单条拒收线 ~2030 字）。
       const FEED_BUDGET = 3600;
       let feedUsed = 0;
-      const feedLines = [];
-      for (const x of results) {
-        let line;
-        if (!x.ok) line = `- ${x.call.name} 失败：${x.error}`;
-        else {
-          const v = x.value;
-          if (v && typeof v === 'object' && v.dataUrl) {
-            const { dataUrl, ...rest } = v;
-            line = `- ${x.call.name} 返回：${JSON.stringify(slimForFeed(x.call.name, rest))}（图片已附在消息里）`;
-          } else {
-            line = `- ${x.call.name} 返回：${JSON.stringify(slimForFeed(x.call.name, v))}`;
+      const feedBlocks = [];
+
+      /** 一个工具结果 → 信封文本。 */
+      const envelope = (x) => {
+        const name = x.call.name;
+        const args = x.call.args || {};
+        const argStr = Object.keys(args)
+          .filter((k) => args[k] !== undefined && args[k] !== '' && k !== '_positional')
+          .map((k) => k + '=' + String(args[k]).slice(0, 40))
+          .join(' | ');
+        const head = `[工具返回：${name}${argStr ? ' | ' + argStr : ''}${x.ok ? '' : ' | 失败'}]`;
+
+        if (!x.ok) {
+          // 失败信封：原因 + 下一步建议（评审 ④：告诉它「调哪个工具、传什么参数」）
+          const err = String(x.error || '执行失败');
+          const hint = /not_found|没找到/.test(err)
+            ? '\n建议下一步：换一个更短的关键词重试，或先用 site_read，what=outline 看全部标题。'
+            : '\n建议下一步：换个参数重试；连续失败就直接告诉用户当前做不到。';
+          return `${head}\n- 原因：${err}${hint}`;
+        }
+
+        // ⚠️ 信封必须基于 slimForFeed 的输出（它才带 truncated/totalChars），
+        // 不是原始 v——否则「已截断」这个关键提示会丢，模型以为读完了。
+        // 但「有没有图」要看**原始值**：slimForFeed 已把 dataUrl 剥掉了
+        // （剥是为了不撞单条上限），剥完就检测不到了。
+        const raw = x.value;
+        const hadImage = !!(raw && typeof raw === 'object' && typeof raw.dataUrl === 'string');
+        const v = (raw && typeof raw === 'object') ? slimForFeed(name, raw) : raw;
+        if (hadImage) {
+          return `${head}\n- 图片已附在本条消息里（${raw.width || '?'}×${raw.height || '?'}，${raw.format || 'jpeg'}）\n- 其余字段：${JSON.stringify(v).slice(0, 300)}`;
+        }
+
+        // 成功信封：元数据在前，正文原样
+        const meta = [];
+        if (v && typeof v === 'object') {
+          if (v.title) meta.push('标题：' + v.title);
+          // 回喂层截断（slimForFeed 把 site_read 正文切到 1500）：与工具自己的
+          // has_more 不同层，两者都要告诉模型，否则它以为已经读完了。
+          if (v.truncated && v.totalChars != null) {
+            meta.push('本条已截断：原文 ' + v.totalChars + ' 字，这里只给了开头（用 offset 参数续读）');
+          }
+          if (v.total_chars != null) meta.push('总字数：' + v.total_chars);
+          if (v.offset != null) meta.push('本段起点：' + v.offset);
+          if (v.has_more) meta.push('还有后续：是（可用 offset=' + (v.offset + (v.limit || 0)) + ' 继续读）');
+          if (Array.isArray(v.outline)) meta.push('小节数：' + v.outline.length);
+          if (v.count != null) meta.push('条目数：' + v.count);
+          if (Array.isArray(v.candidates) && v.candidates.length) {
+            meta.push('候选：' + v.candidates.map((c) => '「' + c + '」').join(' / '));
           }
         }
-        if (feedUsed + line.length > FEED_BUDGET) {
-          // 超预算：截断这一条塞进去（不整条丢——模型至少知道调过什么），然后停。
-          const room = Math.max(120, FEED_BUDGET - feedUsed);
-          if (room > 120) feedLines.push(line.slice(0, room) + '…（截断）');
-          const rest = results.length - feedLines.length;
-          if (rest > 0) feedLines.push(`- （其余 ${rest} 个结果因篇幅省略）`);
+        const metaStr = meta.length ? meta.map((m) => '- ' + m).join('\n') + '\n' : '';
+
+        // 正文：优先 text（site_read），其次其它可读字段
+        let body = '';
+        if (v && typeof v === 'object' && typeof v.text === 'string' && v.text) body = v.text;
+        else body = JSON.stringify(slimForFeed(name, v));
+
+        return `${head}\n${metaStr}---正文开始---\n${body}\n---正文结束---`;
+      };
+
+      for (const x of results) {
+        const block = envelope(x);
+        if (feedUsed + block.length > FEED_BUDGET) {
+          const room = Math.max(200, FEED_BUDGET - feedUsed);
+          if (room > 200) feedBlocks.push(block.slice(0, room) + '\n…（本条过长，已截断。需要更多内容请用 offset 参数续读）');
+          const left = results.length - feedBlocks.length;
+          if (left > 0) feedBlocks.push(`（另有 ${left} 个结果因篇幅省略）`);
           break;
         }
-        feedUsed += line.length;
-        feedLines.push(line);
+        feedUsed += block.length;
+        feedBlocks.push(block);
       }
-      // ⭐ 2026-10-23 改版（长任务实测三轮）：回喂必须**锚定任务句 + 确认调用已执行**。
-      //
-      // 旧模板「刚才的操作结果：…请根据上面的结果回答」有两个实测病灶：
-      //   ① 任务句不在场——run3 实测模型把提示词的示例行（site_read，what=section）
-      //     当成「要我记录的约束」，反问「你希望我基于这个格式做什么」；
-      //   ② 「调用已执行」没有确认语义——模型（尤其沙箱路径）不确定这行文本
-      //     真被执行了，于是转去 ls /mnt/ws 自己找（run6 原话「site_* 未挂载」）。
-      // 修复：模板明确「你写的调用已经执行了，结果如下」+ 每轮重述任务句。
-      prompt = `你上一轮写的调用已经执行了，结果如下：
-${feedLines.join('\n')}
+
+      // 锚定任务句 + 确认调用已执行（2026-10-23 三次改版的结论，保留）
+      prompt = `你上一轮写的调用已经执行了。结果如下：
+
+${feedBlocks.join('\n\n')}
 
 原始任务：${userText}
 
-任务没完成就继续写下一行调用（一次一条）；材料够了就直接写答案。`;
+材料够了就直接写答案；不够就接着写下一行调用（一次一条）。`;
       // 上传过图 → 本轮直接问「图里有什么」这种极简问题（agent.md 实测：问法越像任务提取越易被拦）
       if (uploaded.length) prompt = `${prompt}\n\n${visionQuestion}`;
     }

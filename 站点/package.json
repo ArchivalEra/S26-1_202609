@@ -6,7 +6,7 @@
   "private": true,
   "scripts": {
     "build": "node build.mjs --canonical-root /repo/S26-1_202609/",
-    "test": "node --test plugins/*.test.mjs",
+    "test": "node --test plugins/",
     "build:pages": "node build.mjs --canonical-root /S26-1_202609/"
   }
 }
