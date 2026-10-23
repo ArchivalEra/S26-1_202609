@@ -95,6 +95,28 @@ export function parseToolCalls(rawText, knownTools) {
   // 2026-10-22（Node 桥实测）：退化形态的实际输出常把标记包在代码围栏里——
   //   「…所在页面：\n\n```\nsite_search，query=工程数学作业2\n```」
   // 围栏只是排版。这里先剥围栏再解析（剥完内容不变，长度变短）。
+  //
+  // 2026-10-23（长任务实测 run9）：**围栏内的调用自带强信号**——模型长篇解释
+  // 自己的思路（127 字引导语）再用围栏给出正式调用。此时前缀长度上限反而成了
+  // 拦路的：先提取「围栏内的行」作为优先候选（围栏内的调用不受前缀限制），
+  // 围栏内没有才退回全文退化解析。
+  const fenceBlocks = [];
+  const fenceRe = /```[a-zA-Z0-9_-]*\s*\n([\s\S]*?)```/g;
+  let fm;
+  while ((fm = fenceRe.exec(text)) !== null) {
+    const inner = fm[1].trim();
+    if (inner && inner.length <= 200) fenceBlocks.push(inner);
+  }
+  // ① 围栏优先：围栏里是一行调用（短、无前缀噪音）——直接按退化解析走，
+  //    不受前缀/整段长度限制（围栏本身就是「这是可执行代码」的排版声明）。
+  for (const block of fenceBlocks) {
+    if (!knownTools || !Array.isArray(knownTools) || !knownTools.length) break;
+    // 词边界：围栏里是「site_search_utils(...)」这种代码引用时不该命中
+    // （2026-10-23 防护实测：示例代码块里的 import site_search_utils 被误判）。
+    if (!knownTools.some((n) => new RegExp('(^|[^\\w])' + n + '([^\\w]|$)').test(block))) continue;
+    const inner = parseToolCalls(block, knownTools);   // 围栏内无围栏，走退化分支
+    if (inner.length) return inner.map((c) => ({ ...c, degraded: true }));
+  }
   const deFenced = text
     .replace(/^\s*```[a-zA-Z0-9_-]*\s*$/gm, '')
     .replace(/```/g, '')
@@ -102,7 +124,15 @@ export function parseToolCalls(rawText, knownTools) {
   const t = deFenced || text.trim();
   if (Array.isArray(knownTools) && knownTools.length && t.length <= 160) {
     for (const name of knownTools) {
-      const at = t.indexOf(name);
+      // ⚠️ 2026-10-23 修（防护实测）：indexOf 会命中「别的标识符的一部分」——
+      // 正文里 `import site_search_utils` 的 site_search 不是我们的工具。
+      // 工具名后面必须是 参数语法（，,）或行尾/空白/围栏边界，不能是 [_a-zA-Z0-9]。
+      let at = -1;
+      {
+        const re = new RegExp('(^|[^\\w])' + name + '([^\\w]|$)');
+        const m = re.exec(t);
+        if (m) at = m.index + m[1].length;
+      }
       if (at < 0) continue;
       // 前缀必须是**纯引导语**。
       // 2026-10-19 实测：模型会写「浙江水利水电学院电路原理习题册电机学课堂笔记检索site_search，…」，
@@ -117,8 +147,28 @@ export function parseToolCalls(rawText, knownTools) {
       //      不是纯引导语，拒掉是对的（下面的误判防护用例守着这条）。
       //   ④ 前缀上限 40 → 60（带一句完整引导语很容易到 50 字）。
       //   ⑤ 整段上限 80 → 160（含引导语 + 代码围栏）。
+      // ⭐ 2026-10-23（长任务 run10）：调用**独立成行**时前缀上限放宽到 120。
+      // 模型的思考叙述长度天然波动（实测 63 字被 60 上限拒掉），而
+      // 「换行 + 工具名行首」本身已是强排版信号（与围栏同源）。
+      // 只有调用挤在正文中间（同行）才维持 60 字的紧限制。
+      const onOwnLine = /(^|\n)\s*$/.test(t.slice(0, at).slice(-Math.min(at + 1, 200)) ? t.slice(0, at) : '');
+      const lineStart = at === 0 || t.slice(0, at).endsWith('\n');
+      const prefixLimit = lineStart ? 120 : 60;
       const prefix = t.slice(0, at).replace(/[\r\n]+/g, ' ');
-      if (prefix.trim().length > 60 || prefix.includes('=')) continue;
+      if (prefix.trim().length > prefixLimit || prefix.includes('=')) continue;
+      // ⚠️ 2026-10-23 修（防护实测）：区分「调用」与「陈述里的工具名」——
+      //   调用形态 A：「site_search，query=…」（分隔符，/）——主力格式
+      //   调用形态 B：「site_search铁芯损耗」（直接连写非拉丁参数，2026-10-19
+      //     实测上游真实输出过，词边界 [^\w] 正好覆盖中文）
+      //   陈述形态：「site_search 来搜索内容哦」（空格后拉丁/动词）——拒。
+      // 判据：紧跟的第一字符属于「，,/中文等非\w」或紧贴 name；若先遇到空白，
+      // 除非空白后就是「，/,」，否则视为陈述句。
+      const after = t.slice(at + name.length);
+      const lead = after.match(/^\s*([^\s])/);
+      const isCallForm = !after.startsWith(' ') && !after.startsWith('\n')
+        ? true                                    // B：直接连写（铁芯损耗形态）
+        : /^\s*[，,]/.test(after);                // A：空白后紧跟分隔符
+      if (!isCallForm) continue;
       const rest = t.slice(at + name.length)
         .replace(/^[\s:：,，、的]+/, '')
         .replace(/[。.]\s*$/, '')
@@ -543,6 +593,32 @@ export function createAssistant(opts = {}) {
       pending.onChunk && pending.onChunk(c);
     }
 
+    // ③b 沙箱工具调用收集（2026-10-23）：tool_call_chunk 的 content 是多个
+    //     JSON 对象连写（帧结构.md §三），按平衡括号切开，args_chunk 按
+    //     tool_call_id 累积。只收集，不执行——finish 时透出给 toolcycle 拦截。
+    if (mp.subType === 'tool_call_chunk' && mp.content && pending) {
+      const c = String(mp.content);
+      let depth = 0, start = null;
+      for (let k = 0; k < c.length; k++) {
+        const ch = c[k];
+        if (ch === '{') { if (depth === 0) start = k; depth++; }
+        else if (ch === '}') {
+          depth--;
+          if (depth === 0 && start !== null) {
+            try {
+              const o = JSON.parse(c.slice(start, k + 1));
+              const tid = o.tool_call_id || o.toolCallId;
+              if (tid) {
+                if (!pending.sandbox[tid]) pending.sandbox[tid] = { name: o.name || '', args: '' };
+                if (o.args_chunk) pending.sandbox[tid].args += o.args_chunk;
+              }
+            } catch { /* 半截 JSON 等下一帧 */ }
+            start = null;
+          }
+        }
+      }
+    }
+
     // ④ 终止判定：**只看表格**（terminalKind 是唯一真相源）
     const terminal = terminalKind(j);
     if (terminal) {
@@ -613,6 +689,11 @@ export function createAssistant(opts = {}) {
         // 流式回调：单次 ask 的 askOpts.onChunk 优先，其次构造时的 onChunk
         onChunk: (typeof perAskOnChunk === 'function' ? perAskOnChunk : externalOnChunk),
         terminal: null,     // 终止类型（terminalKind 的返回值）
+        // ⭐ 2026-10-23（长任务实测发现）：模型会把 site_* 行包进它自己的沙箱工具
+        //   （execute("echo \"site_read，what=outline\"") 或 read_file）——意图全在，
+        //   只是通道选错。tool_call_chunk 按 tool_call_id 拼接收集于此，
+        //   finish 时以 sandboxCalls 透出，由 toolcycle 拦截转成我们的调用。
+        sandbox: {},        // tool_call_id → { name, args }
         finish(reason) {
           clearTimeout(deadlineTimer);
           if (pending.idleTimer) clearInterval(pending.idleTimer);
@@ -643,6 +724,9 @@ export function createAssistant(opts = {}) {
             text: txt, confirmed: pending.confirmed, modelId: mid,
             frames: pending.frames, status, terminal: pending.terminal,
             ms: Date.now() - startedAt,
+            // 沙箱调用（2026-10-23）：模型用它的 execute/read_file 包 site_* 行时，
+            // 从这里透出 {name, args} 列表给 toolcycle 拦截。仅 toolcycle 消费。
+            sandboxCalls: Object.values(pending.sandbox),
           };
           pending = null;
           return out;
@@ -737,14 +821,15 @@ export function createAssistant(opts = {}) {
     const tryOnce = async (p) => {
       const r = await ask(p, askOpts);
       const calls = parseToolCalls(r.text);
-      return { r, calls, dead: !calls.length && (isBlockedText(r.text) || !r.text) };
+      // 沙箱调用透传（2026-10-23）：tryOnce 的合并口径也带上
+      return { r, calls, sandboxCalls: r.sandboxCalls || [], dead: !calls.length && (isBlockedText(r.text) || !r.text) };
     };
 
     let attempts = 0;
     let first = await tryOnce(prompt);
     attempts++;
     if (!first.dead) {
-      return { text: first.r.text, calls: first.calls, attempts, gaveUp: false };
+      return { text: first.r.text, calls: first.calls, sandboxCalls: first.sandboxCalls, attempts, gaveUp: false };
     }
     onRetry({ attempt: attempts, reason: isBlockedText(first.r.text) ? '拦截' : '空', text: first.r.text });
 
