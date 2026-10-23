@@ -761,10 +761,19 @@ export function createPageView(doc, loc, winOverride) {
       if (what === 'section') {
         const hs = headings();
         const hit = hs.filter((h) => h.title.indexOf(needle) >= 0 || h.anchor === needle)[0];
-        if (!hit) return { ok: false, reason: 'not_found', query: needle,
-          candidates: nearestTitles(needle, hs.map((h) => h.title)),
-          hint: '小节标题里没有匹配。从 candidates 里挑最近的一个重试。',
-          available: hs.map((h) => h.title).slice(0, 30) };
+        if (!hit) {
+          // 2026-10-23（实测）：候选为空时 hint 必须换说法——
+          // 「从 candidates 里挑」而 candidates 是空数组，模型会照着重试空值。
+          // 空候选的正确含义是「这一页没有相关内容」，该换页而不是换词。
+          const cand = nearestTitles(needle, hs.map((h) => h.title));
+          return {
+            ok: false, reason: 'not_found', query: needle, candidates: cand,
+            hint: cand.length
+              ? '小节标题里没有匹配。从 candidates 里挑最近的一个重试。'
+              : '这一页没有相关小节（候选为空）。别在本页重试——换一页：先用 site_search 搜全站，或 site_index 看站点地图。',
+            available: hs.map((h) => h.title).slice(0, 30),
+          };
+        }
         const target = byId(hit.anchor);
         if (!target) return { ok: false, reason: 'anchor_missing', anchor: hit.anchor };
 

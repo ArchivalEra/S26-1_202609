@@ -173,19 +173,32 @@ export function parseToolCalls(rawText, knownTools) {
         .replace(/^[\s:：,，、的]+/, '')
         .replace(/[。.]\s*$/, '')
         .trim();
-      // ⚠️ 2026-10-23 修（lab 闸门红）：rest 也必须短。真实调用的参数是关键词
-      // （「工程数学作业2」「卡诺图」），不会是几十字的整段。这条守的是
-      // 「长正文里偶然提到工具名」——前缀短 + 正文长 ⇒ 第一处命中就把
-      // 后面整段吞成 _positional。rest > 60 字 = 不是调用，跳过。
-      if (rest.length > 60) continue;
       const args = {};
       if (rest) {
         // `query=电机学 课堂笔记, scope=site` → {query:'电机学 课堂笔记', scope:'site'}
         const kv = /([a-zA-Z_][\w]*)\s*=\s*([^,，;；]+)/g;
         let mm;
-        while ((mm = kv.exec(rest)) !== null) args[mm[1]] = mm[2].trim();
+        while ((mm = kv.exec(rest)) !== null) {
+          // 2026-10-23：值末尾常跟模型的自我纠正括注——
+          // 「query=课程目录（刚才的文件读取是误操作，忽略。）」。
+          // 括注不是参数内容，剥掉（中英文括号都认）。
+          let val = mm[2].trim();
+          const paren = val.search(/[（(]/);
+          if (paren > 0) val = val.slice(0, paren).trim();
+          args[mm[1]] = val;
+        }
         if (!Object.keys(args).length) args._positional = rest;
       }
+      // ⚠️ 2026-10-23 修（示例式实测 run-v3-1）：rest 长度约束**只对纯位置参数生效**。
+      //
+      // 上一版无条件 `rest > 60 → 跳过`，结果把模型的正常输出误杀：
+      //   「site_read，what=section，query=课程目录（刚才的文件读取是误操作，忽略。）…」
+      //   —— 参数齐全（what/query 都在），只是后面跟了一句自我纠正的括注，rest 71 字。
+      // 判据改成：**已经有 key=value 就是调用**（参数语法本身就是最强信号），
+      // 后面的解释文字由 kv 正则天然忽略（它只取到下一个逗号/分号）。
+      // 纯位置参数（没有任何 key=）才需要长度约束——那才是「长正文偶然提工具名」的形态。
+      const hasKv = Object.keys(args).length > 0;
+      if (!hasKv && rest.length > 60) continue;
       out.push({ name, args, degraded: true });
       break;   // 一行只当一次调用
     }

@@ -220,17 +220,19 @@ fs.mkdirSync(webmcpDir, { recursive: true });
 // 顺序必须是这样（先写被注入方、后写注入方），否则哈希算的是上一轮的旧内容。
 fs.writeFileSync(path.join(webmcpDir, 'webmcp-shim.js'), WEBMCP_SHIM_JS);
 fs.writeFileSync(path.join(webmcpDir, 'webmcp-tools.js'), WEBMCP_TOOLS_JS);
+// 页面桥（2026-10-19 植入）：也由 loader 动态注入，所以必须在这算哈希之前写盘。
+fs.writeFileSync(path.join(webmcpDir, 'webmcp-bridge.js'), PAGE_BRIDGE_JS);
 {
   const shimVer = assetVersion('assets/plugins/webmcp-shim.js');
   const toolsVer = assetVersion('assets/plugins/webmcp-tools.js');
+  const bridgeVer = assetVersion('assets/plugins/webmcp-bridge.js');
   const loaderSrc = WEBMCP_LOADER_JS
     .split('__SHIM_VER__').join(shimVer)
-    .split('__TOOLS_VER__').join(toolsVer);
+    .split('__TOOLS_VER__').join(toolsVer)
+    .split('__BRIDGE_VER__').join(bridgeVer);
   fs.writeFileSync(path.join(webmcpDir, 'webmcp-loader.js'), loaderSrc);
 }
 fs.writeFileSync(path.join(webmcpDir, 'webmcp-relay.js'), WEBMCP_RELAY_JS);
-// 页面桥（2026-10-19 植入）：打开页面自动连本机桥，不再手工注入
-fs.writeFileSync(path.join(webmcpDir, 'webmcp-bridge.js'), PAGE_BRIDGE_JS);
 // 学习助手面板（2026-10-19）：JS + CSS 都是构建期写盘，SW 会自动预缓存
 fs.writeFileSync(path.join(webmcpDir, 'chat-panel.js'), CHAT_JS);
 fs.writeFileSync(path.join(webmcpDir, 'chat-panel.css'), CHAT_CSS);
