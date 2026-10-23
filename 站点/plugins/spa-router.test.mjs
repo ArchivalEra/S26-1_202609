@@ -49,23 +49,27 @@ test('三个插件真的暴露了 reset 钩子（构建产物检查）', () => {
   assert.ok(t.includes('__readerRescan'), 'shirone-reader 暴露 __readerRescan');
 });
 
-test('sw.js 形状：双策略 + 版本注入 + 无写死域名', () => {
-  const sw = fs.readFileSync(path.join(HERE, '../dist/sw.js'), 'utf8');
-  assert.ok(sw.includes('cache-first') || sw.includes('caches.match(req)'), '资产 cache-first');
-  assert.ok(sw.includes('stale-while-revalidate') || (sw.includes('PAGE_CACHE') && sw.includes('refresh')), '页面 SWR');
-  assert.ok(!sw.includes('github.io') && !sw.includes('isui.ren'), '不得写死域名（双部署）');
-  assert.ok(/VERSION = 'v[0-9a-z]+'/.test(sw), '版本号已注入');
+// ⭐ SW 已根除（2026-10-23 用户定案：长任务要「永远新鲜的页面」——SW 的
+// stale-while-revalidate 会先出旧缓存、下次才生效，模型连跳十几页会拿到上一版 HTML；
+// 资产缓存由浏览器 HTTP 缓存 + CDN + 站点自带 ?v=<内容哈希> 接管）。旧的两个
+// 形状测试随 sw.js 一起退役，换成根除后的守卫：
+//   ① 产物里没有 sw.js、页面里没有注册行（防「复活」）
+//   ② 一次性清理脚本在场（老用户旧 SW 的退役通道，跑一两周后连它一起删）
+
+test('SW 根除：产物无 sw.js、页面无注册行（防复活）', () => {
+  assert.ok(!fs.existsSync(path.join(HERE, '../dist/sw.js')), 'dist/sw.js 不得存在');
+  const page = fs.readFileSync(path.join(HERE, '../dist/index.html'), 'utf8');
+  assert.ok(!page.includes('serviceWorker.register'), '页面不得注册 SW');
+  assert.ok(!/"sw\.js"/.test(page), '页面不得引用 sw.js');
 });
 
-test('sw 预缓存清单来自实际产物', () => {
-  const sw = fs.readFileSync(path.join(HERE, '../dist/sw.js'), 'utf8');
-  const m = sw.match(/const SW_ASSETS = (\[[^\]]*\]);/);
-  assert.ok(m, 'ASSETS 清单存在');
-  const list = JSON.parse(m[1].replace(/"/g, '"'));
-  assert.ok(list.length > 5, '清单非空');
-  for (const rel of list) {
-    assert.ok(fs.existsSync(path.join(HERE, '../dist', rel)), `预缓存文件存在: ${rel}`);
-  }
+test('SW 根除：一次性清理脚本在场且被页面引用（老用户退役通道）', () => {
+  const kill = fs.readFileSync(path.join(HERE, '../dist/assets/plugins/sw-kill.js'), 'utf8');
+  assert.ok(kill.includes('unregister'), '清理脚本必须反注册');
+  assert.ok(kill.includes('caches.delete') || kill.includes('caches.keys'), '清理脚本必须清缓存');
+  assert.ok(kill.includes('sw_killed'), '必须有去重标记（清完变 no-op）');
+  const page = fs.readFileSync(path.join(HERE, '../dist/index.html'), 'utf8');
+  assert.ok(page.includes('sw-kill.js'), '页面必须引用清理脚本');
 });
 
 
@@ -79,10 +83,7 @@ test('① 旧缓存页防御：读不到侧栏形状时 active 不被清空（re
     '读不到 nav JSON 时返回 undefined（保留烘焙态，不清空强调栏）');
 });
 
-test('② SW 版本握手：activate 清空 pages 缓存（含本版），杜绝新旧页面组合', () => {
-  const sw = fs.readFileSync(path.join(HERE, 'sw-template.js'), 'utf8');
-  assert.ok(sw.includes("k.startsWith('pages-')"), 'activate 清 pages- 前缀缓存');
-});
+// ② SW 版本握手测试随 sw-template.js 一起退役（SW 已根除，见上方根除守卫测试）。
 
 test('③ 兜底分级：网络失败先 cache:reload 重试再整页跳', () => {
   const src = fs.readFileSync(path.join(HERE, 'spa-router.mjs'), 'utf8');

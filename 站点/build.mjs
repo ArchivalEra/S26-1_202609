@@ -13,6 +13,8 @@ import { WEBMCP_LOADER_JS, WEBMCP_RELAY_JS } from './plugins/webmcp-loader.mjs';
 import { PAGE_BRIDGE_JS } from './plugins/page-bridge.mjs';
 import { CHAT_JS, CHAT_CSS } from './plugins/chat-panel.mjs';
 import { SPA_ROUTER_JS } from './plugins/spa-router.mjs';
+// SW 根除（2026-10-23）：一次性反注册脚本——见下方写盘段注释
+import { SW_KILL_JS } from './plugins/sw-kill.mjs';
 import { DRAWER_SYNC_JS } from './plugins/drawer-sync.mjs';
 import { buildNavModel, isActive, isExpanded, NAV_STRUCTURE_JS } from './plugins/nav-structure.mjs';
 import { WEBMCP_SHIM_JS } from './plugins/webmcp-shim.mjs';
@@ -251,17 +253,15 @@ fs.writeFileSync(path.join(webmcpDir, 'spa-router.js'), SPA_ROUTER_JS);
 fs.writeFileSync(path.join(webmcpDir, 'nav-structure.js'), NAV_STRUCTURE_JS);
 fs.writeFileSync(path.join(webmcpDir, 'drawer-sync.js'), DRAWER_SYNC_JS);
 
-// SW：模板 + 本版资产清单（预缓存）注入，写到 dist 根（注册 scope ./ 覆盖全站）
-const swAssets = fs.readdirSync(path.join(DIST_DIR, 'assets', 'plugins'))
-  .map((f) => 'assets/plugins/' + f)
-  .concat(['assets/theme/shirone-reader.js', 'assets/theme/shirone-reader.css',
-           'assets/katex/katex.min.css', 'assets/katex/katex.min.js']);
-const swSrc = fs.readFileSync(path.join(SITE_DIR, 'plugins', 'sw-template.js'), 'utf8')
-  .replace("const VERSION = 'v1';", `const VERSION = 'v${Date.now().toString(36)}';`)
-  .replace('// 预缓存：本版静态资产清单由构建期注入到 SW_ASSETS', '// 预缓存清单（构建期注入）\nconst SW_ASSETS = ' + JSON.stringify(swAssets) + ';')
-  .replace('ASSETS_LIST', JSON.stringify(swAssets));
-fs.writeFileSync(path.join(DIST_DIR, 'sw.js'), swSrc);
-console.log('[build] Wrote spa-router.js + sw.js (assets: ' + swAssets.length + ')');
+// SW 已根除（2026-10-23 用户定案：长任务要「永远新鲜的页面」，SW 的 SWR/预缓存
+// 与它正面冲突——页面先出旧缓存、后台静默更新、下次才生效，模型跳十几次页会拿到
+// 上一版 HTML；且 SW 修过两次版本错配/部署形态坑，是纯负资产。浏览器 HTTP 缓存 +
+// CDN + 站点自带的 ?v=<内容哈希> 接管静态资产缓存）。
+//
+// 这里写的是**一次性清老用户**的 sw-kill.js：老浏览器里已注册的旧 SW 还活着，
+// 页面加载时反注册 + 清全部 caches。跑一两周（老用户都来过一次）后删本段。
+fs.writeFileSync(path.join(webmcpDir, 'sw-kill.js'), SW_KILL_JS);
+console.log('[build] Wrote sw-kill.js (one-shot SW removal for legacy visitors)');
 
 // 检索语料：渲染循环里逐页填，循环结束后统一建索引。
 const searchDocs = [];
@@ -1624,7 +1624,9 @@ for (const relPath of TARGET_FILES) {
   <script src="${rootRel}${assetUrl('assets/plugins/chat-panel.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/assistant-bundle.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/spa-router.js')}" defer></script>
-  <script>if ('serviceWorker' in navigator) { addEventListener('load', function () { navigator.serviceWorker.register('${rootRel}sw.js'); }); }</script>
+  <!-- SW 已根除（2026-10-23）：只保留一次性清理，反注册老用户的旧 SW + 清 caches。
+       localStorage 标记去重，清完一次后本脚本自动变 no-op。 -->
+  <script src="${rootRel}${assetUrl('assets/plugins/sw-kill.js')}" defer></script>
 </body>
 </html>`;
 
