@@ -123,6 +123,11 @@ export function parseToolCalls(rawText, knownTools) {
         .replace(/^[\s:：,，、的]+/, '')
         .replace(/[。.]\s*$/, '')
         .trim();
+      // ⚠️ 2026-10-23 修（lab 闸门红）：rest 也必须短。真实调用的参数是关键词
+      // （「工程数学作业2」「卡诺图」），不会是几十字的整段。这条守的是
+      // 「长正文里偶然提到工具名」——前缀短 + 正文长 ⇒ 第一处命中就把
+      // 后面整段吞成 _positional。rest > 60 字 = 不是调用，跳过。
+      if (rest.length > 60) continue;
       const args = {};
       if (rest) {
         // `query=电机学 课堂笔记, scope=site` → {query:'电机学 课堂笔记', scope:'site'}
