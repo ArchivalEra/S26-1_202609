@@ -60,10 +60,30 @@ export function createChatService({
   // 否则 SPA 换页后新增/移除的工具跟不上（站点侧注册表会变）。
   let currentTools = tools;
 
+  // ⚠️ 2026-10-25（长任务实测）：会话表**必须有上限**。
+  // 桥是长命单例，而 sessionId 每个调用方都可能不同（测试/面板/脚本各用各的）——
+  // 旧实现只增不减：几十次跑下来 mgr 里堆几十个会话，每个 open 都连一条上游 WS，
+  // 而它们共享同一个上游身份（visitorId 由 cookie 定）⇒ 历史在服务端累积，
+  // 表现为模型反复念叨之前某场对话的内容（实测「浙江水利水电学院」）。
+  // 上限 + LRU：超过 MAX_SESSIONS 关掉最久未用的那一个。
+  const MAX_SESSIONS = 4;
+  const lru = [];
+  const touch = (key) => {
+    const i = lru.indexOf(key);
+    if (i >= 0) lru.splice(i, 1);
+    lru.push(key);
+    while (lru.length > MAX_SESSIONS) {
+      const old = lru.shift();
+      const sid = sessions.get(old);
+      if (sid != null) { try { mgr.close(sid); } catch { /* 已关 */ } }
+      sessions.delete(old);
+    }
+  };
   const getSession = (key) => {
     if (!sessions.has(key)) {
       sessions.set(key, mgr.open({ planning: true, modelId: 559 }));
     }
+    touch(key);
     return sessions.get(key);
   };
 
@@ -159,7 +179,10 @@ export function createChatService({
       phase('generating');
       // 用户附件（2026-10-19）：作为首轮 fileInfo 进入工具会话 ——
       // 与「模型调 site_image 自动上传」共用同一条视觉通道。
-      const runOpts = { timeout: 180000, idleMs: 50000, onChunk };
+      // ⚠️ 2026-10-25（无上限长任务实测：40 轮后答案退化成 15 字碎片）：
+      // idleMs 50000 → 120000。长任务后期上游思考时间显著变长（实测第 40 轮
+      // 63 秒无帧），50 秒的看门狗把它误判成「冻死」，已收到的正文被丢弃后重试。
+      const runOpts = { timeout: 240000, idleMs: 120000, onChunk };
       if (Array.isArray(attach) && attach.length) runOpts.fileInfo = attach;
       result = await ts.run(text, runOpts);
     } catch (e) {
