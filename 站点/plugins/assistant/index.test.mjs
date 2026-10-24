@@ -131,5 +131,5 @@ test('会话身份透传：sid 形态可识别且不含上游信息', async () =
   const { bridge, taps } = fakeBridge([{ ok: true, text: '好' }]);
   const svc = createAssistantClient({ bridge, tools: TOOLS, invoke: async () => ({ ok: true, value: '' }) });
   await svc.ask('c1', '你好', () => {});
-  assert.match(taps.asks[0].payload.sessionId, /^site-\d+$/, 'sid 用 site- 前缀（区别于面板 web- 与 A 侧缺省铸造）');
+  assert.match(taps.asks[0].payload.sessionId, /^site-\d+-[a-z0-9]{6}$/, 'sid = site-序号-每页随机量（刷新即新 id，污染会话甩得掉）');
 });

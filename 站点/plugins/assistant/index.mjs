@@ -46,9 +46,13 @@ function bridgeAdapter(bridge) {
   // （web-1、web-2…），roleB 的「新问才受闸」把每一轮工具循环都当成新的一问，
   // 第二轮起全被 3 秒速率闸拒掉——生产路径（userscript 通道）首发即中。
   let sessionSeq = 0;
+  // 每页随机量（站长定案 2026-10-25）：同页会话内 sid 稳定（速率闸续轮语义不变），
+  // 换页/刷新必然新 id——上游会话一旦被污染（误贴代码等），刷新即逃生；
+  // 也消除跨页计数器重置带来的 sid 字符串碰撞（'site-1' 每页都会出现）。
+  const pageNonce = Math.random().toString(36).slice(2, 8);
   return {
     async open() {
-      const sessionId = 'site-' + (++sessionSeq);
+      const sessionId = 'site-' + (++sessionSeq) + '-' + pageNonce;
       return {
         /**
          * 一次提问 = 一次 bridge.ask。
