@@ -363,18 +363,133 @@ test('CHAT_CSS：过程提示在视觉上与正文分开', () => {
   assert.match(CHAT_CSS, /\.chat-status[\s\S]*?on-surface-variant/, '过程提示要用弱化色');
 });
 
-test('CHAT_JS：状态码正则没有被模板串吃掉（2026-10-22，第五次同类坑）', () => {
-  // CHAT_JS 是普通模板字符串：源码里写单个反斜杠 d，求值时会被当成转义吃掉，
-  // 产物变成 /^HTTP (d{3})$/ ⇒ 「HTTP 429」永远匹配不上 ⇒ 401/403/404/413/429
-  // 四个分支全是死代码。判据只看**代码行**（排除注释——注释里有意保留旧形态作考古）。
-  const BS = String.fromCharCode(92);
-  const GOOD = 'HTTP (' + BS + 'd{3})';
-  const BAD = 'HTTP (' + 'd{3})';
-  const codeLines = CHAT_JS.split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
-  assert.ok(codeLines.includes(GOOD), '代码里状态码正则应保留反斜杠 d');
-  assert.equal(codeLines.includes(BAD), false, '代码里不得出现无反斜杠的 d{3} 形态');
-  // 行为验证：抠出那段正则真跑一次
-  const m = codeLines.match(/msg\.match\((\/\^HTTP[^)]*\)\$?\/)\)/);
+// ── 模板串吃掉正则转义的泛化守卫（2026-10-24，第六坑后收口）─────────
+//
+// 坑的机理：`*_JS` 导出是普通模板串，源码里写单反斜杠 s/d/w，模板串求值时会把
+// 单个反斜杠当转义吃掉，产物正则变成 /（s*d+s*秒s*）/——第五坑（HTTP 的 d{3}）、
+// 第六坑（秒表叠字）同一个机理。单点守卫只能护住已知那一条；这里泛化为扫描
+// **全部** *_JS 模板串导出的 cooked 产物：把每个产物当 JS 逐字符走一遍（跳过
+// 字符串、注释、模板串——裸串全扫会把注释里的 **加粗**、代码里的 fails++、
+// 字符串里的 LaTeX end{ 全误伤成命中），抠出全部正则字面量，体内出现
+// 「字母 s/d/w 后跟量词（* + {）且字母前无反斜杠」即红。免疫对照（η 审计已证）：
+//   · 源里写双反斜杠 d{3} ⇒ 产物字母前有反斜杠，不报；
+//   · toString 插值路径（chat-render 等函数源码）字节原样，转义带着反斜杠进来，不报。
+// 已知保守性：正则/除号的判别用的是「前一个 token」启发式，误判只会**漏报**
+// （把正则当除号跳过），不会误报；模板串里的嵌套插值同理。守卫宁可漏不可错杀。
+
+function scanEatenRegexEscapes(code) {
+  const hits = [];
+  const n = code.length;
+  const KEYWORDS = new Set(['return', 'typeof', 'instanceof', 'in', 'of',
+    'case', 'delete', 'void', 'throw', 'new', 'do', 'else', 'yield', 'await']);
+  let i = 0, line = 1, prevWord = '', prevChar = '';
+  while (i < n) {
+    const c = code[i];
+    if (c === '\n') { line++; i++; continue; }
+    if (c === ' ' || c === '\t' || c === '\r') { i++; continue; }
+    if (c === '/' && code[i + 1] === '/') { while (i < n && code[i] !== '\n') i++; continue; }
+    if (c === '/' && code[i + 1] === '*') {
+      i += 2;
+      while (i < n && !(code[i] === '*' && code[i + 1] === '/')) { if (code[i] === '\n') line++; i++; }
+      i += 2; continue;
+    }
+    if (c === '"' || c === "'") { // 字符串：整段跳过
+      const q = c; i++;
+      while (i < n && code[i] !== q) { if (code[i] === '\\') i++; else if (code[i] === '\n') line++; i++; }
+      i++; prevWord = ''; prevChar = '"'; continue;
+    }
+    if (c === '`') { // 模板串：产物里目前只在 toString 注入段出现，防御性跳过
+      i++;
+      while (i < n && code[i] !== '`') { if (code[i] === '\\') i++; else if (code[i] === '\n') line++; i++; }
+      i++; prevWord = ''; prevChar = '"'; continue;
+    }
+    if (/[A-Za-z0-9_$]/.test(c)) { // 标识符/关键字/数字——其后紧跟的 / 按除号处理
+      let j = i + 1;
+      while (j < n && /[A-Za-z0-9_$]/.test(code[j])) j++;
+      prevWord = code.slice(i, j); prevChar = '';
+      i = j; continue;
+    }
+    if (c === '/') {
+      // 除号 vs 正则开头：前一个是普通标识符/数字/右括号/右方括号/字符串 ⇒ 除号
+      const isRegex = (prevWord !== '' && KEYWORDS.has(prevWord))
+        || (prevWord === '' && prevChar !== ')' && prevChar !== ']' && prevChar !== '"');
+      if (!isRegex) { prevWord = ''; prevChar = '/'; i++; continue; }
+      const startLine = line;
+      let j = i + 1, inClass = false;
+      while (j < n) { // 正则体：到未转义的 / 为止；字符类里的 / 不算结束
+        const d = code[j];
+        if (d === '\\') { j += 2; continue; }
+        if (d === '\n') { line++; j++; continue; }
+        if (d === '[') inClass = true;
+        else if (d === ']') inClass = false;
+        else if (d === '/' && !inClass) break;
+        j++;
+      }
+      const body = code.slice(i + 1, j);
+      // 体内扫描：字母前有反斜杠 ⇒ 免疫；字符类内部不算（类里的字母是字面字符，
+      // 量词跟不到它头上，[d*] 是合法写法）
+      let cls = false;
+      for (let k = 0; k < body.length; k++) {
+        const b = body[k];
+        if (b === '\\') { k++; continue; }
+        if (b === '[') { cls = true; continue; }
+        if (b === ']') { cls = false; continue; }
+        if (!cls && (b === 's' || b === 'd' || b === 'w')
+          && (body[k + 1] === '*' || body[k + 1] === '+' || body[k + 1] === '{')) {
+          hits.push({ line: startLine, body });
+          break;
+        }
+      }
+      i = j + 1; prevWord = ''; prevChar = '"'; continue;
+    }
+    prevWord = ''; prevChar = c; i++;
+  }
+  return hits;
+}
+
+test('全部 *_JS 产物：正则字面量里没有裸 s/d/w 转义（泛化扫描）', async () => {
+  // 导出清单动态发现（读源码找 export const *_JS =），新加的插件模板串自动进扫描。
+  // 这些模块 build.mjs 在 Node 里都要 import，天然无 DOM 依赖，测试里 import 是安全的。
+  const { readdirSync, readFileSync } = await import('node:fs');
+  const dir = new URL('.', import.meta.url);
+  const files = readdirSync(dir).filter((f) => f.endsWith('.mjs') && !f.endsWith('.test.mjs'));
+  const offenders = [];
+  const seen = [];
+  for (const f of files) {
+    const names = [...readFileSync(new URL(f, dir), 'utf8').matchAll(/export const (\w+_JS)\s*=/g)]
+      .map((m) => m[1]);
+    if (!names.length) continue;
+    const mod = await import('./' + f);
+    for (const name of names) {
+      const cooked = mod[name];
+      if (typeof cooked !== 'string') { offenders.push(f + ' 的 ' + name + ' 不是字符串'); continue; }
+      seen.push(name);
+      for (const hit of scanEatenRegexEscapes(cooked)) {
+        offenders.push(name + '（' + f + '）产物第 ' + hit.line + ' 行正则 /' + hit.body + '/');
+      }
+    }
+  }
+  // 清单健全性：主干导出必须在场，防止「目录读空导致假绿」
+  for (const must of ['CHAT_JS', 'WEBMCP_TOOLS_JS', 'SPA_ROUTER_JS', 'PAGE_BRIDGE_JS', 'DRAWER_SYNC_JS']) {
+    assert.ok(seen.includes(must), '导出清单异常，缺 ' + must + '（实际：' + seen.join(', ') + '）');
+  }
+  assert.deepEqual(offenders, [],
+    '模板串吃掉了正则转义（字母 s/d/w 前无反斜杠，源码应写双反斜杠）：\n' + offenders.join('\n'));
+});
+
+test('CHAT_JS：秒表正则能剥掉服务端带的秒数（第六坑修复的行为验证）', () => {
+  // 抠出 setStatus 里 replace(/（…）/g 那条正则，用真实叠字样例跑一遍。
+  // 修复前产物是 /（s*d+s*秒s*）/：一个「（N 秒）」也剥不掉，秒数会一直叠下去。
+  const m = CHAT_JS.match(/replace\((\/（.*?秒.*?\/)g/);
+  assert.ok(m, '应能抠出秒表正则');
+  const re = new RegExp(m[1].slice(1, -1), 'g');
+  assert.equal('正在思考（15 秒）（16 秒）'.replace(re, ''), '正在思考', '两个秒数都得剥掉');
+  assert.equal('正在检索资料'.replace(re, ''), '正在检索资料', '没带秒数时不得误伤正文');
+});
+
+test('CHAT_JS：状态码正则能匹配 HTTP 429/401（第五坑的行为回归）', () => {
+  // 字符形态的把关已由上面的泛化扫描接管；这里只留行为验证：抠出正则真跑一次。
+  const m = CHAT_JS.match(/msg\.match\((\/\^HTTP[^)]*\)\$?\/)\)/);
   assert.ok(m, '应能抠出状态码正则');
   const re = new RegExp(m[1].slice(1, -1));
   assert.equal(re.test('HTTP 429'), true, '必须能匹配 HTTP 429');

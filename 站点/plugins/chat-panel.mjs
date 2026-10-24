@@ -1219,7 +1219,11 @@ function setStatus(msg, text) {
   if (!msg.statusEl) { attachStatusSlot(msg); if (!msg.statusEl) return; }
   // 秒数一律由本地秒表负责：把服务端可能带的所有「（N 秒）」全剥掉，
   // 否则会出现「…（15 秒）（16 秒）」这种叠字。
-  msg.statusBase = String(text).replace(/（\s*\d+\s*秒\s*）/g, "").trim();
+  // ⚠️ 2026-10-24 修：这里原来写单反斜杠 s/d 形态——本串整体在 CHAT_JS 普通
+  // 模板串里，单个反斜杠会被求值吃掉，产物变成 /（s*d+s*秒s*）/，一个「（N 秒）」
+  // 也剥不掉（防叠字逻辑在产线上是死代码，第六次踩模板串的坑）。
+  // 写双反斜杠才能 cook 出可用的正则；改这里必须在产物里验证。
+  msg.statusBase = String(text).replace(/（\\s*\\d+\\s*秒\\s*）/g, "").trim();
   if (!msg.queryStartedAt) msg.queryStartedAt = Date.now();
   msg.statusEl.textContent = msg.statusBase;
 }
