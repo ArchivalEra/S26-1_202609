@@ -40,7 +40,7 @@ import { createChatService } from './chatsvc.mjs';
  *
  * @param {{ask: Function, cancel: Function}} bridge window.__assistantBridge
  */
-function bridgeAdapter(bridge) {
+function bridgeAdapter(bridge, toolsProvider) {
   // 2026-10-24 修（生产验收「发得太快了」）：每个管理器会话铸一个**稳定** sid
   // 随每轮 ask 递给桥。此前 payload 不带会话身份，A 侧薄桥只能每轮自铸
   // （web-1、web-2…），roleB 的「新问才受闸」把每一轮工具循环都当成新的一问，
@@ -71,7 +71,22 @@ function bridgeAdapter(bridge) {
             if (!onChunk || !ev || ev.type !== 'delta' || ev.text == null) return;
             try { onChunk(String(ev.text)); } catch { /* 消费方自理 */ }
           };
-          const r = await bridge.ask({ text: String(prompt == null ? '' : prompt), sessionId }, onEvent);
+          // ⚠️ 2026-10-25 修（生产验收「上游说有工具但不知道怎么用」）：
+          // payload.tools 一直是空数组——工具定义只进了本地的工具会话（用于解析
+          // 与执行），**从没随 ask 递到上游**。roleA 头注释早就写明「tools 由
+          // 站点侧每问现取填入，通道契约要求该字段恒在」，这里补上。
+          // 症状：上游收到「你有哪些工具」的教学文案 + 空工具表 ⇒ 知道存在、
+          // 调不出来，只能回「我环境里没有 site_* 工具」。
+          let toolDefs = [];
+          try {
+            const t = typeof toolsProvider === 'function' ? await toolsProvider() : null;
+            if (Array.isArray(t)) toolDefs = t;
+          } catch { toolDefs = []; }
+          const r = await bridge.ask({
+            text: String(prompt == null ? '' : prompt),
+            sessionId,
+            tools: toolDefs,
+          }, onEvent);
           const text = String((r && r.text) || '');
           if (r && r.ok === true) return { text, status: 'answered' };
           const reason = String((r && r.reason) || '');
@@ -115,7 +130,14 @@ export function createAssistantClient({
   if (typeof invoke !== 'function') {
     throw new Error('createAssistantClient: 缺少 invoke（工具执行接缝）');
   }
-  const mgr = createManager({ adapter: bridgeAdapter(bridge) });
+  // 工具表**每问现取**（SPA 换页后注册表会变）：tools 参数既可以是数组，
+  // 也可以是 () => 数组 / Promise 的提供器。传数组时也按引用读（调用方 push
+  // 新工具能跟上），不复制快照。
+  const readTools = async () => {
+    const t = typeof tools === 'function' ? await tools() : tools;
+    return Array.isArray(t) ? t : [];
+  };
+  const mgr = createManager({ adapter: bridgeAdapter(bridge, readTools) });
   return createChatService({
     mgr, tools, invoke, contextProvider, navToolNames, rounds,
   });

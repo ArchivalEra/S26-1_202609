@@ -56,6 +56,8 @@ export function createChatService({
   // sessionId（浏览器侧的会话名）→ 管理器 id
   const sessions = new Map();
   // 每次 ask 时更新：工具清单可能随页面导航变化
+  // 2026-10-25：tools 可能是**提供器**（() => 数组 / Promise）——每问现取，
+  // 否则 SPA 换页后新增/移除的工具跟不上（站点侧注册表会变）。
   let currentTools = tools;
 
   const getSession = (key) => {
@@ -145,7 +147,9 @@ export function createChatService({
 
     const ts = createToolSession({
       mgr, sessionId: sid, invoke: wrappedInvoke,
-      tools: currentTools,
+      tools: typeof currentTools === 'function'
+        ? await currentTools()
+        : (Array.isArray(currentTools) ? currentTools : []),
       rounds, navToolNames,
       upload, visionQuestion, contextProvider,
     });
