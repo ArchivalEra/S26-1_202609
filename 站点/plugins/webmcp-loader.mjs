@@ -245,6 +245,21 @@ function shouldBridge() {
   } catch (e) { return false; }
 }
 
+// 2026-10-25（生产验收）：形态 3 保留「读者不付 281KB」，但**给面板留一个
+// 运行时开关** window.__webmcpEnable()——面板打开/首次发问时调它，
+// 当场补载 polyfill 并注册工具。这样「要不要页面工具」不再要求用户记住
+// ?webmcp=1 或手写 localStorage（验收里正因为没人记，mode 一直是 absent，
+// 工具零注册 → 提示词整段被跳过 → 模型只回「我没有 site_* 工具」）。
+window.__webmcpEnable = function () {
+  if (window.__webmcpMode === "polyfill+wanted" || window.__webmcpMode === "native-document") return window.__webmcpMode;
+  if (hasDoc) { window.__webmcpMode = "native-document"; injectPlugins(); return window.__webmcpMode; }
+  window.__webmcpMode = "polyfill+wanted";
+  var p = inject("../vendor/webmcp/polyfill.iife.js");
+  p.onload = function () { injectPlugins(); };
+  p.onerror = function () { window.__webmcpMode = "polyfill-failed"; };
+  return window.__webmcpMode;
+};
+
 if (hasDoc) {                       // 形态 1：原生已有 document 注册表 → 直接用
   window.__webmcpMode = "native-document";
   injectPlugins();
@@ -253,7 +268,7 @@ if (hasDoc) {                       // 形态 1：原生已有 document 注册�
   var p = inject("../vendor/webmcp/polyfill.iife.js");
   p.onload = function () { injectPlugins(); };
   p.onerror = function () { window.__webmcpMode = "polyfill-failed"; };
-} else {                            // 形态 3：普通读者没要 → 一个字节都不拉
+} else {                            // 形态 3：普通读者没要 → 一个字节都不拉（面板可随时开）
   window.__webmcpMode = "absent";
 }
 })();`;

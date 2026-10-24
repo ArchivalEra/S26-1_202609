@@ -306,7 +306,13 @@ export function createToolSession({
   }
 
   async function run(userText, askOpts) {
-    const wantsPageAction = (alwaysTools || actionRe.test(userText)) && allowed.length > 0;
+    // ⚠️ 2026-10-25 修（生产验收）：**工具表为空也必须发提示词**。
+    // 旧条件 `&& allowed.length > 0` 的后果：页面工具没注册时（mode=absent、
+    // polyfill 未加载、SPA 换页丢注册），提示词整段被跳过，用户正文裸发上游——
+    // 模型连「有这套文本协议」都不知道，只会回「我没有 site_* 工具」。
+    // 提示词里的示例与调用形态本来就与工具表无关（catalog 为空只是少一行清单），
+    // 照发才能让模型写出调用行；真调不通时回喂会如实报错，比静默裸问好。
+    const wantsPageAction = alwaysTools || actionRe.test(userText);
     // G15 疑问式法则：工具表在前、任务句在最后（模型最后读到的就是那个问句）
     let prompt = wantsPageAction ? pageToolsPrompt(allowed, userText) : userText;
 
