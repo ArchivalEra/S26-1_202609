@@ -37,19 +37,19 @@ sh gates-selftest.sh                             # 每道闸门先证明自己�
 
 | 键 | 值 | 测于 | 复跑命令 |
 |---|---|---|---|
-| `courses` | **6** | 2026-10-24T18:11:32+0800 | `ls -d 课程/*/ | wc -l` |
-| `figures` | **174** | 2026-10-24T18:11:32+0800 | `ls 课程/电路原理/作业/figures/ | wc -l` |
-| `glossary_entries` | **179** | 2026-10-24T18:11:32+0800 | `awk '/^:::glossary-dict/{f=1;next} /^:::/{f=0} f&&/^sym-/{n++} END{print n}' 站点/符号包/通用.md 课程/电机学/教材解析/0.0-符号入门.md 课程/工程数学/教材解析/0.0-符号入门.md 课程/电路原理/教材解析/0.0-符号入门.md` |
-| `handoff_lines` | **401** | 2026-10-24T18:11:47+0800 | `wc -l < .zcode/handoff.md` |
-| `handoff_sections` | **12** | 2026-10-24T18:11:47+0800 | `grep -c '^### 0\.' .zcode/handoff.md` |
-| `homework` | **19** | 2026-10-24T18:11:32+0800 | `find 课程 -path '*/作业/*.md' ! -name 'index.md' | wc -l` |
-| `hooktests` | **28** | 2026-10-24T18:11:47+0800 | `python3 .githooks/test-update-readme.py 2>&1 | grep -oE 'Ran [0-9]+ tests' | awk '{print $2}'` |
-| `md_files` | **143** | 2026-10-24T18:11:32+0800 | `git ls-files '*.md' | wc -l` |
-| `notes` | **25** | 2026-10-24T18:11:32+0800 | `find 课程 -path '*/课堂笔记/*.md' ! -name 'index.md' | wc -l` |
-| `plugin_tests` | **336** | 2026-10-24T18:11:47+0800 | `cd 站点 && node --test plugins/*.test.mjs 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2=="tests"||$2=="fail"||$2=="cancelled") {v[$2]=$3} END {t=v["tests"]; f=v["fail"]+0; c=v["cancelled"]+0; if (t=="") {print "plugin_tests：没读到 tests 汇总行（node --test 没跑完？）" > "/dev/stderr"; exit 1} print t; if (f+c>0) {print "plugin_tests：fail=" f " cancelled=" c " ⇒ 红测试，非零退出（issue #18 决策 #7）" > "/dev/stderr"; exit 1}}'` |
-| `problems` | **278** | 2026-10-24T18:11:32+0800 | `python3 -c "import re,glob;print(sum(len(re.findall(r'[0-9]+',s)) for f in glob.glob('课程/电路原理/作业/2026-09-28-习题册第*.md') for ln in open(f,encoding='utf-8') if ln.startswith('### ') for s in re.findall(r'(?:选|填|计|判|画图)\s*([0-9][0-9、,\s]*)', re.sub(r'（[^）]*）','',ln[4:]))))"` |
-| `sitepages` | **115** | 2026-10-24T18:11:32+0800 | `sed -n '/^export const TARGET_FILES = \[/,/^\];/p' 站点/页面清单.mjs | grep -c "^  '"` |
-| `textbook` | **21** | 2026-10-24T18:11:32+0800 | `find 课程 -path '*/教材解析/*.md' ! -name 'index.md' | wc -l` |
+| `courses` | **6** | 2026-10-24T18:22:45+0800 | `ls -d 课程/*/ | wc -l` |
+| `figures` | **174** | 2026-10-24T18:22:45+0800 | `ls 课程/电路原理/作业/figures/ | wc -l` |
+| `glossary_entries` | **179** | 2026-10-24T18:22:45+0800 | `awk '/^:::glossary-dict/{f=1;next} /^:::/{f=0} f&&/^sym-/{n++} END{print n}' 站点/符号包/通用.md 课程/电机学/教材解析/0.0-符号入门.md 课程/工程数学/教材解析/0.0-符号入门.md 课程/电路原理/教材解析/0.0-符号入门.md` |
+| `handoff_lines` | **408** | 2026-10-24T18:22:57+0800 | `wc -l < .zcode/handoff.md` |
+| `handoff_sections` | **13** | 2026-10-24T18:22:57+0800 | `grep -c '^### 0\.' .zcode/handoff.md` |
+| `homework` | **19** | 2026-10-24T18:22:45+0800 | `find 课程 -path '*/作业/*.md' ! -name 'index.md' | wc -l` |
+| `hooktests` | **28** | 2026-10-24T18:22:57+0800 | `python3 .githooks/test-update-readme.py 2>&1 | grep -oE 'Ran [0-9]+ tests' | awk '{print $2}'` |
+| `md_files` | **143** | 2026-10-24T18:22:45+0800 | `git ls-files '*.md' | wc -l` |
+| `notes` | **25** | 2026-10-24T18:22:45+0800 | `find 课程 -path '*/课堂笔记/*.md' ! -name 'index.md' | wc -l` |
+| `plugin_tests` | **336** | 2026-10-24T18:22:57+0800 | `cd 站点 && node --test plugins/*.test.mjs 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2=="tests"||$2=="fail"||$2=="cancelled") {v[$2]=$3} END {t=v["tests"]; f=v["fail"]+0; c=v["cancelled"]+0; if (t=="") {print "plugin_tests：没读到 tests 汇总行（node --test 没跑完？）" > "/dev/stderr"; exit 1} print t; if (f+c>0) {print "plugin_tests：fail=" f " cancelled=" c " ⇒ 红测试，非零退出（issue #18 决策 #7）" > "/dev/stderr"; exit 1}}'` |
+| `problems` | **278** | 2026-10-24T18:22:45+0800 | `python3 -c "import re,glob;print(sum(len(re.findall(r'[0-9]+',s)) for f in glob.glob('课程/电路原理/作业/2026-09-28-习题册第*.md') for ln in open(f,encoding='utf-8') if ln.startswith('### ') for s in re.findall(r'(?:选|填|计|判|画图)\s*([0-9][0-9、,\s]*)', re.sub(r'（[^）]*）','',ln[4:]))))"` |
+| `sitepages` | **115** | 2026-10-24T18:22:45+0800 | `sed -n '/^export const TARGET_FILES = \[/,/^\];/p' 站点/页面清单.mjs | grep -c "^  '"` |
+| `textbook` | **21** | 2026-10-24T18:22:45+0800 | `find 课程 -path '*/教材解析/*.md' ! -name 'index.md' | wc -l` |
 
 13 条事实。
 <!-- /AUTO:FACTS -->
