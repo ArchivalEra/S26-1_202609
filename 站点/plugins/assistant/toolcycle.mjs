@@ -95,6 +95,12 @@ site_read，what=section，query=行列式的性质
 系统返回：（这一节的正文）
 助手：这一节讲了三件事……
 
+用户：去工程数学作业2那一页。
+助手：好，跳过去。
+site_navigate，to=page，path=课程/工程数学/作业/index.html
+系统返回：已跳到该页
+助手：已跳到工程数学作业列表页。
+
 照这个节奏：需要页面内容时，先写一句你打算做什么，再写一行「名字，参数=值」。
 系统会执行那一行并把结果发回来，然后你接着往下写。
 一次只写一行。参数只填关键词，不要整句抄进去。
@@ -310,10 +316,10 @@ export function createToolSession({
             `你在【课程资料站】的：《${ctx.title || ''}》${ctx.course ? '（' + ctx.course + '）' : ''}`,
             ctx.path ? `页面路径：${ctx.path}` : '',
             ctx.sections && ctx.sections.length ? `本页共 ${ctx.sections.length} 个小节。` : '',
-            // 「搜全站」是歧义源之一：模型在自家页面上会把它读成「搜学习通」。
-            '可用工具（只作用于本资料站，不是学习通）：site_index（看本站地图）、'
-              + 'site_read（读本页正文）、site_navigate（去本站别的页）、'
-              + 'site_search（搜本站全站）、site_list_images（列本页图片）。',
+            // 工具名与提示词 catalog 同源（issue #18 P0-3）：都从 allowed 派生，
+            // 不再手抄第二份清单——两份口径不一致时模型会夹在矛盾信息里挑错形态。
+            // 表述按 2026-10-23 定案：不与学习通的工具作区分。
+            `可用工具（作用于当前课程资料站）：${allowed.map((t) => t.name).join('、')}。`,
             '先自己查目录/读正文，再回答。',
           ].filter(Boolean).join('\n');
           prompt = `${head}\n\n${prompt}`;
@@ -412,10 +418,9 @@ export function createToolSession({
       }
       // 退化形态也要认（2026-10-19：上游某些时段只回「site_read读选3」这种裸文本）。
       //
-      // ⚠️ 白名单用**全部已注册工具**（tools），不是提示词里那 3 个（allowed）。
-      // G20 的「工具上限 3 个」约束的是**提示词长度**（清单越长越易被拦），
-      // 不该约束「模型能调什么」——实测模型会自己想到第 4 个工具（site_navigate），
-      // 用 allowed 过滤会把它写的调用静默丢掉。
+      // ⚠️ 解析白名单用**全部已注册工具**（tools），不是提示词清单（allowed）。
+      // 清单约束的是提示词长度，不该约束「模型能调什么」——用 allowed 过滤
+      // 会把模型写的调用静默丢掉（2026-10-23 起 allowed 默认就是全量，此处零风险）。
       let parsed = r.status === 'blocked'
         ? []
         : parseToolCalls(txt, tools.map((t) => t.name)).map((c) => normalizeCall(c));
