@@ -191,7 +191,10 @@ test('navToolNames 过滤：不在名单的工具不进提示词', async () => {
   });
   await ts.run('帮我导航到铁芯损耗');
   assert.match(taps.prompts[0], /site_open_section/);
-  assert.doesNotMatch(taps.prompts[0], /site_search/);
+  // 过滤作用面是「可用：」清单行，不是全文——示例教学行（issue #20 起教先搜再跳）
+  // 天然含 site_search 字样，与清单过滤无关。
+  const catalog = taps.prompts[0].match(/可用：(.+)/)[1];
+  assert.ok(!catalog.includes('site_search'), '清单行不得含被过滤的工具');
 });
 
 // ── 视觉链路（webp→jpeg 后上传，让模型真的看得见图）────────────
@@ -438,15 +441,32 @@ test('首轮上下文里的工具清单也标了「只作用于本资料站」',
 
 // ── 提示词口径与跳转形态（issue #18 P0-3：九次实测 0/9 完成跳转的归因修正）──
 
-test('提示词示例教了跳转形态：site_navigate，to=page，path=…', async () => {
+test('提示词示例教了跳转形态：先搜再跳的完整链（issue #20 改版）', async () => {
   // 模型九次都愿意调 site_navigate，但只给 query 不给 to——因为示例从没
-  // 演示过 to=page 的完整调用行。示例区必须包含它。
+  // 演示过 to=page 的完整调用行。示例区必须包含它；且要教「先搜再跳」两步链
+  // （真实任务大多要先搜到路径），与 issue #18 时只教直跳不同。
   const taps = {};
   const mgr = scriptedMgr(['answer:好'], taps);
   const ts = createToolSession({ mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: TOOLS });
   await ts.run('去工程数学作业2那一页');
   const p = taps.prompts[0];
-  assert.match(p, /site_navigate，to=page，path=课程\/工程数学\/作业\/index\.html/, '示例区必须有 to=page 完整形态');
+  assert.match(p, /site_search，query=示例课程\n系统返回：命中 1 页：课程\/示例\/index\.html/, '示例必须教「搜到路径再跳」的两步链');
+  assert.match(p, /site_navigate，to=page，path=课程\/示例\/index\.html/, '示例区必须有 to=page 完整形态');
+});
+
+test('提示词示例防污染：示例目标是虚拟页 + 演示/任务有边界行（issue #20）', async () => {
+  // E3-T2-r2 实测：示例任务句用真页名（工程数学作业2）时，模型把它当成了真任务，
+  // 答非所问。示例区（任务行之前）不得出现任何真实课程名的任务句；边界行把
+  // 注意力锚回末行任务。
+  const taps = {};
+  const mgr = scriptedMgr(['answer:好'], taps);
+  const ts = createToolSession({ mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: TOOLS });
+  await ts.run('跳到工程数学作业2那一页');
+  const p = taps.prompts[0];
+  const example = p.slice(0, p.indexOf('任务：'));
+  assert.ok(example.includes('演示到此为止'), '演示结束必须有边界行');
+  assert.ok(!example.match(/工程数学|电路原理|电机学|电力大数据|电子技术|形势与政策/), '示例区不得出现真实课程名（虚拟目标零碰撞）');
+  assert.ok(example.includes('示例课程'), '示例目标应是显式虚拟页');
 });
 
 test('上下文头部与提示词 catalog 工具名同源（两份口径不再各活各的）', async () => {
