@@ -808,6 +808,7 @@ var stopAnswerRef = function () {};   // 当前提问的停止句柄（askChat �
 // chat-panel-hook.md，合入记录在归档）。null = 恢复本机桥。不装脚本时这个钩子
 // 永远空置——面板行为与原来完全一致（双形态并存，验收 13）。
 // 面板不知道 iframe/通道/密文的存在：它只认这三个函数，换传输层不用再动面板。
+// 2026-10-25：插件形态整体删除，transport 恒为 null（只走本机桥 SSE）。
 var transport = null;
 
 // ── 工具函数 ────────────────────────────────────────────────
@@ -971,8 +972,6 @@ function prepareImage(file) {
 
 /** 把一张图 POST 到桥的 /upload，拿回 fileInfo。 */
 function uploadAttachment(item, tk) {
-  // 脚本形态：transport 决定怎么上送（攒着随下次 ask 的 payload.images 一起走）
-  if (transport && transport.upload) return transport.upload(item);
   // 非本机不向 127.0.0.1 发请求（2026-10-19 审计修复）
   if (!LOCAL_ONLY) return Promise.reject(new Error("学习助手只在你自己电脑上可用"));
   var b64 = String(item.dataUrl || "").split(",")[1] || "";
@@ -1289,8 +1288,7 @@ function askChat(text) {
   if (busy) return;
   // 底层兜底（2026-10-19）：UI 已经禁用了输入框，但 __chatPanel.ask 是暴露的，
   // 别让任何调用路径在非本机环境发出请求。
-  // transport 存在 = 脚本形态接管（事件走 iframe 通道，不连本机桥）——豁免此门。
-  if (!transport && !LOCAL_ONLY) {
+  if (!LOCAL_ONLY) {
     var nope = addMsg("bot");
     nope.body.textContent = "学习助手只在你自己电脑上可用（要连本地桥进程）。";
     nope.done = true;
@@ -1427,12 +1425,6 @@ function askChat(text) {
 
   function stopAnswer() {
     if (!busy) return;
-    // 脚本形态：走通道 cancel（B 侧真停上游）；5s 无终态则本地收尾（兜底）
-    if (transport) {
-      try { transport.cancel(); } catch (e) { /* 面板照常收尾 */ }
-      try { if (botMsg && botMsg.__shortStop) botMsg.__shortStop(); } catch (e) { /* 已收尾 */ }
-      return;
-    }
     var tk = (function () {
       try { return window.__bridgeToken || localStorage.getItem("webmcp_bridge_token") || ""; } catch (e) { return ""; }
     })();
@@ -1452,48 +1444,10 @@ function askChat(text) {
   stopAnswerRef = stopAnswer;
 
   // ── 双形态分派（2026-10-20）──────────────────────────────
-  // transport 存在 = 脚本形态：事件走 transport.ask 的 onEvent，终态走 Promise。
-  // 词汇与本机桥 SSE 完全一致（handleEventPlain 同一个消费者）。
-  if (transport) {
-    // 2026-10-20 无人值守实测发现（端到端）：B 侧不存在/失联时 transport.ask 的
-    // Promise 永远不落定 → busy 永卡、close 也解不开、后续 submit 全进 stopAnswer。
-    // 兜底：本地超时（比正常一问的最长往返 400s 短不了，但比「永远」好）——
-    // cancel 被点过的场合用短超时（5s：停止后上游回包最多几秒）；
-    // 无人点停的长跑用 420s（对齐管理器 deadline 360s + 余量）。
-    var stopPressed = false;
-    // ⚠️ 2026-10-20 修「按钮已复位却报上一问还没结束」：
-    // 兜底定时器只复位面板自己的 busy，transport 那边的 activeSid 仍指着那一问，
-    // 于是下一问被 transport 直接拒掉，而界面上根本没有停止按钮可按。
-    // 收尾必须**两边一起**：先让 transport 本地放弃（它会落定 Promise，
-    // 下面 .then 里的 finish 也会跑），再补一次面板收尾兜住异常路径。
-    var localTimer = setTimeout(function () {
-      var why = stopPressed ? "（已停止）" : "回答超时（助手未响应）";
-      try { if (transport && typeof transport.abandon === "function") transport.abandon(why); } catch (e) { /* 面板自理 */ }
-      handleEventPlain({ type: "error", reason: why });
-      finish();
-    }, 420000);
-    transport.ask(payload, function (ev) { handleEventPlain(ev); })
-      .then(function (r) {
-        clearTimeout(localTimer);
-        if (r && r.ok) { handleEventPlain({ type: "done", text: r.text || "" }); }
-        else { handleEventPlain({ type: "error", reason: (r && r.reason) || "未知错误" }); }
-        finish();
-      })
-      .catch(function (e) {
-        clearTimeout(localTimer);
-        handleEventPlain({ type: "error", reason: String((e && e.message) || e) });
-        finish();
-      });
-    // 停止被点时缩短兜底（stopAnswer 里置位；那里调 transport.cancel 后
-    // B 侧正常会回 done{cancelled}，5s 内没回就本地收尾）
-    botMsg.__shortStop = function () { stopPressed = true; clearTimeout(localTimer);
-      localTimer = setTimeout(function () {
-        try { if (transport && typeof transport.abandon === "function") transport.abandon("（已停止）"); } catch (e) { /* 面板自理 */ }
-        handleEventPlain({ type: "error", reason: "（已停止）" });
-        finish();
-      }, 5000); };
-    return;
-  }
+  // ── 脚本形态已删除（2026-10-25 架构收口）──────────────────────
+  // 站长定案：删掉插件与站点侧的衔接层，回到 node 桥形态验证。
+  // 原 transport 分支（走 userscript iframe 通道）整段移除——它引入的重复工具循环、
+  // 参数错位、工具表空、白名单双份等一串缺陷随这段一起消失。面板只走本机桥 SSE。
   // ── 本机桥形态（现状，原链不动）──────────────────────────
 
   /** 发一次 /chat。401/403 时刷新一次 token 再试——桥可能重装过（新 token）。 */

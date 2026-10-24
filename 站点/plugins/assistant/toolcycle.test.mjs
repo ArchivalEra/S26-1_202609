@@ -435,8 +435,12 @@ test('首轮上下文里的工具清单也标了「只作用于本资料站」',
   const p = taps.prompts[0];
   // 2026-10-24（issue #18 P0-3）口径变更：不与学习通的工具作区分表述；
   // 头部工具行改为与 catalog 同源派生（见下一条测试）。
-  assert.match(p, /可用工具（作用于当前课程资料站）/, '工具清单自带归属');
+  assert.match(p, /可用工具：site_/, '工具清单在场');
   assert.doesNotMatch(p, /不是学习通/, '不写双系统区分（2026-10-23 定案）');
+  // 2026-10-25（桥形态真上游实测）：首轮只调一次 site_read 就放弃——
+  // 缺的是检索顺序，头部必须写明「先搜定位 → 再读/跳 → 再答」。
+  assert.match(p, /查找顺序：①.*site_search/, '给出检索顺序的第一条');
+  assert.match(p, /② 用 site_navigate 或 site_read/, '给出第二步');
 });
 
 // ── 提示词口径与跳转形态（issue #18 P0-3：九次实测 0/9 完成跳转的归因修正）──
@@ -483,7 +487,7 @@ test('上下文头部与提示词 catalog 工具名同源（两份口径不再�
   });
   await ts.run('读一下这一页');
   const p = taps.prompts[0];
-  const head = p.match(/可用工具（作用于当前课程资料站）：(.+?)。/);
+  const head = p.match(/可用工具：(.+?)。/);
   assert.ok(head, '头部工具行存在');
   const cat = p.match(/可用：(.+)/);
   assert.ok(cat, 'catalog 行存在');

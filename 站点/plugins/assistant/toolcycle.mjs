@@ -327,15 +327,18 @@ export function createToolSession({
           // 旧版塞 12 条标题进去，等于替模型完成了「定位」——它不需要查目录、
           // 不需要判断哪一节相关，直接复述标题当答案（实测「电路原理选3图13解析」）。
           // 现在只给「你在哪 + 有哪些工具」，查找过程还给模型自己。
+          // 2026-10-25（桥形态真上游实测）：首轮模型只调一次 site_read（读到首页
+          // README）就放弃，直接拿示例答案收尾。缺的是**检索顺序**：它不知道该先
+          // 用 site_search 定位、命中页后再读。这里把顺序写成三条可照做的步骤，
+          // 并显式点明「当前页若不是目标页，先搜再跳」（实测起点永远是 README）。
           const head = [
             `你在【课程资料站】的：《${ctx.title || ''}》${ctx.course ? '（' + ctx.course + '）' : ''}`,
-            ctx.path ? `页面路径：${ctx.path}` : '',
+            ctx.path ? `当前页路径：${ctx.path}` : '',
             ctx.sections && ctx.sections.length ? `本页共 ${ctx.sections.length} 个小节。` : '',
-            // 工具名与提示词 catalog 同源（issue #18 P0-3）：都从 allowed 派生，
-            // 不再手抄第二份清单——两份口径不一致时模型会夹在矛盾信息里挑错形态。
-            // 表述按 2026-10-23 定案：不与学习通的工具作区分。
-            `可用工具（作用于当前课程资料站）：${allowed.map((t) => t.name).join('、')}。`,
-            '先自己查目录/读正文，再回答。',
+            `可用工具：${allowed.map((t) => t.name).join('、')}。`,
+            '查找顺序：① 当前页不是目标页时，先 site_search 搜关键词定位页面；'
+              + '② 用 site_navigate 或 site_read 到命中页；③ 读到内容再回答。'
+              + '一轮只写一行调用，系统会把结果发回来，你接着写下一行。',
           ].filter(Boolean).join('\n');
           prompt = `${head}\n\n${prompt}`;
         }
