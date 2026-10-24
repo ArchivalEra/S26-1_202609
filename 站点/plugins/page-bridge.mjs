@@ -147,6 +147,10 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
       yBefore: before.y, yAfter, dy: yAfter - before.y,
       hBefore: before.h, hAfter,
       scrolled: Math.abs(yAfter - before.y) >= 5,   // 5px 阈值内视为没动（亚像素/回弹）
+      // 导航判据：URL 或 data-site-path 任一变化即 navigated（SPA 换页两处都会变；
+      // 只换锚点不算导航——hash 变化时 path 不变，按 scrolled/targetVisible 判）。
+      navigated: before.url.split('#')[0] !== location.href.split('#')[0] || before.path !== ((document.body && document.body.getAttribute('data-site-path')) || ''),
+      urlBefore: before.url, urlAfter: location.href,
     };
     // 目标落位检查：参数里带 title/anchor 时，看目标元素现在在不在视口顶部——
     // 不靠工具自述，靠 getBoundingClientRect 量。
@@ -176,7 +180,14 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
   const run = async (msg) => {
     const handle = handles.find((t) => t.name === msg.name);
     if (!handle) return post({ id: msg.id, ok: false, error: '页面没有工具 ' + msg.name });
-    const before = { y: Math.round(window.scrollY), h: document.documentElement.scrollHeight, args: msg.args || {} };
+    // 2026-10-24（issue #18 决策 #4）：快照补 url 与 data-site-path——
+    // site_navigate 的 to=page 成功跳转（SPA 换页）此前**无法证明**：
+    // scrolled 只量滚动，跳完页滚动可能恰好为 0。URL/路径变了就是导航发生了。
+    const before = {
+      y: Math.round(window.scrollY), h: document.documentElement.scrollHeight, args: msg.args || {},
+      url: location.href,
+      path: (document.body && document.body.getAttribute('data-site-path')) || '',
+    };
     try {
       let value;
       try {

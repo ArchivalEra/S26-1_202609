@@ -209,6 +209,25 @@ test('退化调用：长正文里提工具名不算调用', () => {
   assert.equal(parseToolCalls(long, ['site_search']).length, 0);
 });
 
+// ── 出现位循环（issue #18 P1-5，2026-10-24）────────────────
+// 首现在叙述句里（被判陈述形态）时，同名的真调用行必须仍被找到——
+// 此前只试第一个出现位，整条丢弃。
+
+test('出现位循环：叙述里先提工具名、后另起一行写调用，调用仍被解析', () => {
+  const known = ['site_search'];
+  const r = parseToolCalls('我用 site_search 来搜索内容哦\nsite_search，query=工程数学作业2', known);
+  assert.equal(r.length, 1, '第一个出现位是陈述形态，第二个才是调用——不许整条丢');
+  assert.equal(r[0].name, 'site_search');
+  assert.equal(r[0].args.query, '工程数学作业2');
+  assert.equal(r[0].degraded, true);
+});
+
+test('出现位循环：所有出现位都是陈述形态时不硬认', () => {
+  const known = ['site_search'];
+  const r = parseToolCalls('我先用 site_search 来搜，再用 site_search 补充搜', known);
+  assert.equal(r.length, 0, '两个出现位都是「空格+动词」陈述形态，不能挑一个硬当调用');
+});
+
 // ── 定时器契约（2026-10-19 真 bug：墙钟被自己清掉）─────────────
 //
 // 症状：一次问答在工具调用后挂 384 秒，靠上层管理器的 360s deadline 才收束，
