@@ -629,3 +629,17 @@ test('流式：走到末轮时转发 onChunk', async () => {
   assert.equal(taps.rounds[1].hasChunk, true, '末轮必须转发');
   assert.ok(chunks.length > 0, '末轮应该有 chunk 流出来');
 });
+
+// ── 工具表为空也要发提示词（2026-10-25 生产验收）──────────────
+// 症状：页面工具没注册时，模型只回「我没有 site_* 工具」——因为提示词整段
+// 被跳过（旧条件 allowed.length > 0），用户正文裸发上游。
+// 协议教学与工具表无关：catalog 空只是少一行清单，示例与调用形态照发。
+test('工具表为空：提示词照发（模型必须知道有这套文本协议）', async () => {
+  const taps = {};
+  const mgr = scriptedMgr(['answer:好'], taps);
+  const ts = createToolSession({ mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: [] });
+  await ts.run('跳到铁芯损耗那一节');
+  const p = taps.prompts[0];
+  assert.match(p, /名字，参数=值/, '调用形态的示例必须在');
+  assert.match(p, /任务：跳到铁芯损耗那一节/, '任务句必须在最后');
+});

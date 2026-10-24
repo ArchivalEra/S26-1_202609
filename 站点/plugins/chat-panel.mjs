@@ -1333,6 +1333,8 @@ function askChat(text) {
   if (attachBtn) attachBtn.disabled = true;
   stream = (typeof AbortController !== "undefined") ? new AbortController() : null;
 
+  // 发问前兜一次：SPA 换页/脚本晚到都可能让工具表为空，这里补载最便宜。
+  try { if (window.__webmcpEnable) window.__webmcpEnable(); } catch (e) { /* 无 loader */ }
   var payload = { text: text, sessionId: sessionKey };
   if (ready.length) payload.attachments = ready;
   var body = JSON.stringify(payload);
@@ -1994,6 +1996,16 @@ window.addEventListener("resize", function () {
 }, { passive: true });
 
 window.__chatPanel = { open: openPanel, close: close, toggle: toggle, ask: askChat, get isOpen() { return open; } };
+
+// 2026-10-25（生产验收）：面板是「我要用页面工具」最直接的信号——打开即启用。
+// loader 的形态 3 默认不加载 polyfill（普通读者不付 281KB），但没有这个开关时
+// 用户必须自己记着带 ?webmcp=1 或手写 localStorage，忘了就工具零注册、
+// 提示词整段被跳过、模型只会回「我没有 site_* 工具」。
+try {
+  var __origOpen = openPanel;
+  openPanel = function () { try { if (window.__webmcpEnable) window.__webmcpEnable(); } catch (e) {} return __origOpen.apply(this, arguments); };
+  window.__chatPanel.open = openPanel;
+} catch (e) { /* 只读绑定：忽略 */ }
 
 // ── setTransport 钩子（2026-10-20，契约见 chat-panel-hook 文档）──
 // fn = {ask, cancel, upload} 或 null（恢复本机桥）。ready 超时指引走 showNotice。
