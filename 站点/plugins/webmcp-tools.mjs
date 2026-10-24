@@ -1638,6 +1638,7 @@ export function buildToolDefs(doc, win) {
   return [
     {
       name: 'site_get_page_info',
+      label: '确认当前页面',
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       description: '我在哪：当前页标题、所属课程、URL、小节清单（含锚点）、当前高亮目录项、折叠面板开合数、显示设置（主题/色相/侧栏）、阅读进度。',
       inputSchema: { type: 'object', properties: {} },
@@ -1645,6 +1646,7 @@ export function buildToolDefs(doc, win) {
     },
     {
       name: 'site_read',
+      label: '读取页面正文',
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       description: '读页面内容（Markdown）。what=page 读整页正文（长页用 offset+maxChars 分页，返回带 total_chars/offset/limit/has_more，按 has_more 继续翻）；outline 只列小节标题；section 读某一节（给 query 标题片段；找不到时返回 candidates 供重试）；panel 读某个折叠面板；symbols 列出本页所有可查符号。',
       inputSchema: {
@@ -1662,6 +1664,7 @@ export function buildToolDefs(doc, win) {
     },
     {
       name: 'site_index',
+      label: '查看站点目录',
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       description: '站点地图：从页内烘焙的侧栏形状返回层级结构（课程 → 分类 → 页面，带路径）。默认给当前课程的全部页面；scope="all" 给全站。先看地图，再决定读哪页。',
       inputSchema: {
@@ -1675,6 +1678,7 @@ export function buildToolDefs(doc, win) {
     },
     {
       name: 'site_navigate',
+      label: '翻到目标页面',
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       description: '去别处。to=section 跳到本页某小节（query 或 anchor）；link 点侧栏某页（query 页面名）；page 按仓库相对路径打开（path）；prev/next 上一节/下一节；home 回首页；back 浏览器后退；top/bottom 到页首/页尾。',
       inputSchema: {
@@ -1691,6 +1695,7 @@ export function buildToolDefs(doc, win) {
     },
     {
       name: 'site_search',
+      label: '检索资料库',
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       description: '找内容。scope=site（默认）直读全站索引，返回命中页面的标题、路径、以及页内命中小节（含锚点）；scope=page 在本页内文里找（像 Ctrl+F），返回片段与所在小节。',
       inputSchema: {
@@ -1713,6 +1718,7 @@ export function buildToolDefs(doc, win) {
     },
     {
       name: 'site_show_symbol',
+      label: '查符号释义',
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
       description: '查本页某个符号的含义：点开它的气泡，返回标题、解释、全部义项（当前语境标 is-here）与「详细」链接。给 term 可用符号 id（如 sym-U）或显示文字（如 U）。',
       inputSchema: { type: 'object', properties: { term: { type: 'string' } }, required: ['term'] },
@@ -1763,6 +1769,7 @@ export function buildToolDefs(doc, win) {
     },
     {
       name: 'site_panels',
+      label: '展开折叠内容',
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
       description: '折叠面板：action=open/close/toggle 全部（或只作用于 match 匹配标题的那些）。返回命中数、实际改变数与最新开合统计。',
       inputSchema: {
@@ -1780,6 +1787,7 @@ export function buildToolDefs(doc, win) {
     },
     {
       name: 'site_view',
+      label: '显示设置',
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
       description: '显示设置：theme=light/dark 切明暗；hue=0-360 改主题色相；sidebar=open/closed/toggle 开合侧栏。只给想改的字段，返回改后状态。',
       inputSchema: {
@@ -1794,6 +1802,7 @@ export function buildToolDefs(doc, win) {
     },
     {
       name: 'site_list_images',
+      label: '查找页面配图',
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       description: '列出本页正文里的图片（下标、地址、格式、alt、尺寸、是否可直接上传）。本站配图是 webp，学习通只收 jpg/png——uploadable=false 的先用 site_image 转码。',
       inputSchema: {
@@ -1807,6 +1816,7 @@ export function buildToolDefs(doc, win) {
     },
     {
       name: 'site_image',
+      label: '查看图片',
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       description: '把页面图片转成 JPEG/PNG 的 dataURL（浏览器 canvas 解码，webp/jxl 都能转）。给 index（先用 site_list_images 取）或 src；自动限宽限体积（默认 1400px / 120KB，超了逐档降质量）。返回可直接交给上传通道的 dataUrl 与字节数。',
       inputSchema: {
@@ -1824,6 +1834,7 @@ export function buildToolDefs(doc, win) {
     },
     {
       name: 'site_capture_view',
+      label: '截图查看版面',
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       description: '把当前页面截成 JPEG 图片（宿主注入能力），供看不见页面的模型查看版面与图表。可给 selector 只截某个元素、或给 rect 只截一块区域。',
       inputSchema: {

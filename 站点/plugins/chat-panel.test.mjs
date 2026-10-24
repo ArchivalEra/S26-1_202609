@@ -625,3 +625,20 @@ test('钩子：setTransport(null) 逃生门 + 切换时停在飞问答', () => {
   assert.match(fn, /if \(busy\) \{[\s\S]{0,40}stopAnswerRef\(\)/, '切换前停掉在飞一问');
   assert.match(fn, /setTimeout[\s\S]{0,120}busy = false/, '2s 强制复位兜底（失联不永卡）');
 });
+
+// ── 工具标签派生（issue #18 决策 #10）──────────────────────────
+// 标签从 buildToolDefs 派生，不再手抄——此前手抄版 site_view 是复制粘贴错误
+// （「截图查看版面」，与 site_capture_view 重复）。
+
+test('TOOL_LABEL 从 buildToolDefs 派生：标签集与 defs 一致，site_view 不再是截图', async () => {
+  const { buildToolDefs } = await import('./webmcp-tools.mjs');
+  const defs = buildToolDefs(null, null);
+  const expected = Object.fromEntries(defs.map((d) => [d.name, d.label || d.name]));
+  const m = CHAT_JS.match(/var TOOL_LABEL = (\{[^;]+\});/);
+  assert.ok(m, 'CHAT_JS 应有 TOOL_LABEL 映射');
+  assert.deepEqual(JSON.parse(m[1]), expected, '标签必须逐字来自 defs 的 label——工具改名时自动跟随');
+  assert.equal(expected.site_view, '显示设置', 'site_view 是显示设置，不是截图');
+  assert.equal(expected.site_capture_view, '截图查看版面', '截图是 capture_view 的职责');
+  // 全覆盖：每个注册工具都有标签（少一条会在面板上显示裸工具名）
+  assert.equal(Object.keys(expected).length, defs.length);
+});

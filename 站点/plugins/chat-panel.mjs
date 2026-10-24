@@ -730,6 +730,15 @@ export function renderMathInto(doc, node, tex, display, katex) {
 // ③ 客户端 IIFE（面板 UI + SSE + 挂载）
 // ════════════════════════════════════════════════════════════════
 
+// 工具中文标签单一真相源（issue #18 决策 #10）：从 buildToolDefs 派生，不再手抄
+// 11 条——手抄版的 site_view 是复制粘贴错误（写成「截图查看版面」，与
+// site_capture_view 重复）。工具改名/增删时标签自动跟随。
+// buildToolDefs(null, null) 只是拿定义数组（view 惰性、不碰 DOM），构建期安全。
+import { buildToolDefs } from './webmcp-tools.mjs';
+const TOOL_LABELS_SRC = JSON.stringify(
+  Object.fromEntries(buildToolDefs(null, null).map((d) => [d.name, d.label || d.name]))
+);
+
 export const CHAT_JS = `(function () {
 "use strict";
 if (typeof document === "undefined") return;
@@ -1199,19 +1208,8 @@ function flushRender(msg) {
 //   · 灰色、小号、无气泡，与正文（黑字通栏）在视觉上明确分开
 //   · 只在等待期间存在；第一个 delta 到达即移除
 //   · 文案说明「在做什么」，而不是只转圈
-var TOOL_LABEL = {
-  site_search: "检索资料库",
-  site_read: "读取页面正文",
-  site_index: "查看站点目录",
-  site_navigate: "翻到目标页面",
-  site_get_page_info: "确认当前页面",
-  site_list_images: "查找页面配图",
-  site_image: "查看图片",
-  site_view: "截图查看版面",
-  site_show_symbol: "查符号释义",
-  site_panels: "展开折叠内容",
-  site_capture_view: "截图查看版面",
-};
+// 标签从 buildToolDefs 派生（文件头 TOOL_LABELS_SRC）——工具改名时这里自动跟随。
+var TOOL_LABEL = ${TOOL_LABELS_SRC};
 
 function setStatus(msg, text) {
   // 过程提示可能已经被 clearStatus 清掉（第一个 delta 到达时就会清）。
