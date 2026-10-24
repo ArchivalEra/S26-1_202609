@@ -384,7 +384,7 @@ test('首轮上下文：只给「你在哪 + 工具」，不注入小节标题�
   const p = taps.prompts[0];
   assert.match(p, /你在【课程资料站】的：《习题册第一章》/, '给位置，并点明是哪套系统');
   assert.match(p, /本页共 3 个小节/, '给总数');
-  assert.match(p, /site_index/, '给工具');
+  assert.match(p, /site_search/, '给工具（头部派生自 allowed，夹具里有什么就列什么）');
   assert.doesNotMatch(p, /选 1（图 1\.1）/, '不该列出小节标题——那是替模型定位');
   assert.doesNotMatch(p, /选 3（图 1\.3）/, '任务里出现的不算，注入的不该有');
 });
@@ -430,8 +430,47 @@ test('首轮上下文里的工具清单也标了「只作用于本资料站」',
   });
   await ts.run('读一下这一页');
   const p = taps.prompts[0];
-  assert.match(p, /只作用于本资料站，不是学习通/, '工具清单要自带归属');
-  assert.match(p, /搜本站全站/, '「搜全站」要写清楚是本站');
+  // 2026-10-24（issue #18 P0-3）口径变更：不与学习通的工具作区分表述；
+  // 头部工具行改为与 catalog 同源派生（见下一条测试）。
+  assert.match(p, /可用工具（作用于当前课程资料站）/, '工具清单自带归属');
+  assert.doesNotMatch(p, /不是学习通/, '不写双系统区分（2026-10-23 定案）');
+});
+
+// ── 提示词口径与跳转形态（issue #18 P0-3：九次实测 0/9 完成跳转的归因修正）──
+
+test('提示词示例教了跳转形态：site_navigate，to=page，path=…', async () => {
+  // 模型九次都愿意调 site_navigate，但只给 query 不给 to——因为示例从没
+  // 演示过 to=page 的完整调用行。示例区必须包含它。
+  const taps = {};
+  const mgr = scriptedMgr(['answer:好'], taps);
+  const ts = createToolSession({ mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: TOOLS });
+  await ts.run('去工程数学作业2那一页');
+  const p = taps.prompts[0];
+  assert.match(p, /site_navigate，to=page，path=课程\/工程数学\/作业\/index\.html/, '示例区必须有 to=page 完整形态');
+});
+
+test('上下文头部与提示词 catalog 工具名同源（两份口径不再各活各的）', async () => {
+  const taps = {};
+  const NAV_TOOLS = [
+    ...TOOLS,
+    { name: 'site_navigate', description: '跳页', inputSchema: { type: 'object', properties: { to: { type: 'string' }, path: { type: 'string' } } } },
+    { name: 'site_index', description: '地图', inputSchema: { type: 'object', properties: {} } },
+  ];
+  const mgr = scriptedMgr(['answer:好'], taps);
+  const ts = createToolSession({
+    mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: NAV_TOOLS,
+    contextProvider: async () => ({ title: '作业索引', course: '工程数学', sections: [] }),
+  });
+  await ts.run('读一下这一页');
+  const p = taps.prompts[0];
+  const head = p.match(/可用工具（作用于当前课程资料站）：(.+?)。/);
+  assert.ok(head, '头部工具行存在');
+  const cat = p.match(/可用：(.+)/);
+  assert.ok(cat, 'catalog 行存在');
+  const headNames = head[1].split('、');
+  const catNames = cat[1].split('；').map((x) => x.split('（')[0]);
+  assert.deepEqual([...headNames].sort(), [...catNames].sort(), '头部与 catalog 必须同一份工具名');
+  assert.ok(headNames.includes('site_navigate'), '头部必须含跳转工具');
 });
 
 // ── 耗时诊断（2026-10-20 查「每次都 50 秒」）────────────────────
