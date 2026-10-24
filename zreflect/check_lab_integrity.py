@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""实验空完整性闸门（lab 相位，手动触发）——Einfacht 对 .zcode/学习通API/ 的管辖权。
+"""实验空完整性闸门（lab 相位，手动触发）——Einfacht 对 .zcode/学习通API/ 与
+.zcode/userscript/（2026-10-24 迁入的生产装配层）两处不入库活代码的管辖权。
 
 管辖对象是**不入库的活代码**（.zcode/ 只落盘），所以：
   · 不进 FACTS.json（事实=入库内容的不变量不动；clone 后无 .zcode/ 不掉条）；
@@ -53,6 +54,69 @@ ALIVE_FILES = (
 
 LAB_DIR = os.path.join(".zcode", "学习通API")
 
+# userscript 装配层（2026-10-24 迁入仓库目录、不入 git）：生产唯一路径
+# （油猴 iframe 通道）的全部源码。此前零测试闸门——生产验收「发得太快了」
+# （sid 假 seam，handoff §0.123）就是这条链没守卫的直接代价。活文件清点 +
+# 回归测试两件事与 学习通API 同款。proto/ 与旧世代归档同待遇（不管内容）。
+US_DIR = os.path.join(".zcode", "userscript")
+US_ALIVE = (
+    "build-user-script.mjs",   # 装配构建（产物自检：零禁词/语法/必需词）
+    "secrets.json",            # 两环密钥材料（.zcode 不入 git，密钥规约不变）
+    "dist.user.js",            # 安装产物（构建输出）
+    "cipher/README.md",         # 密文链设计说明（单向锁模型）
+    "cipher/cipher.mjs",       # 两环密文（AES-GCM，fail-closed）
+    "cipher/cipher.test.mjs",
+    "channel/channel.mjs",     # 六消息 iframe 通道
+    "channel/channel.test.mjs",
+    "assembly/chat-panel-hook.md",  # 面板 setTransport 契约（2026-10-20）
+    "assembly/roleA.mjs",      # 课程页侧薄桥（含 sessionId 透传，§0.123 修复）
+    "assembly/roleA.test.mjs",
+    "assembly/roleB.mjs",      # 上游 iframe 侧（工具循环 + 速率闸）
+    "assembly/roleB.test.mjs",
+)
+# 回归测试跑这四个（node --test，cwd=US_DIR）
+US_TESTS = ("cipher/cipher.test.mjs", "channel/channel.test.mjs",
+            "assembly/roleA.test.mjs", "assembly/roleB.test.mjs")
+
+
+def check_us(problems):
+    """userscript 装配层的清点 + 回归测试。目录整体不存在 = clone 环境，绿着退场。"""
+    if not os.path.isdir(US_DIR):
+        return
+    runtim = {".bridge-token"}
+    root = set()
+    sub = {"cipher": set(), "channel": set(), "assembly": set()}
+    for dirpath, dirnames, filenames in os.walk(US_DIR):
+        rel = os.path.relpath(dirpath, US_DIR)
+        for f in filenames:
+            fp = os.path.join(rel, f) if rel != "." else f
+            if fp in runtim or fp.startswith("proto/") or fp.startswith("归档"):
+                continue
+            if "/" in fp:
+                d, name = fp.split("/", 1)
+                if d in sub:
+                    sub[d].add(name)
+            else:
+                root.add(f)
+    for fp in US_ALIVE:
+        if "/" in fp:
+            d, name = fp.split("/", 1)
+            actual = sub.get(d, set())
+        else:
+            d, name = None, fp
+            actual = root
+        if name not in actual:
+            problems.append("userscript 活文件缺失：%s（迁址/误删？先改 US_ALIVE）" % fp)
+    for d, names in sub.items():
+        extra = [n for n in names if "%s/%s" % (d, n) not in US_ALIVE]
+        if extra:
+            problems.append("userscript/%s 多出未登记文件：%s（新源文件先改 US_ALIVE）" % (d, ", ".join(sorted(extra))))
+    import subprocess
+    r = subprocess.run(["node", "--test", *US_TESTS], cwd=US_DIR,
+                       capture_output=True, text=True, timeout=300)
+    if r.returncode != 0:
+        problems.append("userscript 回归测试未全绿：\n%s" % (r.stdout + r.stderr)[-600:])
+
 
 def run(args):
     if not os.path.isdir(LAB_DIR):
@@ -89,6 +153,9 @@ def run(args):
         if r.returncode != 0:
             problems.append("回归测试未全绿：\n%s"
                             % (r.stdout + r.stderr)[-800:])
+
+    # 第二辖区：userscript 装配层（目录缺失 = clone 环境，内部自行绿退场）
+    check_us(problems)
 
     if problems:
         print("lab 相位：发现 %d 个问题" % len(problems))
