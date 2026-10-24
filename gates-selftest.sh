@@ -286,6 +286,52 @@ configurable_selftest() {
 }
 
 
+plugin_tests_red_selftest() {
+  # 票 G（issue #18 决策 #7）：plugin_tests 的复跑命令必须「跑结果不跑数量」。
+  # 旧命令把返回码吞在 grep 管道里：注入必失败测试后照样打印数字、零退出。
+  # cmd 现取自 measure_edu.py（不手抄——自证盯的就是那条 cmd，手抄会漂）；
+  # 注入一个必失败测试 ⇒ 必须非零退出（且 stdout 仍是数字：红的是注入的
+  # 测试，不是命令没跑成）；删掉注入文件 ⇒ 必须恢复零退出。
+  cmd=$(python3 -c "import sys; sys.path.insert(0, '$HERE/zreflect'); from measure_edu import PLUGIN_TESTS_CMD as c; print(c)") || {
+    echo "  ❌ 取不到 PLUGIN_TESTS_CMD（measure_edu.py 导入失败？）"
+    return 1
+  }
+  inj="$HERE/站点/plugins/zz-injected-fail.test.mjs"    # 排序靠后、一眼可辨
+  red=0
+  (
+    # 子壳 + trap：断言失败 / Ctrl-C / TERM 都保证删掉注入文件，绝不留盘
+    trap 'rm -f "$inj"' EXIT
+    trap 'rm -f "$inj"; exit 130' INT TERM
+    printf '%s\n' \
+      '// gates-selftest 注入的必失败测试（自证用，trap 保证跑完即删）' \
+      "import { test } from 'node:test';" \
+      "test('zz-injected-fail：注入的必失败用例', () => { throw new Error('injected fail'); });" \
+      > "$inj"
+    # 故意用不带 pipefail 的 sh 跑：退出码必须由命令自己给，不靠调用方的
+    # pipefail 兜底——人从 STATE.md 抄这条 cmd 去跑时是没有 pipefail 的。
+    out=$(cd "$HERE" && sh -c "$cmd" 2>/dev/null)
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+      echo "  ❌ 注入必失败测试后 PLUGIN_TESTS_CMD 仍零退出（stdout=$out）⇒ 闸门只拦数量漂移不拦红测试"
+      exit 1
+    fi
+    case "$out" in
+      ''|*[!0-9]*)
+        echo "  ❌ PLUGIN_TESTS_CMD 非零退出但 stdout 不是数字（$out）⇒ 红的不是注入测试，是命令本身没跑成"
+        exit 1 ;;
+    esac
+  ) || red=1
+  [ -e "$inj" ] && rm -f "$inj"      # 双保险：子壳被 SIGKILL 时 trap 不会跑
+  [ "$red" -eq 0 ] || return 1
+  if (cd "$HERE" && sh -c "$cmd" >/dev/null 2>&1); then
+    echo "  ✅ plugin_tests 复跑命令：注入必失败测试 ⇒ 非零退出；清理 ⇒ 零退出（跑结果不跑数量）"
+    return 0
+  fi
+  echo "  ❌ 清理注入文件后 PLUGIN_TESTS_CMD 仍非零退出 ⇒ 注入没删干净，或套件本来就红"
+  return 1
+}
+
+
 # —— 主流程（所有函数定义之后）——————————————————————————————
 rc=0
 if [ "${1:-}" = "--selftest" ]; then
@@ -299,5 +345,7 @@ else
   module_selftest || rc=1
   echo "── 跨仓库可配置性 ──"
   configurable_selftest || rc=1
+  echo "── plugin_tests 复跑命令跑结果不跑数量（issue #18 决策 #7）──"
+  plugin_tests_red_selftest || rc=1
 fi
 exit "$rc"

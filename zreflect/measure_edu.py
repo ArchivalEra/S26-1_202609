@@ -50,8 +50,25 @@ SITEPAGES_CMD = (
 HOOKTESTS_CMD = (
     "python3 .githooks/test-update-readme.py 2>&1 | grep -oE 'Ran [0-9]+ tests' | awk '{print $2}'"
 )
+# 站点插件测试项数：数字照旧取 node --test 汇总行的 tests 总数（裸值契约不变），
+# 但 fail+cancelled>0 ⇒ 非零退出（issue #18 决策 #7）。旧命令把返回码吞在
+# grep 管道里：「334 全绿」与「334 全红」产出同一个数字，闸门只拦数量漂移
+# 不拦红测试——人从 STATE.md 抄这条 cmd 去跑时（shell 无 pipefail）红着也是
+# rc=0。退出码由 awk 自己给，不依赖调用方 pipefail；红的原因打到 stderr。
+# 汇总行按字段判（$2 是键、$3 是纯数字）：spec 报告器「ℹ tests N」（node 26
+# 实测）与 TAP「# tests N」都认；测试名里出现「tests 3」字样也不会误取
+# （旧 grep -o 取首个匹配，先命中测试名就数错）。没读到汇总行 ⇒ 同样非零退出
+# （宁缺勿假：node 崩了不许把 0 交给台账）。
 PLUGIN_TESTS_CMD = (
-    "cd 站点 && node --test plugins/*.test.mjs 2>&1 | grep -oE 'tests [0-9]+' | head -1 | grep -oE '[0-9]+'"
+    "cd 站点 && node --test plugins/*.test.mjs 2>&1 | awk "
+    "'NF==3 && $3 ~ /^[0-9]+$/ && ($2==\"tests\"||$2==\"fail\"||$2==\"cancelled\") "
+    "{v[$2]=$3} "
+    "END {t=v[\"tests\"]; f=v[\"fail\"]+0; c=v[\"cancelled\"]+0; "
+    "if (t==\"\") {print \"plugin_tests：没读到 tests 汇总行（node --test 没跑完？）\" "
+    "> \"/dev/stderr\"; exit 1} "
+    "print t; "
+    "if (f+c>0) {print \"plugin_tests：fail=\" f \" cancelled=\" c "
+    "\" ⇒ 红测试，非零退出（issue #18 决策 #7）\" > \"/dev/stderr\"; exit 1}}'"
 )
 # handoff 体量（2026-10-20 站长定案精简时入账）：handoff 是「下个会话只读这一份
 # 就能接着干」的进度手记，越长越读不完。两条事实把它变成可测量的：
@@ -86,7 +103,8 @@ TABLE = [
      {"replay": False, "witness": HOOKTESTS_WITNESS,
       # 2026-10-21：25 → 28（阶段一加了 3 项导航覆盖率测试）
       "witness_expect": "28"}),
-    ("plugin_tests", PLUGIN_TESTS_CMD, "站点/plugins/", "站点插件测试项数"),
+    ("plugin_tests", PLUGIN_TESTS_CMD, "站点/plugins/",
+     "站点插件测试项数（fail+cancelled>0 ⇒ 复跑非零退出）"),
     # handoff 体量：见 HANDOFF_LINES_CMD 处的注释。「读不完」本身就是要量的事实。
     ("handoff_lines", HANDOFF_LINES_CMD, ".zcode/handoff.md",
      "进度手记总行数（超 ~1500 行该归档精简）"),
