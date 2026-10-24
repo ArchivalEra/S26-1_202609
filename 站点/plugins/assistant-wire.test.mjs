@@ -17,9 +17,16 @@ import assert from 'node:assert/strict';
 import { wireAssistant } from './assistant-wire.mjs';
 
 /** 假 client：按给定 status 返回 chatsvc 的真实契约形态 `{status, text, calls}`。 */
-function fakeClient({ status = 'ok', text = '答案', error = undefined } = {}) {
+function fakeClient({ status = 'ok', text = '答案', error = undefined, taps = {} } = {}) {
   return {
-    async ask(_text, _onEvent) {
+    // ⚠️ 真实契约是四参 (sessionId, text, emit, attach)——夹具必须照抄，
+    // 否则「调用方传错参数个数」这类 bug 在夹具里根本显不出来（2026-10-25
+    // 生产验收的教训：夹具写成两参，于是两参调用恒绿，函数源码被当问题发了出去）。
+    async ask(sessionId, askText, emit, attach) {
+      taps.sessionId = sessionId;
+      taps.text = askText;
+      taps.emit = emit;
+      taps.attach = attach;
       if (status === 'ok') return { status: 'ok', text, calls: [] };
       return { status, error, text: text || '', calls: [] };
     },
@@ -126,4 +133,25 @@ test('wire 超时：桥不在场时返回 timeout，不抛异常', async () => {
     win, createAssistantClient: () => fakeClient(), runTool: async () => ({}), pollMs: 1, deadlineMs: 30,
   });
   assert.equal(await w.promise, 'timeout');
+});
+
+// ── 契约④：ask 的参数位置（2026-10-25 生产验收实弹）──────────────
+// 症状：上游一直解释同一段 JS。根因是接线器只传两参，而 chatsvc.ask 是四参
+// (sessionId, text, emit, attach) ⇒ text 落进 sessionId、onEvent 落进 text
+// ⇒ String(函数) 被当成问题发给上游，用户输入从未到达；emit 也恒 undefined。
+test('契约④：用户正文必须落在 text 位，回调必须落在 emit 位（参数不许错位）', async () => {
+  const taps = {};
+  const client = fakeClient({ taps });
+  const win = fakeWin({ client });
+  win.__assistantBridge = { ask: async () => ({ ok: true, text: '' }), cancel() {} };
+  await wireAssistant({ win, createAssistantClient: () => client, runTool: async () => ({ ok: true }), serializeTools: () => [] }).promise;
+  const t = win.transportRef.current;
+  const onEvent = function (ev) { void ev; };
+  await t.ask({ text: '电机学有哪些课堂笔记' }, onEvent);
+  assert.equal(taps.text, '电机学有哪些课堂笔记', '用户输入必须原样落在 text 位');
+  assert.equal(typeof taps.emit, 'function', 'emit 必须是回调（不是 undefined）');
+  assert.equal(taps.emit, onEvent, 'emit 必须就是调用方给的 onEvent');
+  assert.ok(!/function|=>/.test(String(taps.text)), 'text 位绝不能出现函数源码');
+  assert.equal(typeof taps.sessionId, 'string', 'sessionId 必须是字符串');
+  assert.ok(!taps.sessionId.includes('电机学'), '用户输入不得串到 sessionId 位');
 });
