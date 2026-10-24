@@ -9,11 +9,12 @@
 
 挡的事故（2026-10-16 三件套重构立的约）：
   ① 实验空根目录活文件清单漂移——新脚本随手落根目录，49 文件平铺的绊脚石复活；
-  ② 破甲配方退化——重构/改措辞把 G 系列结论（疑问式、3 工具上限、首条无清单、
-     回喂带清单、caveman 保工具名）弄丢，配方.test.mjs 先红。
+  ② 破甲配方退化——G 系列结论（疑问式、首条无清单、回喂带清单、caveman 保
+     工具名）的设计史在 agent.md §三与 实验/G1-G21/结论.md（配方.mjs 及其
+     测试已按 issue #18 决策 #11 删除，2026-10-24）。
 
 判据：
-  · 根目录文件集合 ⊆ 白名单（活文件 21 个；多出的 ⇒ 报，说明有新文件要归档或入单）；
+  · 根目录文件集合 ⊆ 白名单（活文件 19 个；多出的 ⇒ 报，说明有新文件要归档或入单）；
   · 全部测试文件 `node --test` 全绿（cwd=实验空；154 项）；
   · 白名单里的文件必须存在（少 ⇒ 报，活文件被误删/误归档）。
 
@@ -42,13 +43,10 @@ ALIVE_FILES = (
     "聊天服务.mjs",        # 模型驱动层（emit 接缝，createChatService，2026-10-19）
     "聊天服务.test.mjs",   # emit 契约测试（14 项）
     "插件后端架构.md",     # 插件设计方案（MV3 三层 + Firefox 兼容矩阵）
-    "配方.mjs",           # 破甲配方唯一真相源
-    "配方.test.mjs",      # G 系列配方回归测试
     "上下文.mjs",         # 单会话转录 + 压缩 + 重放（2026-10-18 用户定案）
     "上下文.test.mjs",    # 压缩保真回归（18 项）
     "对话.mjs",           # 无感入口（业务轮次，接工具会话）
     "bridge.mjs",        # 桥服务（SSE + HTTP 端点 + 鉴权 + 效果回执透传）
-    "页面桥.js",          # 注入页面的桥接端（含效果回执）
     "agent.md",          # 设计说明（指向 配方.mjs，不承载措辞）
     "README.md",         # 协议文档
 )
@@ -76,14 +74,15 @@ def run(args):
     if missing:
         problems.append("活文件缺失：%s（被误删或误归档？）" % ", ".join(missing))
 
-    # 配方回归测试（只在 配方.test.mjs 存在时跑；缺失已由上面报过）
-    # 2026-10-19：扩到全部测试文件——判据/工具会话是实验的判据与执行核心，
-    # 只测配方挡不住它们退化（此前 154 项里闸门只跑 7 项）。
-    if "配方.test.mjs" in actual:
-        tests = [t for t in ("配方.test.mjs", "上下文.test.mjs", "会话.test.mjs",
-                             "chaoxing.test.mjs", "工具会话.test.mjs", "判据.test.mjs",
-                             "bridge.test.mjs", "聊天服务.test.mjs")
-                 if t in actual]
+    # 回归测试（2026-10-24 修：入口条件原是「配方.test.mjs 存在」——配方删除后
+    # 恒假，整块静默短路，闸门只查文件清单不查测试。改为「有任何活测试文件」；
+    # 全部缺失已由上面的 活文件缺失 报过。）
+    # 2026-10-19：扩到全部测试文件——判据/工具会话是实验的判据与执行核心。
+    tests = [t for t in ("上下文.test.mjs", "会话.test.mjs",
+                         "chaoxing.test.mjs", "工具会话.test.mjs", "判据.test.mjs",
+                         "bridge.test.mjs", "聊天服务.test.mjs")
+             if t in actual]
+    if tests:
         r = subprocess.run(
             ["node", "--test", *tests],
             cwd=LAB_DIR, capture_output=True, text=True, timeout=300)
@@ -152,7 +151,10 @@ def _cases():
     def missing_case():
         global LAB_DIR
         old = LAB_DIR
-        files = [f for f in ALIVE_FILES if f != "配方.mjs"]
+        # 2026-10-24：缺失样本从 配方.mjs（已删）换成 bridge.mjs——
+        # 样本必须是清单里真实存在的文件，否则用例恒不触发。
+        assert "bridge.mjs" in ALIVE_FILES
+        files = [f for f in ALIVE_FILES if f != "bridge.mjs"]
         tmp, lab = make_lab(files)
         LAB_DIR = lab
         try:
