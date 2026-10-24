@@ -103,3 +103,33 @@ test('bridge.cancel 被转到桥（站点停问）', async () => {
   svc.cancel('c1');
   assert.equal(taps.cancelled, true);
 });
+
+// ── 会话身份透传（2026-10-24 生产验收「发得太快了」修复）──────────────
+// 病灶：bridgeAdapter 的 ask 不带会话身份 ⇒ A 侧薄桥每轮自铸 sid（web-1、web-2…）
+// ⇒ roleB 的「新问才受闸」把每一轮工具循环都当成新的一问 ⇒ 第二轮起全被
+// 3 秒速率闸拒掉。修复：每个管理器会话一个稳定 sid 随每轮 payload 递下去。
+
+test('会话身份透传：同一会话的每轮 ask 带同一个 sessionId，换会话才换', async () => {
+  // 剧本：第一问两轮（工具循环形态——调用行在**终态文本**里，非末轮的 delta
+  // 会被工具会话剥掉不进转录），第二问一轮
+  const { bridge, taps } = fakeBridge([
+    { ok: true, text: '我先搜一下\nsite_search，query=x' },
+    { ok: true, text: '第一问答完' },
+    { ok: true, text: '第二问答完' },
+  ]);
+  const svc = createAssistantClient({ bridge, tools: TOOLS, invoke: async () => ({ ok: true, value: '' }) });
+  await svc.ask('conv-A', '第一问', () => {});
+  await svc.ask('conv-B', '第二问', () => {});
+  const sids = taps.asks.map((a) => a.payload.sessionId);
+  assert.ok(sids.every((s) => typeof s === 'string' && s), '每轮 payload 都要带 sessionId');
+  assert.equal(new Set(sids).size, 2, '两个会话 ⇒ 恰好两个 sid');
+  assert.equal(sids[0], sids[1], '同一会话的多轮必须同一个 sid（roleB 闸的续轮放行前提）');
+  assert.notEqual(sids[0], sids[2], '新会话必须新 sid（速率闸对连发新问的限速语义）');
+});
+
+test('会话身份透传：sid 形态可识别且不含上游信息', async () => {
+  const { bridge, taps } = fakeBridge([{ ok: true, text: '好' }]);
+  const svc = createAssistantClient({ bridge, tools: TOOLS, invoke: async () => ({ ok: true, value: '' }) });
+  await svc.ask('c1', '你好', () => {});
+  assert.match(taps.asks[0].payload.sessionId, /^site-\d+$/, 'sid 用 site- 前缀（区别于面板 web- 与 A 侧缺省铸造）');
+});

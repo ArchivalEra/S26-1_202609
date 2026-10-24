@@ -41,8 +41,14 @@ import { createChatService } from './chatsvc.mjs';
  * @param {{ask: Function, cancel: Function}} bridge window.__assistantBridge
  */
 function bridgeAdapter(bridge) {
+  // 2026-10-24 修（生产验收「发得太快了」）：每个管理器会话铸一个**稳定** sid
+  // 随每轮 ask 递给桥。此前 payload 不带会话身份，A 侧薄桥只能每轮自铸
+  // （web-1、web-2…），roleB 的「新问才受闸」把每一轮工具循环都当成新的一问，
+  // 第二轮起全被 3 秒速率闸拒掉——生产路径（userscript 通道）首发即中。
+  let sessionSeq = 0;
   return {
     async open() {
+      const sessionId = 'site-' + (++sessionSeq);
       return {
         /**
          * 一次提问 = 一次 bridge.ask。
@@ -61,7 +67,7 @@ function bridgeAdapter(bridge) {
             if (!onChunk || !ev || ev.type !== 'delta' || ev.text == null) return;
             try { onChunk(String(ev.text)); } catch { /* 消费方自理 */ }
           };
-          const r = await bridge.ask({ text: String(prompt == null ? '' : prompt) }, onEvent);
+          const r = await bridge.ask({ text: String(prompt == null ? '' : prompt), sessionId }, onEvent);
           const text = String((r && r.text) || '');
           if (r && r.ok === true) return { text, status: 'answered' };
           const reason = String((r && r.reason) || '');
