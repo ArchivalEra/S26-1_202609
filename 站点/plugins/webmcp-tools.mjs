@@ -582,13 +582,6 @@ export function createPageView(doc, loc, winOverride) {
     return out;
   }
 
-  /** 读页内嵌的符号词典（构建期按页烘焙）。 */
-  function glossaryDict() {
-    const tag = byId(S.glossaryJson);
-    if (!tag) return null;
-    try { return JSON.parse(tag.textContent || '{}'); } catch (e) { return null; }
-  }
-
   /**
    * 读页内嵌的**侧栏形状**（阶段一）：`#nav-structure-json`，由 nav-structure.mjs
    * 构建期烘焙。这是 site_index / site_navigate 的**唯一数据源**——不再爬侧栏 DOM。
@@ -663,11 +656,6 @@ export function createPageView(doc, loc, winOverride) {
     const txt = textOf(byId(S.searchResults));
     const m = txt.match(S.hitCountRe);
     return { total: m ? Number(m[1]) : hits.length, hits: hits.slice(0, 12) };
-  }
-
-  /** 搜索面板的输入框与容器（打开面板用）。 */
-  function searchUi() {
-    return { panel: byId(S.searchPanel), input: byId(S.searchInput) };
   }
 
   /**
@@ -1064,9 +1052,14 @@ export function createPageView(doc, loc, winOverride) {
         if (w.__spaRouter && typeof w.__spaRouter.navigate === 'function') {
           const rootAttr = (doc.documentElement && doc.documentElement.getAttribute('data-root')) || './';
           const url = new URL(rootAttr + path, location.href).pathname;
-          w.__spaRouter.navigate(url, hash, true);
           const verified = navPaths.includes(normalized);
-          return { ok: true, to, path: normalized, hash, via: 'spa', verified };
+          // 2026-10-24（issue #18 决策 #4 配套）：等 SPA 路由真正换完页再回结果——
+          // 此前 fire-and-forget，工具立刻回 ok 而 URL/滚动还是旧页的，
+          // 页面桥量出的 navigated/scrolled 全是假值。返回 Promise：runTool 与
+          // execute 都 await（WebMCP 的 execute 允许异步），同步读 .ok 的旧调用
+          // 只剩测试，已同步改 await。
+          return Promise.resolve(w.__spaRouter.navigate(url, hash, true))
+            .then(() => ({ ok: true, to, path: normalized, hash, via: 'spa', verified }));
         }
       } catch (e) { /* 退化到整页跳转 */ }
       try {
@@ -1605,8 +1598,8 @@ export function createPageView(doc, loc, winOverride) {
   }
 
   return {
-    headings, pageInfo, openSection, togglePanels, findSymbol, listSymbols, glossaryDict,
-    searchResults, searchUi, captureView,
+    headings, pageInfo, openSection, togglePanels, findSymbol, listSymbols,
+    searchResults, captureView,
     readContent, findInPage, navigate, setView, viewState, panelState,
     listImages, imageToDataUrl, siteIndex, searchIndex,
   };
@@ -1888,32 +1881,18 @@ export function registerTools(doc, nav) {
  *   恒 resolve——失败也回 `{ok:false, error}`，由工具循环按「失败也回喂」消费。
  */
 export async function runTool(doc, name, args) {
-  const view = createPageView(doc, null, null);
-  // 直接调 view 的具名方法（与 buildToolDefs 里的 execute 是同一批实现）——
-  // 不经 modelContext.executeTool，避免 polyfill 把异常压成
-  // "Tool execution failed"（page-bridge.mjs 2026-10-19 吃过这个亏）。
-  const MAP = {
-    site_get_page_info: () => view.pageInfo(),
-    site_read: (a) => view.readContent(a || {}),
-    site_index: (a) => view.siteIndex(a || {}),
-    site_navigate: (a) => view.navigate(a || {}),
-    site_search: (a) => {
-      const q = String((a && a.query) || '').trim();
-      if (!q) return { ok: false, reason: 'empty_query' };
-      if ((a && a.scope) === 'page') return view.findInPage(q);
-      return view.searchIndex(q, { limit: a && a.limit, includeHeadings: true });
-    },
-    site_show_symbol: (a) => view.findSymbol(a || {}),
-    site_panels: (a) => view.togglePanels(a || {}),
-    site_view: (a) => view.setView(a || {}),
-    site_list_images: (a) => view.listImages(a || {}),
-    site_image: (a) => view.imageToDataUrl(a || {}),
-    site_capture_view: (a) => view.captureView(a || {}),
-  };
-  const fn = MAP[name];
-  if (!fn) return { ok: false, error: '页面没有工具 ' + String(name) };
+  // 分派唯一真相（issue #18 P0-1）：直接取 buildToolDefs 的 execute——
+  // 注册（WebMCP）与执行（工具循环）走同一份实现、同一套参数解包。
+  // 此前这里有一份手写 MAP，参数解包与 buildToolDefs 各活各的：
+  // site_panels 把 {action:"close"} 整个塞给标量参数 open（对象恒真 → close 变 open）、
+  // site_show_symbol 把 {term} 塞给字符串参数（String() 出 "[object Object]" → 永远查不到）。
+  const defs = buildToolDefs(doc, (doc && doc.defaultView) || null);
+  const def = defs.find((d) => d.name === name);
+  if (!def || typeof def.execute !== 'function') {
+    return { ok: false, error: '页面没有工具 ' + String(name) };
+  }
   try {
-    const value = await fn(args);
+    const value = await def.execute(args || {});
     return { ok: !(value && typeof value === 'object' && value.ok === false), value };
   } catch (e) {
     return { ok: false, error: String((e && e.message) || e) };
