@@ -202,10 +202,15 @@ fs.writeFileSync(path.join(searchPluginDir, 'site-search.css'), SEARCH_CSS);
 // （本仓已踩过「改了 JS/CSS 浏览器不见效」的负缓存坑）。内容哈希进 URL ⇒ 内容变、URL 才变，
 // 新旧副本共存无关紧要，且不变时 URL 稳定、缓存照常命中。
 // 只哈希**站点自己的**资产（主题/插件）：katex 是第三方 vendored，改它就该整份换版本。
+// 2026-10-24（issue #18 决策 #6）：引用不存在的资产时**抛错**，不静默降级成无 ?v= 的
+// 裸引用——那会产出一个 404 死链接且构建零警告（审计 γ P1-3）。与仓库既有硬失败
+// 定案一致（frontmatter 硬失败、COURSE_STATUS 硬失败）。
 const assetVersion = (relFromDist) => {
   try {
     return createHash('sha256').update(fs.readFileSync(path.join(DIST_DIR, relFromDist))).digest('hex').slice(0, 10);
-  } catch (_) { return ''; }
+  } catch (e) {
+    throw new Error(`assetVersion：dist 里没有资产 ${relFromDist}——引用了不存在的文件（先构建该资产再引用）`);
+  }
 };
 const assetUrl = (relFromDist) => {
   const v = assetVersion(relFromDist);
@@ -584,10 +589,13 @@ const TEXTBOOK_ORDER = [
   "课程/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.5-用MATLAB进行矩阵运算.md"
 ];
 
+// 2026-10-24（issue #18 决策 #9）补 2026-10-08 那篇——NOTES_ORDER 只列 3 条时第 4 篇
+// 笔记永远拿不到下一节分页（审计 γ P1-2）。派生化（从文件系统枚举）列为后续项。
 const NOTES_ORDER = [
   "课程/工程数学/课堂笔记/2026-09-17-determinants-order-2-3.md",
   "课程/工程数学/课堂笔记/2026-09-17-determinants-transcript-notes.md",
-  "课程/工程数学/课堂笔记/2026-09-24-降阶法克拉默法则与齐次方程组.md"
+  "课程/工程数学/课堂笔记/2026-09-24-降阶法克拉默法则与齐次方程组.md",
+  "课程/工程数学/课堂笔记/2026-10-08-矩阵的定义与运算及逆的引入.md"
 ];
 
 // Helper: Wrap bare CJK in math mode
