@@ -133,3 +133,33 @@ test('会话身份透传：sid 形态可识别且不含上游信息', async () =
   await svc.ask('c1', '你好', () => {});
   assert.match(taps.asks[0].payload.sessionId, /^site-\d+-[a-z0-9]{6}$/, 'sid = site-序号-每页随机量（刷新即新 id，污染会话甩得掉）');
 });
+
+// ── payload.tools 必须随每问递到上游（2026-10-25 生产验收）──────────
+// 症状：上游回「我环境里没有 site_* 工具，但我知道它们存在」——教学文案到了，
+// payload.tools 却是空数组：工具定义只进了本地工具会话（解析/执行用），
+// 从没随 ask 递出去。roleA 头注释写明「tools 由站点侧每问现取填入」。
+test('payload.tools：工具定义必须随 ask 递到桥（不许空数组）', async () => {
+  const { bridge, taps } = fakeBridge([{ ok: true, text: '好' }]);
+  const svc = createAssistantClient({ bridge, tools: TOOLS, invoke: async () => ({ ok: true, value: '' }) });
+  await svc.ask('c1', '你好', () => {});
+  const t = taps.asks[0].payload.tools;
+  assert.ok(Array.isArray(t), 'payload.tools 必须是数组');
+  assert.equal(t.length, TOOLS.length, '工具数量必须与注册表一致');
+  assert.deepEqual(t.map((x) => x.name).sort(), TOOLS.map((x) => x.name).sort());
+  assert.ok(t[0].inputSchema, '每项要带 inputSchema（上游据此填参数）');
+});
+
+test('payload.tools：工具表变化时每问现取（SPA 换页后不复用旧清单）', async () => {
+  const asks = [];
+  const bridge = {
+    async ask(pl) { asks.push(pl.tools.length); return { ok: true, text: '好' }; },
+    cancel() {},
+  };
+  const live = [...TOOLS];
+  const svc = createAssistantClient({ bridge, tools: live, invoke: async () => ({ ok: true, value: '' }) });
+  await svc.ask('c1', '第一问', () => {});
+  live.push({ name: 'site_new', inputSchema: { type: 'object', properties: {} } });
+  await svc.ask('c1', '第二问', () => {});
+  assert.equal(asks[0], live.length - 1, '第一问看到注册时的工具数');
+  assert.equal(asks[1], live.length, '第二问看到新增后的数量（每问现取，不许缓存快照）');
+});
