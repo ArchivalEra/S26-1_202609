@@ -560,8 +560,8 @@ test('本机守卫：非本机时 tokenAsync 不请求 127.0.0.1', () => {
 
 test('本机守卫：非本机时 askChat 不发请求', () => {
   const fn = CHAT_JS.slice(CHAT_JS.indexOf('function askChat'), CHAT_JS.indexOf('function resetSendButton'));
-  // 2026-10-20：transport 接管时豁免（脚本形态不连本机桥）；无 transport 时仍拦
-  assert.match(fn, /if \(!transport && !LOCAL_ONLY\)/, 'askChat 要拦截（transport 除外）');
+  // 2026-10-25：插件形态整体删除，本机门不再有 transport 豁免。
+  assert.match(fn, /if \(!LOCAL_ONLY\)/, 'askChat 要拦截（无豁免分支）');
   assert.match(fn, /只在你自己电脑上可用/, '要给出说明');
 });
 
@@ -589,13 +589,14 @@ test('钩子：setTransport/showNotice 暴露在 __chatPanel 上', () => {
   assert.match(CHAT_JS, /window\.__chatPanel\.showNotice\s*=/, 'showNotice 要暴露');
 });
 
-test('钩子：askChat 双形态分派（transport 存在走通道，否则本机桥）', () => {
+test('askChat：脚本形态已删除，只剩本机桥路径（2026-10-25 架构收口）', () => {
+  // 站长定案：删掉插件与站点侧衔接层，回到 node 桥形态。transport 分支
+  // （走 userscript iframe 通道）整段移除——它带来的重复工具循环、参数错位、
+  // 工具表空、白名单双份等缺陷随之消失。
   const fn = CHAT_JS.slice(CHAT_JS.indexOf('function askChat'), CHAT_JS.indexOf('function resetSendButton'));
-  assert.match(fn, /if \(transport\) \{/, '分派点存在');
-  assert.match(fn, /transport\.ask\(payload/, '脚本形态走 transport.ask');
-  assert.match(fn, /handleEventPlain\(ev\)/, '事件词汇共用同一消费者');
-  // 本机桥路径保留（零删除）
-  assert.match(fn, /attempt\(1\)\.then/, '本机桥路径仍在');
+  assert.doesNotMatch(fn, /transport\.ask\(payload/, '脚本形态的通道分派不许回来');
+  assert.match(fn, /attempt\(1\)\.then/, '本机桥路径必须在');
+  assert.match(fn, /handleEventPlain/, '事件仍走统一消费者');
 });
 
 test('钩子：事件词汇两路共用 handleEventPlain', () => {
@@ -612,11 +613,12 @@ test('钩子：事件词汇两路共用 handleEventPlain', () => {
     '分派点能看见 handleEventPlain');
 });
 
-test('钩子：stopAnswer 与 uploadAttachment 的传输分派', () => {
+test('stopAnswer / uploadAttachment：插件形态的分派已删除（只剩本机桥）', () => {
+  // 2026-10-25 站长定案：插件侧整体删除，面板只保留本机桥 SSE。
   const fn = CHAT_JS.slice(CHAT_JS.indexOf('function askChat'), CHAT_JS.indexOf('function resetSendButton'));
-  assert.match(fn, /if \(transport\) \{[\s\S]{0,80}transport\.cancel\(\)/, '停止走通道');
+  assert.doesNotMatch(fn, /transport\.cancel\(\)/, '停止不再走通道');
   const up = CHAT_JS.slice(CHAT_JS.indexOf('function uploadAttachment'), CHAT_JS.indexOf('function renderAttachBar'));
-  assert.match(up, /if \(transport && transport\.upload\) return transport\.upload\(item\)/, '上传走 transport');
+  assert.doesNotMatch(up, /transport\.upload\(item\)/, '上传不再走 transport');
 });
 
 test('钩子：setTransport(null) 逃生门 + 切换时停在飞问答', () => {
