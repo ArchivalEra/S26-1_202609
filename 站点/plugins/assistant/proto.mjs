@@ -62,6 +62,49 @@ export function b64ToBytes(b64) {
   } catch { return null; }
 }
 
+
+/**
+ * 从**一行**文本里解析一个调用（队列式的单行解析器）。
+ * 判据与退化分支完全一致（前缀纯引导语 / 调用形态 / key=value / 位置参数长度），
+ * 只是把「扫全文找出现位」换成「这一行里找」。返回 {name, args, degraded} 或 null。
+ */
+function parseOneLine(line, name) {
+  const text = String(line || '');
+  const re = new RegExp('(^|[^\\w])' + name + '(?=[^\\w]|$)');
+  const m = re.exec(text);
+  if (!m) return null;
+  const at = m.index + m[1].length;
+  const prefix = text.slice(0, at);
+  // 前缀只能是纯引导语：不含参数语法（英文等号）。
+  // 长度上限：**行首**（前缀为空或纯空白）= 调用独立成行，前缀多长都不算诱导语；
+  // 行内残留才用 120 字上限（与退化分支的 lineStart 放宽同源）。
+  if (prefix.includes('=')) return null;
+  if (prefix.trim().length > 120 && prefix.trim().length > 0) return null;
+  const after = text.slice(at + name.length);
+  const isCallForm = (!after.startsWith(' ') && !after.startsWith('\n'))
+    ? true                      // 直接连写（中文参数常见）
+    : /^\s*[，,]/.test(after);   // 空白后必须紧跟分隔符；空格+词 = 陈述句
+  if (!isCallForm) return null;
+  const rest = after.replace(/^[\s:：,，、的]+/, '').replace(/[。.]\s*$/, '').trim();
+  const args = {};
+  if (rest) {
+    const kv = /([a-zA-Z_][\w]*)\s*=\s*([^,，;；]+)/g;
+    let mm;
+    while ((mm = kv.exec(rest)) !== null) {
+      let val = mm[2].trim();
+      const paren = val.search(/[（(]/);
+      if (paren > 0) val = val.slice(0, paren).trim();
+      args[mm[1]] = val;
+    }
+    if (!Object.keys(args).length) {
+      if (rest.length > 60) return null;   // 纯位置参数才限长
+      args._positional = rest;
+    }
+  }
+  return { name, args, degraded: true };
+}
+
+
 /**
  * 解析上游回复里的工具调用（**唯一实现**——此前 18 份拷贝写反过 3 次方向）。
  * 上游输出的尖括号一律 HTML 转义（&lt;invoke&gt;），先反转义再抠。
@@ -122,6 +165,31 @@ export function parseToolCalls(rawText, knownTools) {
     .replace(/```/g, '')
     .trim();
   const t = deFenced || text.trim();
+
+  // ⭐ 2026-10-25 队列式调用（长任务实测：模型一轮写多个调用行，旧实现只取第一个，
+  // 剩下的它当"已经执行过"继续编答案——15 个调用只执行 0 个）。
+  // 新规则：**逐行扫描**，每行按出现顺序解析，全部收进队列；同一工具可多次；
+  // 不再受「全文 ≤160 字」限制（长回复里的调用行同样有效）。
+  // 防误判不变：行首缩进 + 工具名 + 紧跟参数语法（，/,/空格+分隔符）。
+  if (Array.isArray(knownTools) && knownTools.length) {
+    const queued = [];
+    const lines = t.split('\n');
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      // 每行内只认一个调用（行内多行合写极罕见，且难判边界）
+      const hit = knownTools.find((n) => {
+        const re = new RegExp('(^|[^\\w])' + n + '(?=[^\\w]|$)');
+        return re.test(line);
+      });
+      if (!hit) continue;
+      const one = parseOneLine(line, hit);
+      if (one) queued.push(one);
+      if (queued.length >= 12) break;   // 单轮上限，防病态输出
+    }
+    if (queued.length) return queued;
+  }
+
   if (Array.isArray(knownTools) && knownTools.length && t.length <= 160) {
     for (const name of knownTools) {
       // ⚠️ 2026-10-23 修（防护实测）：indexOf 会命中「别的标识符的一部分」——
@@ -608,6 +676,10 @@ export function createAssistant(opts = {}) {
     // ③ 正文累积
     for (const c of chunks) {
       pending.text += c;
+      // 诊断（2026-10-25 官方站对照）：逐帧记录累积长度，定位「只收到开头」。
+      if (typeof log === 'function') {
+        try { log(`[帧] +${String(c).length}字 累计=${pending.text.length} 预览=${String(c).slice(0, 20).replace(/\n/g, ' ')}`); } catch { /* 无 log */ }
+      }
       pending.onChunk && pending.onChunk(c);
     }
 
@@ -878,7 +950,24 @@ export function createAssistant(opts = {}) {
     return { text: first.r.text, calls: [], attempts, gaveUp: true };
   }
 
-  return { apply, models, switchModel, connect, ask, askRetry, askWithRetry, uploadImage, askImage, send, close, cancel,
+  /**
+   * 丢弃上游身份（2026-10-25，长任务「历史串味」修复）。
+   *
+   * 为什么需要：上游一场对话的身份（visitorId/conversationId）由 **cookie** 决定。
+   * 不清 cookie 的话，同一台机器上所有会话（哪怕我们的 sessionId 全不同）
+   * 在上游看来都是**同一场对话**——历史在服务端累积，模型会反复念叨很早以前
+   * 某次对话的内容（实测「浙江水利水电学院」在校名被反复引用）。
+   *
+   * 浏览器里由同源 cookie 承载，Node 侧由 jfetch 的 cookie jar 承载；这里把
+   * identity 置空，下次 connect 会重新 apply 拿新身份。浏览器同源侧还需装配层
+   * 额外清 document.cookie（Node 侧无此概念）。
+   */
+  function resetIdentity() {
+    identity = null;
+    return true;
+  }
+
+  return { apply, resetIdentity, models, switchModel, connect, ask, askRetry, askWithRetry, uploadImage, askImage, send, close, cancel,
     get identity() { return identity; },
     get activeModelId() { return activeModelId; },
     get planning() { return planning; } };

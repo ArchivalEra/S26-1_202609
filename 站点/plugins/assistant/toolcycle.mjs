@@ -112,7 +112,9 @@ site_navigate，to=page，path=课程/示例/index.html
 系统返回：已跳到该页
 助手：跳好了。
 
-照这个节奏：先写一句打算做什么，再写一行「名字，参数=值」；系统执行后把结果发回来，你接着往下写。一次只写一行，参数只填关键词。演示到此为止，你的任务在最后一行。
+照这个节奏：先写一句打算做什么，再写一行「名字，参数=值」；系统执行后把结果发回来，你接着往下写。一次只写一行，参数只填关键词。
+
+任务要多个材料时，逐份读、逐份记：每读完一份就把要点记下来，再读下一份，全部读完才写总结。读到一页的元数据（标题/字数）不算读过内容，要读到正文。演示到此为止，你的任务在最后一行。
 
 可用：${catalog}
 
@@ -198,7 +200,7 @@ export function createToolSession({
    * 回喂前的瘦身：图片清单可能几十条，全量塞回去会撞上游单条长度限制
    * （实测 35 张 × ~150 字 = 5KB，直接超）。只保留「选图需要知道」的字段。
    */
-  const MAX_FEED_JSON = 6000;   // 单条工具结果回喂上限（P2-22）
+  const MAX_FEED_JSON = 2400;   // 单条工具结果回喂上限（2026-10-25：6000 → 2400，对齐上游单条上限）
 
   function slimForFeed(name, v) {
     if (!v || typeof v !== 'object') return v;
@@ -272,8 +274,8 @@ export function createToolSession({
     }
     // 2026-10-19：从 3000 收到 1500——实测上游单条上限约 1000-2000 字，
     // 3000 字的回喂会直接触发「输入信息过长」。
-    if (name === 'site_read' && typeof v.text === 'string' && v.text.length > 1500) {
-      return { ...v, text: v.text.slice(0, 1500), truncated: true, totalChars: v.totalChars || v.text.length };
+    if (name === 'site_read' && typeof v.text === 'string' && v.text.length > 1100) {
+      return { ...v, text: v.text.slice(0, 1100), truncated: true, totalChars: v.totalChars || v.text.length };
     }
     // 2026-10-19 修 P2-22：其余工具此前**无上限**——模型给个巨大 maxChars 就能把
     // 桥响应和提示词一起撑爆。统一兜底：序列化超限就截断并标记。
@@ -289,12 +291,40 @@ export function createToolSession({
   }
 
   /** 从效果回执里提炼一句给人看的话（产品摘要；判据不用这个，直接看 effect 字段）。 */
+  /**
+   * 一次工具结果 → 一行**可积累的事实**（进 summary，收尾轮会带上）。
+   *
+   * ⚠️ 2026-10-25 修（无上限长任务实测：40 轮 41 调用后答案退化成 15 字碎片）：
+   * 旧实现只会产出「页面操作完成」这类空话，summary 里没有任何内容——
+   * 模型跑 40 轮后收尾时手上没有可组织的事实，只能吐碎片。
+   * 现在记**标题 + 首句**（前 80 字），六门课跑下来就是六条真材料。
+   */
   function describe(x) {
-    if (!x.ok || !x.value || typeof x.value !== 'object') return null;
+    if (!x || !x.ok || !x.value || typeof x.value !== 'object') return null;
     const v = x.value;
-    if (x.call.name === 'site_open_section') return `已跳到「${v.title || ''}」`;
-    if (x.call.name === 'site_search' && Array.isArray(v.hits)) return `搜索到 ${v.hits.length} 条结果`;
-    if (v.ok) return '页面操作完成';
+    const name = x.call && x.call.name;
+    const args = (x.call && x.call.args) || {};
+    const firstLine = (s) => String(s || '').replace(/[#*`>\-]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80);
+
+    if (name === 'site_read') {
+      const title = v.title || (args.query || args.what || '');
+      const head = firstLine(v.text || v.outline || '');
+      return `读到「${String(title).slice(0, 40)}」${head ? '：' + head : ''}`;
+    }
+    if (name === 'site_search') {
+      const hits = Array.isArray(v.hits) ? v.hits : [];
+      const names = hits.slice(0, 3).map((h) => h.title || h.path || '').filter(Boolean);
+      return `搜「${String(args.query || '').slice(0, 20)}」命中 ${v.total != null ? v.total : hits.length} 条${names.length ? '：' + names.join(' / ') : ''}`;
+    }
+    if (name === 'site_navigate') {
+      return `到达「${String(v.title || v.path || args.path || '').slice(0, 40)}」`;
+    }
+    if (name === 'site_index') {
+      const n = Array.isArray(v.nodes) ? v.nodes.length : (v.count != null ? v.count : null);
+      return `看了站点地图${n != null ? '（' + n + ' 项）' : ''}`;
+    }
+    if (v.title) return `「${String(v.title).slice(0, 40)}」`;
+    if (v.ok !== false) return null;
     return null;
   }
 
@@ -359,15 +389,19 @@ export function createToolSession({
     // 与 summary 同理，每次 run 重置。只读，不参与任何判断。
     const timings = [];
 
-    for (let round = 1; round <= rounds; round++) {
+    // rounds <= 0 = **不设上限**（2026-10-25）：模型自己决定何时停。
+    // 硬保险仍在：单问有 deadline（管理器 360s 墙钟），不会真的挂死。
+    const MAX_ROUND_HARD = 60;   // 无上限时的物理保险，防病态输出
+    const effRounds = rounds > 0 ? rounds : MAX_ROUND_HARD;
+    for (let round = 1; round <= effRounds; round++) {
       // ⭐ 最后一轮强制收尾（2026-10-19 实测）：不这么做的模型会一直调工具，
       // 6 轮全用在「再读一次 / 再搜一次」上，最终 status=unresolved、answer 为空。
-      const lastRound = round === rounds;
-      if (lastRound) {
-        prompt = `${prompt}
-
-工具调用次数已用完。**不要再写任何调用**，直接用上面已经拿到的结果回答用户。`;
-      }
+      // ⭐ 2026-10-25 定案（站长）：**不设收尾轮、不发任何收尾 prompt**。
+      // 上游自己会规划工具调用——它要的是一个「冰冷的显示屏」：每次回复只拿到
+      // 上一轮所有工具的原始结果，不加任务复述、不加 deadline 提醒、不加「该收尾了」。
+      // 上下文只有 256k，任何一句多余的引导都是在挤占它自己的规划空间。
+      // 之前那些「最后一轮强制收尾」「重发任务句」「结构化解说」全部删除。
+      const lastRound = round === effRounds;
       // 有图就带图问（第一轮带图时模型才看得见；后续回喂仍是文本）
       //
       // ⭐ 流式（2026-10-19）：**只在「会产生最终答案」的那一轮**转发 onChunk。
@@ -534,7 +568,10 @@ export function createToolSession({
       // （总字数/位置/相关小节），正文原样贴（不转义），结尾给下一步建议。
       //
       // 长度纪律不变：总量仍受 FEED_BUDGET 兜底（上游单条拒收线 ~2030 字）。
-      const FEED_BUDGET = 3600;
+      // ⚠️ 2026-10-25（长任务实测）：3600 → 1800。上游单条上限实测约 1000-2000
+      // （本文件别处注释已写明），3600 的预算在第 3-4 轮会触发上游慢响应/退化
+      // （实测第 4 轮 63s、重试 2 次、答案退化成 7 字片段）。
+      const FEED_BUDGET = 1800;
       let feedUsed = 0;
       const feedBlocks = [];
 
@@ -609,14 +646,10 @@ export function createToolSession({
         feedBlocks.push(block);
       }
 
-      // 锚定任务句 + 确认调用已执行（2026-10-23 三次改版的结论，保留）
-      prompt = `你上一轮写的调用已经执行了。结果如下：
-
-${feedBlocks.join('\n\n')}
-
-原始任务：${userText}
-
-材料够了就直接写答案；不够就接着写下一行调用（一次一条）。`;
+      // ⭐ 2026-10-25（站长定案）：回喂**只做机械搬运**——把上一轮所有工具的
+      // 结果原样排好发回去，不加任何引导语、不复述任务、不给建议。
+      // 上游自己会规划下一步；我们要当的是显示屏，不是监工。
+      prompt = feedBlocks.join('\n\n');
       // 上传过图 → 本轮直接问「图里有什么」这种极简问题（agent.md 实测：问法越像任务提取越易被拦）
       if (uploaded.length) prompt = `${prompt}\n\n${visionQuestion}`;
     }

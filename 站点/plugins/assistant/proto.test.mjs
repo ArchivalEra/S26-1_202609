@@ -372,3 +372,48 @@ test('isTooLongText：只认「输入信息过长」（P2-17：裸「请重新�
   assert.ok(isTooLongText('输入信息过长，请精简后重试'));
   assert.ok(!isTooLongText('格式有误，请重新输入'));
 });
+
+// ── 队列式调用（2026-10-25 长任务实测）──────────────────────────
+// 长任务里模型一轮写出 5-15 个调用行，旧实现只取第一个（且全文 ≤160 字才解析）
+// ⇒ 15 个调用执行 0 个，模型把剩下的当"已执行"继续编答案。
+test('队列式：一轮多行调用全部收集，按出现顺序、同一工具可重复', () => {
+  const known = ['site_search', 'site_navigate', 'site_read'];
+  const reply = [
+    '我先搜第一份笔记。',
+    'site_search，query=行列式',
+    '命中，跳过去。',
+    'site_navigate，to=page，path=课堂笔记/行列式.html',
+    '读正文。',
+    'site_read，what=section，query=行列式',
+    '再搜作业1。',
+    'site_search，query=作业1',
+  ].join('\n');
+  const r = parseToolCalls(reply, known);
+  assert.equal(r.length, 4, '四行调用必须全部收集（含同一工具两次）');
+  assert.deepEqual(r.map((c) => c.name), ['site_search', 'site_navigate', 'site_read', 'site_search']);
+  assert.equal(r[0].args.query, '行列式');
+  assert.equal(r[3].args.query, '作业1');
+});
+
+test('队列式：长回复（>160 字）里的调用行仍被解析', () => {
+  const known = ['site_read'];
+  const preamble = '这是一段很长的思考叙述。'.repeat(30);   // 330 字
+  const tail = '读完之后我继续解释。'.repeat(10);
+  const reply = preamble + '\nsite_read，what=outline\n' + tail;
+  const r = parseToolCalls(reply, known);
+  assert.equal(r.length, 1, '长回复不许整段跳过');
+  assert.equal(r[0].name, 'site_read');
+  assert.equal(r[0].args.what, 'outline');
+});
+
+test('队列式防误判：叙述句里的工具名不算调用', () => {
+  const known = ['site_search'];
+  const r = parseToolCalls('我会用 site_search 来搜索，但它现在不可用。\n系统返回：命中 1 页', known);
+  assert.equal(r.length, 0, '「空格+中文词」是陈述句，不是调用');
+});
+
+test('队列式：单轮上限 12（防病态输出）', () => {
+  const known = ['site_read'];
+  const many = Array.from({ length: 30 }, () => 'site_read，what=outline').join('\n');
+  assert.equal(parseToolCalls(many, known).length, 12);
+});

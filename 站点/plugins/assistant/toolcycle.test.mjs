@@ -97,7 +97,7 @@ test('动作意图：工具表注入 → 模型吐调用 → invoke 执行 → �
   const r = await ts.run('铁芯损耗在资料库的哪一节？');
 
   assert.match(taps.prompts[0], /site_search/);            // 第一轮带工具表
-  assert.match(taps.prompts[1], /已经执行了。结果如下/);           // 第二轮回喂
+  assert.match(taps.prompts[1], /\[工具返回：/, '第二轮回喂只搬工具结果（无引导语）');
   assert.equal(taps.invokes.length, 1);                    // 工具真的被执行
   assert.equal(taps.invokes[0].name, 'site_search');
   assert.equal(r.calls.length, 1);
@@ -158,19 +158,20 @@ test('传输层故障（frozen）如实上抛，answer 为空', async () => {
   assert.equal(r.answer, '');
 });
 
-test('rounds 用尽：最后一轮强制收尾，把正文当答案（2026-10-19 实测：否则 answer 恒空）', async () => {
+test('rounds 用尽：最后一轮的正文当答案（无收尾 prompt 注入）', async () => {
   const taps = {};
-  // 模型每轮都想调工具——旧实现会跑满 3 轮后返回 unresolved + 空答案
   const script = Array.from({ length: 5 }, () => 'call:site_search:铁芯损耗');
-  script[2] = 'answer:根据前面的结果，铁芯损耗在第五节。';   // 最后一轮听劝
+  script[2] = 'answer:根据前面的结果，铁芯损耗在第五节。';
   const mgr = scriptedMgr(script, taps);
   const ts = createToolSession({ mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: TOOLS, rounds: 3 });
   const r = await ts.run('搜铁芯损耗');
-  assert.match(taps.prompts[2], /不要再写任何调用/, '最后一轮必须明确禁止再调工具');
   assert.equal(r.status, 'ok');
   assert.match(r.answer, /铁芯损耗在第五节/);
   assert.equal(r.calls.length, 2, '前两轮各调一次');
+  // 2026-10-25：收尾轮不再是特殊轮——不发任何收尾 prompt。
+  assert.doesNotMatch(taps.prompts[2], /收尾轮|次数已用完|最初的问题是/, '不许注入收尾语');
 });
+
 
 test('最后一轮模型仍吐调用：正文当答案，调用不执行', async () => {
   const taps = {};
@@ -322,14 +323,17 @@ test('回喂瘦身：图片清单只回前 12 条 + omitted 计数（35 张全�
   assert.match(feed, /"omitted":23/);
 });
 
-test('回喂提示：允许模型继续调工具（不许说「不要再调用工具」）', async () => {
+test('回喂是纯搬运：只有工具结果，没有引导语 / 不复述任务', async () => {
+  // 2026-10-25 站长定案：上游自己会规划工具调用，回喂不许夹带任何引导。
   const taps = {};
-  const mgr = scriptedMgr(['call:site_search:磁路', 'answer:好了'], taps);
+  const mgr = scriptedMgr(['call:site_search:铁芯损耗', 'answer:好'], taps);
   const ts = createToolSession({ mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: TOOLS });
-  await ts.run('搜磁路');
+  await ts.run('搜铁芯损耗');
   const feed = taps.prompts[1];
+  assert.match(feed, /\[工具返回：site_search/, '必须有工具结果');
+  assert.doesNotMatch(feed, /你上一轮|已经执行了|原始任务|接着写|建议下一步/, '不许夹带引导语');
+  assert.doesNotMatch(feed, /搜铁芯损耗/, '不复述任务句');
   assert.doesNotMatch(feed, /不要再调用工具/);
-  assert.match(feed, /接着写下一行调用/);
 });
 
 test('回喂瘦身：site_read 超 3000 字截断并标记', async () => {

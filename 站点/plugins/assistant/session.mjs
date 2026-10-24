@@ -50,7 +50,9 @@ export function chaoxingAdapter(upstream) {
     async open(cfg) {
       const a = createAssistant({
         base: upstream.base, unitId: upstream.unitId, robotId: upstream.robotId,
-        planning: !!cfg.planning, log: () => {},
+        planning: !!cfg.planning,
+        // 诊断开关：ZHEN_DEBUG=1 时把 proto 的帧级日志打到 stderr
+        log: process.env.ZHEN_DEBUG ? (...a) => console.error('[proto]', ...a) : () => {},
       });
       await a.connect();
       // I3：每次建连必重切模型（上游实测：新会话回退默认 223）
@@ -223,6 +225,16 @@ export function createManager(opts = {}) {
           return { text: txt, calls: [], attempts: attempt,
                    generation: s.generation, restored: hasGap,
                    status: st === 'cancelled' ? 'cancelled' : 'partial', cancelled: true };
+        }
+        // ⚠️ 2026-10-25：**frozen 但有正文**时不许丢（长任务后期误杀的主要损失点）。
+        // 旧行为把已收到的半截正文丢掉去重试，而重试往往又冻结——用户最后拿到
+        // 的是碎片。有正文就按 partial 交回：诚实告知「只答了一部分」，
+        // 比丢掉重试再拿个空答案好。
+        if (st === 'frozen' && txt) {
+          s.transcript.add(text, txt, 'partial');
+          return { text: txt, calls: [], attempts: attempt,
+                   generation: s.generation, restored: hasGap,
+                   status: 'partial', error: 'frozen_with_text' };
         }
         if (st === 'frozen' || st === 'transport' || st === 'empty') {
           try { channel.close(); } catch { /* ignore */ }
