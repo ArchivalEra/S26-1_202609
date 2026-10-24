@@ -155,3 +155,32 @@ test('契约④：用户正文必须落在 text 位，回调必须落在 emit �
   assert.equal(typeof taps.sessionId, 'string', 'sessionId 必须是字符串');
   assert.ok(!taps.sessionId.includes('电机学'), '用户输入不得串到 sessionId 位');
 });
+
+// ── 契约⑤：工具表必须来自注册表，且 Promise 形态也要吃 ─────────────
+// 症状（2026-10-25 生产验收）：用户正文到了上游，但**提示词没包上**。
+// 机制：getTools() 在规范/polyfill 注册表返回 Promise，旧实现同步当数组用
+// ⇒ Array.isArray(Promise) 为假 ⇒ 工具表恒空 ⇒ allowed.length === 0
+// ⇒ 站点侧不加提示词，正文裸发。
+test('契约⑤：getTools() 返回 Promise 时工具表仍要读到（不许静默变空）', async () => {
+  const tools = [{ name: 'site_read', description: '读正文', inputSchema: { type: 'object', properties: {} } }];
+  let gotTools = null;
+  const client = {
+    async ask() { return { status: 'ok', text: '好', calls: [] }; },
+    cancel() {}, upload() { return null; }, setTools() {}, snapshot() { return null; }, close() {},
+  };
+  const win = {
+    __assistantBridge: { ask: async () => ({ ok: true, text: '' }), cancel() {} },
+    __chatPanel: { setTransport(t) { win.transport = t; } },
+    document: { modelContext: { getTools: () => Promise.resolve(tools) } },
+    navigator: {},
+  };
+  await wireAssistant({
+    win,
+    createAssistantClient: ({ tools: t }) => { gotTools = t; return client; },
+    runTool: async () => ({ ok: true }),
+    pollMs: 1,
+  }).promise;
+  await win.transport.ask({ text: '问一句' }, () => {});
+  assert.ok(Array.isArray(gotTools), '工具表必须是数组');
+  assert.equal(gotTools.length, 1, 'Promise 形态的 getTools 结果不许丢');
+});

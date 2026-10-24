@@ -82,16 +82,20 @@ function makeTransport({ win, bridge, createAssistantClient, runTool, serializeT
   let activeSid = null;
   let seq = 0;
 
-  const toolList = () => {
+  // ⚠️ 2026-10-25 修（生产验收「提示词不见了」）：getTools() 在规范/polyfill
+  // 注册表上返回 **Promise**（只有 Firefox 原生是同步数组，见 webmcp-shim 头注释
+  // 的对照表）。旧实现同步当数组用 ⇒ Array.isArray(Promise) 为假 ⇒ 工具表恒空
+  // ⇒ 站点侧 allowed.length === 0 ⇒ 不加提示词，用户正文裸发上游。
+  const toolList = async () => {
     if (typeof serializeTools === 'function') {
-      try { return serializeTools(); } catch { return []; }
+      try { return await serializeTools(); } catch { return []; }
     }
     // 默认：从页面注册表读（与 webmcp-tools 的 registerTools 同一个源）
     try {
       const mc = (win.document && win.document.modelContext)
         || (win.navigator && win.navigator.modelContext) || null;
       if (!mc || typeof mc.getTools !== 'function') return [];
-      const list = mc.getTools();
+      const list = await mc.getTools();   // 规范/polyfill 返回 Promise；Firefox 原生是数组
       if (!Array.isArray(list)) return [];
       // 只留模型需要知道的三样（实现细节不过通道）
       return list.map((t) => ({
@@ -105,7 +109,7 @@ function makeTransport({ win, bridge, createAssistantClient, runTool, serializeT
   // 每个 sid 一个 client（保留各自的会话历史）
   const clients = new Map();
 
-  const clientFor = (sid) => {
+  const clientFor = async (sid) => {
     let c = clients.get(sid);
     if (c) return c;
     c = createAssistantClient({
@@ -113,7 +117,7 @@ function makeTransport({ win, bridge, createAssistantClient, runTool, serializeT
         ask: (payload, onEvent) => bridge.ask(payload, onEvent),
         cancel: () => bridge.cancel(),
       },
-      tools: toolList(),
+      tools: await toolList(),
       invoke: (name, args) => runTool(name, args),
       contextProvider: null,
     });
@@ -123,7 +127,9 @@ function makeTransport({ win, bridge, createAssistantClient, runTool, serializeT
 
   return {
     ask(payload = {}, onEvent = () => {}) {
-      return new Promise((resolve) => {
+      // async 执行器：toolList() 要 await（getTools 在 polyfill 下是 Promise）。
+      // 内部仍显式 new Promise + settle 门闩，语义不变。
+      return new Promise(async (resolve) => {
         if (activeSid !== null) {
           resolve({ ok: false, reason: '上一问还没结束（先停止或等终态）' });
           return;
@@ -138,7 +144,7 @@ function makeTransport({ win, bridge, createAssistantClient, runTool, serializeT
           resolve(r);
         };
         try {
-          const client = clientFor(sid);
+          const client = await clientFor(sid);
           // ⚠️ 2026-10-22 修：client.ask 返回的是 `{status, text, calls}`，
           // **没有 ok 字段**（chatsvc.mjs 的契约）。旧代码判 `r.ok` ⇒ 恒为假 ⇒
           // 每次成功回答都落到 `{ok:false, reason:'未知错误'}`——面板上看到的
