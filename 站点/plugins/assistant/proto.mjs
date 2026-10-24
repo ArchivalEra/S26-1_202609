@@ -127,13 +127,17 @@ export function parseToolCalls(rawText, knownTools) {
       // ⚠️ 2026-10-23 修（防护实测）：indexOf 会命中「别的标识符的一部分」——
       // 正文里 `import site_search_utils` 的 site_search 不是我们的工具。
       // 工具名后面必须是 参数语法（，,）或行尾/空白/围栏边界，不能是 [_a-zA-Z0-9]。
-      let at = -1;
-      {
-        const re = new RegExp('(^|[^\\w])' + name + '([^\\w]|$)');
-        const m = re.exec(t);
-        if (m) at = m.index + m[1].length;
-      }
-      if (at < 0) continue;
+      //
+      // ⚠️ 2026-10-24 修（issue #18 P1-5）：对该工具名的**所有**出现位逐个尝试——
+      // 此前只取第一个出现位，首现在叙述句里（被下面任一判据判为陈述形态跳过）时，
+      // 真正的调用行永远轮不到（「我用 site_search 来搜内容哦\nsite_search，query=x」
+      // 整条丢弃）。判据链一行不动，只换尝试对象；尾边界改前瞻（不吃字符，
+      // 相邻出现位不漏）。continue 现在的语义是「试下一个出现位」，不是「放弃这个工具」。
+      const reAll = new RegExp('(^|[^\\w])' + name + '(?=[^\\w]|$)', 'g');
+      let m;
+      let matched = false;
+      while (!matched && (m = reAll.exec(t)) !== null) {
+      const at = m.index + m[1].length;
       // 前缀必须是**纯引导语**。
       // 2026-10-19 实测：模型会写「浙江水利水电学院电路原理习题册电机学课堂笔记检索site_search，…」，
       // 前缀 32 字全是铺垫。按「前缀里有没有参数语法」判断比按长度更准。
@@ -200,7 +204,8 @@ export function parseToolCalls(rawText, knownTools) {
       const hasKv = Object.keys(args).length > 0;
       if (!hasKv && rest.length > 60) continue;
       out.push({ name, args, degraded: true });
-      break;   // 一行只当一次调用
+      matched = true;   // 一行只当一次调用
+      }
     }
   }
   return out;
