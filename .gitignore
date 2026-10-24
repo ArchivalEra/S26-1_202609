@@ -369,6 +369,7 @@
 !/站点/plugins/assistant/proto.mjs
 !/站点/plugins/assistant/toolcycle.mjs
 !/站点/plugins/assistant/toolcycle.test.mjs
+!/站点/plugins/assistant/proto.test.mjs
 !/站点/plugins/assistant/chatsvc.mjs
 !/站点/plugins/assistant/chatsvc.test.mjs
 !/站点/plugins/assistant/session.mjs

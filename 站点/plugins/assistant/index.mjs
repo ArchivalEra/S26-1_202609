@@ -1,9 +1,10 @@
 // index.mjs —— 站点侧助手的对外入口（T10：协议栈搬到站点侧）
 //
-// ## 搬家边界
-//   toolcycle.mjs / chatsvc.mjs / session.mjs / context.mjs / proto.mjs
-//   都是从 /mnt/hdd/study/userscript/proto/ **原样复制**的（函数体逐字未动，
-//   四个 .test.mjs 同目录、测试逻辑零改动）。本文件是唯一新写的部分：外壳。
+// ## 搬家边界与真相源（issue #18 canonical 归位，2026-10-24）
+//   toolcycle.mjs / session.mjs / context.mjs / proto.mjs / chatsvc.mjs
+//   最初从 /mnt/hdd/study/userscript/proto/ 原样复制而来；现在**本目录就是唯一
+//   真相源**（仓内副本曾领先仓外 6 行——2026-10-22 的 reason 透传修复只落在这边），
+//   仓外目录降级为 userscript 装配源。行为改动只改这里；.test.mjs 同目录同源。
 //
 // ## 为什么需要外壳
 //   旧链路里 createManager 的默认 adapter（session.mjs 的 chaoxingAdapter）自己
