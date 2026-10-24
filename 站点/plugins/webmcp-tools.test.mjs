@@ -12,7 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   PAGE_SELECTORS, textOf, hasClass, renderMarkdown, createPageView, buildToolDefs, registerTools,
-  serializeSelectors, WEBMCP_TOOLS_JS,
+  serializeSelectors, WEBMCP_TOOLS_JS, runTool,
 } from './webmcp-tools.mjs';
 
 // ---------------------------------------------------------------- 假 DOM
@@ -618,23 +618,24 @@ test('site_navigate：link 找不到给候选清单', () => {
   assert.ok(r.available.includes('第二章 变压器'));
 });
 
-test('site_navigate：page 走 SPA 路由（若页面暴露 __spaRouter）', () => {
+test('site_navigate：page 走 SPA 路由（若页面暴露 __spaRouter）', async () => {
   const doc = fakeDoc();
   const seen = [];
   doc.defaultView.__spaRouter = { navigate: (...a) => seen.push(a) };
   // 2026-10-19 起 page 分支会做侧栏校验：路径必须在该页的 data-path 里。
   // 夹具里那条侧栏链接就是合法目标。
-  const r = createPageView(doc).navigate({ to: 'page', path: '课程/电机学/第二章.html', hash: 'sec-1' });
+  // 2026-10-24 起 page 分支返回 Promise（等路由换完页，effect 才量得到真值）。
+  const r = await createPageView(doc).navigate({ to: 'page', path: '课程/电机学/第二章.html', hash: 'sec-1' });
   assert.equal(r.ok, true);
   assert.equal(r.via, 'spa');
   assert.equal(seen.length, 1);
 });
 
-test('site_navigate：索引页即使不在侧栏也放行（build.mjs 定案：group 无链接）', () => {
+test('site_navigate：索引页即使不在侧栏也放行（build.mjs 定案：group 无链接）', async () => {
   const doc = fakeDoc();
   const seen = [];
   doc.defaultView.__spaRouter = { navigate: (...a) => seen.push(a) };
-  const r = createPageView(doc).navigate({ to: 'page', path: '课程/电机学/index.html' });
+  const r = await createPageView(doc).navigate({ to: 'page', path: '课程/电机学/index.html' });
   assert.equal(r.ok, true, '索引页应放行');
   assert.equal(r.verified, false, '但要标出未经侧栏校验');
 });
@@ -1277,4 +1278,76 @@ test('WEBMCP_TOOLS_JS：在假环境里能真的注册上（端到端，不靠�
   vm.createContext(sandbox);
   vm.runInContext(WEBMCP_TOOLS_JS, sandbox);
   assert.equal(registered.length, 11, '内联源码应注册 11 个工具');
+});
+
+
+// ---------------------------------------------------------------- runTool 分派统一（issue #18 P0-1）
+//
+// 同一工具、同一参数，「站点侧工具循环（runTool）」与「浏览器 WebMCP 注册
+// （buildToolDefs 的 execute）」必须同构——此前 runTool 自带一份手写 MAP，
+// 把参数对象整个塞给标量参数：site_panels close 恒变 open、site_show_symbol
+// 永远 not_on_page。下面每条都同时做行为断言（真关/真命中）与双路径对照。
+
+/** 两条路径各用一份同构新夹具（工具会改 DOM，串用互相污染）。 */
+async function bothWays(name, args, tweak) {
+  const d1 = fakeDoc();
+  const d2 = fakeDoc();
+  if (tweak) { tweak(d1); tweak(d2); }
+  const clone = () => JSON.parse(JSON.stringify(args));
+  const viaRun = await runTool(d1, name, clone());
+  const def = buildToolDefs(d2, d2.defaultView).find((x) => x.name === name);
+  const raw = await def.execute(clone());
+  const viaExec = { ok: !(raw && typeof raw === 'object' && raw.ok === false), value: raw };
+  return { viaRun, viaExec, d1, d2 };
+}
+
+test('runTool：site_panels action=close 真的关（旧 MAP 把对象塞给 open，close 恒变 open）', async () => {
+  const openIt = (d) => { d.querySelector('details').open = true; };
+  const { viaRun, viaExec, d1 } = await bothWays('site_panels', { action: 'close' }, openIt);
+  assert.equal(viaRun.ok, true);
+  assert.equal(d1.querySelector('details').open, false, 'close 之后面板必须是收起态');
+  assert.deepEqual(viaRun, viaExec);
+});
+
+test('runTool：site_panels match 与 action 组合也走同一套解包', async () => {
+  const r = await bothWays('site_panels', { action: 'open', match: '折叠里的标题' });
+  assert.equal(r.viaRun.ok, true);
+  assert.deepEqual(r.viaRun, r.viaExec);
+});
+
+test('runTool：site_show_symbol term 命中返回释义（旧 MAP 传对象恒 not_on_page）', async () => {
+  const { viaRun, viaExec } = await bothWays('site_show_symbol', { term: 'sym-U' });
+  assert.equal(viaRun.ok, true, '命中符号应 ok');
+  assert.equal(viaRun.value.term, 'sym-U');
+  assert.ok(viaRun.value.bubble, '要读到气泡内容');
+  assert.deepEqual(viaRun, viaExec);
+});
+
+test('runTool：site_show_symbol 查不到回 symbol_not_on_page 且给可用清单', async () => {
+  const { viaRun, viaExec } = await bothWays('site_show_symbol', { term: '不存在的符号' });
+  assert.equal(viaRun.ok, false);
+  assert.equal(viaRun.value.reason, 'symbol_not_on_page');
+  assert.ok(Array.isArray(viaRun.value.available) && viaRun.value.available.length > 0);
+  assert.deepEqual(viaRun, viaExec);
+});
+
+test('runTool：site_search scope=page 与注册路径一致', async () => {
+  const { viaRun, viaExec } = await bothWays('site_search', { query: '铁芯', scope: 'page' });
+  assert.equal(viaRun.ok, true);
+  assert.ok(viaRun.value.total >= 1, '夹具正文里有「铁芯损耗」');
+  assert.deepEqual(viaRun, viaExec);
+});
+
+test('runTool：site_navigate to=prev 真点分页卡且两路同构', async () => {
+  const { viaRun, viaExec, d1 } = await bothWays('site_navigate', { to: 'prev' });
+  assert.equal(viaRun.ok, true);
+  assert.equal(viaRun.value.title, '第一章 概述');
+  assert.ok(d1.querySelector('a.paging-prev')._clicked, '分页卡必须真的被点');
+  assert.deepEqual(viaRun, viaExec);
+});
+
+test('runTool：未知工具名报错不抛异常（恒 resolve 契约）', async () => {
+  const r = await runTool(fakeDoc(), 'site_no_such', {});
+  assert.equal(r.ok, false);
+  assert.match(r.error, /site_no_such/);
 });
