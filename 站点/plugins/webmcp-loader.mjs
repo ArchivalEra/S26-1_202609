@@ -80,7 +80,11 @@ function inject(rel) {
   // 它同样由 loader 动态注入，URL 无 ?v=，还配 fetch(cache:"force-cache")。
   // 实测改 page-bridge.mjs 后产物内容变了、请求 URL 一个字节没变 ⇒ 浏览器用旧副本。
   // 三个动态注入的脚本必须都在这里。
-  var VERS = { "webmcp-shim.js": "__SHIM_VER__", "webmcp-tools.js": "__TOOLS_VER__", "webmcp-bridge.js": "__BRIDGE_VER__" };
+  // ⚠️ 2026-10-24 补（生产验收抓到）：**polyfill 同样动态注入却不在表里**——
+  // EdgeOne 边缘给 288KB 的 polyfill 卖了份 32KB 截断副本（源仓完好，CDN 毒缓存），
+  // 无内容戳的 URL 永远绕不开它，脚本加载即抛错 ⇒ 工具零注册 ⇒ 面板裸文本问答。
+  // 内容戳让每次内容变化都换新 URL，毒缓存/旧缓存一律自然绕行。
+  var VERS = { "webmcp-shim.js": "__SHIM_VER__", "webmcp-tools.js": "__TOOLS_VER__", "webmcp-bridge.js": "__BRIDGE_VER__", "../vendor/webmcp/polyfill.iife.js": "__POLYFILL_VER__" };
   var v = VERS[rel] || "";
   el.src = baseDir() + rel + (v && v.indexOf("__") !== 0 ? "?v=" + v : "");
   el.async = false;

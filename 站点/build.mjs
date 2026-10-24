@@ -234,7 +234,8 @@ fs.writeFileSync(path.join(webmcpDir, 'webmcp-bridge.js'), PAGE_BRIDGE_JS);
   const loaderSrc = WEBMCP_LOADER_JS
     .split('__SHIM_VER__').join(shimVer)
     .split('__TOOLS_VER__').join(toolsVer)
-    .split('__BRIDGE_VER__').join(bridgeVer);
+    .split('__BRIDGE_VER__').join(bridgeVer)
+    .split('__POLYFILL_VER__').join(assetVersion('assets/vendor/webmcp/polyfill.iife.js'));
   fs.writeFileSync(path.join(webmcpDir, 'webmcp-loader.js'), loaderSrc);
 }
 fs.writeFileSync(path.join(webmcpDir, 'webmcp-relay.js'), WEBMCP_RELAY_JS);
