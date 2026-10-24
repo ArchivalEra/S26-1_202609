@@ -147,7 +147,13 @@ function makeTransport({ win, bridge, createAssistantClient, runTool, serializeT
           //   cancelled / partial       → 用户停的，按成功交回（保留半截正文）
           //   其余（transport/deadline/empty/frozen）→ 真失败，带上 error 原文
           const OK_STATUS = ['ok', 'blocked', 'unresolved', 'cancelled', 'partial'];
-          client.ask(String(payload.text ?? ''), onEvent)
+          // ⚠️ 2026-10-25 修（生产验收「上游反复解释同一段代码」）：
+          // createAssistantClient().ask 是**四参** (sessionId, text, emit, attach)，
+          // 这里曾只传两参 ⇒ text 落进 sessionId、onEvent 落进 text ⇒
+          // `String(onEvent)` 把**回调函数源码**当成问题发给上游（面板上表现为
+          // 上游一直解释同一段 JS），用户输入从未到达。emit 也一直是 undefined，
+          // 流式事件全丢。三个位置必须按契约填满。
+          client.ask(sid, String(payload.text ?? ''), onEvent)
             .then((r) => {
               const st = String((r && r.status) || '');
               if (OK_STATUS.includes(st)) {
