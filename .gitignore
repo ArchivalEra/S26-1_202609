@@ -363,6 +363,7 @@
 !/站点/plugins/webmcp-shim.test.mjs
 !/站点/plugins/webmcp-tools.mjs
 !/站点/plugins/webmcp-tools.test.mjs
+!/站点/plugins/build-asset-version.test.mjs
 # 助手协议栈（T10：从 userscript/proto 搬来，函数体逐字保留；测试随代码同目录）
 !/站点/plugins/assistant/index.mjs
 !/站点/plugins/assistant/index.test.mjs
