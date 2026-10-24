@@ -280,7 +280,7 @@ configurable_selftest() {
   done
   rm -rf "$tmp"
   [ "$ok" = "$n" ] && [ -n "$red" ] || {
-    echo "  ❌ 可配置性自证不成立（换名全绿=$ok/$n；默认名下没红的闸门=[$red_need]）"; return 1; }
+    echo "  ❌ 可配置性自证不成立（换名全绿=$ok/$n；应红名单=[$red_need]——具体谁没红见上方逐条 ❌，这里只列期望）"; return 1; }
   echo "  ✅ 五个名字全换（LEDGER.json/NOTES.md/RETRACT.json/cases/R1-R3.md）$ok/$n 全绿；默认名字下 [$red_need] 全红 ⇒ 没有硬编码"
   return 0
 }
