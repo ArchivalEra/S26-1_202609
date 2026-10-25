@@ -1471,12 +1471,47 @@ function askChat(text) {
   // 暴露给表单的 submit 处理器（它在 askChat 外面，拿不到闭包里的 stopAnswer）
   stopAnswerRef = stopAnswer;
 
-  // ── 双形态分派（2026-10-20）──────────────────────────────
-  // ── 脚本形态已删除（2026-10-25 架构收口）──────────────────────
-  // 站长定案：删掉插件与站点侧的衔接层，回到 node 桥形态验证。
-  // 原 transport 分支（走 userscript iframe 通道）整段移除——它引入的重复工具循环、
-  // 参数错位、工具表空、白名单双份等一串缺陷随这段一起消失。面板只走本机桥 SSE。
-  // ── 本机桥形态（现状，原链不动）──────────────────────────
+  // ── 双形态分派 ─────────────────────────────────────────
+  //
+  // 2026-10-25 重建（方案-插件重启 §0.1）：transport 分支回归。
+  // 与旧版的关键差别——**这次 transport 只提供「一次 ask」，不跑工具循环**。
+  // 旧版失败根因就是 B 侧又养了一套 chatsvc/toolcycle（handoff §0.133）。
+  // 现在工具循环在 A 侧（站点协议栈），transport 只当管道。
+  //
+  // 契约：fn = { ask(payload, onEvent) → Promise<{ok,text?,reason?}>, cancel() → {cancelled} }
+  //   payload = { text, sessionId?, tools? }
+  //   onEvent 的 ev 词汇与 SSE 完全一致：delta / status / tool / done / error
+  // ⇒ handleEventPlain 与 finish 可以原样复用（它们在 2026-10-20 就为此提升到了顶层）。
+  if (transport) {
+    var tp = transport;
+    var stopRef = null;
+    stopAnswerRef = function () {
+      // 用户点停止：通知对端真停（通道内会转给上游 cancel），本地立刻收尾。
+      try { if (stopRef) stopRef(); } catch (e) { /* 对端不在 */ }
+      finish();
+    };
+    try {
+      stopRef = function () { try { tp.cancel(); } catch (e) { /* 忽略 */ } };
+      var tpRes = tp.ask(payload, handleEventPlain);
+      if (tpRes && typeof tpRes.then === 'function') {
+        tpRes.then(function (r) {
+          // 对端没发终态事件时兜底（正常路径下 onEvent 已经发过 done/error）
+          if (r && r.ok === false && r.reason) handleEventPlain({ type: "error", reason: String(r.reason) });
+          finish();
+        }).catch(function (e) {
+          handleEventPlain({ type: "error", reason: String((e && e.message) || e) });
+          finish();
+        });
+      } else {
+        finish();
+      }
+    } catch (e) {
+      handleEventPlain({ type: "error", reason: String((e && e.message) || e) });
+      finish();
+    }
+    return;
+  }
+  // ── 本机桥形态（默认，原链不动）──────────────────────────
 
   /** 发一次 /chat。401/403 时刷新一次 token 再试——桥可能重装过（新 token）。 */
   function attempt(n) {
