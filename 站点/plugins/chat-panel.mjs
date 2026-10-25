@@ -483,7 +483,32 @@ body.chat-resizing .chat-panel {
   cursor: pointer;
 }
 .chat-attach-btn:hover { background-color: var(--md-sys-color-surface-container-high); }
-.chat-attach-btn:disabled { opacity: .4; cursor: default; }
+.chat-attach-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ── 联网搜索开关（2026-10-25，照抄官方语义）────────────────────
+   官方实现（.zcode/会话语义/实测-多会话与联网-20261025.md §五）：
+   开启判据是父级 .tool-button 有 active 类；与附件**互斥**，实现很轻——
+   给附件按钮加 disabled 属性 + cursor:not-allowed，**不改 class、不改
+   pointer-events、不置灰**（opacity 仍为 1）。
+   这里照抄这个轻量做法，避免两套判据。 */
+.chat-web-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px; height: 34px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  cursor: pointer;
+}
+.chat-web-btn:hover { background-color: var(--md-sys-color-surface-container-high); }
+.chat-web-btn.active {
+  background-color: var(--md-sys-color-secondary-container, rgba(120,120,255,.18));
+  color: var(--md-sys-color-on-secondary-container, var(--md-sys-color-primary));
+}
+.chat-web-btn[aria-pressed="true"] { font-weight: 600; }
 
 .chat-attach-bar {
   display: flex;
@@ -793,6 +818,10 @@ var LOCAL_ONLY = (function () {
 // ── 状态 ────────────────────────────────────────────────────
 var panel = null, logEl = null, inputEl = null, sendBtn = null, jumpBtn = null, backdrop = null;
 var attachBtn = null, attachBar = null, fileInput = null;
+// 联网搜索开关（2026-10-25）：与附件互斥，语义照抄官方页面。
+// 开着就禁附件——两路输入都会改变上游的检索策略，同时用会互相干扰。
+var webBtn = null;
+var webSearch = false;
 var open = false;
 var busy = false;
 var katexLoading = null;
@@ -1724,6 +1753,33 @@ function buildPanel() {
     fileInput.value = "";      // 允许连续选同一个文件
   });
 
+  // 联网 ↔ 附件互斥（2026-10-25，官方语义照抄）。
+  //
+  // 为什么互斥：联网会让上游去检索外部网页，附件是给上游一份本地材料——
+  // 两路输入同时开，上游的检索策略会互相干扰（官方页面同样不让同时用）。
+  //
+  // 为什么判据是 disabled 属性而不是 class：官方 .upload-trigger 就是这么做的，
+  // 只有 disabled 属性 + cursor:not-allowed，**没有** .disabled 类、不改
+  // pointer-events、不置灰。照抄它，避免我们造出第二套判据。
+  function setWebSearch(on) {
+    webSearch = !!on;
+    if (webBtn) {
+      webBtn.classList.toggle("active", webSearch);
+      webBtn.setAttribute("aria-pressed", webSearch ? "true" : "false");
+      webBtn.title = webSearch ? "联网搜索已开启（关闭后才能加附件）" : "联网搜索（开启后不能用附件）";
+    }
+    if (attachBtn) {
+      if (webSearch) {
+        attachBtn.disabled = true;
+        attachBtn.title = "联网搜索已开启，先关掉才能加附件";
+      } else {
+        // 只在「不是发送中」时恢复——发送中也禁附件（见 askChat）
+        attachBtn.disabled = false;
+        attachBtn.title = "添加图片（也可以直接粘贴或拖进来）";
+      }
+    }
+  }
+
   attachBtn = document.createElement("button");
   attachBtn.type = "button";
   attachBtn.className = "chat-attach-btn";
@@ -1742,6 +1798,30 @@ function buildPanel() {
     attachBtn.appendChild(svg);
   })();
   attachBtn.addEventListener("click", function () { fileInput.click(); });
+
+  // 联网搜索开关（2026-10-25）。图标用地球网格，与官方 icon-lianwangsousuo1 同义。
+  webBtn = document.createElement("button");
+  webBtn.type = "button";
+  webBtn.className = "chat-web-btn";
+  webBtn.setAttribute("aria-label", "联网搜索");
+  webBtn.setAttribute("aria-pressed", "false");
+  webBtn.title = "联网搜索（开启后不能用附件）";
+  (function () {
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("width", "18"); svg.setAttribute("height", "18");
+    svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor"); svg.setAttribute("stroke-width", "2");
+    svg.setAttribute("stroke-linecap", "round"); svg.setAttribute("stroke-linejoin", "round");
+    var c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    c.setAttribute("cx", "12"); c.setAttribute("cy", "12"); c.setAttribute("r", "9");
+    var g1 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    g1.setAttribute("d", "M3 12h18");
+    var g2 = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    g2.setAttribute("d", "M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18");
+    svg.appendChild(c); svg.appendChild(g1); svg.appendChild(g2);
+    webBtn.appendChild(svg);
+  })();
+  webBtn.addEventListener("click", function () { setWebSearch(!webSearch); });
 
   inputEl = document.createElement("textarea");
   inputEl.className = "chat-textarea";
@@ -1775,7 +1855,7 @@ function buildPanel() {
   sendBtn.type = "submit";
   sendBtn.setAttribute("aria-label", "发送");
   sendBtn.textContent = "↑";
-  form.appendChild(attachBtn); form.appendChild(inputEl); form.appendChild(sendBtn);
+  form.appendChild(attachBtn); form.appendChild(webBtn); form.appendChild(inputEl); form.appendChild(sendBtn);
   form.appendChild(fileInput);
   form.addEventListener("submit", function (e) {
     e.preventDefault();
