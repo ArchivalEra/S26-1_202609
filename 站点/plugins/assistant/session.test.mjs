@@ -285,3 +285,70 @@ test('★ 文件守卫：context.mjs 必须已删（上游自己存历史、自�
   assert.equal(existsSync(new URL('./context.mjs', import.meta.url)), false,
     '转录模块已删——本地不存任何会话数据');
 });
+
+// ── msgListTotal 必须是**同步可读的缓存值**（2026-10-25 实测抓到的真 bug）──
+//
+// 病灶：proto 的 msgListTotal() 是 async（要发一次 HTTP），旧实现把它当同步值读
+// ⇒ 拿到 Promise 对象，`typeof === 'number'` 恒假 ⇒ 判据永远认为「新会话」
+// ⇒ 第二次提问照样发工具清单（实测提示词 1286 字，本该是裸问题）。
+//
+// 修法：建连时取一次、缓存在 record 上，句柄与管理器都同步读缓存。
+
+test('★ msgListTotal 是同步数值（不是 Promise）——建连后立即读得到', async () => {
+  const taps = { msgListTotal: 5 };
+  const adapter = {
+    async open() {
+      return {
+        async ask() { return { text: 'x', status: 'answered' }; },
+        conversationId: () => 'conv-1',
+        // 模拟 proto 的 async 签名：返回 Promise<number>
+        async msgListTotal() { return taps.msgListTotal; },
+        close() {},
+      };
+    },
+  };
+  const m = createManager({ adapter });
+  const h = m.open();
+  await m.ask(h, '第一问');   // 建连 + 缓存
+
+  // 关键断言：读出来必须是数字，不能是 Promise
+  const v = m.msgListTotal(h);
+  assert.equal(typeof v, 'number', '必须是数字——Promise 会让判据恒假');
+  assert.equal(v, 5);
+  assert.equal(h.msgListTotal, 5, '句柄上也要是数字');
+});
+
+test('★ 建连后 total=0 ⇒ 仍按新会话（第一次提问要发清单）', async () => {
+  const adapter = {
+    async open() {
+      return {
+        async ask() { return { text: 'x', status: 'answered' }; },
+        conversationId: () => 'conv-new',
+        async msgListTotal() { return 0; },
+        close() {},
+      };
+    },
+  };
+  const m = createManager({ adapter });
+  const h = m.open();
+  await m.ask(h, '第一问');
+  assert.equal(m.msgListTotal(h), 0, '0 是有效值，不是「取不到」');
+});
+
+test('★ msgListTotal 取不到（抛错）⇒ null，不崩', async () => {
+  const adapter = {
+    async open() {
+      return {
+        async ask() { return { text: 'x', status: 'answered' }; },
+        conversationId: () => 'conv-x',
+        async msgListTotal() { throw new Error('网络挂了'); },
+        close() {},
+      };
+    },
+  };
+  const m = createManager({ adapter });
+  const h = m.open();
+  const r = await m.ask(h, '第一问');
+  assert.equal(r.status, 'ok', '取不到判据不该影响问答');
+  assert.equal(m.msgListTotal(h), null);
+});

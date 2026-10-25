@@ -126,11 +126,8 @@ export function createManager(opts = {}) {
     /** 当前会话的历史条数（上游 msgList.total）。null = 还没连过。
      *  判据：> 0 就是旧会话（有历史），不必再发工具清单。 */
     get msgListTotal() {
-      try {
-        return (rec.channel && typeof rec.channel.msgListTotal === 'function'
-          ? rec.channel.msgListTotal()
-          : null);
-      } catch { return null; }
+      // 建连时缓存的（见 ensureChannel）。null = 还没连过 / 取不到。
+      return rec.msgListTotal != null ? rec.msgListTotal : null;
     },
     /** 第几次建连（诊断用：换线会递增）。 */
     get generation() { return rec.generation || 0; },
@@ -182,6 +179,15 @@ export function createManager(opts = {}) {
     }
     touch(h);
     evictIfNeeded();
+    // ⚠️ 2026-10-25 修：`msgListTotal()` 是 **async**（要发一次 HTTP），
+    // 旧实现把它当同步值读 ⇒ 拿到的是 Promise 对象，`typeof === 'number'` 恒假
+    // ⇒ 判据永远认为「新会话」，第二次提问照样发工具清单（实测提示词 1286 字）。
+    //
+    // 正确做法：建连后取一次，缓存在 record 上。同一个 conversationId 下
+    // total 只会增不会减，取一次够用。
+    try {
+      rec.msgListTotal = await rec.channel.msgListTotal();
+    } catch { rec.msgListTotal = null; }
     return rec.channel;
   };
 
@@ -194,6 +200,20 @@ export function createManager(opts = {}) {
   const doAsk = async (h, text, askOpts = {}) => {
     const rec = recOf(h);
     const t0 = Date.now();
+
+    // ⚠️ 2026-10-25 修：`msgListTotal` 必须**每次提问前刷新**，不能只在建连时取。
+    //
+    // 实测（两次提问）：第一次提问后上游 total 从 0 变成 2，但缓存还停在 0
+    // ⇒ 第二次提问的第一轮照样发工具清单（实测提示词带 site_search）。
+    //
+    // 刷新时机放在这里（doAsk 开头）而不是 ensureChannel：ensureChannel 在
+    // 热连接时直接 return，不会重取；而 doAsk 每次提问都会走到。
+    // 失败不影响问答（判据取不到 ⇒ null ⇒ 上层按新会话处理，多发一次清单）。
+    if (rec.channel && typeof rec.channel.msgListTotal === 'function') {
+      try { rec.msgListTotal = await rec.channel.msgListTotal(); }
+      catch { rec.msgListTotal = null; }
+    }
+
     let attempt = 0;
     for (;;) {
       if (Date.now() - t0 > deadlineMs) {
@@ -299,6 +319,7 @@ export function createManager(opts = {}) {
       const rec = {
         cfg: { planning: !!cfg.planning, modelId: cfg.modelId || 559 },
         channel: null, generation: 0,
+        msgListTotal: null,   // 建连后取一次（上游 msgList.total）
         cancelRequested: false, deadlineTimer: null,
       };
       const h = handleOf(rec);
@@ -389,8 +410,10 @@ export function createManager(opts = {}) {
      *  判据：> 0 ⇒ 旧会话（有历史），不必再发工具清单。 */
     msgListTotal(h) {
       const rec = records.get(h);
-      if (!rec || !rec.channel || typeof rec.channel.msgListTotal !== 'function') return null;
-      try { return rec.channel.msgListTotal(); } catch { return null; }
+      if (!rec) return null;
+      // 建连时缓存的（见 ensureChannel）——**同步读**，因为 toolcycle 在拼提示词时
+      // 需要立刻决定发不发清单，不能 await。
+      return rec.msgListTotal != null ? rec.msgListTotal : null;
     },
 
     /** 帧级日志累积（仅 ZHEN_TRACE>=3 时有内容）。 */
