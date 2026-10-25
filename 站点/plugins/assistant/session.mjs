@@ -49,20 +49,22 @@ import { createTranscript } from './context.mjs';
 /** 真实 adapter（默认）：唯一 import createAssistant 的地方。生灭权在管理器，这里只有动作。
  *  @param {{base: string, unitId: string|number, robotId: string|number}} upstream
  *    上游地址三件套——运行时由密文层解出（cipher.unlockUpstream），最外层传入，不硬编码。 */
-export function chaoxingAdapter(upstream) {
+export function chaoxingAdapter(upstream, hostOpts = {}) {
+  // 日志策略由**宿主**注入（2026-10-25，为「node 侧整套搬进插件」做准备）。
+  //
+  // 旧实现直接读 `process.env.ZHEN_DEBUG` / `ZHEN_TRACE`——那在 Node 里有效，
+  // 但搬到浏览器（B 侧 iframe）会直接 `process is not defined` 崩掉。
+  // 所以默认值改为「静默」：Node 侧由 .zcode/学习通API/会话.mjs 薄适配器注入
+  // 环境变量读法；浏览器侧由 guest 宿主注入「转发给 A」的 log。
+  const log = typeof hostOpts.log === 'function' ? hostOpts.log : () => {};
+  const trace = hostOpts.trace != null ? Number(hostOpts.trace) : 0;
   return {
     async open(cfg) {
       const a = createAssistant({
         base: upstream.base, unitId: upstream.unitId, robotId: upstream.robotId,
         planning: !!cfg.planning,
-        // 诊断开关：ZHEN_DEBUG=1 时把 proto 的帧级日志打到 stderr
-        log: process.env.ZHEN_DEBUG ? (...a) => console.error('[proto]', ...a) : () => {},
-        // 帧级日志档位（2026-10-25）：ZHEN_TRACE=0/1/2/3
-        //   0 关闭  1 每帧一行摘要（默认）  2 +原始 JSON(截断 4KB)  3 全帧累积供落盘
-        // 只在 ZHEN_DEBUG 打开时才有效——否则没地方打。
-        trace: process.env.ZHEN_DEBUG
-          ? Number(process.env.ZHEN_TRACE != null ? process.env.ZHEN_TRACE : 1)
-          : 0,
+        log,
+        trace,
       });
       await a.connect();
       // I3：每次建连必重切模型（上游实测：新会话回退默认 223）
@@ -204,6 +206,16 @@ export function createManager(opts = {}) {
   const doAsk = async (h, text, askOpts = {}) => {
     const rec = recOf(h);
     const t0 = Date.now();
+    // ⚠️ 2026-10-25 修（长任务真凶之二：模型回「人家没看懂耶」）：
+    //
+    // 工具循环的**中间轮**传给这里的 `text` 是**回喂文本**（上一轮所有工具的
+    // 原始结果，实测一段就 3.7K 字），不是用户的提问。旧实现不分青红皂白把它
+    // 记进转录 ⇒ 一旦 `too_long` 触发重放，就把几万字的工具结果当成「用户说过的话」
+    // 塞回上游，模型彻底懵掉（实测日志：`此前第9轮，我问过：「[工具返回：site_read…]`）。
+    //
+    // 现在：`askOpts.transcribe === false` 的轮次**不进转录**。
+    // 只记「用户真问题 → 最终答案」这一对，重放才有意义。
+    const transcribe = askOpts.transcribe !== false;
 
     // 惰性轮换：成本阈值命中 ⇒ 先变冷（复用同一条冷启动路径）
     if (rec.channel && rec.transcript.shouldRotate()) dropChannel(rec);
@@ -269,7 +281,7 @@ export function createManager(opts = {}) {
           // 用户的意图是「停下来」，不是「重试」。
           // 已收到的正文按 partial 落进转录（可重放），但**不标记 ok**——
           // 半截答案不该在下次提问时被当成完整上下文重放。
-          rec.transcript.add(text, txt, 'partial');
+          if (transcribe) rec.transcript.add(text, txt, 'partial');
           return { text: txt, calls: [], attempts: attempt,
                    generation: rec.generation, restored: hasGap,
                    status: st === 'cancelled' ? 'cancelled' : 'partial', cancelled: true };
@@ -279,7 +291,7 @@ export function createManager(opts = {}) {
         // 的是碎片。有正文就按 partial 交回：诚实告知「只答了一部分」，
         // 比丢掉重试再拿个空答案好。
         if (st === 'frozen' && txt) {
-          rec.transcript.add(text, txt, 'partial');
+          if (transcribe) rec.transcript.add(text, txt, 'partial');
           return { text: txt, calls: [], attempts: attempt,
                    generation: rec.generation, restored: hasGap,
                    status: 'partial', error: 'frozen_with_text' };
@@ -290,12 +302,12 @@ export function createManager(opts = {}) {
           if (st === 'empty') {
             // 有终止帧却零正文 = 上游真的答了空。重试一次即可，不要无限换线。
             if (attempt > 1 || Date.now() - t0 > deadlineMs) {
-              rec.transcript.add(text, '', 'frozen');
+              if (transcribe) rec.transcript.add(text, '', 'frozen');
               return { text: '', calls: [], attempts: attempt, error: 'empty',
                        generation: rec.generation, restored: hasGap, status: 'empty' };
             }
           } else if (attempt > reconnectAttempts || Date.now() - t0 > deadlineMs) {
-            rec.transcript.add(text, '', 'frozen');
+            if (transcribe) rec.transcript.add(text, '', 'frozen');
             // 2026-10-22：优先带 adapter 给的**真实原因**（r.error），没有才退回枚举值。
             // 之前恒写 st，于是「桥没起」「密文解不开」「上游拒答」在面板上全显示成
             // 「未知错误」——查连通问题时等于没有诊断信息。
@@ -309,7 +321,7 @@ export function createManager(opts = {}) {
           // 补救：强制把历史重放一遍（当作冷启动），再问一次。只补救一次，避免循环。
           attempt += 1;
           if (attempt > 1) {
-            rec.transcript.add(text, '', 'frozen');
+            if (transcribe) rec.transcript.add(text, '', 'frozen');
             return { text: '', calls: [], attempts: attempt, error: 'context_missing',
                      generation: rec.generation, restored: hasGap, status: 'context_missing' };
           }
@@ -323,19 +335,19 @@ export function createManager(opts = {}) {
           attempt += 1;
           dropChannel(rec);
           if (attempt > reconnectAttempts + 2 || Date.now() - t0 > deadlineMs) {
-            rec.transcript.add(text, '', 'frozen');
+            if (transcribe) rec.transcript.add(text, '', 'frozen');
             return { text: '(上下文过长，已按新话题继续)', calls: [], attempts: attempt,
                      generation: rec.generation, restored: hasGap, status: 'too_long' };
           }
           continue;
         }
         if (st === 'deadline') {
-          rec.transcript.add(text, '', 'frozen');
+          if (transcribe) rec.transcript.add(text, '', 'frozen');
           return { text: txt, calls: [], attempts: attempt + 1, error: 'deadline',
                    generation: rec.generation, restored: hasGap, status: 'deadline' };
         }
         // I1：记账先于 resolve
-        rec.transcript.add(text, txt, st === 'blocked' ? 'blocked' : 'ok');
+        if (transcribe) rec.transcript.add(text, txt, st === 'blocked' ? 'blocked' : 'ok');
         // 背景段没全发出去 ⇒ 水位停在原处，下次还会重放（宁可多发，不可漏发）
         if (replayOk) {
           rec.deliveredSeq = rec.transcript.turns.length
@@ -364,12 +376,12 @@ export function createManager(opts = {}) {
         attempt += 1;
         // 墙钟到点：不再重试，收束返回（避免 deadline 后又开新连接白跑）
         if (String(e.message) === 'deadline' || Date.now() - t0 > deadlineMs) {
-          rec.transcript.add(text, '', 'frozen');
+          if (transcribe) rec.transcript.add(text, '', 'frozen');
           return { text: '', calls: [], attempts: attempt, error: 'deadline',
                    generation: rec.generation, restored: hasGap, status: 'deadline' };
         }
         if (attempt > reconnectAttempts) {
-          rec.transcript.add(text, '', 'frozen');
+          if (transcribe) rec.transcript.add(text, '', 'frozen');
           return { text: '', calls: [], attempts: attempt, error: String(e.message || e),
                    generation: rec.generation, restored: hasGap, status: 'transport' };
         }

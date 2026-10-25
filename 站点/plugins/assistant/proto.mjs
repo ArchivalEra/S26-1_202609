@@ -923,7 +923,7 @@ export function createAssistant(opts = {}) {
    * 问一个问题，等完整回答（自动处理「转大模型」确认）。
    * @returns {Promise<{text:string, confirmed:boolean, modelId:number|null}>}
    */
-  function ask(question, { modelId: perQuestionModel, confirmOption = '1', timeout = 120000, idleMs = 20000, fileInfo = null, onChunk: perAskOnChunk = null } = {}) {
+  function ask(question, { modelId: perQuestionModel, confirmOption = '1', timeout = 120000, idleMs = 20000, fileInfo = null, onChunk: perAskOnChunk = null, tools = null } = {}) {
     if (!ws || ws.readyState !== 1) throw new Error('未连接，先 await connect()');
     const mid = perQuestionModel ? Number(perQuestionModel) : activeModelId;
     return new Promise((resolve, reject) => {
@@ -1004,8 +1004,32 @@ export function createAssistant(opts = {}) {
       // 带图：questionType 仍是 TEXT，额外挂 fileInfo 数组（改别的值服务端不认图）。
       const patch = { question, visibleQuestion: question };
       if (fileInfo && fileInfo.length) patch.fileInfo = fileInfo;
+      // 🔬 实验（2026-10-25）：把工具定义**结构化**塞进提问帧的 msg.tools。
+      //
+      // 背景：`pageToolsPrompt` 只是把工具清单**写进文本**——模型看到的是
+      // 「你会用 site_search，query=x 这种写法」，而它自己的工具表里没有这些东西，
+      // 于是行为在「照文本协议写」和「判定工具不存在、改用沙箱 ls」之间摇摆
+      // （同一提示词实测两种结果：12 次调用 vs 0 次）。
+      //
+      // 这个字段从来没验证过：全仓唯一提到它的是 index.mjs 的一句注释
+      // （「payload.tools 由站点侧每问现取填入，通道契约要求该字段恒在」），
+      // 但那条路走的是 window.__assistantBridge（插件形态），node 桥根本不经过。
+      //
+      // 放在 msg 里而不是顶层：上游的字段都在 msg（question/fileInfo/chatModel…），
+      // 顶层是路由元数据（msgTimeId/direction/communicateType）。
+      if (Array.isArray(tools) && tools.length) {
+        patch.tools = tools;
+        log('[实验] 帧里带 tools=' + tools.length + ' 个：' + tools.map((t) => t && t.name).join(','));
+      }
       const f = frame(patch);
-      log('[→]', question, fileInfo && fileInfo.length ? `（+${fileInfo.length} 图）` : '');
+      // 诊断（2026-10-25）：问题经常是**多行提示词**，旧日志只打了首行，
+      // 排查「工具表有没有送到」时看不到 catalog。ZHEN_DEBUG=1 时打全文。
+      if (typeof log === 'function') {
+        try {
+          if (String(question).includes('\n')) log('[→全文]\n' + String(question));
+          else log('[→]', question, fileInfo && fileInfo.length ? `（+${fileInfo.length} 图）` : '');
+        } catch { /* 无 log */ }
+      }
       ws.send(JSON.stringify(f));
       // 空闲看门狗：服务端偶发推两三帧就冻住（§0.47 的时序坑），
       // 与其干等满 timeout，不如 idleMs 无新帧就收工，好让上层重试。
