@@ -466,9 +466,30 @@ export function createToolSession({
       // 正确方向（未实施）：撤回契约要做成**显式对象**（如 onStream{delta,retract}）
       // 而不是函数属性；并给每个 delta 带轮次序号，让撤回精确到轮；
       // cleanAnswer 要在**流式输出前**逐段生效，不能只作用于最终答案。
-      const streamOpts = lastRound && opts && opts.onChunk
+      const streamOpts0 = lastRound && opts && opts.onChunk
         ? opts
         : (opts && opts.onChunk ? { ...opts, onChunk: null } : opts);
+      // 🔬 2026-10-25：把工具定义**结构化**随每轮提问递上去（实验路 A）。
+      //
+      // 只在 `tools` 非空时加。加了之后 proto 会把它塞进帧的 msg.tools——
+      // 让上游的工具表和提示词里的文字清单**指向同一批工具**，而不是只靠文字描述
+      // 让模型猜「这些东西存不存在」。
+      //
+      // 变的是「有没有这个字段」，不变的是回喂/解析/工具循环——全部照旧。
+      {
+        try { console.error('[实验] toolcycle 收到 tools=' + (Array.isArray(tools) ? tools.length : typeof tools)); } catch { }
+      }
+      const streamOpts = {
+        ...(streamOpts0 || {}),
+        ...(tools && tools.length ? { tools } : {}),
+        // ⚠️ 2026-10-25（长任务真凶之二）：**中间轮的回喂不进转录**。
+        //
+        // 第 1 轮是用户真问题（要记）；第 2 轮起 `prompt` 是上一轮工具的原始结果
+        // （实测单段 3.7K 字），记进转录后一旦 too_long 触发重放，这些工具结果
+        // 会被当成「用户说过的话」几万字塞回上游 ⇒ 模型回「人家没看懂耶」。
+        // 只记「真问题 → 最终答案」这一对，重放才有意义。
+        transcribe: round === 1,
+      };
       const r = await mgr.ask(session, prompt, streamOpts);
       // 落账时机：该轮成功才记（上游确实收到了才不重发）
       if (r && r.status === 'answered' && freshAttach.length) {
