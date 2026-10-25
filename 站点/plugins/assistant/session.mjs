@@ -301,6 +301,11 @@ export function createManager(opts = {}) {
         touch(id);
         return {
           text: txt, calls: r.calls || [], attempts: attempt + 1,
+          // ⚠️ 2026-10-25 修（审计 C2）：`sandboxCalls` 此前在这里断了。
+          // proto.mjs 产出（`tool_call_chunk` 里模型把 site_* 包进 execute/read_file
+          // 时会被收集），toolcycle.mjs:485 消费，中间这一层没透传 ⇒ 拦截机制
+          // 从 2026-10-23 上线起从未生效（唯一产品路径上恒 undefined）。
+          sandboxCalls: r.sandboxCalls || [],
           generation: s.generation, restored: hasGap, terminal: r.terminal,
           status: st === 'blocked' ? 'blocked' : 'ok',
           // 诊断（2026-10-21 回填）：此前只有 Node 侧适配器带 ms，T2 收敛后

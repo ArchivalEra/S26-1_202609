@@ -35,17 +35,13 @@ ALIVE_FILES = (
     "chaoxing.test.mjs", # 传输层帧回放测试（终止表/正文抽取，20 项）
     "守卫.test.mjs",      # 结构守卫：薄适配器形态 + 明文禁词 + tools 传递（6 项，2026-10-22 入单）
     "会话.mjs",           # 多会话管理器（open/ask/close/rotate/snapshot）
-    "会话.test.mjs",      # 管理器接口测试（20 项）
     "工具会话.mjs",        # 「模型 ⇄ 工具」闭环唯一实现（ask/invoke 双接缝，2026-10-19）
-    "工具会话.test.mjs",   # 工具闭环接口测试（11 项）
     "判据.mjs",           # 全实验唯一判据表（judge/isPass/judgeChannel，2026-10-19）
     "判据.test.mjs",      # 判据回归（15 项）
     "bridge.test.mjs",    # 桥服务接口测试（鉴权/来源/体积/pending/chat，26 项）
     "聊天服务.mjs",        # 模型驱动层（emit 接缝，createChatService，2026-10-19）
-    "聊天服务.test.mjs",   # emit 契约测试（14 项）
     "插件后端架构.md",     # 插件设计方案（MV3 三层 + Firefox 兼容矩阵）
     "上下文.mjs",         # 单会话转录 + 压缩 + 重放（2026-10-18 用户定案）
-    "上下文.test.mjs",    # 压缩保真回归（18 项）
     "对话.mjs",           # 无感入口（业务轮次，接工具会话）
     "bridge.mjs",        # 桥服务（SSE + HTTP 端点 + 鉴权 + 效果回执透传）
     "agent.md",          # 设计说明（指向 配方.mjs，不承载措辞）
@@ -78,10 +74,10 @@ def run(args):
     # 恒假，整块静默短路，闸门只查文件清单不查测试。改为「有任何活测试文件」；
     # 全部缺失已由上面的 活文件缺失 报过。）
     # 2026-10-19：扩到全部测试文件——判据/工具会话是实验的判据与执行核心。
-    tests = [t for t in ("上下文.test.mjs", "会话.test.mjs",
-                         "chaoxing.test.mjs", "工具会话.test.mjs", "判据.test.mjs",
-                         "bridge.test.mjs", "聊天服务.test.mjs")
-             if t in actual]
+    # ⚠️ 2026-10-25（审计 C3）：lab 侧的四个测试副本（工具会话/会话/聊天服务/上下文）
+    # 与 canonical 漂移了（168 测 3 红，还在断言已删除的「收尾轮」提示）。
+    # 副本已删，改为**直接跑 canonical 的测试**——一份实现一份测试，不再有第二份。
+    tests = [t for t in ("chaoxing.test.mjs", "判据.test.mjs", "bridge.test.mjs") if t in actual]
     if tests:
         r = subprocess.run(
             ["node", "--test", *tests],
