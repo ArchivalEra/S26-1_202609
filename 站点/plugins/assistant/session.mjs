@@ -57,6 +57,12 @@ export function chaoxingAdapter(upstream) {
         planning: !!cfg.planning,
         // 诊断开关：ZHEN_DEBUG=1 时把 proto 的帧级日志打到 stderr
         log: process.env.ZHEN_DEBUG ? (...a) => console.error('[proto]', ...a) : () => {},
+        // 帧级日志档位（2026-10-25）：ZHEN_TRACE=0/1/2/3
+        //   0 关闭  1 每帧一行摘要（默认）  2 +原始 JSON(截断 4KB)  3 全帧累积供落盘
+        // 只在 ZHEN_DEBUG 打开时才有效——否则没地方打。
+        trace: process.env.ZHEN_DEBUG
+          ? Number(process.env.ZHEN_TRACE != null ? process.env.ZHEN_TRACE : 1)
+          : 0,
       });
       await a.connect();
       // I3：每次建连必重切模型（上游实测：新会话回退默认 223）
@@ -79,6 +85,9 @@ export function chaoxingAdapter(upstream) {
         // 上游真名（只读）：本通道所在的那一场对话。管理器拿它做「恢复会话」的键，
         // 但绝不自己造一个——未连上时是 null。
         conversationId: () => (a.identity && a.identity.conversationId) || null,
+        // 帧级日志累积（ZHEN_TRACE>=3 时才有内容）：供调用方落盘回放。
+        traceFrames: () => (typeof a.traceFrames !== 'undefined' ? a.traceFrames : []),
+        frameCount: () => (typeof a.frameCount === 'number' ? a.frameCount : 0),
         close: () => a.close(),
       };
     },
@@ -475,6 +484,20 @@ export function createManager(opts = {}) {
     /** 全部会话句柄（面板列表用）。 */
     conversations() {
       return [...records.keys()];
+    },
+
+    /** 帧级日志累积（仅 ZHEN_TRACE>=3 时有内容）。调用方拿它落盘做回放。 */
+    traceFrames(h) {
+      const rec = records.get(h);
+      if (!rec || !rec.channel || typeof rec.channel.traceFrames !== 'function') return [];
+      try { return rec.channel.traceFrames() || []; } catch { return []; }
+    },
+
+    /** 当前帧计数（诊断：一次问答收了多少帧）。 */
+    frameCount(h) {
+      const rec = records.get(h);
+      if (!rec || !rec.channel || typeof rec.channel.frameCount !== 'function') return 0;
+      try { return rec.channel.frameCount() || 0; } catch { return 0; }
     },
 
     /** 按**上游 conversationId** 找回会话（恢复会话走这条）。未连上的会话还没有 id，找不到。 */

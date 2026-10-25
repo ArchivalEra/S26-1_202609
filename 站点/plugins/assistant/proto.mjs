@@ -456,6 +456,126 @@ export function createAssistant(opts = {}) {
   const onFrame = opts.onFrame || null;
   const referer = `${base}/prime/web?unitId=${unitId}&robotId=${robotId}`;
 
+  // ── 帧级日志（2026-10-25，站长要求「真正登录态打通」排障用）──────────
+  //
+  // 目标：一次问答能**完整回放**——身份从哪来、连接参数、每一帧的类型/正文/终止，
+  // 以及上游自己发的工具调用。追「登录态认不出来」这类问题时，只看结果不够，
+  // 必须能看到「服务端到底回了什么」。
+  //
+  // 三档，靠 opts.trace 控制（默认 1 = 每帧一行摘要）：
+  //   0  关闭（连摘要都不打）
+  //   1  每帧一行摘要：序号/类型/子类型/正文长度/终止判定
+  //   2  摘要 + 每帧原始 JSON（超长截断到 4KB）
+  //   3  摘要 + 原始 JSON 全文，并累积到 traceFrames 供调用方落盘
+  //
+  // ⚠️ 为什么不做成「一律全文」：一次长任务几百帧、每帧几 KB，stderr 会淹掉
+  // 真正的错误行。默认 1 行一帧，需要时再加档。
+  const traceLevel = opts.trace != null ? Number(opts.trace) : 1;
+  const traceFrames = [];      // 仅 trace>=3 时累积（供 /tmp/*.json 落盘）
+  let frameSeq = 0;
+  let reqSeq = 0;
+  // 连续同摘要合并（2026-10-25）：助手模式一次问答实测 74 个 tool_call_thought，
+  // 逐帧打会把 stderr 淹掉，真正的正文帧反而找不到。
+  // 做法：摘要与上一行相同时不立即打，先计数；类型变了或收尾时补一行「×N」。
+  let seenCid = null;          // 连接时确定的 cid（用于检测帧里的漂移）
+  let runKey = null;           // 当前连续段的关键字（类型+子类型）
+  let runCount = 0;            // 本段已折叠的帧数
+  let runFirstSeq = 0;
+
+  /** 把待折叠的连续段打出来（若有）。 */
+  function flushRun() {
+    if (runCount > 1) {
+      log(`[帧] ${runKey} ×${runCount}（#${runFirstSeq}–#${runFirstSeq + runCount - 1}，已折叠）`);
+    }
+    runKey = null; runCount = 0; runFirstSeq = 0;
+  }
+
+  /** 一帧摘要（不含正文全文）。 */
+  function frameSummary(j) {
+    const mp = j.mobileProperties || {};
+    let type = String(mp.type || j.type || '');
+    const sub = String(mp.subType || '');
+    // 顶层形态（2026-10-25 实测）：知识库路径的帧没有 mobileProperties，
+    // 只有 { answer, answerContentType, robotRespType, systemMsg, sseStop, ... }。
+    // 之前把这类帧打成空类型，日志上只剩「+11字」，看不出是什么。
+    if (!type) {
+      if (j.systemMsg) type = 'SYS';                       // 回显用户问题
+      else if (j.robotRespType) type = 'KB/' + String(j.robotRespType);
+      else if (j.sseStop) type = 'SSE_STOP';
+      else type = 'TOP';
+    }
+    const chunks = extractChunks(j);
+    const len = chunks.reduce((n, c) => n + String(c).length, 0);
+    const parts = [type + (sub ? '/' + sub : '')];
+    if (len) parts.push(`+${len}字`);
+    const term = terminalKind(j);
+    if (term) parts.push('★终止=' + term);
+    if (mp.isStop) parts.push('isStop');
+    if (mp.type === 'RADIO_CONFIRM') parts.push('选项框=' + String(j.msg && j.msg.answer || '').slice(0, 30));
+    if (mp.subType === 'tool_call_chunk') parts.push('沙箱调用');
+    if (mp.subType === 'tool_call_result') parts.push('沙箱结果');
+    if (j.sseStop) parts.push('sseStop');
+    if (j.answerType && !mp.type) parts.push('answerType=' + j.answerType);
+    // 正文预览（只第一段前 30 字，用于一眼看出「回答到哪了」）
+    if (chunks.length) parts.push('“' + String(chunks[0]).slice(0, 30).replace(/\n/g, ' ') + '”');
+    return parts.join(' ');
+  }
+
+  /** 记录一帧（受 traceLevel 控制）。 */
+  function traceFrame(raw, j) {
+    if (traceLevel <= 0) return;
+    frameSeq += 1;
+    try {
+      // trace>=2 时不折叠（要逐帧对照原文，折叠会丢信息）
+      if (traceLevel >= 2) {
+        log(`[帧#${frameSeq}] ${frameSummary(j)}`);
+        const text = traceLevel >= 3 ? String(raw) : String(raw).slice(0, 4096);
+        log(`[帧#${frameSeq}原文] ${text}`);
+        if (traceLevel >= 3) traceFrames.push({ seq: frameSeq, at: Date.now(), raw: String(raw) });
+        return;
+      }
+      // conversationId 漂移检测（2026-10-25）：帧里带的 cid 与连接时的那场不一致，
+      // 说明「这一帧不是这一场的」——排障时这是最核心的信号之一。
+      // 实测助手模式 52 帧全部带同一个 cid；不一致就是异常。
+      if (seenCid !== null && j.conversationId && j.conversationId !== seenCid) {
+        log(`[⚠️ cid 漂移] 帧里是 ${String(j.conversationId).slice(0, 12)}…，`
+            + `连接时是 ${String(seenCid).slice(0, 12)}…`);
+      }
+
+      // trace==1：折叠连续重复帧
+      const mp = j.mobileProperties || {};
+      const key = String(mp.type || j.type || '?') + (mp.subType ? '/' + mp.subType : '');
+      const hasText = extractChunks(j).length > 0;
+      if (!hasText && key === runKey) { runCount += 1; return; }   // 同一无正文类型，折叠
+      if (runCount) flushRun();                                    // 换类型了，先把上一段补出来
+      log(`[帧#${frameSeq}] ${frameSummary(j)}`);
+      if (!hasText) { runKey = key; runCount = 1; runFirstSeq = frameSeq; }
+    } catch { /* 日志不许影响主流程 */ }
+  }
+
+  /** 记录一次 HTTP 往返（身份链排障的关键：能看到服务端回了什么）。 */
+  function traceHttp(method, path, status, body) {
+    if (traceLevel <= 0) return;
+    reqSeq += 1;
+    try {
+      const short = String(path).split('?')[0];
+      // 响应体只打关键字段，避免把整页配置刷屏
+      let hint = '';
+      try {
+        const o = JSON.parse(body);
+        if (o.visitorId) hint += ` visitorId=${o.visitorId}`;
+        if (o.visitorLoggedIn !== undefined) hint += ` loggedIn=${o.visitorLoggedIn}`;
+        if (o.isNewVisitor !== undefined) hint += ` isNew=${o.isNewVisitor}`;
+        if (o.cvsInfo && o.cvsInfo.conversationId) hint += ` cid=${String(o.cvsInfo.conversationId).slice(0, 12)}…`;
+        if (o.data && o.data.name) hint += ` name=${o.data.name}`;
+        if (o.code !== undefined) hint += ` code=${o.code}`;
+        if (o.statusCode !== undefined) hint += ` statusCode=${o.statusCode}`;
+      } catch { hint = ' (非 JSON)'; }
+      log(`[HTTP#${reqSeq}] ${method} ${short} → ${status}${hint}`);
+      if (traceLevel >= 3) traceFrames.push({ seq: 'http' + reqSeq, at: Date.now(), http: { method, path: short, status, body: String(body).slice(0, 8192) } });
+    } catch { /* 忽略 */ }
+  }
+
   let ws = null;
   let keepalive = null;
   let identity = null;
@@ -490,6 +610,8 @@ export function createAssistant(opts = {}) {
       const text = await res.text();
       let json = null;
       try { json = JSON.parse(text); } catch { /* 非 JSON */ }
+      // 帧级日志：HTTP 往返（身份链排障的关键——能看到服务端实际回了什么）
+      traceHttp(method, path, res.status, text);
       return { status: res.status, json, text };
     } finally {
       to.clear();   // body 读完/抛错都要清（P1-7 教训）
@@ -511,7 +633,15 @@ export function createAssistant(opts = {}) {
       method: 'POST',
       body: { visitorId: identity.visitorId, location: '' },
     });
-    log('[identity]', identity.visitorId, identity.conversationId);
+    // 身份三件套 + 登录态（2026-10-25：这一行是「真正登录态打通」的判据——
+    // visitorId 是 lc_<uid> 还是 32 位 hex，一眼就能看出服务端认不认登录）
+    log('[identity]', identity.visitorId,
+        `loggedIn=${r.json.visitorLoggedIn}`, `isNew=${r.json.isNewVisitor}`,
+        'cid=' + identity.conversationId);
+    if (!r.json.visitorLoggedIn) {
+      log('[identity] ⚠️ 服务端判为未登录（visitorId 非 lc_ 形态）——'
+          + '若是从 Node 发起，属已知限制：应用层头全对齐也认不出，需浏览器侧会话');
+    }
     return identity;
   }
 
@@ -674,6 +804,8 @@ export function createAssistant(opts = {}) {
   function handleFrame(raw) {
     let j;
     try { j = JSON.parse(String(raw)); } catch { return; }
+    // 帧级日志：每一帧都记（不管有没有 pending——连接建立期/空闲期的帧同样要看）
+    traceFrame(raw, j);
     if (onFrame) { try { onFrame(j); } catch { /* 日志回调不许影响主流程 */ } }
     if (!pending) return;
 
@@ -702,12 +834,12 @@ export function createAssistant(opts = {}) {
     }
 
     // ③ 正文累积
+    //
+    // ⚠️ 2026-10-25：这里原来还有一行「[帧] +N字 累计=…」的逐帧日志。
+    // 现在 traceFrame 的摘要已经带了「+N字 + 首段预览」，同一件事打两遍只会
+    // 让日志更难读（实测正文帧变成两行一对）。删掉重复的那条，保留 traceFrame。
     for (const c of chunks) {
       pending.text += c;
-      // 诊断（2026-10-25 官方站对照）：逐帧记录累积长度，定位「只收到开头」。
-      if (typeof log === 'function') {
-        try { log(`[帧] +${String(c).length}字 累计=${pending.text.length} 预览=${String(c).slice(0, 20).replace(/\n/g, ' ')}`); } catch { /* 无 log */ }
-      }
       pending.onChunk && pending.onChunk(c);
     }
 
@@ -751,7 +883,10 @@ export function createAssistant(opts = {}) {
       userId: identity.visitorId, channel: 'WEB', conversationId: identity.conversationId,
       robotId, visitorVc: identity.visitorVc, scene: '', lang: 'zh-CN', isLLMPlanning: planning,
     })}`;
-    log('[WS]', url);
+    log('[WS]', `planning=${planning}`, `cid=${String((identity||{}).conversationId||'').slice(0,12)}…`,
+        `vid=${String((identity||{}).visitorId||'').slice(0,14)}`, `model=${activeModelId}`);
+    if (traceLevel >= 2) log('[WS:url]', url);
+    seenCid = (identity && identity.conversationId) || null;
     return new Promise((resolve, reject) => {
       // 浏览器 WS 构造器第二参是子协议（不是选项对象）——同源 iframe 里
       // Origin/来源由浏览器自动带，单参直连即可，不伪造任何头。
@@ -803,6 +938,7 @@ export function createAssistant(opts = {}) {
       }, timeout);
       pending = {
         text: '', confirmed: false, confirmOption, deadlineTimer,
+        frameAtStart: frameSeq,   // 这一问起始帧号（收尾算「总帧数」用）
         frames: 0, lastFrameAt: Date.now(), idleMs, idleTimer: null,
         // 流式回调：单次 ask 的 askOpts.onChunk 优先，其次构造时的 onChunk
         onChunk: (typeof perAskOnChunk === 'function' ? perAskOnChunk : externalOnChunk),
@@ -838,10 +974,20 @@ export function createAssistant(opts = {}) {
             : txt ? 'answered'
             : pending.terminal ? 'empty'      // 有终止帧却零正文 = 真空回答
             : 'frozen';                       // 无终止帧 = 冻死
+          if (runCount) flushRun();
+          const framesTotal = frameSeq - (pending.frameAtStart || 0);
+          if (traceLevel > 0) {
+            log(`[答] ─── 结束 status=${status} 正文帧=${pending.frames} `
+                + `总帧=${framesTotal} `
+                + `耗时=${Date.now() - startedAt}ms 字数=${txt.length}`
+                + `${pending.terminal ? ' 终止=' + pending.terminal : ''} ───`);
+          }
           const out = {
             text: txt, confirmed: pending.confirmed, modelId: mid,
             frames: pending.frames, status, terminal: pending.terminal,
             ms: Date.now() - startedAt,
+            // 帧级日志（2026-10-25）：这一问收了多少帧（相对基线），供上层诊断
+            tracedFrames: framesTotal,
             // 沙箱调用（2026-10-23）：模型用它的 execute/read_file 包 site_* 行时，
             // 从这里透出 {name, args} 列表给 toolcycle 拦截。仅 toolcycle 消费。
             sandboxCalls: Object.values(pending.sandbox),
@@ -852,6 +998,7 @@ export function createAssistant(opts = {}) {
         resolve: (v) => resolve(v),
       };
       const startedAt = Date.now();
+      if (traceLevel > 0) log(`[问] ─── 开始（帧基线 #${pending.frameAtStart}，model=${mid}） ───`);
       // 注意：**不要**往 msg 里塞 chatModel/modelId（会 1002 断连）；
       // 模型由 switchModel() 走 REST 切换，此处只发纯提问帧。
       // 带图：questionType 仍是 TEXT，额外挂 fileInfo 数组（改别的值服务端不认图）。
@@ -998,5 +1145,9 @@ export function createAssistant(opts = {}) {
   return { apply, resetIdentity, models, switchModel, connect, ask, askRetry, askWithRetry, uploadImage, askImage, send, close, cancel,
     get identity() { return identity; },
     get activeModelId() { return activeModelId; },
-    get planning() { return planning; } };
+    get planning() { return planning; },
+    /** 帧级日志累积（仅 trace>=3 时有内容）。调用方拿它落盘成 /tmp/*.json 做回放。 */
+    get traceFrames() { return traceFrames.slice(); },
+    /** 当前帧计数（诊断用：一次问答收了多少帧）。 */
+    get frameCount() { return frameSeq; } };
 }
