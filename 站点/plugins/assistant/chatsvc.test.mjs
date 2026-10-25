@@ -16,9 +16,9 @@ function fakeMgr(script, taps = {}) {
   taps.asks = [];
   let i = 0;
   return {
-    open(cfg) { taps.opened += 1; taps.lastCfg = cfg; return 's' + taps.opened; },
-    async ask(sid, text, opts) {
-      taps.asks.push({ sid, text, opts });
+    open(cfg) { taps.opened += 1; taps.lastCfg = cfg; return { conversationId: 'c' + taps.opened }; },
+    async ask(h, text, opts) {
+      taps.asks.push({ h, text, opts });
       const s = script[i++] || 'answer:默认';
       if (s === 'frozen') return { text: '', status: 'frozen', calls: [] };
       if (s === 'transport') return { text: '', status: 'transport', calls: [] };
@@ -36,10 +36,14 @@ function fakeMgr(script, taps = {}) {
       }
       return { text: s.replace(/^answer:/, ''), status: 'ok', calls: [] };
     },
-    snapshot() { return { id: 's1', turns: 1 }; },
+    snapshot(h) { return h == null ? [{ conversationId: null, turns: 1 }] : { conversationId: null, turns: 1 }; },
+    find() { return null; },
     close() {},
   };
 }
+
+const H = Object.freeze({ conversationId: null });
+const H2 = Object.freeze({ conversationId: null });
 
 const TOOLS = [
   { name: 'site_read', description: '读正文', inputSchema: { type: 'object', properties: { what: { type: 'string' } } } },
@@ -56,7 +60,7 @@ test('ask：成功时恰好一次 done，且带最终文本', async () => {
   const mgr = fakeMgr(['answer:这是回答']);
   const svc = createChatService({ mgr, tools: TOOLS, invoke: async () => ({ value: {} }) });
   const { events, emit } = collect();
-  const r = await svc.ask('c1', '你好', emit);
+  const r = await svc.ask(H, '你好', emit);
 
   assert.equal(r.status, 'ok');
   const dones = events.filter((e) => e.type === 'done');
@@ -69,7 +73,7 @@ test('ask：非流式时把完整答案补成一个 delta（前端文本与 done
   const mgr = fakeMgr(['answer:完整答案']);
   const svc = createChatService({ mgr, tools: TOOLS, invoke: async () => ({}) });
   const { events, emit } = collect();
-  await svc.ask('c1', '问', emit);
+  await svc.ask(H, '问', emit);
 
   const deltas = events.filter((e) => e.type === 'delta');
   assert.equal(deltas.length, 1);
@@ -83,7 +87,7 @@ test('ask：流式时 delta 逐段到达（不重复补发完整答案）', asyn
   // rounds:1 ⇒ 第一轮即最后一轮，onChunk 生效
   const svc = createChatService({ mgr, tools: TOOLS, rounds: 1, invoke: async () => ({}) });
   const { events, emit } = collect();
-  await svc.ask('c1', '问', emit);
+  await svc.ask(H, '问', emit);
 
   const deltas = events.filter((e) => e.type === 'delta');
   assert.equal(deltas.length, 2, '两段增量');
@@ -98,7 +102,7 @@ test('ask：delta 只在最后一轮出现（工具循环的过程话不推）',
     invoke: async () => ({ value: { ok: true, text: '页面内容' } }),
   });
   const { events, emit } = collect();
-  await svc.ask('c1', '读一下', emit);
+  await svc.ask(H, '读一下', emit);
 
   const deltas = events.filter((e) => e.type === 'delta');
   // 第 1 轮的 "site_read，what=page" 不该变成 delta
@@ -114,7 +118,7 @@ test('ask：工具执行完 emit 一个 tool 事件', async () => {
     invoke: async () => ({ value: { ok: true } }),
   });
   const { events, emit } = collect();
-  await svc.ask('c1', '读', emit);
+  await svc.ask(H, '读', emit);
 
   const tools = events.filter((e) => e.type === 'tool');
   assert.ok(tools.length >= 1, '应至少有一个 tool 事件');
@@ -129,7 +133,7 @@ test('ask：工具失败时 tool 事件带 ok:false', async () => {
     invoke: async () => { throw new Error('页面失败'); },
   });
   const { events, emit } = collect();
-  await svc.ask('c1', '读', emit);
+  await svc.ask(H, '读', emit);
 
   const tools = events.filter((e) => e.type === 'tool');
   assert.equal(tools[0].ok, false);
@@ -142,7 +146,7 @@ test('ask：传输层故障转成 error 事件，不抛异常', async () => {
   const mgr = fakeMgr(['frozen']);
   const svc = createChatService({ mgr, tools: TOOLS, invoke: async () => ({}) });
   const { events, emit } = collect();
-  const r = await svc.ask('c1', '问', emit);
+  const r = await svc.ask(H, '问', emit);
 
   assert.equal(r.status, 'frozen');
   const errs = events.filter((e) => e.type === 'error');
@@ -158,37 +162,53 @@ test('ask：run 抛异常也转成 error', async () => {
   };
   const svc = createChatService({ mgr, tools: TOOLS, invoke: async () => ({}) });
   const { events, emit } = collect();
-  const r = await svc.ask('c1', '问', emit);
+  const r = await svc.ask(H, '问', emit);
   assert.equal(r.status, 'error');
   assert.equal(events.filter((e) => e.type === 'error').length, 1);
 });
 
 // ── 会话管理 ────────────────────────────────────────────────
 
-test('同一 sessionId 复用同一个管理器会话', async () => {
+test('open()：每调一次开一场新对话（本地不铸 id）', async () => {
   const taps = {};
   const mgr = fakeMgr(['answer:a', 'answer:b'], taps);
   const svc = createChatService({ mgr, tools: TOOLS, invoke: async () => ({}) });
-  await svc.ask('c1', '第一问', () => {});
-  await svc.ask('c1', '第二问', () => {});
-  assert.equal(taps.opened, 1, '不该重复 open');
-});
-
-test('不同 sessionId 各自开会话（上下文隔离）', async () => {
-  const taps = {};
-  const mgr = fakeMgr(['answer:a', 'answer:b'], taps);
-  const svc = createChatService({ mgr, tools: TOOLS, invoke: async () => ({}) });
-  await svc.ask('c1', '问', () => {});
-  await svc.ask('c2', '问', () => {});
+  const a = svc.open();
+  const b = svc.open();
+  assert.notEqual(a, b, '两次 open 是两个不同句柄');
+  assert.notEqual(typeof a, 'string', '句柄不是自造的字符串 id');
   assert.equal(taps.opened, 2);
 });
 
-test('snapshot：无会话返回 null，有会话返回管理器快照', async () => {
+test('同一句柄的多次 ask 复用同一个管理器会话', async () => {
+  const taps = {};
+  const mgr = fakeMgr(['answer:a', 'answer:b'], taps);
+  const svc = createChatService({ mgr, tools: TOOLS, invoke: async () => ({}) });
+  const h = svc.open();
+  await svc.ask(h, '第一问', () => {});
+  await svc.ask(h, '第二问', () => {});
+  assert.equal(taps.opened, 1, '同一句柄不该重复 open');
+});
+
+test('snapshot：无参返回全部，带参返回单会话', async () => {
   const mgr = fakeMgr(['answer:a']);
   const svc = createChatService({ mgr, tools: TOOLS, invoke: async () => ({}) });
-  assert.equal(svc.snapshot('nope'), null);
-  await svc.ask('c1', '问', () => {});
-  assert.ok(svc.snapshot('c1'));
+  const h = svc.open();
+  await svc.ask(h, '问', () => {});
+  assert.ok(svc.snapshot(h), '带句柄能拿到快照');
+  assert.ok(Array.isArray(svc.snapshot()), '不带参返回列表');
+});
+
+test('attach()：按上游 conversationId 找回会话；找不到返回 null', async () => {
+  const mgr = {
+    open() { return { conversationId: null }; },
+    find(cid) { return cid === 'up-1' ? 'FOUND' : null; },
+    async ask() { return { text: 'x', status: 'ok' }; },
+    snapshot() { return null; }, close() {},
+  };
+  const svc = createChatService({ mgr, tools: TOOLS, invoke: async () => ({}) });
+  assert.equal(svc.attach('up-1'), 'FOUND');
+  assert.equal(svc.attach('nope'), null);
 });
 
 test('setTools：更新后下次 ask 用新清单', async () => {
@@ -196,7 +216,7 @@ test('setTools：更新后下次 ask 用新清单', async () => {
   const mgr = fakeMgr(['answer:a', 'answer:b'], taps);
   const svc = createChatService({ mgr, tools: TOOLS, invoke: async () => ({}) });
   svc.setTools([{ name: 'site_index', description: '地图', inputSchema: { type: 'object', properties: {} } }]);
-  await svc.ask('c1', '问', () => {});
+  await svc.ask(H, '问', () => {});
   // 提示词里应出现新工具名
   assert.match(taps.asks[0].text, /site_index/);
 });
@@ -211,7 +231,7 @@ test('createChatService：缺 mgr / invoke 时明确报错', () => {
 test('emit 不是函数时不崩（调用方可省略）', async () => {
   const mgr = fakeMgr(['answer:a']);
   const svc = createChatService({ mgr, tools: TOOLS, invoke: async () => ({}) });
-  const r = await svc.ask('c1', '问');   // 不传 emit
+  const r = await svc.ask(H, '问');   // 不传 emit
   assert.equal(r.status, 'ok');
 });
 
@@ -221,22 +241,22 @@ test('emit 不是函数时不崩（调用方可省略）', async () => {
 // `function upload(sessionId, bytes, opts)` 声明提升覆盖，而工具会话按
 // `(bytes, opts)` 两参调用 ⇒ sessionId 收到 Uint8Array、bytes 收到 {filename,mime}。
 // 视觉链路从上线起就是坏的，而 chatsvc.test.mjs 里没有一条 upload 用例。
-test('C1：工具会话调 upload(bytes, opts) 时，mgr.uploadImage 收到的 sessionId 是字符串', async () => {
+test('C1：upload(bytes, opts) 的字节原样到达 mgr.uploadImage（不被 id 挤位）', async () => {
   const taps = { uploads: [] };
+  const HANDLE = { conversationId: 'up-1' };
   const mgr = {
-    open() { return 's1'; },
+    open() { return HANDLE; },
     async ask() { return { text: '好', status: 'ok', calls: [] }; },
-    async uploadImage(sid, bytes, opts) {
-      taps.uploads.push({ sid, bytesType: typeof bytes, bytesLen: bytes && bytes.length, opts });
+    async uploadImage(h, bytes, opts) {
+      taps.uploads.push({ h, bytesType: typeof bytes, bytesLen: bytes && bytes.length, opts });
       return { objectId: 'obj-c1', filePath: 'x' };
     },
-    snapshot() { return null; },
-    close() {},
+    snapshot() { return null; }, find() { return null; }, close() {},
   };
   const svc = createChatService({ mgr, tools: TOOLS, invoke: async () => ({ value: {} }) });
-  const fi = await svc.upload('conv-abc', new Uint8Array([1, 2, 3]), { filename: 'a.png' });
+  const fi = await svc.upload(HANDLE, new Uint8Array([1, 2, 3]), { filename: 'a.png' });
   assert.equal(taps.uploads.length, 1);
-  assert.equal(taps.uploads[0].sid, 's1', 'sessionId 必须经 getSession 解析成管理器 id');
+  assert.equal(taps.uploads[0].h, HANDLE, '句柄原样透传（旧 bug：id 挤掉 bytes 的位置）');
   assert.equal(taps.uploads[0].bytesLen, 3, 'bytes 必须是原始字节，不是 {filename}');
   assert.equal(fi.objectId, 'obj-c1');
 });

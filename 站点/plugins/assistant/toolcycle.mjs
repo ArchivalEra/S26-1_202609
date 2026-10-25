@@ -7,7 +7,7 @@
 // 某个词」与产品能力「模型调工具 → 桥执行 → 页面动」之间没有任何代码连接。
 //
 // ## 接口（小）
-//   createToolSession({ mgr, sessionId, invoke, tools, rounds, navToolNames })
+//   createToolSession({ mgr, session, invoke, tools, rounds, navToolNames })
 //     → { run(userText, opts?) → { answer, calls, effects, status } }
 //
 // ## 两个接缝（seam）
@@ -146,8 +146,8 @@ const maybeParse = (v) => {
 /**
  * 建一个工具会话。
  * @param {object} p
- * @param {{ask: Function}} p.mgr            会话管理器（ask(id, text, opts)）
- * @param {string} p.sessionId               管理器里的会话 id
+ * @param {{ask: Function}} p.mgr            会话管理器（ask(handle, text, opts)）
+ * @param {object} p.session                 会话句柄（mgr.open() 的返回值）
  * @param {Function} p.invoke                (name, args) → Promise<{value, effect?}>
  * @param {Array<{name:string, description?:string, desc?:string, inputSchema?:object}>} [p.tools]
  *   工具清单（页面桥报上来的定义；空数组 = 纯问答）
@@ -156,7 +156,7 @@ const maybeParse = (v) => {
  * @param {RegExp} [p.actionRe=PAGE_ACTION_RE]  哪些话算「要动页面」
  */
 export function createToolSession({
-  mgr, sessionId, invoke, tools = [], rounds = 4, navToolNames = null, actionRe = PAGE_ACTION_RE,
+  mgr, session, invoke, tools = [], rounds = 4, navToolNames = null, actionRe = PAGE_ACTION_RE,
   upload = null,          // 视觉接缝：(bytes, opts) → fileInfo；null = 不支持看图
   visionQuestion = '图里有什么？',
   contextProvider = null, // 页面上下文接缝：() → {title, course, sections[]}；null = 不注入
@@ -469,7 +469,7 @@ export function createToolSession({
       const streamOpts = lastRound && opts && opts.onChunk
         ? opts
         : (opts && opts.onChunk ? { ...opts, onChunk: null } : opts);
-      const r = await mgr.ask(sessionId, prompt, streamOpts);
+      const r = await mgr.ask(session, prompt, streamOpts);
       // 落账时机：该轮成功才记（上游确实收到了才不重发）
       if (r && r.status === 'answered' && freshAttach.length) {
         freshAttach.forEach((f) => attachmentsSent.add(f.objectId));

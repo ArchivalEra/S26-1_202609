@@ -795,7 +795,6 @@ var panel = null, logEl = null, inputEl = null, sendBtn = null, jumpBtn = null, 
 var attachBtn = null, attachBar = null, fileInput = null;
 var open = false;
 var busy = false;
-var sessionKey = "web-" + (Date.now() % 100000);
 var katexLoading = null;
 var stream = null;          // 当前 AbortController
 var stuck = true;           // 是否贴底
@@ -982,7 +981,6 @@ function uploadAttachment(item, tk) {
       data: b64,
       mimeType: item.mimeType,
       filename: item.name,
-      sessionId: sessionKey,
     }),
   }).then(function (r) { return r.json(); }).then(function (j) {
     if (!j || !j.ok) throw new Error((j && j.error) || "上传失败");
@@ -1333,7 +1331,8 @@ function askChat(text) {
 
   // 发问前兜一次：SPA 换页/脚本晚到都可能让工具表为空，这里补载最便宜。
   try { if (window.__webmcpEnable) window.__webmcpEnable(); } catch (e) { /* 无 loader */ }
-  var payload = { text: text, sessionId: sessionKey };
+  // 2026-10-25：payload 不带任何会话标识——桥只持有一场对话，身份由上游发。
+  var payload = { text: text };
   if (ready.length) payload.attachments = ready;
   var body = JSON.stringify(payload);
 
@@ -1431,7 +1430,7 @@ function askChat(text) {
     var cancelReq = fetch(withToken(BRIDGE + "/chat/cancel", tk), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId: sessionKey }),
+      body: JSON.stringify({}),
     }).catch(function () { /* 断网也要把本地停掉 */ });
     // 先把 cancel 交出去，再断流。0ms 足够让请求离开事件循环（fetch 同步入队），
     // 又不会让用户感觉「按了没反应」。
