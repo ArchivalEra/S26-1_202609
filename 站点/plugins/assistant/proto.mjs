@@ -1183,7 +1183,9 @@ export function createAssistant(opts = {}) {
         scene: '', unitId, robotId,
       })}&safeformat=json`, { timeoutMs: 10000 });
       const d = (r.json && r.json.data) || {};
-      return typeof d.total === 'number' ? d.total : null;
+      const total = typeof d.total === 'number' ? d.total : null;
+      log('[msgList] total=' + total + ' conversationId=' + String(identity.conversationId).slice(0, 12));
+      return total;
     } catch { return null; }
   }
 
