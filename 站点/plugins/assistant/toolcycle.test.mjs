@@ -697,3 +697,47 @@ test('工具表为空：提示词照发（模型必须知道有这套文本协�
   assert.match(p, /名字，参数=值/, '调用形态的示例必须在');
   assert.match(p, /任务：跳到铁芯损耗那一节/, '任务句必须在最后');
 });
+
+// ── 新会话才发工具清单（2026-10-25 站长定案）──────────────────────
+//
+// 判据只看上游：mgr.msgListTotal(handle) = msgList.total。
+//   > 0 ⇒ 旧会话（有历史）⇒ 裸问题，不重复灌清单
+//   = 0 或 null ⇒ 新会话 ⇒ 发清单 + 页面上下文
+//
+// 为什么要这条：上游自己存历史、自己压缩；旧会话再灌一遍清单只是挤占它的上下文。
+
+test('★ 新会话（msgListTotal=0）⇒ 发工具清单', async () => {
+  const taps = {};
+  const mgr = scriptedMgr(['answer:好'], taps);
+  mgr.msgListTotal = () => 0;
+  const ts = createToolSession({ mgr, session: HANDLE, invoke: fakeInvoke(taps), tools: TOOLS });
+  await ts.run('铁芯损耗在资料库的哪一节？');
+  assert.match(taps.prompts[0], /site_search/, '新会话要发清单');
+});
+
+test('★ 旧会话（msgListTotal>0）⇒ 不发清单，裸问题', async () => {
+  const taps = {};
+  const mgr = scriptedMgr(['answer:好'], taps);
+  mgr.msgListTotal = () => 7;   // 这场对话已经有 7 条历史
+  const ts = createToolSession({ mgr, session: HANDLE, invoke: fakeInvoke(taps), tools: TOOLS });
+  await ts.run('铁芯损耗在资料库的哪一节？');
+  assert.doesNotMatch(taps.prompts[0], /site_search/, '旧会话不该再灌清单');
+  assert.equal(taps.prompts[0], '铁芯损耗在资料库的哪一节？', '应该是裸问题');
+});
+
+test('★ 判据取不到（null）⇒ 按新会话处理（多发比少发安全）', async () => {
+  const taps = {};
+  const mgr = scriptedMgr(['answer:好'], taps);
+  mgr.msgListTotal = () => null;
+  const ts = createToolSession({ mgr, session: HANDLE, invoke: fakeInvoke(taps), tools: TOOLS });
+  await ts.run('铁芯损耗在资料库的哪一节？');
+  assert.match(taps.prompts[0], /site_search/, 'null 按新会话');
+});
+
+test('★ mgr 没有 msgListTotal 方法（旧 adapter）⇒ 也按新会话处理', async () => {
+  const taps = {};
+  const mgr = scriptedMgr(['answer:好'], taps);   // 没挂 msgListTotal
+  const ts = createToolSession({ mgr, session: HANDLE, invoke: fakeInvoke(taps), tools: TOOLS });
+  await ts.run('铁芯损耗在资料库的哪一节？');
+  assert.match(taps.prompts[0], /site_search/);
+});

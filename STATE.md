@@ -37,19 +37,19 @@ sh gates-selftest.sh                             # 每道闸门先证明自己�
 
 | 键 | 值 | 测于 | 复跑命令 |
 |---|---|---|---|
-| `courses` | **6** | 2026-10-25T18:40:09+0800 | `ls -d 课程/*/ | wc -l` |
-| `figures` | **174** | 2026-10-25T18:40:09+0800 | `ls 课程/电路原理/作业/figures/ | wc -l` |
-| `glossary_entries` | **179** | 2026-10-25T18:40:09+0800 | `awk '/^:::glossary-dict/{f=1;next} /^:::/{f=0} f&&/^sym-/{n++} END{print n}' 站点/符号包/通用.md 课程/电机学/教材解析/0.0-符号入门.md 课程/工程数学/教材解析/0.0-符号入门.md 课程/电路原理/教材解析/0.0-符号入门.md` |
-| `handoff_lines` | **466** | 2026-10-25T18:40:21+0800 | `wc -l < .zcode/handoff.md` |
-| `handoff_sections` | **7** | 2026-10-25T18:40:21+0800 | `grep -c '^### 0\.' .zcode/handoff.md` |
-| `homework` | **19** | 2026-10-25T18:40:09+0800 | `find 课程 -path '*/作业/*.md' ! -name 'index.md' | wc -l` |
-| `hooktests` | **28** | 2026-10-25T18:40:21+0800 | `python3 .githooks/test-update-readme.py 2>&1 | grep -oE 'Ran [0-9]+ tests' | awk '{print $2}'` |
-| `md_files` | **143** | 2026-10-25T18:40:09+0800 | `git ls-files '*.md' | wc -l` |
-| `notes` | **25** | 2026-10-25T18:40:09+0800 | `find 课程 -path '*/课堂笔记/*.md' ! -name 'index.md' | wc -l` |
-| `plugin_tests` | **334** | 2026-10-25T18:40:21+0800 | `cd 站点 && node --test plugins/*.test.mjs 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2=="tests"||$2=="fail"||$2=="cancelled") {v[$2]=$3} END {t=v["tests"]; f=v["fail"]+0; c=v["cancelled"]+0; if (t=="") {print "plugin_tests：没读到 tests 汇总行（node --test 没跑完？）" > "/dev/stderr"; exit 1} print t; if (f+c>0) {print "plugin_tests：fail=" f " cancelled=" c " ⇒ 红测试，非零退出（issue #18 决策 #7）" > "/dev/stderr"; exit 1}}'` |
-| `problems` | **278** | 2026-10-25T18:40:09+0800 | `python3 -c "import re,glob;print(sum(len(re.findall(r'[0-9]+',s)) for f in glob.glob('课程/电路原理/作业/2026-09-28-习题册第*.md') for ln in open(f,encoding='utf-8') if ln.startswith('### ') for s in re.findall(r'(?:选|填|计|判|画图)\s*([0-9][0-9、,\s]*)', re.sub(r'（[^）]*）','',ln[4:]))))"` |
-| `sitepages` | **115** | 2026-10-25T18:40:09+0800 | `sed -n '/^export const TARGET_FILES = \[/,/^\];/p' 站点/页面清单.mjs | grep -c "^  '"` |
-| `textbook` | **21** | 2026-10-25T18:40:09+0800 | `find 课程 -path '*/教材解析/*.md' ! -name 'index.md' | wc -l` |
+| `courses` | **6** | 2026-10-25T18:56:01+0800 | `ls -d 课程/*/ | wc -l` |
+| `figures` | **174** | 2026-10-25T18:56:01+0800 | `ls 课程/电路原理/作业/figures/ | wc -l` |
+| `glossary_entries` | **179** | 2026-10-25T18:56:01+0800 | `awk '/^:::glossary-dict/{f=1;next} /^:::/{f=0} f&&/^sym-/{n++} END{print n}' 站点/符号包/通用.md 课程/电机学/教材解析/0.0-符号入门.md 课程/工程数学/教材解析/0.0-符号入门.md 课程/电路原理/教材解析/0.0-符号入门.md` |
+| `handoff_lines` | **484** | 2026-10-25T18:56:13+0800 | `wc -l < .zcode/handoff.md` |
+| `handoff_sections` | **7** | 2026-10-25T18:56:13+0800 | `grep -c '^### 0\.' .zcode/handoff.md` |
+| `homework` | **19** | 2026-10-25T18:56:01+0800 | `find 课程 -path '*/作业/*.md' ! -name 'index.md' | wc -l` |
+| `hooktests` | **28** | 2026-10-25T18:56:13+0800 | `python3 .githooks/test-update-readme.py 2>&1 | grep -oE 'Ran [0-9]+ tests' | awk '{print $2}'` |
+| `md_files` | **143** | 2026-10-25T18:56:01+0800 | `git ls-files '*.md' | wc -l` |
+| `notes` | **25** | 2026-10-25T18:56:01+0800 | `find 课程 -path '*/课堂笔记/*.md' ! -name 'index.md' | wc -l` |
+| `plugin_tests` | **334** | 2026-10-25T18:56:13+0800 | `cd 站点 && node --test plugins/*.test.mjs 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2=="tests"||$2=="fail"||$2=="cancelled") {v[$2]=$3} END {t=v["tests"]; f=v["fail"]+0; c=v["cancelled"]+0; if (t=="") {print "plugin_tests：没读到 tests 汇总行（node --test 没跑完？）" > "/dev/stderr"; exit 1} print t; if (f+c>0) {print "plugin_tests：fail=" f " cancelled=" c " ⇒ 红测试，非零退出（issue #18 决策 #7）" > "/dev/stderr"; exit 1}}'` |
+| `problems` | **278** | 2026-10-25T18:56:01+0800 | `python3 -c "import re,glob;print(sum(len(re.findall(r'[0-9]+',s)) for f in glob.glob('课程/电路原理/作业/2026-09-28-习题册第*.md') for ln in open(f,encoding='utf-8') if ln.startswith('### ') for s in re.findall(r'(?:选|填|计|判|画图)\s*([0-9][0-9、,\s]*)', re.sub(r'（[^）]*）','',ln[4:]))))"` |
+| `sitepages` | **115** | 2026-10-25T18:56:01+0800 | `sed -n '/^export const TARGET_FILES = \[/,/^\];/p' 站点/页面清单.mjs | grep -c "^  '"` |
+| `textbook` | **21** | 2026-10-25T18:56:01+0800 | `find 课程 -path '*/教材解析/*.md' ! -name 'index.md' | wc -l` |
 
 13 条事实。
 <!-- /AUTO:FACTS -->
@@ -64,6 +64,7 @@ sh gates-selftest.sh                             # 每道闸门先证明自己�
 | `check_envfile.py`（env 文件闸门） | commit | 守钩子的 REFLECT_* 载体（旋钮 typo / 指向缺失 / 空值） | `REFLECT_ENV_FILE` |
 | `check_facts.py`（事实闸门） | commit | 块一致性 / 裸数字 / 坏引用 | `REFLECT_FACTS`, `REFLECT_DOC`, `REFLECT_NAKED_MIN` |
 | `check_facts_replay.py`（复跑闸门） | commit | 台账 cmd 逐字复跑（裸值契约：stdout 必须等于值） | `REFLECT_FACTS`, `REFLECT_REPLAY`, `REFLECT_REPLAY_TIMEOUT` |
+| `check_identity.py`（身份白名单闸门） | commit | 只有上游发放的 id 才许出现在活代码里，自造 id 出现即红 | `REFLECT_IDENTITY` |
 | `check_instruments.py`（仪器生命周期闸门） | commit | 恒常检测（first_seen）+ 被证伪量法登记 | `REFLECT_INSTRUMENTS`, `REFLECT_INSTRUMENT_DAYS`, `REFLECT_FACTS` |
 | `check_invariants.py`（不变量闸门） | commit | 声明式不变量：仓库文件必须/不得含某片段（grep 级） | `REFLECT_INVARIANTS` |
 | `check_locks.py`（锁定源闸门） | commit | 锁定源清单（URL + 文件 + sha256 的内容指纹） | — |
@@ -77,5 +78,5 @@ sh gates-selftest.sh                             # 每道闸门先证明自己�
 | `check_semantics.py`（语义闸门） | start-of-work | 语义唯一性：一个概念只许一个规范键名，禁用别名出现即红 | `REFLECT_SEMANTICS` |
 | `doctor.py`（开工预检 doctor） | start-of-work | 进程 / 端口活性（查会死的东西 ⇒ runs_at=start-of-work，不进 pre-commit） | `REFLECT_DOCTOR`, `REFLECT_DOCTOR_TIMEOUT` |
 
-16 道闸门（发现式名录派生 —— 手写清单会漂，加闸门 = 落一个声明行，这里自动长出来）。
+17 道闸门（发现式名录派生 —— 手写清单会漂，加闸门 = 落一个声明行，这里自动长出来）。
 <!-- /AUTO:GATES -->

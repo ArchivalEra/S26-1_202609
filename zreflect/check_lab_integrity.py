@@ -41,7 +41,6 @@ ALIVE_FILES = (
     "bridge.test.mjs",    # 桥服务接口测试（鉴权/来源/体积/pending/chat，26 项）
     "聊天服务.mjs",        # 模型驱动层（emit 接缝，createChatService，2026-10-19）
     "插件后端架构.md",     # 插件设计方案（MV3 三层 + Firefox 兼容矩阵）
-    "上下文.mjs",         # 单会话转录 + 压缩 + 重放（2026-10-18 用户定案）
     "对话.mjs",           # 无感入口（业务轮次，接工具会话）
     "bridge.mjs",        # 桥服务（SSE + HTTP 端点 + 鉴权 + 效果回执透传）
     "agent.md",          # 设计说明（指向 配方.mjs，不承载措辞）

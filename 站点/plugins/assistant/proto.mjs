@@ -477,7 +477,7 @@ export function createAssistant(opts = {}) {
   // 连续同摘要合并（2026-10-25）：助手模式一次问答实测 74 个 tool_call_thought，
   // 逐帧打会把 stderr 淹掉，真正的正文帧反而找不到。
   // 做法：摘要与上一行相同时不立即打，先计数；类型变了或收尾时补一行「×N」。
-  let seenCid = null;          // 连接时确定的 cid（用于检测帧里的漂移）
+  let seenConversationId = null;   // 连接时确定的 conversationId（用于检测帧里的漂移）
   let runKey = null;           // 当前连续段的关键字（类型+子类型）
   let runCount = 0;            // 本段已折叠的帧数
   let runFirstSeq = 0;
@@ -534,12 +534,12 @@ export function createAssistant(opts = {}) {
         if (traceLevel >= 3) traceFrames.push({ seq: frameSeq, at: Date.now(), raw: String(raw) });
         return;
       }
-      // conversationId 漂移检测（2026-10-25）：帧里带的 cid 与连接时的那场不一致，
+      // conversationId 漂移检测（2026-10-25）：帧里带的 conversationId 与连接时的那场不一致，
       // 说明「这一帧不是这一场的」——排障时这是最核心的信号之一。
-      // 实测助手模式 52 帧全部带同一个 cid；不一致就是异常。
-      if (seenCid !== null && j.conversationId && j.conversationId !== seenCid) {
-        log(`[⚠️ cid 漂移] 帧里是 ${String(j.conversationId).slice(0, 12)}…，`
-            + `连接时是 ${String(seenCid).slice(0, 12)}…`);
+      // 实测助手模式 52 帧全部带同一个 conversationId；不一致就是异常。
+      if (seenConversationId !== null && j.conversationId && j.conversationId !== seenConversationId) {
+        log(`[⚠️ conversationId 漂移] 帧里是 ${String(j.conversationId).slice(0, 12)}…，`
+            + `连接时是 ${String(seenConversationId).slice(0, 12)}…`);
       }
 
       // trace==1：折叠连续重复帧
@@ -566,7 +566,7 @@ export function createAssistant(opts = {}) {
         if (o.visitorId) hint += ` visitorId=${o.visitorId}`;
         if (o.visitorLoggedIn !== undefined) hint += ` loggedIn=${o.visitorLoggedIn}`;
         if (o.isNewVisitor !== undefined) hint += ` isNew=${o.isNewVisitor}`;
-        if (o.cvsInfo && o.cvsInfo.conversationId) hint += ` cid=${String(o.cvsInfo.conversationId).slice(0, 12)}…`;
+        if (o.cvsInfo && o.cvsInfo.conversationId) hint += ` conversationId=${String(o.cvsInfo.conversationId).slice(0, 12)}…`;
         if (o.data && o.data.name) hint += ` name=${o.data.name}`;
         if (o.code !== undefined) hint += ` code=${o.code}`;
         if (o.statusCode !== undefined) hint += ` statusCode=${o.statusCode}`;
@@ -637,7 +637,7 @@ export function createAssistant(opts = {}) {
     // visitorId 是 lc_<uid> 还是 32 位 hex，一眼就能看出服务端认不认登录）
     log('[identity]', identity.visitorId,
         `loggedIn=${r.json.visitorLoggedIn}`, `isNew=${r.json.isNewVisitor}`,
-        'cid=' + identity.conversationId);
+        'conversationId=' + identity.conversationId);
     if (!r.json.visitorLoggedIn) {
       log('[identity] ⚠️ 服务端判为未登录（visitorId 非 lc_ 形态）——'
           + '若是从 Node 发起，属已知限制：应用层头全对齐也认不出，需浏览器侧会话');
@@ -883,10 +883,10 @@ export function createAssistant(opts = {}) {
       userId: identity.visitorId, channel: 'WEB', conversationId: identity.conversationId,
       robotId, visitorVc: identity.visitorVc, scene: '', lang: 'zh-CN', isLLMPlanning: planning,
     })}`;
-    log('[WS]', `planning=${planning}`, `cid=${String((identity||{}).conversationId||'').slice(0,12)}…`,
+    log('[WS]', `planning=${planning}`, `conversationId=${String((identity||{}).conversationId||'').slice(0,12)}…`,
         `vid=${String((identity||{}).visitorId||'').slice(0,14)}`, `model=${activeModelId}`);
     if (traceLevel >= 2) log('[WS:url]', url);
-    seenCid = (identity && identity.conversationId) || null;
+    seenConversationId = (identity && identity.conversationId) || null;
     return new Promise((resolve, reject) => {
       // 浏览器 WS 构造器第二参是子协议（不是选项对象）——同源 iframe 里
       // Origin/来源由浏览器自动带，单参直连即可，不伪造任何头。
@@ -1161,12 +1161,38 @@ export function createAssistant(opts = {}) {
    * identity 置空，下次 connect 会重新 apply 拿新身份。浏览器同源侧还需装配层
    * 额外清 document.cookie（Node 侧无此概念）。
    */
+  /**
+   * 当前会话的历史条数（**直接叫上游的字段名**：msgList 的 `total`）。
+   *
+   * 为什么需要（2026-10-25 站长定案）：**本地不存任何会话数据**，靠上游判断
+   * 「当前会话是不是新开的」——`total > 0` 就是旧会话（有历史），
+   * 不必再发工具清单；`total === 0` 是新会话。
+   *
+   * 实测（ZCode 浏览器，登录态）：apply 三次返回同一个 conversationId；
+   * 发一条消息后 total 0→2；**刷新页面后 conversationId 不变、total 仍是 2**。
+   * 匿名态每次连接都是新 conversationId、total 恒 0 ⇒ 永远按新会话处理（上游正常行为）。
+   *
+   * 失败时返回 null（不抛）：判据取不到时上层按「新会话」处理更安全。
+   */
+  async function msgListTotal() {
+    if (!identity) await apply();
+    if (!identity.conversationId) return null;
+    try {
+      const r = await jfetch(`/v1/front/msgList?${qs({
+        pageNo: 1, pageSize: 1, conversationId: identity.conversationId,
+        scene: '', unitId, robotId,
+      })}&safeformat=json`, { timeoutMs: 10000 });
+      const d = (r.json && r.json.data) || {};
+      return typeof d.total === 'number' ? d.total : null;
+    } catch { return null; }
+  }
+
   function resetIdentity() {
     identity = null;
     return true;
   }
 
-  return { apply, resetIdentity, models, switchModel, connect, ask, askRetry, askWithRetry, uploadImage, askImage, send, close, cancel,
+  return { apply, resetIdentity, models, switchModel, connect, ask, askRetry, askWithRetry, uploadImage, askImage, send, close, cancel, msgListTotal,
     get identity() { return identity; },
     get activeModelId() { return activeModelId; },
     get planning() { return planning; },

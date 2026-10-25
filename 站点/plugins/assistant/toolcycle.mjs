@@ -356,13 +356,32 @@ export function createToolSession({
     // 提示词里的示例与调用形态本来就与工具表无关（catalog 为空只是少一行清单），
     // 照发才能让模型写出调用行；真调不通时回喂会如实报错，比静默裸问好。
     const wantsPageAction = alwaysTools || actionRe.test(userText);
+    // ⭐ 2026-10-25 站长定案：**旧会话不再发工具清单**。
+    //
+    // 判据只看上游，不看本地（本地零会话数据）：`mgr` 句柄上的 `msgListTotal`
+    // 就是 `msgList.total`。`> 0` ⇒ 这场对话已经有历史 ⇒ 上游记得前文、
+    // 也知道工具怎么用 ⇒ 再灌一遍清单只是挤占它的上下文。
+    //
+    // 匿名态每次连接都是新 conversationId、total 恒 0 ⇒ 永远按新会话处理
+    // （这是上游正常行为，不是缺陷）。
+    //
+    // 取不到判据（null）时按**新会话**处理：多发一次清单比少发安全。
+    let msgListTotal = null;
+    try {
+      msgListTotal = (typeof mgr.msgListTotal === 'function') ? mgr.msgListTotal(session) : null;
+    } catch { msgListTotal = null; }
+    const isNewConversation = !(typeof msgListTotal === 'number' && msgListTotal > 0);
+
     // G15 疑问式法则：工具表在前、任务句在最后（模型最后读到的就是那个问句）
-    let prompt = wantsPageAction ? pageToolsPrompt(allowed, userText) : userText;
+    // 旧会话（isNewConversation=false）⇒ 裸问题，不重复灌清单。
+    let prompt = (wantsPageAction && isNewConversation)
+      ? pageToolsPrompt(allowed, userText)
+      : userText;
 
     // ⭐ 首轮页面上下文（2026-10-19 实测）：不给页面信息时，模型对「这一章」「第 3 题」
     // 这类指代一律回「指代不明」——上游把它判成 context_missing，重放历史也救不回来
     // （历史里根本没有页面内容）。所以动作意图的第一条消息必须自带「我在哪一页」。
-    if (wantsPageAction && contextProvider) {
+    if (wantsPageAction && isNewConversation && contextProvider) {
       try {
         const ctx = await contextProvider();
         if (ctx) {
