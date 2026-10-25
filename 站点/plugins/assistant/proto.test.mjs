@@ -497,8 +497,8 @@ test('帧级日志：trace 档位是构造参数（不许硬编码）', () => {
 
 test('帧级日志：conversationId 漂移检测在位', () => {
   const src = readFileSync(new URL('./proto.mjs', import.meta.url), 'utf8');
-  assert.match(src, /cid 漂移/, '必须有 cid 漂移告警');
-  assert.match(src, /seenCid/, '要记住连接时的 cid');
+  assert.match(src, /conversationId 漂移/, '必须有 conversationId 漂移告警');
+  assert.match(src, /seenConversationId/, '要记住连接时的 conversationId');
 });
 
 test('帧级日志：顶层形态（无 mobileProperties）也能识别', () => {
