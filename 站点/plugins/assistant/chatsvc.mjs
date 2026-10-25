@@ -47,7 +47,7 @@ import { createToolSession } from './toolcycle.mjs';
  * @param {string[]} [p.navToolNames] 提示词里放行的工具（G20：只放前 3 个进提示词）
  */
 export function createChatService({
-  mgr, tools = [], invoke, upload = null, contextProvider = null,
+  mgr, tools = [], invoke, contextProvider = null,
   rounds = 4, navToolNames = null, visionQuestion = '图里有什么？',
 }) {
   if (!mgr) throw new Error('createChatService: 缺少 mgr');
@@ -171,7 +171,13 @@ export function createChatService({
         ? await currentTools()
         : (Array.isArray(currentTools) ? currentTools : []),
       rounds, navToolNames,
-      upload, visionQuestion, contextProvider,
+      // ⚠️ 2026-10-25 修（审计 C1）：这里原来传 `upload`，但它指向下面 :268 的
+      // `function upload(sessionId, bytes, opts)`（函数声明提升覆盖了 :50 的参数），
+      // 而 toolcycle 按 `(bytes, opts)` 两参调用 ⇒ sessionId 收到 Uint8Array、
+      // bytes 收到 {filename,mime} ⇒ 视觉链路一直坏。
+      // 现在传一个**单参签名**的闭包：工具会话只需 bytes + opts，会话 id 由这里绑。
+      upload: (bytes, opts) => uploadOne(key, bytes, opts),
+      visionQuestion, contextProvider,
     });
 
     let result;

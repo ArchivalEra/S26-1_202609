@@ -308,6 +308,50 @@ test('上传后的 fileInfo 会随下一轮 ask 的 fileInfo 一起发出', asyn
   assert.equal(taps.fileInfos[1], 1, '第二轮应带 1 张图');
 });
 
+test('附件跨 run 去重：同一 session 第二次 run 不重传已交付的图（2026-10-25）', async () => {
+  // 官方站实测：助手模式下 fileInfo 只需在发图那轮带，后续轮 [] 上游仍记得。
+  // 旧实现 imagesSent 是 run() 内局部变量，每次 run 重置 ⇒ 每问都重传历史全部附件。
+  const taps = { fileInfos: [] };
+  const mgr = {
+    async ask(_id, text, opts) {
+      taps.fileInfos.push((opts && opts.fileInfo) || []);
+      return { text: '好', status: 'answered' };
+    },
+  };
+  const ts = createToolSession({
+    mgr, sessionId: 's1', tools: TOOLS,
+    invoke: async () => ({ value: { ok: true, dataUrl: 'data:image/jpeg;base64,QUJD' } }),
+    upload: async () => ({ objectId: 'obj-x' }),
+  });
+  // 第一次 run：附一张图（通过 askOpts.fileInfo 传入）
+  await ts.run('第一问', { fileInfo: [{ objectId: 'obj-x' }] });
+  // 第二次 run：同一张图
+  await ts.run('第二问', { fileInfo: [{ objectId: 'obj-x' }] });
+
+  assert.equal(taps.fileInfos[0].length, 1, '第一问发出该图');
+  assert.equal(taps.fileInfos[1].length, 0, '第二问不该重传同一 objectId');
+});
+
+test('附件落账时机：该轮失败（transport）不落账，下一轮仍会重试', async () => {
+  const taps = { fileInfos: [] };
+  let n = 0;
+  const mgr = {
+    async ask(_id, text, opts) {
+      n += 1;
+      taps.fileInfos.push((opts && opts.fileInfo) || []);
+      return n === 1
+        ? { text: '', status: 'transport', error: 'boom' }
+        : { text: '好', status: 'answered' };
+    },
+  };
+  const ts = createToolSession({ mgr, sessionId: 's1', tools: TOOLS, invoke: async () => ({ value: {} }) });
+  const img = [{ objectId: 'obj-y' }];
+  await ts.run('第一问', { fileInfo: img });
+  await ts.run('第二问', { fileInfo: img });
+  assert.equal(taps.fileInfos[0].length, 1);
+  assert.equal(taps.fileInfos[1].length, 1, '上一轮失败未落账 ⇒ 这一轮还要带');
+});
+
 test('回喂瘦身：图片清单只回前 12 条 + omitted 计数（35 张全塞会撞单条上限）', async () => {
   const taps = {};
   const images = Array.from({ length: 35 }, (_, i) => ({

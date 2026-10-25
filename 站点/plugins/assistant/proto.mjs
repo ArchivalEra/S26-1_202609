@@ -184,7 +184,15 @@ export function parseToolCalls(rawText, knownTools) {
       });
       if (!hit) continue;
       const one = parseOneLine(line, hit);
-      if (one) queued.push(one);
+      if (!one) continue;
+      // 去重：同 name + 同参数只执行一次。
+      // ⚠️ 2026-10-25 回归修复：模型会把同一条调用写两遍（先叙述、再「正式」写一行），
+      // 队列式照单全收 ⇒ 同一个工具被执行两次（实测一次问答里 site_index ×2、
+      // site_navigate ×2、site_read ×2，回喂里同样的结果出现两遍，模型随即迷失、
+      // 吐出上游兜底话术「人家没看明白诶」）。旧实现只取第一个，天然没这个问题。
+      const sig = one.name + '|' + JSON.stringify(one.args || {});
+      if (queued.some((q) => q.name + '|' + JSON.stringify(q.args || {}) === sig)) continue;
+      queued.push(one);
       if (queued.length >= 12) break;   // 单轮上限，防病态输出
     }
     if (queued.length) return queued;
@@ -345,8 +353,18 @@ export function terminalKind(j) {
   }
   // 拦截帧（带 content 的 MACHINE_STOP）
   if (type === 'MACHINE_STOP' && mp.content) return 'machine_stop';
-  // 顶层语义流程结束
-  if (top === 'FINAL_FINISH') return 'final_finish';
+  // ⚠️ 2026-10-25 删：`if (top === 'FINAL_FINISH') return 'final_finish'`
+  //
+  // 官方站实测（.zcode/会话语义/实测-帧序列-20261025.md）：普通模式一次问答里
+  // FINAL_FINISH 发**两次**——
+  //   帧 6  FINAL_FINISH 总耗时 0.890   ← 知识库阶段结束，不是回答结束
+  //   帧 7  MACHINE_READ_LOADING
+  //   帧 8-17 MACHINE_READ ×10         ← 全部正文
+  //   帧 18 MACHINE_READ flag="stop"   ← 真正的结束
+  // 在帧 6 收束 = 丢掉全部正文，这正是「答案永远只有一句话开头」的直接原因。
+  // 未知帧本来就不终止：FINAL_FINISH 现在落到下面的 return null（非终止）。
+  // 风险为零：planning: true 硬编码在 chatsvc.mjs:84 与 对话.mjs:118，
+  // 普通模式在生产路径上没有消费者。
   // 纯文本回答结束
   if (j.sseStop) return 'sse_stop';
   // 确认框（不是终止，是交互）
@@ -570,7 +588,17 @@ export function createAssistant(opts = {}) {
    *   ext:string, hidden:boolean, filePath:string}>}
    */
   async function uploadImage(bytes, opts = {}) {
-    if (!cdnBase) throw new Error('uploadImage 需要 cdnBase（图片 CDN 根，运行时由密文层给）');
+    if (!cdnBase) {
+      // ⚠️ 2026-10-25 审计发现：`cdnBase` 是可选参数，但**全仓没有调用方传它**
+      // （bridge.mjs / 对话.mjs / chatsvc.mjs 都没给）。也就是说：模型一旦调
+      // site_image，上传到这一步必抛，整条视觉链路是断的。
+      // 这里不猜 CDN 根（猜错会静默生成 404 的 filePath），而是明确报出缺口，
+      // 让调用方看到「图片功能需要配置 cdnBase」而不是一个含糊的运行时错误。
+      throw new Error(
+        'uploadImage 需要 cdnBase（图片 CDN 根，运行时由密文层给）；'
+        + '当前调用方未配置 —— 模型调 site_image 会失败',
+      );
+    }
     if (!identity) await apply();
     const name = opts.filename || 'shot.png';
     const ext = (name.split('.').pop() || 'png').toLowerCase();

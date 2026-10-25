@@ -214,3 +214,37 @@ test('emit 不是函数时不崩（调用方可省略）', async () => {
   const r = await svc.ask('c1', '问');   // 不传 emit
   assert.equal(r.status, 'ok');
 });
+
+// ── C1 回归：upload 接缝签名（2026-10-25 审计）────────────────
+//
+// 旧实现：`createChatService({ upload })` 的参数被同文件的
+// `function upload(sessionId, bytes, opts)` 声明提升覆盖，而工具会话按
+// `(bytes, opts)` 两参调用 ⇒ sessionId 收到 Uint8Array、bytes 收到 {filename,mime}。
+// 视觉链路从上线起就是坏的，而 chatsvc.test.mjs 里没有一条 upload 用例。
+test('C1：工具会话调 upload(bytes, opts) 时，mgr.uploadImage 收到的 sessionId 是字符串', async () => {
+  const taps = { uploads: [] };
+  const mgr = {
+    open() { return 's1'; },
+    async ask() { return { text: '好', status: 'ok', calls: [] }; },
+    async uploadImage(sid, bytes, opts) {
+      taps.uploads.push({ sid, bytesType: typeof bytes, bytesLen: bytes && bytes.length, opts });
+      return { objectId: 'obj-c1', filePath: 'x' };
+    },
+    snapshot() { return null; },
+    close() {},
+  };
+  const svc = createChatService({ mgr, tools: TOOLS, invoke: async () => ({ value: {} }) });
+  const fi = await svc.upload('conv-abc', new Uint8Array([1, 2, 3]), { filename: 'a.png' });
+  assert.equal(taps.uploads.length, 1);
+  assert.equal(taps.uploads[0].sid, 's1', 'sessionId 必须经 getSession 解析成管理器 id');
+  assert.equal(taps.uploads[0].bytesLen, 3, 'bytes 必须是原始字节，不是 {filename}');
+  assert.equal(fi.objectId, 'obj-c1');
+});
+
+test('C1：createChatService 不再接受 upload 参数（防止同名遮蔽复发）', async () => {
+  // 静态断言：参数列表里不许出现 upload
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('./chatsvc.mjs', import.meta.url), 'utf8');
+  const sig = src.slice(src.indexOf('export function createChatService'), src.indexOf(') {', src.indexOf('export function createChatService')));
+  assert.doesNotMatch(sig, /\bupload\b\s*=\s*null/, 'createChatService 的签名里不许再有 upload 参数');
+});

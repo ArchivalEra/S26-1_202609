@@ -416,3 +416,30 @@ test('取消：管理器在会话上留标记（通道扑空也能停下来）',
   assert.match(src, /const wasCancelled = !!s\.cancelRequested/,
     'doAsk 收尾要消费标记——否则上游答完了仍当成功交回去');
 });
+
+// ── C2 回归：sandboxCalls 必须透传（2026-10-25 审计）──────────
+//
+// proto.mjs 产出（模型把 site_* 包进 execute/read_file 时收集）、
+// toolcycle.mjs:485 消费，而 session.mjs 的返回值里此前没有这个词
+// ⇒ 拦截机制从 2026-10-23 上线起从未生效。
+test('C2：adapter 返回的 sandboxCalls 必须透传到 mgr.ask 的返回值', async () => {
+  const adapter = {
+    async open() {
+      return {
+        async ask() {
+          return {
+            text: '好', status: 'answered',
+            sandboxCalls: [{ name: 'execute', args: 'site_read，what=page' }],
+          };
+        },
+        close() {},
+      };
+    },
+  };
+  const m = createManager({ adapter });
+  const id = m.open();
+  const r = await m.ask(id, '测试');
+  assert.ok(Array.isArray(r.sandboxCalls), 'sandboxCalls 必须是数组（不是 undefined）');
+  assert.equal(r.sandboxCalls.length, 1);
+  assert.equal(r.sandboxCalls[0].name, 'execute');
+});

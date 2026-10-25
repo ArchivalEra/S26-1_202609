@@ -165,6 +165,19 @@ export function createToolSession({
   const allowed = navToolNames ? tools.filter((t) => navToolNames.includes(t.name)) : tools;
 
   /**
+   * 已交付给上游的附件（objectId 集合）——**跨 run() 保持**，与 session 同生命周期。
+   *
+   * ⚠️ 2026-10-25（官方站实测）：助手模式下 `fileInfo` 只需在发图那一轮带，
+   * 后续轮 `[]` 上游仍记得（实测第 3、4 轮完全记得图，还画出矩阵位置图）。
+   * 旧实现在 run() 内用局部布尔 `imagesSent`，**每次 run() 重置** ⇒ 同一会话
+   * 连续提问时每问都重传历史全部附件——粒度错了（按 run 而非按会话）。
+   *
+   * 落账时机：只在**该轮 answered 之后**才加入。transport/blocked 失败时上游
+   * 没收到，不落账，下一轮可重试。
+   */
+  const attachmentsSent = new Set();
+
+  /**
    * 把退化调用（`{_positional: '铁芯损耗'}`）映射成该工具的具名参数。
    * 模型只给了位置没给参数名时，按工具 schema 的第一个必填/第一个属性填。
    * 映射不出来就原样留着（工具会自己报参数错，比静默丢弃好）。
@@ -377,11 +390,6 @@ export function createToolSession({
     const calls = [];
     const effects = [];
     const images = [];      // 本轮交给模型「看」的图（已上传的 fileInfo）
-    // 图片只在**首次**随消息发出（2026-10-19 补用户附件）：
-    // 旧实现每轮都把 images 全量塞进 fileInfo，工具循环跑 4 轮就重复挂了 4 次
-    // 同样的图——上游会把重复附件当异常。用标志位而不是清空 images，
-    // 因为返回值的 `images` 仍要如实反映「这轮交付了哪些图」。
-    let imagesSent = false;
     // 2026-10-19 修 P2-13：summary 原先声明在 createToolSession 作用域，
     // 复用同一个 session 对象时会跨 run() 累积。改为每次 run 重置。
     const summary = [];
@@ -418,11 +426,25 @@ export function createToolSession({
       // 权衡：一轮答完的场景没有逐字流（会整段出现），但工具循环的过程话绝不会漏给用户。
       // 后者是产品红线（用户不该看到「我查一下」）。
       //
-      // 图片的传递（2026-10-19 补用户附件）：只在**本轮有新图**时才随消息发出，
-      // 发出一次后不再重复挂载——工具循环跑 4 轮不会挂 4 次同样的附件。
-      const opts = images.length && !imagesSent
-        ? { ...(askOpts || {}), fileInfo: images.slice() }
-        : askOpts;
+      // 待发附件 = 本会话还没交付过的那些（跨 run 去重）。
+      // ⚠️ 两个来源都要过滤：
+      //   ① `images`  —— 工具循环自己上传的图（site_image 转码后）
+      //   ② `askOpts.fileInfo` —— 调用方传进来的用户附件（chatsvc 的 attach）
+      // 只过滤 ① 会让 ② 每轮原样透传 ⇒ 每次 run() 都重传全部历史附件。
+      const incoming = [
+        ...images,
+        ...(Array.isArray(askOpts && askOpts.fileInfo) ? askOpts.fileInfo : []),
+      ];
+      const seen = new Set();
+      const freshAttach = incoming.filter((f) => {
+        if (!f || !f.objectId) return false;
+        if (attachmentsSent.has(f.objectId) || seen.has(f.objectId)) return false;
+        seen.add(f.objectId);
+        return true;
+      });
+      const opts = freshAttach.length
+        ? { ...(askOpts || {}), fileInfo: freshAttach }
+        : (askOpts && askOpts.fileInfo ? { ...askOpts, fileInfo: [] } : askOpts);
 
       // ── 流式（2026-10-19 回退说明）────────────────────────────
       //
@@ -447,8 +469,11 @@ export function createToolSession({
       const streamOpts = lastRound && opts && opts.onChunk
         ? opts
         : (opts && opts.onChunk ? { ...opts, onChunk: null } : opts);
-      if (images.length && !imagesSent) imagesSent = true;
       const r = await mgr.ask(sessionId, prompt, streamOpts);
+      // 落账时机：该轮成功才记（上游确实收到了才不重发）
+      if (r && r.status === 'answered' && freshAttach.length) {
+        freshAttach.forEach((f) => attachmentsSent.add(f.objectId));
+      }
       const txt = r.text || '';
       // 每轮耗时（2026-10-20）：分清「单轮慢」与「轮数叠加」。
       // 四轮各 12s 与一轮 45s 是完全不同的病，只看总墙钟无法定位。

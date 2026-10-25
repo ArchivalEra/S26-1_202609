@@ -54,11 +54,37 @@ test('终止表：MACHINE_READ 只在 flag=stop 时终止（普通模式）', ()
   assert.equal(terminalKind(machineRead('abc')), null);
 });
 
-test('终止表：MACHINE_STOP 带 content 才算终止；FINAL_FINISH 与 sseStop 也要认', () => {
+test('终止表：MACHINE_STOP 带 content 才算终止；sseStop 也要认', () => {
   assert.equal(terminalKind({ mobileProperties: { type: 'MACHINE_STOP', content: '{}' } }), 'machine_stop');
-  assert.equal(terminalKind({ type: 'FINAL_FINISH' }), 'final_finish');
   assert.equal(terminalKind({ msg: { answer: 'x' }, sseStop: true }), 'sse_stop');
   assert.equal(terminalKind({ mobileProperties: { type: 'RADIO_CONFIRM', option: 'LLM_ANSWER_CONFIRM' } }), null);
+});
+
+// ── FINAL_FINISH 不是终止（2026-10-25 官方站实测）──────────────
+//
+// 实测序列（.zcode/会话语义/实测-帧序列-20261025.md）：普通模式一次问答里
+// FINAL_FINISH 发两次，帧 6 那次只是知识库阶段结束，帧 7-18 才是正文与真正的 stop。
+// 旧实现把它判成终止 ⇒ 在帧 6 就收束 ⇒ 「答案永远只有一句话开头」。
+test('终止表：FINAL_FINISH 绝不判终止（知识库阶段结束，后面还有全部正文）', () => {
+  assert.equal(terminalKind({ type: 'FINAL_FINISH' }), null,
+    'FINAL_FINISH 是阶段结束标记，不是回答结束');
+});
+
+test('终止表：实测普通模式序列——只有最后那条 MACHINE_READ/stop 才终止', () => {
+  // 按官方站实测的帧顺序构造（帧号见实测文档）
+  const seq = [
+    { type: 'SEMANTIC', agent_event: { event: 'knowledge_question_thought' } },   // 帧0
+    { answer: '行列式的几何意义', systemMsg: true, option: 16 },                   // 帧1 语义抽取
+    { type: 'FINAL_FINISH', meta: { description: '[{总耗时:0.890}]' } },          // 帧6 知识库结束
+    { mobileProperties: { type: 'MACHINE_READ_LOADING', content: '{"message":"正在生成中"}' } }, // 帧7
+    { mobileProperties: { type: 'MACHINE_READ', content: JSON.stringify({ content: '行列式的几何意义是：' }) } }, // 帧15
+    { mobileProperties: { type: 'MACHINE_READ', content: JSON.stringify({ content: '平行多面体的有向体积。' }) } }, // 帧17
+    { mobileProperties: { type: 'MACHINE_READ', content: JSON.stringify({ flag: 'stop' }) } },  // 帧18 真终止
+  ];
+  const terms = seq.map((f) => terminalKind(f));
+  assert.deepEqual(terms.slice(0, 6), [null, null, null, null, null, null],
+    '前六帧都不许终止——FINAL_FINISH（帧6）尤其不许');
+  assert.equal(terms[6], 'machine_flag_stop', '只有最后那条 flag=stop 才终止');
 });
 
 // ── 正文抽取（extractChunks）──────────────────────────────
@@ -412,8 +438,25 @@ test('队列式防误判：叙述句里的工具名不算调用', () => {
   assert.equal(r.length, 0, '「空格+中文词」是陈述句，不是调用');
 });
 
-test('队列式：单轮上限 12（防病态输出）', () => {
+test('队列式：单轮上限 12（防病态输出，不同参数才计数）', () => {
   const known = ['site_read'];
-  const many = Array.from({ length: 30 }, () => 'site_read，what=outline').join('\n');
+  // 30 条**不同参数**的调用 ⇒ 截到 12（去重不会把它们合并）
+  const many = Array.from({ length: 30 }, (_, i) => `site_read，query=q${i}`).join('\n');
   assert.equal(parseToolCalls(many, known).length, 12);
+});
+
+test('队列式去重：同 name + 同参数只执行一次（2026-10-25 回归）', () => {
+  // 模型会把同一条调用写两遍（先叙述、再「正式」写一行）。不去重就会执行两次，
+  // 回喂里同样的结果出现两遍，模型随即迷失（实测吐出「人家没看明白诶」）。
+  const known = ['site_index'];
+  const dup = '我先看地图。\nsite_index，scope=all\nsite_index，scope=all';
+  const r = parseToolCalls(dup, known);
+  assert.equal(r.length, 1, '同一调用写两遍，只能执行一次');
+  assert.equal(r[0].name, 'site_index');
+});
+
+test('队列式去重：参数不同的同名调用仍各自保留', () => {
+  const known = ['site_read'];
+  const r = parseToolCalls('site_read，query=甲\nsite_read，query=乙', known);
+  assert.equal(r.length, 2, '参数不同 = 两次真实调用，不许合并');
 });
