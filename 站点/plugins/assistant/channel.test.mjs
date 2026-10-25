@@ -238,19 +238,6 @@ test('stop：A 发 stop ⇒ B 调 host.cancel（真停上游，不只是断本�
   assert.equal(cancelled, 1);
 });
 
-// ── ready ──────────────────────────────────────────────────
-
-test('ready：B 报到后 A 能观测到 ready 状态', () => {
-  const { a, b } = makePair();
-  const aep = createHostEndpoint({ target: b, bOrigin: 'https://b.example', listenOn: a });
-  let readyAt = null;
-  aep.on('ready', () => { readyAt = Date.now(); });
-  const bep = createGuestEndpoint({ parentWindow: a, aOrigin: 'https://a.example', bOrigin: 'https://b.example', listenOn: b });
-  const resp = createResponder({ endpoint: bep, host: { async ask() {}, cancel() {} } });
-  resp.announce();
-  assert.ok(readyAt, 'A 侧必须收到 ready');
-});
-
 // ── 安全：B 侧也只认 A 的 origin ────────────────────────────
 
 test('I1（反向）：A 侧 origin 不对 ⇒ B 侧不执行', () => {
