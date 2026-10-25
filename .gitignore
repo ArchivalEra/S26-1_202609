@@ -377,6 +377,13 @@
 !/站点/plugins/assistant/session.test.mjs
 !/站点/plugins/assistant/context.mjs
 !/站点/plugins/assistant/context.test.mjs
+!/站点/plugins/assistant/channel.mjs
+!/站点/plugins/assistant/channel.test.mjs
+!/站点/plugins/assistant/upstream-host.mjs
+!/站点/plugins/assistant/upstream-host.test.mjs
+!/站点/plugins/assistant/iframe-bridge.mjs
+!/站点/plugins/assistant/iframe-bridge.test.mjs
+!/站点/plugins/assistant/guest-entry.mjs
 !/站点/plugins/assistant-wire.mjs
 !/站点/plugins/assistant-wire.test.mjs
 !/站点/plugins/assistant-bundle.mjs
