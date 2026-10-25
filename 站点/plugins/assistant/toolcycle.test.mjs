@@ -17,7 +17,7 @@ import { createToolSession, cleanAnswer, PAGE_ACTION_RE } from './toolcycle.mjs'
 function scriptedMgr(script, taps = {}) {
   taps.prompts = [];
   return {
-    async ask(_id, text) {
+    async ask(_h, text) {
       taps.prompts.push(text);
       const s = script.shift() || 'answer:（默认）';
       if (s.startsWith('status:')) {
@@ -47,6 +47,8 @@ function fakeInvoke(taps, effectFor = {}) {
   };
 }
 
+const HANDLE = Object.freeze({});
+
 const TOOLS = [
   { name: 'site_search', description: '只搜本站', inputSchema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
   { name: 'site_open_section', description: '跳小节', inputSchema: { type: 'object', properties: { title: { type: 'string' } } } },
@@ -63,7 +65,7 @@ test('动作意图（含「资料库/哪一节」）命中 PAGE_ACTION_RE；闲�
 test('默认给工具表（2026-10-19：关键词判断漏判 4/8，改为默认给）', async () => {
   const taps = {};
   const mgr = scriptedMgr(['answer:磁阻 R_m = l/(μA)'], taps);
-  const ts = createToolSession({ mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: TOOLS });
+  const ts = createToolSession({ mgr, session: HANDLE, invoke: fakeInvoke(taps), tools: TOOLS });
   const r = await ts.run('什么是磁路欧姆定律？');
   assert.equal(r.status, 'ok');
   assert.match(taps.prompts[0], /site_search/, '默认就该带工具表，让模型自己判断');
@@ -73,7 +75,7 @@ test('默认给工具表（2026-10-19：关键词判断漏判 4/8，改为默认
 test('alwaysTools=false 时退回关键词判断（保留给纯问答场合）', async () => {
   const taps = {};
   const mgr = scriptedMgr(['answer:磁阻 R_m = l/(μA)'], taps);
-  const ts = createToolSession({ mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: TOOLS, alwaysTools: false });
+  const ts = createToolSession({ mgr, session: HANDLE, invoke: fakeInvoke(taps), tools: TOOLS, alwaysTools: false });
   const r = await ts.run('什么是磁路欧姆定律？');
   assert.match(taps.prompts[0], /^什么是磁路欧姆定律/);
   assert.doesNotMatch(taps.prompts[0], /site_search/);
@@ -93,7 +95,7 @@ test('动作意图：工具表注入 → 模型吐调用 → invoke 执行 → �
     'call:site_search:铁芯损耗',
     'answer:铁芯损耗在第 7-8 页那一节。',
   ], taps);
-  const ts = createToolSession({ mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: TOOLS });
+  const ts = createToolSession({ mgr, session: HANDLE, invoke: fakeInvoke(taps), tools: TOOLS });
   const r = await ts.run('铁芯损耗在资料库的哪一节？');
 
   assert.match(taps.prompts[0], /site_search/);            // 第一轮带工具表
@@ -107,7 +109,7 @@ test('动作意图：工具表注入 → 模型吐调用 → invoke 执行 → �
 test('效果回执原样透出（effects 数组带 dy/targetVisible）', async () => {
   const taps = {};
   const mgr = scriptedMgr(['call:site_search:铁芯损耗', 'answer:找到了'], taps);
-  const ts = createToolSession({ mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: TOOLS });
+  const ts = createToolSession({ mgr, session: HANDLE, invoke: fakeInvoke(taps), tools: TOOLS });
   const r = await ts.run('搜一下铁芯损耗');
   assert.equal(r.effects.length, 1);
   assert.equal(r.effects[0].name, 'site_search');
@@ -125,7 +127,7 @@ test('HTML 转义的调用也能解析（学习通尖括号是 &lt; 转义形）
       };
     },
   };
-  const ts = createToolSession({ mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: TOOLS });
+  const ts = createToolSession({ mgr, session: HANDLE, invoke: fakeInvoke(taps), tools: TOOLS });
   await ts.run('搜磁路');
   assert.equal(taps.invokes[0].args.query, '磁路');
 });
@@ -134,7 +136,7 @@ test('invoke 抛错：软失败记进结果，回喂带失败行，不中断', a
   const taps = {};
   const invoke = async () => { throw new Error('页面 30s 内没有回传结果'); };
   const mgr = scriptedMgr(['call:site_search:铁芯损耗', 'answer:那我直接告诉你'], taps);
-  const ts = createToolSession({ mgr, sessionId: 's1', invoke, tools: TOOLS });
+  const ts = createToolSession({ mgr, session: HANDLE, invoke, tools: TOOLS });
   const r = await ts.run('搜铁芯损耗');
   assert.match(taps.prompts[1], /工具返回：site_search[^\\n]*失败/);
   assert.equal(r.calls.length, 1);
@@ -144,7 +146,7 @@ test('invoke 抛错：软失败记进结果，回喂带失败行，不中断', a
 test('blocked：不解析调用、不执行工具，直接上抛', async () => {
   const taps = {};
   const mgr = scriptedMgr(['status:blocked'], taps);
-  const ts = createToolSession({ mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: TOOLS });
+  const ts = createToolSession({ mgr, session: HANDLE, invoke: fakeInvoke(taps), tools: TOOLS });
   const r = await ts.run('搜铁芯损耗');
   assert.equal(r.status, 'blocked');
   assert.equal(taps.invokes, undefined);   // 一次都没执行
@@ -152,7 +154,7 @@ test('blocked：不解析调用、不执行工具，直接上抛', async () => {
 
 test('传输层故障（frozen）如实上抛，answer 为空', async () => {
   const mgr = scriptedMgr(['status:frozen']);
-  const ts = createToolSession({ mgr, sessionId: 's1', invoke: async () => ({}), tools: TOOLS });
+  const ts = createToolSession({ mgr, session: HANDLE, invoke: async () => ({}), tools: TOOLS });
   const r = await ts.run('搜铁芯损耗');
   assert.equal(r.status, 'frozen');
   assert.equal(r.answer, '');
@@ -163,7 +165,7 @@ test('rounds 用尽：最后一轮的正文当答案（无收尾 prompt 注入�
   const script = Array.from({ length: 5 }, () => 'call:site_search:铁芯损耗');
   script[2] = 'answer:根据前面的结果，铁芯损耗在第五节。';
   const mgr = scriptedMgr(script, taps);
-  const ts = createToolSession({ mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: TOOLS, rounds: 3 });
+  const ts = createToolSession({ mgr, session: HANDLE, invoke: fakeInvoke(taps), tools: TOOLS, rounds: 3 });
   const r = await ts.run('搜铁芯损耗');
   assert.equal(r.status, 'ok');
   assert.match(r.answer, /铁芯损耗在第五节/);
@@ -177,7 +179,7 @@ test('最后一轮模型仍吐调用：正文当答案，调用不执行', async
   const taps = {};
   const script = Array.from({ length: 5 }, () => 'call:site_search:铁芯损耗');
   const mgr = scriptedMgr(script, taps);
-  const ts = createToolSession({ mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: TOOLS, rounds: 2 });
+  const ts = createToolSession({ mgr, session: HANDLE, invoke: fakeInvoke(taps), tools: TOOLS, rounds: 2 });
   const r = await ts.run('搜铁芯损耗');
   assert.equal(taps.invokes.length, 1, '第 2 轮（最后一轮）的调用不应执行');
   assert.equal(r.status, 'ok');
@@ -187,7 +189,7 @@ test('navToolNames 过滤：不在名单的工具不进提示词', async () => {
   const taps = {};
   const mgr = scriptedMgr(['answer:好'], taps);
   const ts = createToolSession({
-    mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: TOOLS,
+    mgr, session: HANDLE, invoke: fakeInvoke(taps), tools: TOOLS,
     navToolNames: ['site_open_section'],
   });
   await ts.run('帮我导航到铁芯损耗');
@@ -217,7 +219,7 @@ test('site_image 返回 dataUrl → 自动上传 → 带图追问（不把 base6
     return { objectId: 'obj-1', filePath: 'https://x/origin.png', name: opts.filename };
   };
   const ts = createToolSession({
-    mgr, sessionId: 's1', invoke, tools: TOOLS, upload,
+    mgr, session: HANDLE, session: HANDLE, invoke, tools: TOOLS, upload,
   });
   const r = await ts.run('看看这张图');
   assert.equal(uploads.length, 1, '应上传一次');
@@ -235,7 +237,7 @@ test('回喂文本里剥掉 dataUrl（几万字符的 base64 会撞上游单条�
     value: { ok: true, format: 'jpeg', mimeType: 'image/jpeg', dataUrl: 'data:image/jpeg;base64,' + b64 },
   });
   const ts = createToolSession({
-    mgr, sessionId: 's1', invoke, tools: TOOLS,
+    mgr, session: HANDLE, session: HANDLE, invoke, tools: TOOLS,
     upload: async () => ({ objectId: 'o' }),
   });
   await ts.run('看图');
@@ -252,7 +254,7 @@ test('没有 upload 接缝时：不尝试上传，dataUrl 原样留在 value 里
   const taps = {};
   const mgr = scriptedMgr(['call:site_image', 'answer:好'], taps);
   const invoke = async () => ({ value: { ok: true, dataUrl: 'data:image/jpeg;base64,QUJD' } });
-  const ts = createToolSession({ mgr, sessionId: 's1', invoke, tools: TOOLS });   // 不给 upload
+  const ts = createToolSession({ mgr, session: HANDLE, invoke, tools: TOOLS });   // 不给 upload
   const r = await ts.run('看图');
   assert.equal(r.images.length, 0);
   assert.ok(r.calls.some((c) => c.name === 'site_image'));
@@ -263,7 +265,7 @@ test('上传失败：记成失败结果，不中断整轮', async () => {
   const mgr = scriptedMgr(['call:site_image', 'answer:好吧'], taps);
   const invoke = async () => ({ value: { ok: true, dataUrl: 'data:image/jpeg;base64,QUJD' } });
   const ts = createToolSession({
-    mgr, sessionId: 's1', invoke, tools: TOOLS,
+    mgr, session: HANDLE, session: HANDLE, invoke, tools: TOOLS,
     upload: async () => { throw new Error('quota exceeded'); },
   });
   const r = await ts.run('看图');
@@ -276,7 +278,7 @@ test('带图追问用极简问法（「图里有什么？」——实测越像�
   const mgr = scriptedMgr(['call:site_image', 'answer:图里是电路'], taps);
   const invoke = async () => ({ value: { ok: true, dataUrl: 'data:image/jpeg;base64,QUJD' } });
   const ts = createToolSession({
-    mgr, sessionId: 's1', invoke, tools: TOOLS,
+    mgr, session: HANDLE, session: HANDLE, invoke, tools: TOOLS,
     upload: async () => ({ objectId: 'o' }),
   });
   await ts.run('看图');
@@ -287,7 +289,7 @@ test('上传后的 fileInfo 会随下一轮 ask 的 fileInfo 一起发出', asyn
   const taps = { asks: 0, fileInfos: [], prompts: [] };
   const script = ['call:site_image', 'answer:看完了'];
   const mgr = {
-    async ask(_id, text, opts) {
+    async ask(_h, text, opts) {
       taps.asks += 1;
       taps.prompts.push(text);
       taps.fileInfos.push(opts && opts.fileInfo ? opts.fileInfo.length : 0);
@@ -299,7 +301,7 @@ test('上传后的 fileInfo 会随下一轮 ask 的 fileInfo 一起发出', asyn
     },
   };
   const ts = createToolSession({
-    mgr, sessionId: 's1', tools: TOOLS,
+    mgr, session: HANDLE, tools: TOOLS,
     invoke: async () => ({ value: { ok: true, dataUrl: 'data:image/jpeg;base64,QUJD' } }),
     upload: async () => ({ objectId: 'obj-9' }),
   });
@@ -313,13 +315,13 @@ test('附件跨 run 去重：同一 session 第二次 run 不重传已交付的�
   // 旧实现 imagesSent 是 run() 内局部变量，每次 run 重置 ⇒ 每问都重传历史全部附件。
   const taps = { fileInfos: [] };
   const mgr = {
-    async ask(_id, text, opts) {
+    async ask(_h, text, opts) {
       taps.fileInfos.push((opts && opts.fileInfo) || []);
       return { text: '好', status: 'answered' };
     },
   };
   const ts = createToolSession({
-    mgr, sessionId: 's1', tools: TOOLS,
+    mgr, session: HANDLE, tools: TOOLS,
     invoke: async () => ({ value: { ok: true, dataUrl: 'data:image/jpeg;base64,QUJD' } }),
     upload: async () => ({ objectId: 'obj-x' }),
   });
@@ -336,7 +338,7 @@ test('附件落账时机：该轮失败（transport）不落账，下一轮仍�
   const taps = { fileInfos: [] };
   let n = 0;
   const mgr = {
-    async ask(_id, text, opts) {
+    async ask(_h, text, opts) {
       n += 1;
       taps.fileInfos.push((opts && opts.fileInfo) || []);
       return n === 1
@@ -344,7 +346,7 @@ test('附件落账时机：该轮失败（transport）不落账，下一轮仍�
         : { text: '好', status: 'answered' };
     },
   };
-  const ts = createToolSession({ mgr, sessionId: 's1', tools: TOOLS, invoke: async () => ({ value: {} }) });
+  const ts = createToolSession({ mgr, session: HANDLE, tools: TOOLS, invoke: async () => ({ value: {} }) });
   const img = [{ objectId: 'obj-y' }];
   await ts.run('第一问', { fileInfo: img });
   await ts.run('第二问', { fileInfo: img });
@@ -360,7 +362,7 @@ test('回喂瘦身：图片清单只回前 12 条 + omitted 计数（35 张全�
   }));
   const mgr = scriptedMgr(['call:site_list_images', 'answer:看完了'], taps);
   const invoke = async () => ({ value: { ok: true, total: 35, needConvert: 35, hint: '要转码', images } });
-  const ts = createToolSession({ mgr, sessionId: 's1', invoke, tools: TOOLS });
+  const ts = createToolSession({ mgr, session: HANDLE, invoke, tools: TOOLS });
   await ts.run('这一页有哪些图');
   const feed = taps.prompts[1];
   assert.ok(feed.length < 4000, `回喂应瘦身（实际 ${feed.length} 字）`);
@@ -371,7 +373,7 @@ test('回喂是纯搬运：只有工具结果，没有引导语 / 不复述任�
   // 2026-10-25 站长定案：上游自己会规划工具调用，回喂不许夹带任何引导。
   const taps = {};
   const mgr = scriptedMgr(['call:site_search:铁芯损耗', 'answer:好'], taps);
-  const ts = createToolSession({ mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: TOOLS });
+  const ts = createToolSession({ mgr, session: HANDLE, invoke: fakeInvoke(taps), tools: TOOLS });
   await ts.run('搜铁芯损耗');
   const feed = taps.prompts[1];
   assert.match(feed, /\[工具返回：site_search/, '必须有工具结果');
@@ -384,7 +386,7 @@ test('回喂瘦身：site_read 超 3000 字截断并标记', async () => {
   const taps = {};
   const mgr = scriptedMgr(['call:site_read', 'answer:读完了'], taps);
   const invoke = async () => ({ value: { ok: true, what: 'page', text: 'x'.repeat(9000), totalChars: 9000 } });
-  const ts = createToolSession({ mgr, sessionId: 's1', invoke, tools: TOOLS });
+  const ts = createToolSession({ mgr, session: HANDLE, invoke, tools: TOOLS });
   await ts.run('读一下这页');
   const feed = taps.prompts[1];
   assert.ok(feed.length < 5000);
@@ -400,7 +402,7 @@ test('退化调用：上游只回「site_read读选3」时也能执行（2026-10
     taps.called = { name, args };
     return { value: { ok: true, query: args.query, total: 3, hits: [] } };
   };
-  const ts = createToolSession({ mgr, sessionId: 's1', invoke, tools: TOOLS, rounds: 2 });
+  const ts = createToolSession({ mgr, session: HANDLE, invoke, tools: TOOLS, rounds: 2 });
   await ts.run('搜一下铁芯损耗');
   assert.ok(taps.called, '退化调用应被执行');
   assert.equal(taps.called.name, 'site_search');
@@ -415,7 +417,7 @@ test('退化调用：正常长文里提到工具名不算调用', async () => {
         '但它出现在句子中段，而且整段话很长，不应该被当成工具调用。', status: 'ok' };
     },
   };
-  const ts = createToolSession({ mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: TOOLS });
+  const ts = createToolSession({ mgr, session: HANDLE, invoke: fakeInvoke(taps), tools: TOOLS });
   const r = await ts.run('随便聊聊');
   assert.equal(taps.invokes, undefined, '不该执行任何调用');
   assert.match(r.answer, /正常回答/);
@@ -425,7 +427,7 @@ test('首轮上下文：只给「你在哪 + 工具」，不注入小节标题�
   const taps = {};
   const mgr = scriptedMgr(['answer:好'], taps);
   const ts = createToolSession({
-    mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: TOOLS,
+    mgr, session: HANDLE, invoke: fakeInvoke(taps), tools: TOOLS,
     contextProvider: async () => ({
       title: '习题册第一章', course: '电路原理', path: '课程/电路原理/作业/x.html',
       sections: [{ title: '选 1（图 1.1）' }, { title: '选 2（图 1.2）' }, { title: '选 3（图 1.3）' }],
@@ -451,7 +453,7 @@ test('提示词只陈述事实：标记操作的是资料站，不写路由规�
   // 工具描述本身就说清了用途，模型有信息自己判断。
   const taps = {};
   const mgr = scriptedMgr(['answer:好'], taps);
-  const ts = createToolSession({ mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: TOOLS });
+  const ts = createToolSession({ mgr, session: HANDLE, invoke: fakeInvoke(taps), tools: TOOLS });
   await ts.run('站点内跳到工程数学的最新作业页');
   const p = taps.prompts[0];
 
@@ -462,7 +464,7 @@ test('提示词只陈述事实：标记操作的是资料站，不写路由规�
 test('提示词不得含命令式否定（会被安全层判成越狱）', async () => {
   const taps = {};
   const mgr = scriptedMgr(['answer:好'], taps);
-  const ts = createToolSession({ mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: TOOLS });
+  const ts = createToolSession({ mgr, session: HANDLE, invoke: fakeInvoke(taps), tools: TOOLS });
   await ts.run('随便问点什么');
   const p = taps.prompts[0];
 
@@ -476,7 +478,7 @@ test('首轮上下文里的工具清单也标了「只作用于本资料站」',
   const taps = {};
   const mgr = scriptedMgr(['answer:好'], taps);
   const ts = createToolSession({
-    mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: TOOLS,
+    mgr, session: HANDLE, invoke: fakeInvoke(taps), tools: TOOLS,
     contextProvider: async () => ({ title: '作业索引', course: '工程数学', sections: [] }),
   });
   await ts.run('读一下这一页');
@@ -499,7 +501,7 @@ test('提示词示例教了跳转形态：先搜再跳的完整链（issue #20 �
   // （真实任务大多要先搜到路径），与 issue #18 时只教直跳不同。
   const taps = {};
   const mgr = scriptedMgr(['answer:好'], taps);
-  const ts = createToolSession({ mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: TOOLS });
+  const ts = createToolSession({ mgr, session: HANDLE, invoke: fakeInvoke(taps), tools: TOOLS });
   await ts.run('去工程数学作业2那一页');
   const p = taps.prompts[0];
   assert.match(p, /site_search，query=示例课程\n系统返回：命中 1 页：课程\/示例\/index\.html/, '示例必须教「搜到路径再跳」的两步链');
@@ -512,7 +514,7 @@ test('提示词示例防污染：示例目标是虚拟页 + 演示/任务有边�
   // 注意力锚回末行任务。
   const taps = {};
   const mgr = scriptedMgr(['answer:好'], taps);
-  const ts = createToolSession({ mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: TOOLS });
+  const ts = createToolSession({ mgr, session: HANDLE, invoke: fakeInvoke(taps), tools: TOOLS });
   await ts.run('跳到工程数学作业2那一页');
   const p = taps.prompts[0];
   const example = p.slice(0, p.indexOf('任务：'));
@@ -530,7 +532,7 @@ test('上下文头部与提示词 catalog 工具名同源（两份口径不再�
   ];
   const mgr = scriptedMgr(['answer:好'], taps);
   const ts = createToolSession({
-    mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: NAV_TOOLS,
+    mgr, session: HANDLE, invoke: fakeInvoke(taps), tools: NAV_TOOLS,
     contextProvider: async () => ({ title: '作业索引', course: '工程数学', sections: [] }),
   });
   await ts.run('读一下这一页');
@@ -550,7 +552,7 @@ test('上下文头部与提示词 catalog 工具名同源（两份口径不再�
 test('每轮耗时随返回值透出（timings），含轮次/耗时/重试/工具数', async () => {
   const taps = {};
   const mgr = {
-    async ask(_id, text) {
+    async ask(_h, text) {
       taps.prompts = taps.prompts || [];
       taps.prompts.push(text);
       const n = taps.prompts.length;
@@ -563,7 +565,7 @@ test('每轮耗时随返回值透出（timings），含轮次/耗时/重试/工�
       return { text: '答案', status: 'ok', ms: 8000, attempts: 2 };
     },
   };
-  const ts = createToolSession({ mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: TOOLS, rounds: 4 });
+  const ts = createToolSession({ mgr, session: HANDLE, invoke: fakeInvoke(taps), tools: TOOLS, rounds: 4 });
   const r = await ts.run('搜一下');
   assert.ok(Array.isArray(r.timings), 'timings 必须是数组');
   assert.equal(r.timings.length, 2, '两轮就应记两条');
@@ -582,7 +584,7 @@ test('解析白名单是全部已注册工具，不是提示词里那 3 个（G2
   };
   const invoke = async (name, args) => { taps.called = { name, args }; return { value: { ok: true } }; };
   const ts = createToolSession({
-    mgr, sessionId: 's1', invoke, tools: TOOLS, navToolNames: ['site_search'], rounds: 2,
+    mgr, session: HANDLE, session: HANDLE, invoke, tools: TOOLS, navToolNames: ['site_search'], rounds: 2,
   });
   await ts.run('跳到第二节');
   assert.ok(taps.called, '模型自己想到的第 4 个工具不该被静默丢掉');
@@ -633,7 +635,7 @@ test('站点地图回喂：超预算时按课程降级并明示总数', () => {
 function streamingMgr(script, taps = {}) {
   taps.rounds = [];
   return {
-    async ask(_id, text, opts) {
+    async ask(_h, text, opts) {
       const hasChunk = !!(opts && typeof opts.onChunk === 'function');
       taps.rounds.push({ hasChunk, prompt: String(text).slice(0, 40) });
       const s = script.shift() || 'answer:（默认）';
@@ -658,7 +660,7 @@ test('流式：非末轮的工具轮**不**转发 onChunk（已知限制，保�
   const taps = {};
   const mgr = streamingMgr(['call:site_search', 'answer:最终答案'], taps);
   const ts = createToolSession({
-    mgr, sessionId: 's1', invoke: fakeInvoke({}), tools: TOOLS, rounds: 4,
+    mgr, session: HANDLE, invoke: fakeInvoke({}), tools: TOOLS, rounds: 4,
   });
   const chunks = [];
   const r = await ts.run('搜一下', { onChunk: (c) => chunks.push(c) });
@@ -673,7 +675,7 @@ test('流式：走到末轮时转发 onChunk', async () => {
   const taps = {};
   const mgr = streamingMgr(['call:site_search', 'answer:末轮答案'], taps);
   const ts = createToolSession({
-    mgr, sessionId: 's1', invoke: fakeInvoke({}), tools: TOOLS, rounds: 2,
+    mgr, session: HANDLE, invoke: fakeInvoke({}), tools: TOOLS, rounds: 2,
   });
   const chunks = [];
   await ts.run('搜一下', { onChunk: (c) => chunks.push(c) });
@@ -689,7 +691,7 @@ test('流式：走到末轮时转发 onChunk', async () => {
 test('工具表为空：提示词照发（模型必须知道有这套文本协议）', async () => {
   const taps = {};
   const mgr = scriptedMgr(['answer:好'], taps);
-  const ts = createToolSession({ mgr, sessionId: 's1', invoke: fakeInvoke(taps), tools: [] });
+  const ts = createToolSession({ mgr, session: HANDLE, invoke: fakeInvoke(taps), tools: [] });
   await ts.run('跳到铁芯损耗那一节');
   const p = taps.prompts[0];
   assert.match(p, /名字，参数=值/, '调用形态的示例必须在');

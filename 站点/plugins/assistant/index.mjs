@@ -22,11 +22,17 @@
 //   正文增量从 onEvent 的 delta 转给工具会话的 askOpts.onChunk。
 //   工具循环（提示词 → ask → 解析 → invoke → 回喂 → 再 ask）全部留在站点侧。
 //
+// ## 2026-10-25：不再铸会话 id
+//   这里原来每开一个管理器会话就铸 `site-<序号>-<每页随机量>` 当 sid 递给桥。
+//   那是为「一个页面挂多场对话 + 换页甩掉污染」造的，而产品路径只有一场对话
+//   （面板没有「新建对话」入口），上游的真名也只有 conversationId。
+//   现在 payload 不带任何会话标识：桥侧只持有一场对话，身份由上游发。
+//
 // ## 薄桥缺的两个能力（如实记下，不假装有）
 //   · 没有 send：管理器重放背景段时退回 ask 慢路径（每条背景段一次完整往返）。
-//     会话不轮换/不逐出时 hasGap 为假，正常问答不会触发重放。
+//     会话不轮换时 hasGap 为假，正常问答不会触发重放。
 //   · 没有 uploadImage：视觉链路（用户附件 / 模型调 site_image 看图）在站点侧
-//     不可用；createChatService 的 upload 保持默认 null。
+//     不可用；createChatService 的 upload 由管理器转交（桥侧支持时才有）。
 
 import { createManager } from './session.mjs';
 import { createChatService } from './chatsvc.mjs';
@@ -39,20 +45,11 @@ import { createChatService } from './chatsvc.mjs';
  * 实际用得上的三个：ask / cancel / close。
  *
  * @param {{ask: Function, cancel: Function}} bridge window.__assistantBridge
+ * @param {Function} [toolsProvider] () → 工具定义数组（每问现取）
  */
 function bridgeAdapter(bridge, toolsProvider) {
-  // 2026-10-24 修（生产验收「发得太快了」）：每个管理器会话铸一个**稳定** sid
-  // 随每轮 ask 递给桥。此前 payload 不带会话身份，A 侧薄桥只能每轮自铸
-  // （web-1、web-2…），roleB 的「新问才受闸」把每一轮工具循环都当成新的一问，
-  // 第二轮起全被 3 秒速率闸拒掉——生产路径（userscript 通道）首发即中。
-  let sessionSeq = 0;
-  // 每页随机量（站长定案 2026-10-25）：同页会话内 sid 稳定（速率闸续轮语义不变），
-  // 换页/刷新必然新 id——上游会话一旦被污染（误贴代码等），刷新即逃生；
-  // 也消除跨页计数器重置带来的 sid 字符串碰撞（'site-1' 每页都会出现）。
-  const pageNonce = Math.random().toString(36).slice(2, 8);
   return {
     async open() {
-      const sessionId = 'site-' + (++sessionSeq) + '-' + pageNonce;
       return {
         /**
          * 一次提问 = 一次 bridge.ask。
@@ -73,8 +70,7 @@ function bridgeAdapter(bridge, toolsProvider) {
           };
           // ⚠️ 2026-10-25 修（生产验收「上游说有工具但不知道怎么用」）：
           // payload.tools 一直是空数组——工具定义只进了本地的工具会话（用于解析
-          // 与执行），**从没随 ask 递到上游**。roleA 头注释早就写明「tools 由
-          // 站点侧每问现取填入，通道契约要求该字段恒在」，这里补上。
+          // 与执行），**从没随 ask 递到上游**。这里补上。
           // 症状：上游收到「你有哪些工具」的教学文案 + 空工具表 ⇒ 知道存在、
           // 调不出来，只能回「我环境里没有 site_* 工具」。
           let toolDefs = [];
@@ -84,7 +80,6 @@ function bridgeAdapter(bridge, toolsProvider) {
           } catch { toolDefs = []; }
           const r = await bridge.ask({
             text: String(prompt == null ? '' : prompt),
-            sessionId,
             tools: toolDefs,
           }, onEvent);
           const text = String((r && r.text) || '');
@@ -100,7 +95,7 @@ function bridgeAdapter(bridge, toolsProvider) {
         cancel() {
           try { return bridge.cancel(); } catch { return { cancelled: false }; }
         },
-        /** 桥的生命周期归插件（T9 的 ready 看门狗）；站点关会话不拆桥。 */
+        /** 桥的生命周期归插件；站点关会话不拆桥。 */
         close() {},
       };
     },
@@ -117,7 +112,7 @@ function bridgeAdapter(bridge, toolsProvider) {
  * @param {Function} p.invoke (name, args) → Promise<{value, effect?}>
  *   工具执行接缝——T11 接 webmcp-tools.mjs 的 runTool，本模块不实现
  * @param {Function} [p.contextProvider] () → {title, course, path?, sections?}
- * @param {string[]} [p.navToolNames] 放行进提示词的工具名（G20：只取前 3 个）
+ * @param {string[]} [p.navToolNames] 放行进提示词的工具名（默认全量放行）
  * @param {number} [p.rounds=4] 工具闭环最多轮数
  * @returns createChatService 的返回值：{ask, cancel, upload, setTools, snapshot, close}
  */
