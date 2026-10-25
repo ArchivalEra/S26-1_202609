@@ -460,3 +460,50 @@ test('队列式去重：参数不同的同名调用仍各自保留', () => {
   const r = parseToolCalls('site_read，query=甲\nsite_read，query=乙', known);
   assert.equal(r.length, 2, '参数不同 = 两次真实调用，不许合并');
 });
+
+// ── 帧级日志（2026-10-25，站长要求「真正登录态打通」排障）──────────────
+//
+// 目的：一次问答能离线回放——身份、HTTP 往返、每帧类型/正文/终止。
+// 这里只测**代码契约**（档位、折叠、导出），真实帧序列由实测覆盖。
+
+test('帧级日志：trace=0 时一行都不打（默认 1 打摘要）', () => {
+  const lines = [];
+  const a = createAssistant({
+    base: 'https://up.example', unitId: '1397', robotId: 'r',
+    log: (...x) => lines.push(x.join(' ')), trace: 0,
+  });
+  // 未连接时调一次 apply 会走 HTTP（这里不发真请求，只验证导出面存在）
+  assert.deepEqual(a.traceFrames, [], 'trace=0 不该累积任何帧');
+  assert.equal(a.frameCount, 0);
+  assert.equal(lines.length, 0, 'trace=0 不该产生日志');
+});
+
+test('帧级日志：导出面存在且形状正确', () => {
+  const a = createAssistant({
+    base: 'https://up.example', unitId: '1397', robotId: 'r', log: () => {}, trace: 1,
+  });
+  assert.ok(Array.isArray(a.traceFrames), 'traceFrames 必须是数组');
+  assert.equal(typeof a.frameCount, 'number', 'frameCount 必须是数字');
+});
+
+test('帧级日志：trace 档位是构造参数（不许硬编码）', () => {
+  const src = readFileSync(new URL('./proto.mjs', import.meta.url), 'utf8');
+  assert.match(src, /opts\.trace/, '档位必须来自 opts.trace');
+  assert.match(src, /traceLevel >= 3/, 'trace>=3 才有原文累积');
+  // 折叠逻辑必须在（否则 100+ 思考帧会淹掉日志）
+  assert.match(src, /function flushRun/, '必须有连续帧折叠');
+  assert.match(src, /×\$\{runCount\}/, '折叠要打 ×N 计数');
+});
+
+test('帧级日志：conversationId 漂移检测在位', () => {
+  const src = readFileSync(new URL('./proto.mjs', import.meta.url), 'utf8');
+  assert.match(src, /cid 漂移/, '必须有 cid 漂移告警');
+  assert.match(src, /seenCid/, '要记住连接时的 cid');
+});
+
+test('帧级日志：顶层形态（无 mobileProperties）也能识别', () => {
+  // 知识库路径的帧只有 { answer, answerContentType, systemMsg, ... }
+  const src = readFileSync(new URL('./proto.mjs', import.meta.url), 'utf8');
+  assert.match(src, /j\.systemMsg.*'SYS'/, 'systemMsg 回显帧要能识别');
+  assert.match(src, /robotRespType/, '知识库帧要按 robotRespType 分类');
+});

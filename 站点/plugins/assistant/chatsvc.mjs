@@ -35,6 +35,7 @@
 //     snapshot(h?)            → 单会话 / 全部
 //     attach(conversationId)  → handle|null   按上游真名找回
 //     close(h?)
+//     traceFrames(h)          → 帧级日志（ZHEN_TRACE>=3 时有内容）
 //   }
 //
 // `emit(event)` 是唯一输出通道，事件类型固定四种：
@@ -268,5 +269,11 @@ export function createChatService({
     return mgr.uploadImage(h, bytes, opts);
   }
 
-  return { open, attach, ask, cancel, upload, setTools, snapshot, close };
+  /** 帧级日志累积（仅 ZHEN_TRACE>=3 时有内容）。桥的 /trace 端点用它。 */
+  function traceFrames(h) {
+    if (!h || typeof mgr.traceFrames !== 'function') return [];
+    try { return mgr.traceFrames(h) || []; } catch { return []; }
+  }
+
+  return { open, attach, ask, cancel, upload, setTools, snapshot, close, traceFrames };
 }
