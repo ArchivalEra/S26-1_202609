@@ -43,11 +43,22 @@ export function bootGuest({
   if (parent === self) throw new Error('bootGuest: 当前不是 iframe（parent === self），不做任何事');
   if (!aOrigin || !bOrigin) throw new Error('bootGuest: 缺 aOrigin/bOrigin');
 
+  // 日志分两路（2026-10-25 站长要求接帧级日志）：
+  //   ① 本地 console（调试时直接看 iframe）
+  //   ② **经通道转发给 A**（面板/控制台能取到——iframe 的 console 默认看不见）
+  // 转发用 responder.forwardLog，它在 A 侧落进环形缓冲。
+  let forwardLog = () => {};   // responder 建好后再接上
+  const localLog = (tag, ...a) => {
+    const line = tag + ' ' + a.join(' ');
+    try { log(line); } catch { /* 上层日志回调不许影响主流程 */ }
+    try { forwardLog(line); } catch { /* 通道没通就丢 */ }
+  };
+
   const host = createUpstreamHost({
     proto,
     base: bOrigin,
     unitId, robotId,
-    log: (...a) => log('[B]', ...a),
+    log: (...a) => localLog('[B]', ...a),
     trace,
   });
 
@@ -61,15 +72,14 @@ export function bootGuest({
   const responder = createResponder({
     endpoint,
     host,
-    log: (...a) => log('[B]', ...a),
+    log: (...a) => localLog('[B]', ...a),
   });
+  forwardLog = responder.forwardLog;   // 接上：此后所有日志都会转给 A
 
-  log('[B] 已就绪，等待 A 侧指令（origin 白名单：' + aOrigin + '）');
-  responder.announce();
+  localLog('[B] 已就绪，等待 A 侧指令（origin 白名单：' + aOrigin + '）');
 
   return {
     host,
-    announce: () => responder.announce(),
     dispose() {
       try { endpoint.dispose(); } catch { /* 忽略 */ }
       try { host.close(); } catch { /* 忽略 */ }

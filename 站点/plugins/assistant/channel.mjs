@@ -15,14 +15,18 @@
 //   I4 **requestId 配对**：call/result 按 requestId 一一对应；每条 call 恰好一条 result（失败也回）。
 //   I5 **timer 必清**：所有定时器在 finally 里清（P1-7 教训：漏一个就吊住事件循环）。
 //
-// ## 消息集（定稿，2026-10-20；本轮只实现 ask/event/ready/stop）
+// ## 消息集（2026-10-25 精简：**没有** ready/ping）
+//
+// 为什么删掉 ready：它只翻转一个没有消费者的布尔量，而为它加的 `ping` 探针
+// 是「A 自己发给自己再转一圈」的多余往返。真正该修的是**顺序**——
+// `contentWindow` 跨导航是稳定的 WindowProxy（实测），所以 A 可以先建 endpoint、
+// 后设 `iframe.src`，B 的第一次 announce 就不会丢。既然不需要 announce，ready 也就没了。
 //
 //   A→B  ask    {v:1, t:'ask', requestId, text, opts?}
 //        stop   {v:1, t:'stop'}
 //        query  {v:1, t:'query', requestId, what:'conversations'|'history', conversationId?}
 //   B→A  event  {v:1, t:'event', requestId, ev:{type, ...}}
 //        result {v:1, t:'result', requestId, ok, value?, error?}
-//        ready  {v:1, t:'ready', protocol:1}
 
 export const PROTOCOL = 1;
 
@@ -122,8 +126,6 @@ export function createRequester({ endpoint, askTimeoutMs = 240000, queryTimeoutM
     pending.delete(m.requestId);
     p.resolve(m);
   });
-  endpoint.on('ready', () => { log('[A] B 侧就绪'); });
-
   /** 问一句；事件走 onEvent，resolve 成 {ok, value?, error?}。 */
   function ask(text, onEvent, opts) {
     const requestId = 'r' + (++seq);
@@ -192,6 +194,31 @@ export function createRequester({ endpoint, askTimeoutMs = 240000, queryTimeoutM
 export function createResponder({ endpoint, host, log = () => {} }) {
   let current = null;   // 在飞的 requestId（用于 stop）
 
+  /**
+   * 把一条日志转发给 A（2026-10-25）。
+   *
+   * 为什么需要：B 侧 `proto.mjs` 的帧级日志打在**自己的 window** 上——
+   * iframe 里的 console 默认看不见，追踪「登录态/帧序列」时等于没有。
+   * 这里把每行转给 A 的环形缓冲。
+   *
+   * 节流：逐条 postMessage 在高帧率下会明显拖慢（实测一次问答 200 帧）。
+   * 用 16ms 批量发送（约一帧的时间），既不丢行也不刷爆通道。
+   */
+  let logBuf = [];
+  let logTimer = null;
+  function forwardLog(line) {
+    logBuf.push(String(line));
+    if (logTimer) return;
+    const flush = () => {
+      logTimer = null;
+      if (!logBuf.length) return;
+      const lines = logBuf; logBuf = [];
+      try { endpoint.send({ t: 'log', lines }); } catch { /* 对端不在，丢了 */ }
+    };
+    logTimer = (typeof setTimeout === 'function') ? setTimeout(flush, 16) : null;
+    if (logTimer === null) flush();
+  }
+
   endpoint.on('ask', async (m) => {
     const requestId = m.requestId;
     current = requestId;
@@ -226,14 +253,5 @@ export function createResponder({ endpoint, host, log = () => {} }) {
     }
   });
 
-  /** 报到（B 装载完成后第一条消息）。 */
-  function announce() {
-    try { endpoint.send({ t: 'ready' }); } catch (e) { log('[B] ready 发送失败', String(e.message || e)); }
-  }
-
-  // A 侧的 ready 探针（2026-10-25）：A 建桥可能晚于 B 的 announce，
-  // 那次 announce 会丢。A 主动 ping 一次，B 收到就重发 announce。
-  endpoint.on('ping', () => announce());
-
-  return { announce, get busy() { return current !== null; } };
+  return { forwardLog, get busy() { return current !== null; } };
 }

@@ -45,17 +45,20 @@ export function createIframeBridge({ aOrigin, bOrigin, target, askTimeoutMs = 24
   });
   const req = createRequester({ endpoint, askTimeoutMs, log });
 
-  // ready 状态（2026-10-25）：B 侧的 announce 可能在桥建好**之前**就到达
-  // （iframe 先装载完、A 后建桥是常见顺序）。所以不能只靠监听事件——
-  // 还要主动问一次：发一个 ready 探针，B 收到就再 announce 一遍。
-  //
-  // ⚠️ 不能用「监听器里的第一次事件」当唯一判据：那样先到的那次就丢了。
-  let ready = false;
-  let readyWaiters = [];
-  endpoint.on('ready', () => {
-    ready = true;
-    const w = readyWaiters; readyWaiters = [];
-    w.forEach((fn) => { try { fn(); } catch { /* 忽略 */ } });
+  // 帧日志缓冲（2026-10-25，站长要求）：
+  // B 侧的 proto 日志发生在**另一个 window**（iframe），A 侧默认看不到。
+  // 这里把 B 转发过来的日志行收在本地环形缓冲里，面板/控制台可随时取。
+  // 上限 2000 行：一次长任务几百帧，留 10 倍余量足够；无上限会吃内存。
+  const LOG_LIMIT = 2000;
+  const logLines = [];
+  endpoint.on('log', (m) => {
+    const lines = Array.isArray(m && m.lines) ? m.lines : (m && m.line ? [m.line] : []);
+    if (!lines.length) return;
+    for (const raw of lines) {
+      const line = String(raw);
+      if (line) logLines.push(line);
+    }
+    if (logLines.length > LOG_LIMIT) logLines.splice(0, logLines.length - LOG_LIMIT);
   });
 
   /** 面板要的 transport 形状。 */
@@ -86,18 +89,10 @@ export function createIframeBridge({ aOrigin, bOrigin, target, askTimeoutMs = 24
     /** 只读查询：会话列表 / 历史（本轮 UI 用）。 */
     conversations: () => req.query('conversations'),
     history: (conversationId) => req.query('history', { conversationId }),
-    get ready() { return ready; },
-    /** 等 B 报到（已经到过就立即 resolve）。 */
-    waitReady(timeoutMs = 15000) {
-      if (ready) return Promise.resolve(true);
-      return new Promise((resolve) => {
-        let done = false;
-        const t = setTimeout(() => { if (!done) { done = true; resolve(false); } }, timeoutMs);
-        readyWaiters.push(() => { if (!done) { done = true; clearTimeout(t); resolve(true); } });
-        // 主动探一次：B 若已经就绪，会重发 announce
-        try { endpoint.send({ t: 'ping' }); } catch { /* 对端还没好 */ }
-      });
-    },
+    /** B 侧日志快照（帧级日志经通道转发上来的）。 */
+    get logLines() { return logLines.slice(); },
+    /** 清空日志缓冲（换会话/重连时）。 */
+    clearLog() { logLines.length = 0; },
     dispose() {
       try { req.abortAll('disposed'); } catch { /* 忽略 */ }
       endpoint.dispose();

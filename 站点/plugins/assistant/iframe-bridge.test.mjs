@@ -52,7 +52,6 @@ function setup(hostImpl) {
 
   const bep = createGuestEndpoint({ parentWindow: a, aOrigin: A_ORIGIN, bOrigin: B_ORIGIN, listenOn: b });
   const resp = createResponder({ endpoint: bep, host: hostImpl });
-  resp.announce();
   return { bridge, resp, a, b };
 }
 
@@ -80,7 +79,6 @@ function setupWithGlobal(hostImpl) {
     });
     const bep = createGuestEndpoint({ parentWindow: a, aOrigin: A_ORIGIN, bOrigin: B_ORIGIN, listenOn: b });
     const resp = createResponder({ endpoint: bep, host: hostImpl });
-    resp.announce();
     return { bridge, resp, a, b, restore: () => { globalThis.window = prev; } };
   } catch (e) { globalThis.window = prev; throw e; }
 }
@@ -139,14 +137,6 @@ test('transport.upload：明确拒绝（本轮不做图片，不许假装成功�
   } finally { ctx.restore(); }
 });
 
-test('ready：B announce 之后 A 侧 ready 为 true', async () => {
-  const ctx = setupWithGlobal({ async ask() { return { status: 'answered', text: '' }; }, cancel() {} });
-  try {
-    // announce 已在 setup 里发过（同步投递）
-    assert.equal(ctx.bridge.ready, true);
-  } finally { ctx.restore(); }
-});
-
 test('dispose：拆除后不再收消息（不留悬挂监听）', async () => {
   const ctx = setupWithGlobal({ async ask() { return { status: 'answered', text: '' }; }, cancel() {} });
   try {
@@ -177,59 +167,67 @@ test('mountHiddenIframe：拒绝没有 document 的环境（明确报错，不�
   assert.throws(() => mountHiddenIframe({ bOrigin: B_ORIGIN, path: '/x', doc: null }), /document/);
 });
 
-// ── ready 竞态回归（2026-10-25 端到端抓到的真 bug）──────────────
-//
-// 病灶：B 的 announce 在桥建好**之前**就发了（iframe 先装载完是常见顺序），
-// 那次 announce 落到没有监听器的窗口上就丢了 ⇒ `bridge.ready` 永远 false。
-// 实测：端到端第一次跑 `ready=false`，但问答本身是通的。
-//
-// 修法：A 建桥后主动发 `ping`，B 收到就重发 announce；同时 waitReady 支持等待。
 
-test('ready 竞态：B 先 announce、A 后建桥 ⇒ waitReady 仍能拿到 true', async () => {
-  const a = makeWindow(A_ORIGIN);
-  const b = makeWindow(B_ORIGIN);
-  a.peer = b; b.peer = a;
-  const prev = globalThis.window;
-  globalThis.window = a;
+// ── 日志转发（2026-10-25 站长要求：帧级日志必须能到 A 侧）────────
+//
+// B 侧 proto 的帧日志发生在 iframe 的 window 上，A 默认看不见。
+// 现在经通道 `log` 消息转发，A 侧落环形缓冲。
+// ⚠️ 这条测试的价值：它是「iframe 里的日志能不能被观测」的唯一守卫。
+
+test('日志转发：B 的日志行经通道到 A（环形缓冲）', async () => {
+  const ctx = setupWithGlobal({
+    async ask() { return { status: 'answered', text: 'ok' }; },
+    cancel() {},
+  });
   try {
-    // ① B 侧先就绪并 announce（此时 A 还没有监听器 —— 这次 announce 必然丢）
-    const bep = createGuestEndpoint({ parentWindow: a, aOrigin: A_ORIGIN, bOrigin: B_ORIGIN, listenOn: b });
-    const resp = createResponder({ endpoint: bep, host: { async ask() { return { status: 'answered', text: '' }; }, cancel() {} } });
-    resp.announce();
-    assert.equal(a.listeners.length, 0, '此刻 A 还没有监听器，announce 确实丢了');
-
-    // ② A 现在才建桥
-    const bridge = createIframeBridge({
-      aOrigin: A_ORIGIN, bOrigin: B_ORIGIN, target: { contentWindow: b }, askTimeoutMs: 2000,
-    });
-    assert.equal(bridge.ready, false, '建桥瞬间还没报到');
-
-    // ③ waitReady 会发 ping，B 收到重发 announce
-    const ok = await bridge.waitReady(2000);
-    assert.equal(ok, true, 'ping 探针必须让 B 重发 ready');
-    assert.equal(bridge.ready, true);
-  } finally { globalThis.window = prev; }
+    // B 侧手动转发两行（真实路径由 responder.forwardLog 做）
+    ctx.resp.forwardLog('[proto] [帧#1] MIX/chat_start');
+    ctx.resp.forwardLog('[proto] [帧#2] MIX/finish ★终止=mix_finish');
+    // 节流是 16ms 批量发，等一拍
+    await new Promise((r) => setTimeout(r, 60));
+    const lines = ctx.bridge.logLines;
+    assert.equal(lines.length, 2, '两行都要到');
+    assert.match(lines[0], /帧#1/);
+    assert.match(lines[1], /mix_finish/);
+  } finally { ctx.restore(); }
 });
 
-test('waitReady：B 一直不响应 ⇒ 超时返回 false（不悬挂）', async () => {
-  const a = makeWindow(A_ORIGIN);
-  const b = makeWindow(B_ORIGIN);
-  a.peer = b; b.peer = a;   // b 上没有 responder ⇒ 不会回 ready
-  const prev = globalThis.window;
-  globalThis.window = a;
-  try {
-    const bridge = createIframeBridge({
-      aOrigin: A_ORIGIN, bOrigin: B_ORIGIN, target: { contentWindow: b }, askTimeoutMs: 1000,
-    });
-    const ok = await bridge.waitReady(120);
-    assert.equal(ok, false, '超时要明确返回 false，不能一直挂');
-  } finally { globalThis.window = prev; }
-});
-
-test('waitReady：已经报到过 ⇒ 立即 true（不重复等）', async () => {
+test('日志转发：环形缓冲有上限（长任务不撑爆内存）', async () => {
   const ctx = setupWithGlobal({ async ask() { return { status: 'answered', text: '' }; }, cancel() {} });
   try {
-    const ok = await ctx.bridge.waitReady(5000);
-    assert.equal(ok, true);
+    for (let i = 0; i < 2100; i++) ctx.resp.forwardLog('line ' + i);
+    await new Promise((r) => setTimeout(r, 80));
+    assert.ok(ctx.bridge.logLines.length <= 2000, '上限 2000 行');
+    assert.ok(ctx.bridge.logLines.length > 0, '不能全丢');
   } finally { ctx.restore(); }
+});
+
+test('clearLog：能清空缓冲（换会话时用）', async () => {
+  const ctx = setupWithGlobal({ async ask() { return { status: 'answered', text: '' }; }, cancel() {} });
+  try {
+    ctx.resp.forwardLog('x');
+    await new Promise((r) => setTimeout(r, 60));
+    assert.ok(ctx.bridge.logLines.length > 0);
+    ctx.bridge.clearLog();
+    assert.equal(ctx.bridge.logLines.length, 0);
+  } finally { ctx.restore(); }
+});
+
+// ── 协议里不该有 ping / ready ───────────────────────────────
+
+test('★ 协议守卫：channel.mjs 里不许再出现 ping / ready（曾是多餘的第七种消息）', () => {
+  const src = readFileSync(new URL('./channel.mjs', import.meta.url), 'utf8');
+  const code = src.split('\n')
+    .filter((l) => { const t = l.trim(); return t && !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*'); })
+    .join('\n');
+  assert.doesNotMatch(code, /t:\s*'ping'/, 'ping 是为翻转没有消费者的布尔量加的多余消息，已删');
+  assert.doesNotMatch(code, /t:\s*'ready'/, 'ready 没有消费者，已删');
+});
+
+test('★ 协议守卫：iframe-bridge 不许再发 ping', () => {
+  const src = readFileSync(new URL('./iframe-bridge.mjs', import.meta.url), 'utf8');
+  const code = src.split('\n')
+    .filter((l) => { const t = l.trim(); return t && !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*'); })
+    .join('\n');
+  assert.doesNotMatch(code, /'ping'/, 'A 侧不许再发 ping');
 });
