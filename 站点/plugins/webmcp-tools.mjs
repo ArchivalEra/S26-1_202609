@@ -1133,12 +1133,20 @@ export function createPageView(doc, loc, winOverride) {
   function captureView(opts, win2) {
     const o = opts || {};
     const w = win2 || win || null;
-    const viewport = w ? { w: w.innerWidth || 0, h: w.innerHeight || 0 } : { w: 0, h: 0 };
+    // ⚠️ 2026-10-26 修（真机实测：截图元信息报 viewport 0×0）：
+    // `innerWidth/innerHeight` 在**窗口失焦/后台**时会报 0——实测同一页面
+    // `outerWidth=0`、`hasFocus=false`，而 `documentElement.clientWidth` 仍是 1265。
+    // 元信息带 0×0 会让调用方（模型/面板）判定「页面没尺寸」而放弃截图。
+    // 补一条 documentElement 兜底：它量布局视口，与窗口焦点无关。
+    const el = (doc && doc.documentElement) || null;
+    const vw = (w && w.innerWidth) || (el && el.clientWidth) || 0;
+    const vh = (w && w.innerHeight) || (el && el.clientHeight) || 0;
+    const viewport = { w: vw, h: vh };
     const meta = {
       title: (doc && doc.title) || '',
       url: (location && location.href) || '',
       scrollY: w ? Math.round(w.scrollY || 0) : 0,
-      docHeight: doc && doc.documentElement ? doc.documentElement.scrollHeight : 0,
+      docHeight: el ? el.scrollHeight : 0,
       viewport,
       reason: String(o.reason || ''),
     };

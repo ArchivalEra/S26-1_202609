@@ -191,24 +191,47 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
     try {
       let value;
       try {
-        value = await mc.executeTool(handle, msg.args || {});
-      } catch (inner) {
-        // ⚠️ 2026-10-19：polyfill 的 executeTool 把所有异常统一成 "Tool execution failed"，
-        // 排查时完全看不到真因。这里**直接调工具实现**再跑一次，把真异常带回桥。
-        // （工具实现挂在 handle.execute 上；polyfill 包装层没暴露，只能从注册表拿。）
-        let detail = '';
-        try {
-          const impl = handle.execute || (handle.tool && handle.tool.execute);
-          if (typeof impl === 'function') {
-            await impl(msg.args || {});
-            detail = '（直调成功——polyfill 包装层自身出错）';
-          } else {
-            detail = '（拿不到工具实现：keys=' + Object.keys(handle).join(',') + '）';
+        // ⚠️ 2026-10-26 修（真机实测：区域截图报 empty_rect、viewport 0×0）：
+        // **不要走 mc.executeTool**。
+        //
+        // 实测对照（同一页面、同一参数、同一时刻）：
+        //   · mc.executeTool(handle, {selector:'.article-content'})
+        //       → ok:false empty_rect，rect {w:0, h:50457}，viewport {0,0}
+        //   · __mcpTools.runTool('site_capture_view', {selector:...})
+        //       → ok:true，660×2335，viewport 1280×720，350KB 图
+        //
+        // 根因：mc.executeTool 执行的是 **polyfill 注册那一刻**的闭包，
+        // 里面捕获的 window 已经过期（SPA 换页 / 重载后 defaultView 变了、
+        // 或注册时窗口未布局）。而 runTool 每次调用都 buildToolDefs(doc, doc.defaultView)
+        // 现建一份，拿到的永远是**当下的** window。
+        //
+        // 这同时是 issue #18 P0-1 的方向：注册与执行共用 buildToolDefs 这一份实现。
+        // runTool 就是那个共用入口，桥不该绕开它自己去摸 handle。
+        //
+        // 失败时 runTool 恒 resolve {ok:false, error}（不抛），所以下面的 catch
+        // 仍然保留给「runTool 本身不可用」这种退化情形。
+        const rt = (typeof window !== 'undefined' && window.__mcpTools && window.__mcpTools.runTool)
+          ? window.__mcpTools.runTool
+          : null;
+        if (rt) {
+          const r = await rt(msg.name, msg.args || {});
+          // runTool 返回 {ok, value}（失败时 {ok:false, error}）；桥的 post 契约要的是 value。
+          if (r && r.ok === false) {
+            throw new Error(r.error || '工具执行失败');
           }
-        } catch (e2) {
-          detail = String((e2 && (e2.stack || e2.message)) || e2).slice(0, 900);
+          value = r && Object.prototype.hasOwnProperty.call(r, 'value') ? r.value : r;
+        } else {
+          // 退化路径：页面没暴露 __mcpTools（旧版产物）。保留旧行为，但明确记录。
+          console.warn('[bridge] 页面未暴露 __mcpTools.runTool，退回 mc.executeTool（可能拿不到当下窗口）');
+          value = await mc.executeTool(handle, msg.args || {});
         }
-        throw new Error('executeTool 失败：' + String((inner && inner.message) || inner) + ' ｜ 真因：' + detail);
+      } catch (inner) {
+        // 到这里的失败只剩三种：runTool 不可用（退化路径）、runTool 内部抛、或工具自己报错。
+        // runTool 正常时不走这段——它把工具异常收成 {ok:false, error} 返回，我们上面已转抛。
+        // 旧版曾在这里再调一次 handle.execute 试图拿真因；现在主路径是 runTool（错误信息
+        // 本来就完整），这条兜底只对退化路径有意义，保留但不重复叙述。
+        const msg0 = String((inner && inner.message) || inner);
+        throw new Error('工具执行失败：' + msg0);
       }
       const effect = measureEffect(before);
       // 2026-10-19 修 P2-14：判据.mjs 的 effect:'hits' 此前**永远不可能命中**——
