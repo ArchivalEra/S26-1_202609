@@ -57,7 +57,7 @@ export function chaoxingAdapter(upstream, hostOpts = {}) {
     async open(cfg) {
       const a = createAssistant({
         base: upstream.base, unitId: upstream.unitId, robotId: upstream.robotId,
-        planning: !!cfg.planning,
+        isLLMPlanning: Number(cfg.isLLMPlanning) === 1 ? 1 : 0,
         log,
         trace,
       });
@@ -317,7 +317,7 @@ export function createManager(opts = {}) {
     open(cfg = {}) {
       if (closed) throw new Error('管理器已关闭');
       const rec = {
-        cfg: { planning: !!cfg.planning, modelId: cfg.modelId || 559 },
+        cfg: { isLLMPlanning: Number(cfg.isLLMPlanning) === 1 ? 1 : 0, modelId: cfg.modelId || 559 },
         channel: null, generation: 0,
         msgListTotal: null,   // 建连后取一次（上游 msgList.total）
         cancelRequested: false, deadlineTimer: null,

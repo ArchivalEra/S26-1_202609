@@ -363,7 +363,7 @@ export function terminalKind(j) {
   //   帧 18 MACHINE_READ flag="stop"   ← 真正的结束
   // 在帧 6 收束 = 丢掉全部正文，这正是「答案永远只有一句话开头」的直接原因。
   // 未知帧本来就不终止：FINAL_FINISH 现在落到下面的 return null（非终止）。
-  // 风险为零：planning: true 硬编码在 chatsvc.mjs:84 与 对话.mjs:118，
+  // 风险为零：isLLMPlanning: 1 硬编码在 chatsvc.mjs 与 对话.mjs，
   // 普通模式在生产路径上没有消费者。
   // 纯文本回答结束
   if (j.sseStop) return 'sse_stop';
@@ -448,13 +448,21 @@ export function createAssistant(opts = {}) {
   //   0 = 普通模式（知识库直答 / MACHINE_READ 流式）
   //   1 = 助手模式（agent 规划，正文走 MIX 帧；平台自带 43 个工具在此模式可用）
   // ⚠️ 页面上切模型会把模式重置回普通——顺序必须是「先助手模式 → 再切模型 → 再开联网」。
-  const planning = opts.planning ? 1 : 0;
+  //
+  // 2026-10-26 收口（向上游语义靠拢）：参数名从自造的 `planning` 改为上游字段名
+  // `isLLMPlanning`，取值直接用 0/1（与线上协议同形）。此前三层各叫一个名字
+  // （界面「助手模式」/ 协议 isLLMPlanning / 代码 planning），语义表还专门给它开了
+  // 别名豁免——豁免一开就没人再往上靠。现在只有上游这一个名字。
+  // 取值归一成数字而非 `!!x`：上游可能传 '0' 字符串，`!!'0'` 是真（踩过这种坑形）。
+  const isLLMPlanning = Number(opts.isLLMPlanning) === 1 ? 1 : 0;
+  const log = opts.log || (() => {});
+  const onFrame = opts.onFrame || null;
   // 2026-10-19 流式：每段正文增量回调（可选）。handleFrame 早已在调 pending.onChunk，
   // 但 pending 从未赋值过它——死代码。这里把外部回调存起来，ask() 时挂上去。
   const externalOnChunk = typeof opts.onChunk === 'function' ? opts.onChunk : null;
-  const log = opts.log || (() => {});
-  const onFrame = opts.onFrame || null;
-  const referer = `${base}/prime/web?unitId=${unitId}&robotId=${robotId}`;
+  // 官方页面 URL 带 isLLMPlanning（实测 §二：页面写 1、实际请求发 0，是页面自己改写）。
+  // 我们按同一形态带上，值直接是归一后的 0/1。
+  const referer = `${base}/prime/web?unitId=${unitId}&robotId=${robotId}&isLLMPlanning=${isLLMPlanning}`;
 
   // ── 帧级日志（2026-10-25，站长要求「真正登录态打通」排障用）──────────
   //
@@ -621,7 +629,7 @@ export function createAssistant(opts = {}) {
   async function apply() {
     const r = await jfetch(`/v1/front/chat/visitor/apply?${qs({
       unitId, robotId, channel: 'WEB', scene: '',
-      referUrl: encodeURIComponent(referer), isLLMPlanning: planning,
+      referUrl: encodeURIComponent(referer), isLLMPlanning,
     })}`);
     if (!r.json || !r.json.visitorId) throw new Error('visitor/apply 失败: ' + r.text.slice(0, 200));
     identity = {
@@ -881,9 +889,9 @@ export function createAssistant(opts = {}) {
     if (!identity) await apply();
     const url = `wss://${new URL(base).host}/v1/ws/chat/${unitId}/visitor?${qs({
       userId: identity.visitorId, channel: 'WEB', conversationId: identity.conversationId,
-      robotId, visitorVc: identity.visitorVc, scene: '', lang: 'zh-CN', isLLMPlanning: planning,
+      robotId, visitorVc: identity.visitorVc, scene: '', lang: 'zh-CN', isLLMPlanning,
     })}`;
-    log('[WS]', `planning=${planning}`, `conversationId=${String((identity||{}).conversationId||'').slice(0,12)}…`,
+    log('[WS]', `isLLMPlanning=${isLLMPlanning}`, `conversationId=${String((identity||{}).conversationId||'').slice(0,12)}…`,
         `vid=${String((identity||{}).visitorId||'').slice(0,14)}`, `model=${activeModelId}`);
     if (traceLevel >= 2) log('[WS:url]', url);
     seenConversationId = (identity && identity.conversationId) || null;
@@ -1197,7 +1205,7 @@ export function createAssistant(opts = {}) {
   return { apply, resetIdentity, models, switchModel, connect, ask, askRetry, askWithRetry, uploadImage, askImage, send, close, cancel, msgListTotal,
     get identity() { return identity; },
     get activeModelId() { return activeModelId; },
-    get planning() { return planning; },
+    get isLLMPlanning() { return isLLMPlanning; },
     /** 帧级日志累积（仅 trace>=3 时有内容）。调用方拿它落盘成 /tmp/*.json 做回放。 */
     get traceFrames() { return traceFrames.slice(); },
     /** 当前帧计数（诊断用：一次问答收了多少帧）。 */

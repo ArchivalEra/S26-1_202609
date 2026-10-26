@@ -89,7 +89,7 @@ export function createChatService({
 
   /** 开一场新对话，返回管理器句柄（本地不铸 id）。 */
   function open() {
-    const h = mgr.open({ planning: true, modelId: 559 });
+    const h = mgr.open({ isLLMPlanning: 1, modelId: 559 });
     touch(h);
     return h;
   }
