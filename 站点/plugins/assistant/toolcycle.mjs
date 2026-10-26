@@ -203,9 +203,12 @@ export function createToolSession({
       const value = maybeParse(r && r.value);
       const effect = (r && r.effect) || null;
       const soft = value && typeof value === 'object' && value.ok === false;
-      return { call: c, ok: !soft, value, effect };
+      // ⭐ 2026-10-26：工具侧产的信封（feed）必须随结果带上，回喂直接用——
+      // 本层不再按工具名重建信封（那是把「工具形状」的知识复制到调用方）。
+      const feed = (r && typeof r.feed === 'string') ? r.feed : null;
+      return { call: c, ok: !soft, value, effect, feed };
     } catch (e) {
-      return { call: c, ok: false, value: null, effect: null, error: String(e.message || e) };
+      return { call: c, ok: false, value: null, effect: null, error: String(e.message || e), feed: null };
     }
   }
 
@@ -215,93 +218,6 @@ export function createToolSession({
    */
   const MAX_FEED_JSON = 2400;   // 单条工具结果回喂上限（2026-10-25：6000 → 2400，对齐上游单条上限）
 
-  function slimForFeed(name, v) {
-    if (!v || typeof v !== 'object') return v;
-    // ⭐ 2026-10-23：dataUrl 一律剥掉（几万字符 base64 会撞上游单条上限）。
-    // 旧实现是在回喂模板里内联剥的；改信封后那段没了，这里补回来——
-    // 它是所有工具的通用规则，不是 site_image 专属。
-    if (typeof v.dataUrl === 'string') {
-      const { dataUrl, ...rest } = v;
-      v = rest;
-    }
-    // site_index 的树含百分号编码与反引号，上游会判成「疑似注入的编码串」。
-    // 修法：只留「缩进 + 标题 + 路径」。
-    //
-    // ⚠️ 2026-10-19 实测（这是本轮最贵的一条）：原来写死 `slice(0, 60)` 行。
-    // 全站 118 个节点铺开约 140 行，砍到 60 行后模型只看到前一两门课，于是
-    // 自信地回答「本站是电子技术课程的知识图谱，没有电机学」——
-    // **截断让工具开始撒谎**，比不返回更糟。
-    //
-    // 现在的做法：**按结构降级，不按位置砍断**。
-    //   · 全量放得下就给全量；
-    //   · 放不下就逐个课程压缩成「课程名（N 页）」的一行摘要——每门课都还在，
-    //     模型知道有哪些课、也知道自己看不到细节，可以再去 site_index(scope=course)。
-    // 绝不出现「刚好砍在某门课中间，后面的课凭空消失」。
-    if (name === 'site_index' && typeof v.text === 'string') {
-      const MAX_TREE = 3200;
-      const lines = String(v.text)
-        .replace(/%[0-9A-Fa-f]{2}/g, '')
-        .replace(/`/g, '')
-        .split('\n');
-      let cleaned = lines.join('\n');
-      if (cleaned.length > MAX_TREE) {
-        // 降级：按顶层缩进分组，每门课只留一行 + 该组页数
-        const groups = [];
-        let cur = null;
-        for (const ln of lines) {
-          const indent = ln.match(/^ */)[0].length;
-          const isCourse = /^\s{2}\S/.test(ln) && !/^\s{2}-/.test(ln);
-          if (isCourse) { cur = { title: ln.trim(), count: 0, sub: [] }; groups.push(cur); }
-          else if (cur) {
-            if (/^\s+-/.test(ln)) cur.count += 1;
-            else if (/^\s{4,}\S/.test(ln) && cur.sub.length < 8) cur.sub.push(ln.trim());
-          } else {
-            groups.push({ title: ln.trim(), count: 0, sub: [], raw: true });
-          }
-        }
-        const compressed = [];
-        for (const g of groups) {
-          if (g.raw) { compressed.push(g.title); continue; }
-          compressed.push(`  ${g.title}（${g.count} 页）`);
-          for (const s of g.sub.slice(0, 4)) compressed.push(`    ${s}`);
-        }
-        cleaned = compressed.join('\n')
-          + `\n（清单较大，已压缩为课程级摘要；共 ${lines.length} 行 / ${v.totalNodes || '?'} 个节点。`
-          + '要看某门课的完整页面清单，用 site_index(scope="course") 切到那门课）';
-      }
-      return {
-        ok: v.ok, scope: v.scope, current: v.current, courses: v.courses,
-        totalNodes: v.totalNodes, shown: v.shown,
-        text: cleaned,
-      };
-    }
-    if (name === 'site_list_images' && Array.isArray(v.images)) {
-      return {
-        ok: v.ok, total: v.total, needConvert: v.needConvert, hint: v.hint,
-        images: v.images.slice(0, 12).map((x) => ({
-          index: x.index, ext: x.ext, uploadable: x.uploadable,
-          natural: x.natural, alt: String(x.alt || '').slice(0, 60),
-        })),
-        omitted: Math.max(0, v.total - 12),
-      };
-    }
-    // 2026-10-19：从 3000 收到 1500——实测上游单条上限约 1000-2000 字，
-    // 3000 字的回喂会直接触发「输入信息过长」。
-    if (name === 'site_read' && typeof v.text === 'string' && v.text.length > 1100) {
-      return { ...v, text: v.text.slice(0, 1100), truncated: true, totalChars: v.totalChars || v.text.length };
-    }
-    // 2026-10-19 修 P2-22：其余工具此前**无上限**——模型给个巨大 maxChars 就能把
-    // 桥响应和提示词一起撑爆。统一兜底：序列化超限就截断并标记。
-    let json;
-    try { json = JSON.stringify(v); } catch { return v; }
-    if (json.length <= MAX_FEED_JSON) return v;
-    return {
-      _truncated: true,
-      _originalChars: json.length,
-      _head: json.slice(0, MAX_FEED_JSON),
-      _hint: '结果过长已截断；需要更多请缩小参数范围（如 maxChars / limit / max）',
-    };
-  }
 
   /** 从效果回执里提炼一句给人看的话（产品摘要；判据不用这个，直接看 effect 字段）。 */
   /**
@@ -591,7 +507,7 @@ export function createToolSession({
       //
       // ⚠️ 2026-10-26 修（端到端实测抓出）：这里原先只认 `site_image`，
       // **`site_capture_view` 被排除在外**。于是模型调截图、工具回了图（实测 263KB JPEG、
-      // 625×2364），但 `slimForFeed` 在回喂时把 dataUrl 剥掉（它必须剥，否则撞单条上限），
+      // 625×2364），但回喂时 dataUrl 被剥掉（base64 几万字符，必须剥否则撞单条上限），
       // 图从来没送到模型眼前——模型只能看见「截图成功了」这行字，然后回一句
       // 「根据法律内容，涉及敏感词，我不能回复」。截图工具的描述写着「供看不见页面的
       // 模型查看版面」，行为与描述不符。
@@ -639,16 +555,30 @@ export function createToolSession({
       // 信封形态：开头一行说清「哪个工具、什么参数、成没成」，元数据在前
       // （总字数/位置/相关小节），正文原样贴（不转义），结尾给下一步建议。
       //
-      // 长度纪律不变：总量仍受 FEED_BUDGET 兜底（上游单条拒收线 ~2030 字）。
-      // ⚠️ 2026-10-25（长任务实测）：3600 → 1800。上游单条上限实测约 1000-2000
-      // （本文件别处注释已写明），3600 的预算在第 3-4 轮会触发上游慢响应/退化
-      // （实测第 4 轮 63s、重试 2 次、答案退化成 7 字片段）。
-      const FEED_BUDGET = 1800;
+      // ⚠️ 2026-10-26（实测边界，这是本次最关键的一处修正）：**1800 → 900**。
+      //
+      // 实测（匿名全新身份，排除历史累积）：单条消息 900 字过 / 1100 字过 /
+      // **1300 字拒**（「输入信息过长」）。豆包窗口是 256K，但 API 层的**单条
+      // 输入限制**只有一千字出头——归档 §0.72（2026-10-19）就记过同一件事。
+      //
+      // 旧值 1800 直接越过这条线：所以「回喂一多就整条被拒」，表现为工具循环
+      // 跑两三步就吐「输入信息过长」。这不是 token 预算，是单条上限，别再按
+      // 上下文窗口去算。取 900 给信封留余量（单个信封已由 MCP 侧保证 ≤950）。
+      const FEED_BUDGET = 900;
       let feedUsed = 0;
       const feedBlocks = [];
 
       /** 一个工具结果 → 信封文本。 */
       const envelope = (x) => {
+        // ⭐ 2026-10-26（站长定案：信封归 MCP 侧）：工具执行侧已经产出 `feed`
+        // （见 webmcp-tools.mjs 的 feedText）——它知道自己的返回形状、也自己保证
+        // 单条长度，本层**不再按工具名分叉**。
+        //
+        // 优先用它；没有 feed（旧版页面产物）才走下面的退化拼装。
+        // 长度兜底仍在本层：单条消息不能超过上游限制（实测 1100 过 / 1300 拒）。
+        if (typeof x.feed === 'string' && x.feed) {
+          return x.feed.slice(0, 1000);
+        }
         const name = x.call.name;
         const args = x.call.args || {};
         const argStr = Object.keys(args)
@@ -666,43 +596,31 @@ export function createToolSession({
           return `${head}\n- 原因：${err}${hint}`;
         }
 
-        // ⚠️ 信封必须基于 slimForFeed 的输出（它才带 truncated/totalChars），
-        // 不是原始 v——否则「已截断」这个关键提示会丢，模型以为读完了。
-        // 但「有没有图」要看**原始值**：slimForFeed 已把 dataUrl 剥掉了
-        // （剥是为了不撞单条上限），剥完就检测不到了。
+        // ⚠️ 2026-10-26（信封归 MCP 侧后）：这一段是**退化兜底**——
+        // 只有页面产物是旧版（runTool 不给 feed）时才会走到。
+        // 它刻意保持极简：不按工具名分叉、不做智能降级，只保证
+        // 「一条消息不超过上游单条上限」（实测 1100 过 / 1300 拒，取 950）。
         const raw = x.value;
-        const hadImage = !!(raw && typeof raw === 'object' && typeof raw.dataUrl === 'string');
-        const v = (raw && typeof raw === 'object') ? slimForFeed(name, raw) : raw;
-        if (hadImage) {
-          return `${head}\n- 图片已附在本条消息里（${raw.width || '?'}×${raw.height || '?'}，${raw.format || 'jpeg'}）\n- 其余字段：${JSON.stringify(v).slice(0, 300)}`;
-        }
-
-        // 成功信封：元数据在前，正文原样
-        const meta = [];
-        if (v && typeof v === 'object') {
-          if (v.title) meta.push('标题：' + v.title);
-          // 回喂层截断（slimForFeed 把 site_read 正文切到 1500）：与工具自己的
-          // has_more 不同层，两者都要告诉模型，否则它以为已经读完了。
-          if (v.truncated && v.totalChars != null) {
-            meta.push('本条已截断：原文 ' + v.totalChars + ' 字，这里只给了开头（用 offset 参数续读）');
-          }
-          if (v.total_chars != null) meta.push('总字数：' + v.total_chars);
-          if (v.offset != null) meta.push('本段起点：' + v.offset);
-          if (v.has_more) meta.push('还有后续：是（可用 offset=' + (v.offset + (v.limit || 0)) + ' 继续读）');
-          if (Array.isArray(v.outline)) meta.push('小节数：' + v.outline.length);
-          if (v.count != null) meta.push('条目数：' + v.count);
-          if (Array.isArray(v.candidates) && v.candidates.length) {
-            meta.push('候选：' + v.candidates.map((c) => '「' + c + '」').join(' / '));
-          }
-        }
-        const metaStr = meta.length ? meta.map((m) => '- ' + m).join('\n') + '\n' : '';
-
-        // 正文：优先 text（site_read），其次其它可读字段
         let body = '';
-        if (v && typeof v === 'object' && typeof v.text === 'string' && v.text) body = v.text;
-        else body = JSON.stringify(slimForFeed(name, v));
-
-        return `${head}\n${metaStr}---正文开始---\n${body}\n---正文结束---`;
+        if (raw && typeof raw === 'object') {
+          if (typeof raw.dataUrl === 'string') {
+            // 图片的 base64 有几万字符，必须剥（附图/识图走独立通道）
+            body = '（图片已附在本条消息里）';
+          } else if (typeof raw.text === 'string' && raw.text) {
+            body = raw.text;
+          } else {
+            try { body = JSON.stringify(raw); } catch { body = String(raw); }
+          }
+        } else {
+          body = String(raw == null ? '' : raw);
+        }
+        const room = Math.max(120, 950 - head.length - 20);
+        let cut = '';
+        if (body.length > room) {
+          cut = '\n…（本条已截断：原文 ' + body.length + ' 字。需要更多用 offset/limit 续读）';
+          body = body.slice(0, Math.max(80, room - cut.length));
+        }
+        return (head + '\n' + body + cut).slice(0, 950);
       };
 
       for (const x of results) {

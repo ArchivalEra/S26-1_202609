@@ -190,6 +190,7 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
     };
     try {
       let value;
+      let feedOut = null;
       try {
         // ⚠️ 2026-10-26 修（真机实测：区域截图报 empty_rect、viewport 0×0）：
         // **不要走 mc.executeTool**。
@@ -215,11 +216,18 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
           : null;
         if (rt) {
           const r = await rt(msg.name, msg.args || {});
-          // runTool 返回 {ok, value}（失败时 {ok:false, error}）；桥的 post 契约要的是 value。
+          // runTool 返回 {ok, value, feed}（失败时 {ok:false, error, feed}）。
+          // ⭐ 2026-10-26（信封归 MCP 侧）：feed 是工具侧产好的**可回喂文本**
+          // （含元数据、自己保证单条长度）。这里必须留下它、传给桥——
+          // 否则站点协议栈又要按工具名重新猜一遍形状（那是接口泄漏）。
+          // 注意：本文件是模板字符串，注释里写标识符用直角引号，别用反引号。
           if (r && r.ok === false) {
+            // 失败也要把 feed 带回去（失败信封里有「建议下一步」）
+            feedOut = r.feed || null;
             throw new Error(r.error || '工具执行失败');
           }
           value = r && Object.prototype.hasOwnProperty.call(r, 'value') ? r.value : r;
+          feedOut = (r && typeof r.feed === 'string') ? r.feed : null;
         } else {
           // 退化路径：页面没暴露 __mcpTools（旧版产物）。保留旧行为，但明确记录。
           console.warn('[bridge] 页面未暴露 __mcpTools.runTool，退回 mc.executeTool（可能拿不到当下窗口）');
@@ -245,11 +253,11 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
         }
       } catch (e) { /* 不改回执 */ }
       (window.__callTraces = window.__callTraces || []).push({ t: Date.now() % 1000000, name: msg.name, ...effect });
-      post({ id: msg.id, ok: true, value, effect });
+      post({ id: msg.id, ok: true, value, effect, feed: feedOut });
     } catch (e) {
       const err = String((e && e.message) || e);
       (window.__callTraces = window.__callTraces || []).push({ t: Date.now() % 1000000, name: msg.name, err });
-      post({ id: msg.id, ok: false, error: err });
+      post({ id: msg.id, ok: false, error: err, feed: feedOut });
     }
   };
 

@@ -111,7 +111,7 @@ function matchIn(root, sel) {
 }
 
 /** 造一个像 document 的对象。 */
-function fakeDoc({ title = '测试页', url = 'http://x/y.html', withSearch = true, withPaging = true } = {}) {
+function fakeDoc({ title = '测试页', url = 'http://x/y.html', withSearch = true, withPaging = true, long = false } = {}) {
   const h1 = el('h1', '变压器额定电流', { id: 'h1' });
   const chip = el('span', '📚 电机学', { className: 'meta-chip primary' });
   const chip2 = el('span', '🏷️ 教材解析', { className: 'meta-chip' });
@@ -258,6 +258,11 @@ function fakeDoc({ title = '测试页', url = 'http://x/y.html', withSearch = tr
 
   const article = el('div', '', { className: 'article-content' });
   article.children = [h1, chip, chip2, h2a, p1, h3, p2, h2b, p3, details1, katex, proseTerm, bubble];
+  if (long) {
+    // 长页夹具（2026-10-26）：默认 30 行的分页判据需要一页超过 30 行。
+    // 每段用短句，凑够行数而不撑大文件。
+    for (let i = 0; i < 60; i++) article.children.push(el('p', '第 ' + (i + 1) + ' 段正文。'));
+  }
   for (const c of article.children) c.parentElement = article;
   // 让 p2 与 h3 的祖先关系成立（h3 在 h2a 后）
   const all = [article, prev, next, navLink, brand, tocActive, glossJson, drawerArea, navJsonTag];
@@ -570,11 +575,35 @@ test('site_read：what=symbols 列出本页可查符号（公式内与正文里�
   assert.ok(ids.includes('sym-I'), '正文里的符号（2026-10-19 修：旧选择器漏掉）');
 });
 
-test('site_read：maxChars 截断并标记', () => {
-  const r = createPageView(fakeDoc()).readContent({ what: 'page', maxChars: 20 });
+// 2026-10-26（口径改行数）：这条原来断言「maxChars:20 就切到 20 字符」。
+// 新口径下 maxChars 是**兜底字符顶**，且至少保证取到 1 行——所以 20 字符这种
+// 极小值不会再切出半个字符窗口。判据改成：默认给 30 行、元数据齐全、超限有标记。
+test('site_read：默认 30 行，且返回完整分页变量', () => {
+  const r = createPageView(fakeDoc({ long: true })).readContent({ what: 'page' });
+  assert.equal(r.returned_lines, 30, '默认只给 30 行（站长定案）');
+  assert.ok(r.total_lines > 30, '假文档应长于 30 行');
+  assert.equal(r.limit, 30);
+  assert.equal(r.offset, 0);
+  assert.equal(r.has_more, true);
+  assert.equal(r.next_offset, 30, '续读起点 = 本次给了几行');
+  assert.ok(/\.total_lines\.|total_lines/.test(String(r.hint || '') + 'total_lines') || r.total_lines != null,
+    '必须带 total_lines');
+  assert.match(String(r.hint), /offset=30/, 'hint 要给出可直接照抄的续读语法');
+});
+
+test('site_read：limit 可放到 400 行，offset 续读不重不漏', () => {
+  const v = createPageView(fakeDoc({ long: true }));
+  const head = v.readContent({ what: 'page', limit: 10 });
+  const next = v.readContent({ what: 'page', offset: head.next_offset, limit: 10 });
+  assert.equal(head.returned_lines, 10);
+  assert.equal(next.offset, 10, '续读从第 10 行起');
+  assert.ok(next.hint == null || /offset=20/.test(next.hint), '再续读指向第 20 行');
+});
+
+test('site_read：maxChars 仍是兜底字符顶（防单行超长撑爆）', () => {
+  const r = createPageView(fakeDoc({ long: true })).readContent({ what: 'page', maxChars: 200 });
+  assert.ok(r.chars <= 200 + 400, '字符顶生效（允许一行超出的余量）');
   assert.equal(r.truncated, true);
-  assert.equal(r.text.length, 20);
-  assert.ok(r.totalChars > 20);
 });
 
 // ---------------------------------------------------------------- findInPage
@@ -1306,13 +1335,16 @@ test('runTool：site_panels action=close 真的关（旧 MAP 把对象塞给 ope
   const { viaRun, viaExec, d1 } = await bothWays('site_panels', { action: 'close' }, openIt);
   assert.equal(viaRun.ok, true);
   assert.equal(d1.querySelector('details').open, false, 'close 之后面板必须是收起态');
-  assert.deepEqual(viaRun, viaExec);
+  // 2026-10-26：runTool 现在额外产 `feed`（信封，见 feedText）——它**只属于 runTool**，
+// 不该混进「两路同构」的判据。判据只比工具语义（ok + value）。
+  assert.deepEqual({ ok: viaRun.ok, value: viaRun.value }, { ok: viaExec.ok, value: viaExec.value });
 });
 
 test('runTool：site_panels match 与 action 组合也走同一套解包', async () => {
   const r = await bothWays('site_panels', { action: 'open', match: '折叠里的标题' });
   assert.equal(r.viaRun.ok, true);
-  assert.deepEqual(r.viaRun, r.viaExec);
+  assert.deepEqual({ ok: r.viaRun.ok, value: r.viaRun.value },
+                   { ok: r.viaExec.ok, value: r.viaExec.value });
 });
 
 test('runTool：site_show_symbol term 命中返回释义（旧 MAP 传对象恒 not_on_page）', async () => {
@@ -1320,7 +1352,9 @@ test('runTool：site_show_symbol term 命中返回释义（旧 MAP 传对象恒 
   assert.equal(viaRun.ok, true, '命中符号应 ok');
   assert.equal(viaRun.value.term, 'sym-U');
   assert.ok(viaRun.value.bubble, '要读到气泡内容');
-  assert.deepEqual(viaRun, viaExec);
+  // 2026-10-26：runTool 现在额外产 `feed`（信封，见 feedText）——它**只属于 runTool**，
+// 不该混进「两路同构」的判据。判据只比工具语义（ok + value）。
+  assert.deepEqual({ ok: viaRun.ok, value: viaRun.value }, { ok: viaExec.ok, value: viaExec.value });
 });
 
 test('runTool：site_show_symbol 查不到回 symbol_not_on_page 且给可用清单', async () => {
@@ -1328,14 +1362,18 @@ test('runTool：site_show_symbol 查不到回 symbol_not_on_page 且给可用清
   assert.equal(viaRun.ok, false);
   assert.equal(viaRun.value.reason, 'symbol_not_on_page');
   assert.ok(Array.isArray(viaRun.value.available) && viaRun.value.available.length > 0);
-  assert.deepEqual(viaRun, viaExec);
+  // 2026-10-26：runTool 现在额外产 `feed`（信封，见 feedText）——它**只属于 runTool**，
+// 不该混进「两路同构」的判据。判据只比工具语义（ok + value）。
+  assert.deepEqual({ ok: viaRun.ok, value: viaRun.value }, { ok: viaExec.ok, value: viaExec.value });
 });
 
 test('runTool：site_search scope=page 与注册路径一致', async () => {
   const { viaRun, viaExec } = await bothWays('site_search', { query: '铁芯', scope: 'page' });
   assert.equal(viaRun.ok, true);
   assert.ok(viaRun.value.total >= 1, '夹具正文里有「铁芯损耗」');
-  assert.deepEqual(viaRun, viaExec);
+  // 2026-10-26：runTool 现在额外产 `feed`（信封，见 feedText）——它**只属于 runTool**，
+// 不该混进「两路同构」的判据。判据只比工具语义（ok + value）。
+  assert.deepEqual({ ok: viaRun.ok, value: viaRun.value }, { ok: viaExec.ok, value: viaExec.value });
 });
 
 test('runTool：site_navigate to=prev 真点分页卡且两路同构', async () => {
@@ -1343,7 +1381,9 @@ test('runTool：site_navigate to=prev 真点分页卡且两路同构', async () 
   assert.equal(viaRun.ok, true);
   assert.equal(viaRun.value.title, '第一章 概述');
   assert.ok(d1.querySelector('a.paging-prev')._clicked, '分页卡必须真的被点');
-  assert.deepEqual(viaRun, viaExec);
+  // 2026-10-26：runTool 现在额外产 `feed`（信封，见 feedText）——它**只属于 runTool**，
+// 不该混进「两路同构」的判据。判据只比工具语义（ok + value）。
+  assert.deepEqual({ ok: viaRun.ok, value: viaRun.value }, { ok: viaExec.ok, value: viaExec.value });
 });
 
 test('runTool：未知工具名报错不抛异常（恒 resolve 契约）', async () => {

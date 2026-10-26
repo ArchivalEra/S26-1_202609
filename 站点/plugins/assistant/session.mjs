@@ -198,6 +198,21 @@ export function createManager(opts = {}) {
       catch { rec.msgListTotal = null; }
     }
 
+    // ⚠️ 2026-10-26 修（实测抓出）：**重试不许重发完整提示词**。
+    //
+    // 病根：这个 for(;;) 每次 continue 都 `ch.ask(text, ...)` 重发同一份 text。
+    // 上游「收到即存历史」⇒ 重试一次 = 同一份提示词在上游存两份。
+    // 实测（同一场，工具循环）：R3 因 frozen 重试一次，第二次重发的是
+    // **含完整回喂的长 prompt**（实测那次 promptTokens 到 138K）——
+    // 白烧一次大调用，还让上游历史多一份重复。
+    //
+    // 修法：**只有第 1 次发完整 text**；重试改用 retryText（调用方给的短句），
+    // 把上下文头/工具清单/回喂统统丢掉。短句仍带任务意图，模型能接着答；
+    // 丢掉的是「材料」，换来的是不重复写入上游历史。
+    const retryText = (askOpts && typeof askOpts.retryText === 'string'
+      && askOpts.retryText.trim())
+      ? askOpts.retryText.trim()
+      : '';
     let attempt = 0;
     for (;;) {
       if (Date.now() - t0 > deadlineMs) {
@@ -212,7 +227,7 @@ export function createManager(opts = {}) {
       try {
         // 墙钟兜底必须罩住挂死的 ask：用 Promise.race，永不返回的通道也能收束。
         const r = await Promise.race([
-          ch.ask(text, askOpts),
+          ch.ask(attempt === 0 || !retryText ? text : retryText, askOpts),
           new Promise((_, rej) => {
             const left = deadlineMs - (Date.now() - t0);
             if (left <= 0) { rej(new Error('deadline')); return; }
@@ -264,6 +279,9 @@ export function createManager(opts = {}) {
           // sandboxCalls 必须透传（审计 C2）：proto 产出、toolcycle 消费，
           // 中间这一层断过 ⇒ 拦截机制从上线起从未生效。
           sandboxCalls: r.sandboxCalls || [], terminal: r.terminal,
+          // ⭐ 2026-10-26：token 统计必须透传（proto 产出）。上一版这条链断在
+          // 这里 ⇒ 上层拿不到 promptTokens，只能靠猜「是不是超限了」。
+          tokens: r.tokens || null,
           status: st === 'blocked' ? 'blocked' : 'ok',
           // 耗时诊断：这份是唯一实现，缺了面板永远显示「0.0s」。
           ms: Date.now() - t0,
