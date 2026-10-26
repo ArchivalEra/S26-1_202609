@@ -45,6 +45,22 @@ GLOSSARY_CMD = (
     "awk '/^:::glossary-dict/{f=1;next} /^:::/{f=0} f&&/^sym-/{n++} END{print n}' "
     "站点/符号包/通用.md 课程/*/教材解析/0.0-符号入门.md"
 )
+# 符号包个数：SYMBOL_PACKS 注册表本身的条数（单一产地——加包即自动 +1）。
+# 2026-10-26 入账动机：STATE/handoff 曾手抄「三个符号包」，实际五个——包数是
+# 会变的口径，手抄必腐烂；入了台账就能用 [[symbol_packs]] 引用。
+SYMBOL_PACKS_CMD = "grep -cE \"^  '[^']+': '[^']+.md',$\" 站点/符号环境.mjs"
+# lab 回归测试项数：与 check_lab_integrity 的回归同一套三件（chaoxing/判据/bridge）。
+# 2026-10-26 入账动机：handoff 基线多次手抄「lab 15/15」「75/75」「69/69」并存——
+# 每次口径变就多一个过期数字。入账后正文写键名。
+LAB_TESTS_CMD = (
+    "cd .zcode/学习通API && node --test chaoxing.test.mjs 判据.test.mjs bridge.test.mjs 2>&1 | awk "
+    "'NF==3 && $3 ~ /^[0-9]+$/ && ($2==\"tests\"||$2==\"fail\"||$2==\"cancelled\") {v[$2]=$3} "
+    "END {t=v[\"tests\"]; f=v[\"fail\"]+0; c=v[\"cancelled\"]+0; "
+    "if (t==\"\") {print \"lab_tests：没读到 tests 汇总行\" > \"/dev/stderr\"; exit 1} "
+    "print t; "
+    "if (f+c>0) {print \"lab_tests：fail=\" f \" cancelled=\" c \" ⇒ 红测试，非零退出\" "
+    "> \"/dev/stderr\"; exit 1}}'"
+)
 # 站点页数：待渲染清单的条数（与钩子的 check_build_targets 同一份清单）。
 # 2026-10-15：清单从 站点/build.mjs 搬到 站点/页面清单.mjs（build 与 MCP 读层共用同一份），
 # 复跑命令随之改指新家——坏 cmd 印在活状态文档里就是每行都绿着的假断言。
@@ -103,6 +119,10 @@ TABLE = [
      "课程/电路原理/作业/figures/", "习题册配图张数"),
     ("glossary_entries", GLOSSARY_CMD, "站点/符号包/通用.md + 课程/*/教材解析/0.0-符号入门.md",
      "全部符号包的词条合计（通用 + 电机学 / 电路原理 / 工程数学 / 电子技术）"),
+    ("symbol_packs", SYMBOL_PACKS_CMD, "站点/符号环境.mjs",
+     "符号包个数（SYMBOL_PACKS 注册表条数；正文引用它，别手抄「三包/五包」——会随加包腐烂）"),
+    ("lab_tests", LAB_TESTS_CMD, ".zcode/学习通API/",
+     "lab 回归测试项数（canonical 三件；与 lab 闸同一套文件，改名单两边一起红）"),
     ("sitepages", SITEPAGES_CMD, "站点/build.mjs", "站点页数（TARGET_FILES 条数）"),
     ("md_files", "git ls-files '*.md' | wc -l", "repo", "受管 Markdown 篇数"),
     ("hooktests", HOOKTESTS_CMD, ".githooks/test-update-readme.py", "钩子集成测试项数",

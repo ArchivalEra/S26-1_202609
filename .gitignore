@@ -515,6 +515,7 @@
 !/zreflect/check_instruments.py
 !/zreflect/check_lab_integrity.py
 !/zreflect/check_identity.py
+!/zreflect/check_handoff.py
 !/zreflect/check_invariants.py
 !/zreflect/check_locks.py
 !/zreflect/check_pins.py
