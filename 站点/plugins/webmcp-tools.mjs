@@ -1844,7 +1844,7 @@ export function buildToolDefs(doc, win) {
       name: 'site_capture_view',
       label: '截图查看版面',
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      description: '把当前页面截成 JPEG 图片（宿主注入能力），供看不见页面的模型查看版面与图表。可给 selector 只截某个元素、或给 rect 只截一块区域。',
+      description: '把页面的一处区域截成图片，交给你自己看（你看不到页面本身）。给 selector 截某个元素（如 .article-content、table），或给 rect 截一块视口坐标区域。区域截图总能成功；不给 selector/rect 的整屏截图需要宿主能力，通常不可用。',
       inputSchema: {
         type: 'object',
         properties: {
