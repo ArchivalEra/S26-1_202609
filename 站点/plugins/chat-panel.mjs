@@ -1,202 +1,432 @@
 /**
- * 学习助手面板（站点侧）。
+ * 学习助手面板（站点侧重写版：书签条 + 对话区）。
  *
- * ## 结构（三层，只有最后一层碰 DOM）
+ * ## 结构（三层）
  *
- *   ① 纯函数（本文件的 parseIncremental / parseInline / renderBlockToOps 来自 chat-render.mjs）
+ *   ① 纯函数：来自 chat-render.mjs（parseIncremental / parseInline / renderBlockToOps）
  *   ② 挂载层：op[] → DOM（applyOps，只用 createElement + textContent）
- *   ③ 传输层：SSE 连桥（/chat）
+ *   ③ 客户端运行层（CHAT_JS IIFE）：
+ *       · 纯静态冷态（未点击时不发任何请求，不挂载繁重 DOM，不拉取 KaTeX/polyfill）
+ *       · 点击 #assistant-toggle 唤醒按需初始化（创建 #chat-dock 与 .chat-panel，拉取会话列表）
+ *       · 三档响应式：桌面/平板热区悬停滑出书签条，手机端常驻 20×56px 侧边把手 + 抽屉
+ *       · 桥端中性契约：/chat/sessions, /chat/sessions/:id/messages, /chat/sessions/new, /chat/sessions/:id/delete
  *
- * ## 安全不变量（测试守着）
+ * ## 安全不变量
  *
- *   I1  **innerHTML 只用于公式节点**，且只接收 katex.renderToString 的产出。
- *   I2  链接协议白名单（在 chat-render.mjs 里）。
- *   I3  图片只允许同源相对路径（在 chat-render.mjs 里）。
- *   I4  任何原始 HTML 标签一律按文本处理（chat-render.mjs 不解析它们）。
- *
- * ## 与站点的关系
- *
- *   · 面板 DOM 放在 `#search-panel` 旁边（`.article-content` 之外）——SPA 换页不会销毁它
- *   · 与 TOC 互斥：`body.chat-open` 类让 `.m3-toc` 隐藏（桌面档）
- *   · 触发按钮是 `#assistant-toggle`（手形图标，build.mjs 已埋好）
- *   · SPA 导航时 `window.__chatSync()` 被调用，只更新「当前页」上下文，不销毁历史
- *
- * ## 手机档 = 右侧抽屉，与左侧边栏同一套手法（2026-10-19 用户定案）
- *
- * 左侧边栏在 `max-width:860px` 是 `position:fixed; transform:translateX(-100%)`，
- * 加 `.open` 类滑入，配 `.drawer-backdrop` 遮罩。右侧助手照抄这套：
- *
- *   · 同样 `fixed` + `translateX(100%)` → `.open` 时归零（**不再用 dvh 高度 + 底部窗口**）
- *   · 同样 `visibility` 切换（收起时不可聚焦，也不参与命中测试）
- *   · 同样的遮罩层与手势：点遮罩关闭、Esc 关闭
- *   · 宽度 `min(88vw, 380px)`——手机上远宽于桌面档的 240px，且**不覆盖整页**
- *
- * 为什么原来的底部窗口会「划一下像磕大」：`height:70dvh` + `bottom:var(--chat-kb-inset)`
- * 在移动浏览器里随 URL 栏收放与键盘弹起**每帧改布局**，`position:fixed` 的元素跟着重排，
- * 主线程被拖住。抽屉用 `100dvh` 一次算好，滚动时不动。
+ *   I1  innerHTML 只用于公式节点，且只接收 katex.renderToString 产出。
+ *   I2  链接协议白名单（在 chat-render.mjs）。
+ *   I3  图片只允许同源相对路径（在 chat-render.mjs）。
+ *   I4  任何原始 HTML 标签一律按文本处理。
+ *   I5  零上游专有语义词汇，全链路中性标识。
+ *   I6  DOM 严格挂载在 document.body 直下，SPA 跨页不被销毁。
  */
 
 import {
   parseIncremental, parseInline, renderBlockToOps, safeHref, safeSrc,
   isMathOpen, findClosingDollar, splitRow, MAX_MESSAGE_CHARS,
 } from './chat-render.mjs';
+import { buildToolDefs } from './webmcp-tools.mjs';
+
+const TOOL_LABELS_SRC = JSON.stringify(
+  Object.fromEntries(buildToolDefs(null, null).map((d) => [d.name, d.label || d.name]))
+);
 
 // ════════════════════════════════════════════════════════════════
 // ① 样式（构建期写盘，不靠 JS 注入）
 // ════════════════════════════════════════════════════════════════
 
 export const CHAT_CSS = `
-/* ── 学习助手面板（2026-10-19）────────────────────────────────
+/* ── 学习助手面板与会话书签条（重构版）────────────────────────
    布局三档：
-     · > 1200px  右栏，接管 TOC 的 240px
-     · 861-1200  浮层 360px（该区间 TOC 本就隐藏）
-     · ≤ 860px   右侧抽屉，与左侧边栏同一套手法（fixed + translateX）
+     · > 1200px  右侧热区悬停滑出书签条，面板浮层覆盖（可拖拽 240-720px）
+     · 861-1200  右侧热区悬停滑出书签条，面板浮层（最大宽度受限）
+     · ≤ 860px   右缘常驻 20×56px 把手，点击滑出书签抽屉，面板全屏抽屉
    与 TOC 互斥由 body.chat-open 控制。 */
+
+:root {
+  --chat-width: 360px;
+}
+
+body.chat-open .m3-toc {
+  display: none;
+}
+
+body.chat-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+body.chat-resizing .chat-panel {
+  transition: none !important;
+  user-select: none;
+}
+
+.chat-resizer {
+  display: none;
+  position: absolute;
+  left: -3px;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  z-index: 95;
+}
+.chat-resizer:hover, .chat-resizer.dragging {
+  background-color: color-mix(in srgb, var(--md-sys-color-primary) 30%, transparent);
+}
 
 .chat-panel {
   display: none;
   flex-direction: column;
   min-height: 0;
   background-color: var(--md-sys-color-surface-container-lowest);
-  color: var(--md-sys-color-on-surface);
+  border-left: 1px solid var(--md-sys-color-outline-variant);
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.12);
+  z-index: 90;
+  box-sizing: border-box;
 }
 
-/* 面板宽度：桌面档可拖拽（2026-10-20，与左侧边栏同一套手法）。
-   变量挂在 :root 上，由本文件的 JS 读写 + localStorage 记忆。
-   默认值直接继承 TOC 的宽度，保持「打开助手就接管目录栏位置」的原始观感。 */
-:root { --chat-width: var(--toc-width); }
-
-/* 拖拽手柄：贴面板左缘（宽度向右增长，所以手柄在西侧）。
-   命中区 6px 比视觉竖线宽——细线好抓。 */
-.chat-resizer {
-  display: none;
-  position: absolute;
-  top: 0;
-  left: -3px;
-  width: 6px;
-  height: 100%;
-  cursor: col-resize;
-  z-index: 50;
-  transition: background-color 0.15s;
-}
-.chat-resizer:hover,
-.chat-resizer.dragging {
-  background-color: var(--md-sys-color-primary);
+body.chat-open .chat-panel {
+  display: flex;
 }
 
-/* 拖拽期间：全局竖光标、禁选中，并掐掉面板自身的过渡（否则跟手迟滞） */
-body.chat-resizing,
-body.chat-resizing * {
-  cursor: col-resize !important;
-  user-select: none !important;
-}
-body.chat-resizing .chat-panel {
-  transition: none !important;
-}
-
-/* 桌面：右栏，位置与宽度对齐 TOC */
+/* ── 桌面档 (≥ 1201px) ── */
 @media (min-width: 1201px) {
-  .chat-panel {
-    /* 拖拽改的是 --chat-width；未拖过时它就是 TOC 的默认宽度 */
-    width: var(--chat-width);
-    flex-shrink: 0;
-    height: calc(100vh - var(--header-height));
-    /* sticky 本身就给 .chat-resizer 提供包含块（非 static 即可），
-       不需要另写 position:relative——那条会覆盖手机档的 fixed（见上）。 */
-    position: sticky;
-    top: var(--header-height);
-    border-left: 1px solid var(--md-sys-color-outline-variant);
-  }
-  body.chat-open .chat-panel { display: flex; }
-  body.chat-open .m3-toc { display: none; }
-  /* 桌面档才给手柄 */
-  body.chat-open .chat-resizer { display: block; }
-}
-
-/* 中等：浮层 */
-@media (min-width: 861px) and (max-width: 1200px) {
-  .chat-panel {
+  #chat-dock {
     position: fixed;
-    right: 16px;
-    top: calc(var(--header-height) + 16px);
-    bottom: 16px;
-    width: 360px;
-    border-radius: 16px;
-    border: 1px solid var(--md-sys-color-outline-variant);
-    box-shadow: var(--shadow-3);
-    z-index: 150;
-  }
-  body.chat-open .chat-panel { display: flex; }
-}
-
-/* 手机：右侧抽屉（与左侧边栏同一套手法，只是方向相反） */
-@media (max-width: 860px) {
-  .chat-panel {
-    /* 常驻 display:flex —— 与左侧抽屉一致，靠 visibility+transform 显隐。
-       若用 display:none 切显隐，滑入过渡不会播（元素从无到有）。 */
-    display: flex;
-    position: fixed;
-    top: 0;
     right: 0;
+    top: 0;
     bottom: 0;
-    left: auto;
-    width: 380px;
-    max-width: 88vw;
-    height: 100vh;
-    height: 100dvh;
-    border-radius: 0;
-    border: none;
+    z-index: 70;
+    pointer-events: none;
+  }
+  #chat-dock .chat-edge {
+    position: fixed;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: color-mix(in srgb, var(--md-sys-color-primary) 35%, transparent);
+    cursor: pointer;
+    pointer-events: auto;
+    transition: background 150ms;
+  }
+  #chat-dock .chat-edge::before {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 13px;
+  }
+  #chat-dock .chat-edge:hover,
+  #chat-dock .chat-edge:focus-visible {
+    background: var(--md-sys-color-primary);
+  }
+  #chat-dock .chat-mobile-handle {
+    display: none;
+  }
+  #chat-dock .chat-bookmarks {
+    position: fixed;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 240px;
+    background: var(--md-sys-color-surface-container-low);
     border-left: 1px solid var(--md-sys-color-outline-variant);
-    box-shadow: var(--shadow-3);
-    z-index: 100;
-    /* 收起态：整块滑到视口外，且不可聚焦/不可命中 */
+    box-shadow: -4px 0 16px rgba(0, 0, 0, 0.08);
+    display: flex;
+    flex-direction: column;
+    transform: translateX(100%);
+    transition: transform 220ms cubic-bezier(.2, .8, .2, 1);
+    pointer-events: auto;
+    /* ⚠️ 2026-10-26 修（真机实测）：书签条必须**浮在对话面板之上**。
+       面板 z-index 90，原先书签条只有 72 ⇒ 面板一打开就把书签条整个盖住
+       （elementFromPoint 在书签条区域返回的是 chat-log）。取 92：高于面板 90，
+       低于 #search-panel 的 95，保证任何面板状态下都能切会话。 */
+    z-index: 92;
+  }
+  #chat-dock.open .chat-bookmarks,
+  #chat-dock:focus-within .chat-bookmarks {
+    transform: translateX(0);
+  }
+  .chat-panel {
+    position: fixed;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: var(--chat-width);
+    max-width: 720px;
+    min-width: 240px;
+    transform: translateX(100%);
+    transition: transform 220ms cubic-bezier(.2, .8, .2, 1);
+  }
+  body.chat-open .chat-panel {
+    transform: translateX(0);
+  }
+  .chat-resizer {
+    display: block;
+  }
+}
+
+/* ── 平板档 (861px – 1200px) ── */
+@media (min-width: 861px) and (max-width: 1200px) {
+  #chat-dock {
+    position: fixed;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 70;
+    pointer-events: none;
+  }
+  #chat-dock .chat-edge {
+    position: fixed;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: color-mix(in srgb, var(--md-sys-color-primary) 35%, transparent);
+    cursor: pointer;
+    pointer-events: auto;
+    transition: background 150ms;
+  }
+  #chat-dock .chat-edge::before {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 13px;
+  }
+  #chat-dock .chat-edge:hover,
+  #chat-dock .chat-edge:focus-visible {
+    background: var(--md-sys-color-primary);
+  }
+  #chat-dock .chat-mobile-handle {
+    display: none;
+  }
+  #chat-dock .chat-bookmarks {
+    position: fixed;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 220px;
+    background: var(--md-sys-color-surface-container-low);
+    border-left: 1px solid var(--md-sys-color-outline-variant);
+    box-shadow: -4px 0 16px rgba(0, 0, 0, 0.08);
+    display: flex;
+    flex-direction: column;
+    transform: translateX(100%);
+    transition: transform 220ms cubic-bezier(.2, .8, .2, 1);
+    pointer-events: auto;
+    /* ⚠️ 2026-10-26 修（真机实测）：书签条必须**浮在对话面板之上**。
+       面板 z-index 90，原先书签条只有 72 ⇒ 面板一打开就把书签条整个盖住
+       （elementFromPoint 在书签条区域返回的是 chat-log）。取 92：高于面板 90，
+       低于 #search-panel 的 95，保证任何面板状态下都能切会话。 */
+    z-index: 92;
+  }
+  #chat-dock.open .chat-bookmarks,
+  #chat-dock:focus-within .chat-bookmarks {
+    transform: translateX(0);
+  }
+  .chat-panel {
+    position: fixed;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: min(380px, 85vw);
+    transform: translateX(100%);
+    transition: transform 220ms cubic-bezier(.2, .8, .2, 1);
+  }
+  body.chat-open .chat-panel {
+    transform: translateX(0);
+  }
+  .chat-resizer {
+    display: none;
+  }
+}
+
+/* ── 手机档 (≤ 860px 独立设计) ── */
+@media (max-width: 860px) {
+  #chat-dock .chat-edge {
+    display: none;
+  }
+  #chat-dock .chat-mobile-handle {
+    position: fixed;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 56px;
+    background: color-mix(in srgb, var(--md-sys-color-surface-container-high) 85%, transparent);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-right: none;
+    border-radius: 12px 0 0 12px;
+    box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1);
+    cursor: pointer;
+    z-index: 75;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+    color: var(--md-sys-color-on-surface-variant);
+    padding: 0;
+  }
+  #chat-dock .chat-mobile-handle svg {
+    width: 14px;
+    height: 14px;
+  }
+  #chat-dock .chat-bookmarks {
+    position: fixed;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: min(72vw, 280px);
+    background: var(--md-sys-color-surface-container-low);
+    border-left: 1px solid var(--md-sys-color-outline-variant);
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.18);
+    display: flex;
+    flex-direction: column;
+    transform: translateX(100%);
+    transition: transform 220ms cubic-bezier(.2, .8, .2, 1);
+    pointer-events: auto;
+    z-index: 94;   /* 手机档面板是 92，书签条要更高才能浮在它上面 */
+  }
+  #chat-dock.open .chat-bookmarks {
+    transform: translateX(0);
+  }
+  .chat-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.32);
+    z-index: 76;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 220ms;
+  }
+  #chat-dock.open ~ .chat-backdrop,
+  body.chat-open .chat-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .chat-panel {
+    position: fixed;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 100vw;
+    max-width: 100vw;
+    border-left: none;
     transform: translateX(100%);
     visibility: hidden;
     pointer-events: none;
-    transition: transform .3s cubic-bezier(.2, 0, 0, 1), visibility .3s;
-    /* 抽屉自身独立成层：页面滚动不带着它重排 */
-    contain: layout paint style;
+    transition: transform 220ms cubic-bezier(.2, .8, .2, 1);
+    z-index: 92;
   }
   body.chat-open .chat-panel {
     transform: translateX(0);
     visibility: visible;
     pointer-events: auto;
   }
-}
-
-/* 助手抽屉的遮罩：复用 .drawer-backdrop 的观感，独立一个元素避免与左侧互抢 */
-.chat-backdrop {
-  display: none;
-}
-@media (max-width: 860px) {
-  .chat-backdrop {
-    display: block;
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.4);
-    z-index: 99;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity .3s;
+  .chat-resizer {
+    display: none;
   }
-  body.chat-open .chat-backdrop {
-    opacity: 1;
-    pointer-events: auto;
+  .bm-item {
+    min-height: 44px;
+  }
+  .bm-del {
+    min-width: 32px;
+    min-height: 32px;
   }
 }
 
-/* ── 头部 ── */
+/* ── 书签条内部元素 ── */
+.bm-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.bm-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--md-sys-color-on-surface);
+  cursor: pointer;
+  border: 1px solid transparent;
+  user-select: none;
+  transition: background 120ms;
+  background: transparent;
+}
+.bm-item:hover {
+  background: var(--md-sys-color-surface-container-high);
+}
+.bm-item.active {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent);
+  color: var(--md-sys-color-primary);
+  font-weight: 500;
+  border-color: color-mix(in srgb, var(--md-sys-color-primary) 25%, transparent);
+}
+.bm-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bm-del {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  color: var(--md-sys-color-on-surface-variant);
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-left: 4px;
+  padding: 0;
+}
+.bm-del:hover {
+  background: var(--md-sys-color-surface-container-highest);
+  color: var(--md-sys-color-error, #b3261e);
+}
+.bm-new {
+  font-weight: 500;
+  color: var(--md-sys-color-primary);
+  border: 1px dashed color-mix(in srgb, var(--md-sys-color-primary) 40%, transparent);
+  margin-bottom: 6px;
+}
+.bm-new:hover {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
+}
+.bm-empty {
+  padding: 16px 8px;
+  font-size: 12px;
+  color: var(--md-sys-color-on-surface-variant);
+  text-align: center;
+}
+
+/* ── 对话面板内部 ── */
 .chat-head {
   display: flex;
   align-items: center;
-  gap: .5rem;
-  padding: .7rem .9rem;
+  justify-content: space-between;
+  padding: .65rem .9rem;
   border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  background-color: var(--md-sys-color-surface-container-low);
   flex-shrink: 0;
 }
 .chat-title {
-  font-size: 0.85rem;
-  font-weight: 700;
+  font-size: 0.88rem;
+  font-weight: 600;
   color: var(--md-sys-color-on-surface);
   flex: 1;
 }
@@ -204,35 +434,50 @@ body.chat-resizing .chat-panel {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px; height: 28px;
+  width: 28px;
+  height: 28px;
   border: none;
   border-radius: 8px;
   background: transparent;
   color: var(--md-sys-color-on-surface-variant);
   cursor: pointer;
 }
-.chat-head-btn:hover { background-color: var(--md-sys-color-surface-container-high); }
+.chat-head-btn:hover {
+  background-color: var(--md-sys-color-surface-container-high);
+}
 
-/* ── 消息区 ── */
 .chat-log {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  overflow-anchor: none;   /* Safari 不支持，靠 JS 的 stuck 状态位 */
-  overscroll-behavior: contain;  /* 滚到边界不回传给页面——手机上尤为明显 */
+  overflow-anchor: none;
+  overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   padding: .8rem .9rem 1rem;
   display: flex;
   flex-direction: column;
   gap: .9rem;
-  /* 只把这一个元素提升成独立合成层：流式追加不触发整页重绘 */
   contain: layout paint style;
 }
 
-.chat-msg { display: flex; flex-direction: column; gap: .35rem; }
+.chat-skeleton {
+  padding: 16px 8px;
+  font-size: 0.78rem;
+  color: var(--md-sys-color-on-surface-variant);
+  font-style: italic;
+  animation: chat-pulse 1.4s ease-in-out infinite;
+  text-align: center;
+}
 
-/* 用户消息：气泡，右对齐 */
-.chat-msg--user { align-items: flex-end; }
+.chat-msg {
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+}
+
+.chat-msg--user {
+  align-items: flex-end;
+}
 .chat-msg--user .chat-body {
   max-width: 88%;
   padding: .5rem .75rem;
@@ -245,7 +490,6 @@ body.chat-resizing .chat-panel {
   word-break: break-word;
 }
 
-/* 助手消息：通栏无气泡（Shirone 的正文气质） */
 .chat-msg--bot .chat-body {
   font-size: 0.82rem;
   line-height: 1.65;
@@ -253,7 +497,6 @@ body.chat-resizing .chat-panel {
   word-break: break-word;
 }
 
-/* 助手消息里的块级元素 */
 .chat-body p { margin: 0 0 .55rem; }
 .chat-body p:last-child { margin-bottom: 0; }
 .chat-body h1, .chat-body h2, .chat-body h3, .chat-body h4 {
@@ -268,7 +511,7 @@ body.chat-resizing .chat-panel {
 .chat-body strong { font-weight: 700; }
 .chat-body em { font-style: italic; }
 .chat-body code {
-  font-family: var(--font-mono);
+  font-family: var(--font-mono, monospace);
   font-size: 0.78em;
   padding: .08em .3em;
   border-radius: 4px;
@@ -287,23 +530,12 @@ body.chat-resizing .chat-panel {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-/* ── 表格（2026-10-19 用户报「表格不美观」）─────────────────────
-   原来为了宽内容不撑破 240px，把 table 直接设成 display:block + 四边全框，
-   结果是「一堆格子」而不是一张表：没有表头分区、没有行分隔层次、
-   内边距挤成 0.25rem、首尾还多出边框。
 
-   现在与站点正文表格同一套观感（shirone-reader.css 的 table 段），
-   并补上一个滚动包裹层：
-     · .chat-table-wrap 负责**横滚 + 外框 + 圆角**（宽度随容器）
-     · table 用 width:max-content 按内容排，不被拉伸
-   早先把 overflow 挂在 table 上时，边框盒撑满整行而列只有内容宽，
-   右侧会留一条空白、圆角画在空盒上（截图实测）。 */
 .chat-table-wrap {
   overflow-x: auto;
   max-width: 100%;
   margin: .2rem 0 .7rem;
   border-radius: 10px;
-  /* 只留外圈一道淡边，避免"每个格子都是框"的网格感 */
   box-shadow: 0 0 0 1px var(--md-sys-color-outline-variant);
 }
 .chat-body table {
@@ -324,11 +556,9 @@ body.chat-resizing .chat-panel {
   background-color: var(--md-sys-color-surface-container);
   font-weight: 600;
   color: var(--md-sys-color-on-surface);
-  /* 表头下沿加重一档：一眼分得出哪行是表头 */
   border-bottom-color: var(--md-sys-color-outline);
 }
 .chat-body tr:last-child td { border-bottom: none; }
-/* 斑马纹：数字型表格最容易看串行 */
 .chat-body tbody tr:nth-child(even) {
   background-color: color-mix(in srgb, var(--md-sys-color-surface-container) 45%, transparent);
 }
@@ -339,12 +569,11 @@ body.chat-resizing .chat-panel {
   margin: .35rem 0;
 }
 .chat-body .chat-math-err {
-  font-family: var(--font-mono);
+  font-family: var(--font-mono, monospace);
   font-size: 0.75rem;
   color: var(--md-sys-color-error, #b3261e);
 }
 
-/* 流式光标 */
 .chat-cursor::after {
   content: '▍';
   margin-left: 1px;
@@ -352,10 +581,6 @@ body.chat-resizing .chat-panel {
 }
 @keyframes chat-blink { 50% { opacity: 0; } }
 
-/* ── 过程提示（思考 ↔ 输出的分界，2026-10-19）─────────────────
-   模型检索期间显示的一行灰字：小号、无气泡、不在正文流里。
-   与助手正文（黑字通栏、0.82rem）刻意拉开差别，一眼能看出
-   「这不是答案，它在干活」。答案第一个字到达时由 JS 移除。 */
 .chat-status {
   color: var(--md-sys-color-on-surface-variant);
   font-size: 0.74rem;
@@ -367,7 +592,8 @@ body.chat-resizing .chat-panel {
 .chat-status::before {
   content: '';
   display: inline-block;
-  width: 6px; height: 6px;
+  width: 6px;
+  height: 6px;
   margin-right: .4rem;
   border-radius: 50%;
   background-color: var(--md-sys-color-primary);
@@ -379,8 +605,6 @@ body.chat-resizing .chat-panel {
   50% { opacity: 1; }
 }
 
-/* 耗时诊断行（2026-10-20 查「每次都 50 秒」）：安静地待在答案末尾。
-   用户据此能直接看出是「一轮就慢」还是「四轮叠加」。 */
 .chat-timings {
   margin-top: .6rem;
   padding-top: .4rem;
@@ -392,7 +616,6 @@ body.chat-resizing .chat-panel {
   opacity: .75;
 }
 
-/* 空状态 */
 .chat-empty {
   color: var(--md-sys-color-on-surface-variant);
   font-size: 0.78rem;
@@ -402,7 +625,6 @@ body.chat-resizing .chat-panel {
 .chat-empty ul { margin: .4rem 0 0; padding-left: 1.1rem; }
 .chat-empty li { margin-bottom: .3rem; }
 
-/* 「有新消息」提示 */
 .chat-jump {
   position: absolute;
   left: 50%;
@@ -415,15 +637,10 @@ body.chat-resizing .chat-panel {
   color: var(--md-sys-color-on-primary);
   font-size: 0.72rem;
   cursor: pointer;
-  box-shadow: var(--shadow-2);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
   z-index: 2;
 }
-/* 注意：这里不能写无条件的 position: relative。
-   它是给 .chat-jump 做包含块的，但会覆盖手机档的 position: fixed——
-   CSS 里同特异度后者胜，而这条写在媒体查询之后。三个档位各自都已
-   建立了包含块（sticky / fixed），所以这条不需要存在。 */
 
-/* ── 输入区 ── */
 .chat-input {
   flex-shrink: 0;
   display: flex;
@@ -435,7 +652,7 @@ body.chat-resizing .chat-panel {
 .chat-textarea {
   flex: 1;
   min-height: 34px;
-  max-height: 132px;   /* 约 6 行 */
+  max-height: 132px;
   resize: none;
   padding: .45rem .6rem;
   border: 1px solid var(--md-sys-color-outline-variant);
@@ -443,103 +660,81 @@ body.chat-resizing .chat-panel {
   background-color: var(--md-sys-color-surface-container-lowest);
   color: var(--md-sys-color-on-surface);
   font-family: inherit;
-  font-size: 16px;     /* iOS 防自动放大（<16px 会缩放） */
+  font-size: 16px;
   line-height: 1.45;
   outline: none;
 }
 .chat-textarea:focus { border-color: var(--md-sys-color-primary); }
-.chat-send {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px; height: 34px;
-  flex-shrink: 0;
-  border: none;
-  border-radius: 50%;
-  background-color: var(--md-sys-color-primary);
-  color: var(--md-sys-color-on-primary);
-  cursor: pointer;
-}
-.chat-send:disabled { opacity: .45; cursor: default; }
-.chat-send.stop { background-color: var(--md-sys-color-error, #b3261e); }
-/* 停止态：正方形（▢）比圆更符合「中止」的语义，也让「正在回答」一眼可辨 */
-.chat-send.stop {
-  border-radius: 10px;
-}
 
-/* ── 附件（2026-10-19 用户要求）─────────────────────────────
-   回形针按钮 + 待发图片缩略图条。
-   缩略图条在输入区**上方**：发送前能看到自己附了什么，发完自动收起。 */
 .chat-attach-btn {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px; height: 34px;
-  flex-shrink: 0;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 10px;
+  background-color: transparent;
   color: var(--md-sys-color-on-surface-variant);
   cursor: pointer;
 }
 .chat-attach-btn:hover { background-color: var(--md-sys-color-surface-container-high); }
-.chat-attach-btn:disabled { opacity: .4; cursor: not-allowed; }
 
-/* 2026-10-26 站长定案：联网按钮删除——上游 WS 协议里没有联网字段（实测
-   .zcode/会话语义/实测-多会话与联网-20261025.md §5.1），按钮只能改自己的
-   UI 态、影响不到上游，等于骗用户。官方那条真实通道未找到之前不做。 */
+.chat-send {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 10px;
+  background-color: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.chat-send:hover { opacity: .9; }
+.chat-send:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+}
+.chat-send.stop {
+  background-color: var(--md-sys-color-error, #b3261e);
+  color: var(--md-sys-color-on-primary);
+}
 
 .chat-attach-bar {
   display: flex;
-  gap: .4rem;
-  padding: .5rem .9rem .1rem;
-  flex-shrink: 0;
+  gap: .5rem;
+  padding: 0 .9rem .4rem;
   overflow-x: auto;
 }
-.chat-attach-bar:empty { display: none; }
 .chat-attach-item {
   position: relative;
-  flex: 0 0 auto;
-  width: 56px; height: 56px;
-  border-radius: 10px;
-  overflow: hidden;
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
   border: 1px solid var(--md-sys-color-outline-variant);
+  overflow: hidden;
+  flex-shrink: 0;
   background-color: var(--md-sys-color-surface-container);
 }
 .chat-attach-item img {
-  width: 100%; height: 100%;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
-  display: block;
-}
-.chat-attach-item.uploading::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: color-mix(in srgb, var(--md-sys-color-surface) 60%, transparent);
-  animation: chat-pulse 1.2s ease-in-out infinite;
-}
-.chat-attach-item.failed { border-color: var(--md-sys-color-error, #b3261e); }
-/* 浏览器解不了的格式（HEIC）画不出缩略图：显示扩展名方块，别露出破图图标 */
-.chat-attach-fallback {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%; height: 100%;
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: .04em;
-  color: var(--md-sys-color-on-surface-variant);
-  background-color: var(--md-sys-color-surface-container-high);
 }
 .chat-attach-x {
   position: absolute;
-  top: 1px; right: 1px;
-  width: 18px; height: 18px;
-  padding: 0;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
   border: none;
   border-radius: 50%;
-  /* 缩略图上叠的删除键：底色必须与图片内容解耦（图片可能是任意颜色），
-     所以用半透明黑而不是主题色——换成 primary 会在浅色图上消失。 */
   background: color-mix(in srgb, #000 55%, transparent);
   color: var(--md-sys-color-on-primary);
   font-size: 12px;
@@ -547,21 +742,38 @@ body.chat-resizing .chat-panel {
   text-align: center;
   cursor: pointer;
 }
-/* 拖拽悬停：整块面板给个提示色 */
+
 .chat-panel.chat-dragover {
   outline: 2px dashed var(--md-sys-color-primary);
   outline-offset: -6px;
 }
 
+.chat-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 100;
+  background: var(--md-sys-color-inverse-surface);
+  color: var(--md-sys-color-inverse-on-surface);
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  transition: opacity 220ms;
+}
+.chat-toast.fade-out {
+  opacity: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .chat-panel { transition: none; }
-  .chat-cursor::after { animation: none; }
-  .chat-attach-item.uploading::after { animation: none; }
+  .chat-panel, #chat-dock .chat-bookmarks, .chat-backdrop { transition: none !important; }
+  .chat-cursor::after { animation: none !important; }
+  .chat-skeleton { animation: none !important; }
 }
 `;
 
 // ════════════════════════════════════════════════════════════════
-// ② 客户端源码（构建期内联；纯逻辑由 toString 派生，保证测的就是跑的）
+// ② 挂载函数（纯逻辑，供单测与客户端直接调用）
 // ════════════════════════════════════════════════════════════════
 
 /**
@@ -596,7 +808,6 @@ export function applyOps(doc, el, ops, katex) {
         case 'link': {
           const n = mk('a');
           n.setAttribute('href', o.href);
-          // 外链新窗口；站内链接（# 或相对）同窗
           if (/^https?:/i.test(o.href)) { n.setAttribute('target', '_blank'); n.setAttribute('rel', 'noopener noreferrer'); }
           n.textContent = o.text;
           out.push(n);
@@ -633,9 +844,6 @@ export function applyOps(doc, el, ops, katex) {
       }
       case 'list': {
         node = mk(op.ordered ? 'ol' : 'ul');
-        // 2026-10-22：items 是 {ops, depth}，depth>0 的项按层级缩进（上游回答里
-        // 编号项下面跟缩进子项很常见）。用 marginLeft 表达层级而不重建嵌套 DOM
-        // ——结构保持扁平，复制成纯文本时也不会多出层级噪音。
         for (const item of op.items) {
           const li = mk('li');
           const childOps = item && item.ops ? item.ops : (Array.isArray(item) ? item : []);
@@ -650,7 +858,7 @@ export function applyOps(doc, el, ops, katex) {
         node = mk('pre');
         const code = mk('code');
         if (op.lang) code.className = 'language-' + op.lang;
-        code.textContent = op.text;      // 代码块永远 textContent
+        code.textContent = op.text;
         node.appendChild(code);
         break;
       }
@@ -684,11 +892,6 @@ export function applyOps(doc, el, ops, katex) {
           }
           node.appendChild(tbody);
         }
-        // 包一层滚动容器（2026-10-19 截图实测）：
-        // 直接给 table 设 display:block + overflow-x:auto 时，**边框盒**撑满
-        // 整个容器宽度，而列按内容宽排——右侧于是留出一条空白，圆角也画在
-        // 空盒上。改成外层 div 负责滚动与外框、table 按内容宽，二者才对齐。
-        // 这与站点正文的 .table-scroll-container 是同一手法。
         var tableWrap = mk('div');
         tableWrap.className = 'chat-table-wrap';
         tableWrap.appendChild(node);
@@ -703,10 +906,7 @@ export function applyOps(doc, el, ops, katex) {
 
 /**
  * 渲染一个公式节点。
- *
- * ⚠️ **安全不变量 I1**：`innerHTML` 只在这里出现，且只接收 KaTeX 的产出。
- * 失败时走 `textContent`——KaTeX 的错误信息可能含**未转义**的 LaTeX 源码，
- * 直接插进 innerHTML 就是注入面。
+ * ⚠️ **安全不变量 I1**：innerHTML 只在这里出现，且只接收 KaTeX 的产出。
  */
 export function renderMathInto(doc, node, tex, display, katex) {
   if (!katex || typeof katex.renderToString !== 'function') {
@@ -714,7 +914,6 @@ export function renderMathInto(doc, node, tex, display, katex) {
     return;
   }
   try {
-    // trust:false 是默认；显式写出来是给读代码的人看
     const html = katex.renderToString(tex, {
       displayMode: !!display,
       throwOnError: false,
@@ -723,31 +922,21 @@ export function renderMathInto(doc, node, tex, display, katex) {
       maxExpand: 1000,
       strict: 'ignore',
     });
-    node.innerHTML = html;   // ← 全文件唯一一处，且来源受限
+    node.innerHTML = html;
   } catch (e) {
     node.className = (node.className ? node.className + ' ' : '') + 'chat-math-err';
-    node.textContent = String((e && e.message) || e);   // 错误串走 textContent
+    node.textContent = String((e && e.message) || e);
   }
 }
 
 // ════════════════════════════════════════════════════════════════
-// ③ 客户端 IIFE（面板 UI + SSE + 挂载）
+// ③ 客户端 IIFE（按需懒加载 + 会话书签条 + 对话面板）
 // ════════════════════════════════════════════════════════════════
-
-// 工具中文标签单一真相源（issue #18 决策 #10）：从 buildToolDefs 派生，不再手抄
-// 11 条——手抄版的 site_view 是复制粘贴错误（写成「截图查看版面」，与
-// site_capture_view 重复）。工具改名/增删时标签自动跟随。
-// buildToolDefs(null, null) 只是拿定义数组（view 惰性、不碰 DOM），构建期安全。
-import { buildToolDefs } from './webmcp-tools.mjs';
-const TOOL_LABELS_SRC = JSON.stringify(
-  Object.fromEntries(buildToolDefs(null, null).map((d) => [d.name, d.label || d.name]))
-);
 
 export const CHAT_JS = `(function () {
 "use strict";
 if (typeof document === "undefined") return;
 
-// 纯逻辑从模块派生——测的就是跑的
 var MAX_MESSAGE_CHARS = ${MAX_MESSAGE_CHARS};
 var parseInline = ${parseInline.toString()};
 var safeHref = ${safeHref.toString()};
@@ -762,74 +951,59 @@ var renderMathInto = ${renderMathInto.toString()};
 
 var BRIDGE = "http://127.0.0.1:9345";
 
-/**
- * 是否允许使用助手（2026-10-19 扩到公网站点）。
- *
- * 助手要与**访问者自己机器上**的桥进程通信。127.0.0.1 在浏览器里永远指
- * 访问者本机，所以「公网页面 + 访客本地程序」这个组合本身是成立的
- * （和本地下载器助手、IDE 插件同构）——只要访客自己跑了桥。
- *
- * 允许的三种情况：
- *   ① loopback hostname（本机开发/阅读）
- *   ② 站点部署域名（isui.ren / GitHub Pages）——同学在公网上打开时会命中
- *   ③ 用户显式开关（?assistant=1 / localStorage.webmcp_bridge=on）
- *
- * 注意「允许打开面板」不等于「能连上」：真正连不上时（油猴脚本没生效）
- * 会走 describeFailure 的提示（2026-10-22 更正：不再指向已废弃的 bridge.mjs）。
- */
 var SITE_HOSTS = ["isui.ren", "archivalera.github.io"];
 var LOCAL_ONLY = (function () {
   try {
     var h = location.hostname;
     if (h === "127.0.0.1" || h === "localhost" || h === "[::1]" || h === "::1") return true;
     for (var i = 0; i < SITE_HOSTS.length; i++) if (h === SITE_HOSTS[i]) return true;
-  } catch (e) { /* 无 location */ }
+  } catch (e) {}
   try {
     var qs = new URLSearchParams(location.search);
     if (qs.get("assistant") === "1") return true;
-  } catch (e) { /* 无 search */ }
+  } catch (e) {}
   try {
     if (localStorage.getItem("webmcp_bridge") === "on") return true;
-  } catch (e) { /* 无存储 */ }
+  } catch (e) {}
   return false;
 })();
 
-// ── 状态 ────────────────────────────────────────────────────
-var panel = null, logEl = null, inputEl = null, sendBtn = null, jumpBtn = null, backdrop = null;
-var attachBtn = null, attachBar = null, fileInput = null;
-// 2026-10-26 站长定案：联网开关删除（协议里无此字段，按钮骗人）；旧实现见 git 历史。
+// ── 运行时状态（冷启动默认未初始化）──
+var initialized = false;
 var open = false;
 var busy = false;
-var katexLoading = null;
-var stream = null;          // 当前 AbortController
-var stuck = true;           // 是否贴底
-var msgEls = [];            // 消息 DOM 引用（用于流式更新最后一条）
-var pending_attach = [];    // 待发附件：{id, name, dataUrl, fileInfo, status:'uploading'|'ready'|'failed'}
-var stopAnswerRef = function () {};   // 当前提问的停止句柄（askChat 里赋值）
+var currentSessionId = null;
+var sessionsList = [];
 
-// ── 传输层替换钩子（2026-10-20，油猴脚本形态）──────────────────
-// setTransport(fn)：fn = {ask, cancel, upload}（契约见 .zcode/userscript-impl 的
-// chat-panel-hook.md，合入记录在归档）。null = 恢复本机桥。不装脚本时这个钩子
-// 永远空置——面板行为与原来完全一致（双形态并存，验收 13）。
-// 面板不知道 iframe/通道/密文的存在：它只认这三个函数，换传输层不用再动面板。
-// 2026-10-25：插件形态整体删除，transport 恒为 null（只走本机桥 SSE）。
+var dockEl = null;
+var bmListEl = null;
+var mobileHandle = null;
+var backdrop = null;
+
+var panel = null;
+var logEl = null;
+var inputEl = null;
+var sendBtn = null;
+var jumpBtn = null;
+var attachBtn = null;
+var attachBar = null;
+var fileInput = null;
+
+var katexLoading = null;
+var stream = null;
+var stuck = true;
+var msgEls = [];
+var pending_attach = [];
+var stopAnswerRef = function () {};
 var transport = null;
 
-// ── 工具函数 ────────────────────────────────────────────────
+var TOOL_LABEL = ${TOOL_LABELS_SRC};
 
-/**
- * 桥 token 的三级来源（2026-10-19 修「永远是连不上助手」）。
- *
- * 面板与页面桥各自独立，**不能假设对方先跑过**：用户可能直接把面板叫起来
- * 而页面桥还没注入完成。所以这里自己解析，顺序与 loader 一致：
- * window.__bridgeToken → localStorage → GET /bootstrap（桥对本机 Origin 回 token）。
- */
+// ── 基础工具 ──
 var tokenPromise = null;
 function tokenAsync(force) {
   if (!force && tokenPromise) return tokenPromise;
   tokenPromise = new Promise(function (resolve) {
-    // 非本机：不向 127.0.0.1 发任何请求（2026-10-19 审计修复）。
-    // 返回空 token，让调用方按「未授权」处理，而不是真的去打本机端口。
     if (!LOCAL_ONLY) return resolve("");
     var t = "";
     try { t = window.__bridgeToken || localStorage.getItem("webmcp_bridge_token") || ""; } catch (e) {}
@@ -855,7 +1029,6 @@ function withToken(u, t) {
   return t ? (u + (u.indexOf("?") >= 0 ? "&" : "?") + "token=" + encodeURIComponent(t)) : u;
 }
 
-/** KaTeX 按需加载（站点已有 katex.min.css，但没有页面引 katex.min.js）。 */
 function ensureKatex() {
   if (window.katex) return Promise.resolve(window.katex);
   if (katexLoading) return katexLoading;
@@ -871,24 +1044,6 @@ function ensureKatex() {
   return katexLoading;
 }
 
-// ── 附件（2026-10-19 用户要求）──────────────────────────────
-//
-// 上游只收 jpg/png。浏览器里 input[type=file] 能拿到 png/jpeg/webp/heic…
-// 所以这里做两道：
-//   ① 选图时按 **magic bytes** 判真实格式（不信任扩展名）
-//   ② 非 jpg/png 的画到 canvas 上转成 jpeg（和 site_image 的 webp→jpeg 同一套思路）
-//
-// 为什么在浏览器转而不是后端转：转码要解码图片，Node 侧没有可靠的零依赖解码器，
-// 而浏览器本来就要把图画到缩略图上——顺手就转了，零额外成本。
-
-/**
- * 按文件头判真实类型。返回 'jpeg' | 'png' | 'gif' | 'webp' | 'heic' | 'unknown'。
- *
- * HEIC 单独认出来（2026-10-19 实测）：iPhone 拍照默认就是它，而**绝大多数
- * 桌面浏览器（Chromium/Firefox on Linux/Windows）根本解不了**——
- * new Image() 直接 onerror、createImageBitmap 报 "could not be decoded"。
- * 所以这不是「转码失败」，是「这个环境读不了这个格式」，得给用户明确的出路。
- */
 function sniffImage(bytes) {
   var b = bytes;
   if (b.length < 12) return "unknown";
@@ -897,7 +1052,6 @@ function sniffImage(bytes) {
   if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return "gif";
   if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46
       && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return "webp";
-  // HEIF/HEIC：ISO BMFF，第 4..7 字节是 'ftyp'，brand 在 8..11
   if (b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) {
     var brand = "";
     for (var i = 8; i < 12; i++) brand += String.fromCharCode(b[i]);
@@ -906,7 +1060,6 @@ function sniffImage(bytes) {
   return "unknown";
 }
 
-/** 把任意可解码图片重绘成 jpeg（透明底铺白），返回 {dataUrl, mimeType}。 */
 function transcodeToJpeg(dataUrl, maxEdge) {
   return new Promise(function (resolve, reject) {
     var img = new Image();
@@ -921,7 +1074,6 @@ function transcodeToJpeg(dataUrl, maxEdge) {
       canvas.width = cw; canvas.height = ch;
       var g = canvas.getContext("2d");
       if (!g) return reject(new Error("canvas 不可用"));
-      // jpeg 没有 alpha：先铺白，否则透明区会变黑
       g.fillStyle = "#ffffff";
       g.fillRect(0, 0, cw, ch);
       g.drawImage(img, 0, 0, cw, ch);
@@ -934,7 +1086,6 @@ function transcodeToJpeg(dataUrl, maxEdge) {
   });
 }
 
-/** File → {dataUrl, mimeType}（非 jpg/png 自动转码）。 */
 function prepareImage(file) {
   return new Promise(function (resolve, reject) {
     if (file.size > 12 * 1024 * 1024) return reject(new Error("图片太大（上限 12 MB）"));
@@ -951,14 +1102,7 @@ function prepareImage(file) {
       var kind = sniffImage(head);
       if (kind === "jpeg") return resolve({ dataUrl: dataUrl, mimeType: "image/jpeg" });
       if (kind === "png") return resolve({ dataUrl: dataUrl, mimeType: "image/png" });
-      // 其余先试浏览器转码：Safari（macOS/iOS）能直接解 HEIC，那就照常走。
       transcodeToJpeg(dataUrl, 2048).then(resolve, function () {
-        // 浏览器解不了（2026-10-19 实测：Chromium/Firefox 在 Linux/Windows 上
-        // 对 HEIC 一律失败）。**不要把原始字节丢掉**——桥那边有 ImageMagick，
-        // 它能解。这里原样交给桥，由它转完再上传。
-        //
-        // 前端不再自己判"能不能转"，也不给用户抛「请改相机设置」这种
-        // 让他去改设备的建议：本机桥能解决的事，不该推给用户。
         resolve({
           dataUrl: dataUrl,
           mimeType: kind === "heic" ? "image/heic"
@@ -974,9 +1118,7 @@ function prepareImage(file) {
   });
 }
 
-/** 把一张图 POST 到桥的 /upload，拿回 fileInfo。 */
 function uploadAttachment(item, tk) {
-  // 非本机不向 127.0.0.1 发请求（2026-10-19 审计修复）
   if (!LOCAL_ONLY) return Promise.reject(new Error("学习助手只在你自己电脑上可用"));
   var b64 = String(item.dataUrl || "").split(",")[1] || "";
   return fetch(withToken(BRIDGE + "/upload", tk), {
@@ -999,7 +1141,6 @@ function uploadAttachment(item, tk) {
   });
 }
 
-/** 重画附件条（缩略图 + 删除按钮）。 */
 function renderAttachBar() {
   if (!attachBar) return;
   while (attachBar.firstChild) attachBar.removeChild(attachBar.firstChild);
@@ -1012,8 +1153,6 @@ function renderAttachBar() {
       var img = document.createElement("img");
       img.src = item.dataUrl;
       img.alt = item.name;
-      // 浏览器解不了的格式（HEIC 等）画不出缩略图——退成文件名方块，
-      // 别让用户看到破图图标还以为是自己传坏了。
       img.onerror = function () {
         img.style.display = "none";
         if (!box.querySelector(".chat-attach-fallback")) {
@@ -1040,13 +1179,11 @@ function renderAttachBar() {
   }
 }
 
-/** 收文件（来自选择器、粘贴、拖拽）。 */
 function acceptFiles(files) {
   var list = Array.prototype.slice.call(files || []);
   if (!list.length) return;
   list.forEach(function (f) {
     if (!f || !/^image\\//.test(f.type || "")) {
-      // HEIC 等有时 type 为空——只要文件名像图就试
       if (!/\\.(jpe?g|png|webp|gif|heic|heif|bmp)$/i.test(f.name || "")) return;
     }
     var item = { id: "a" + Date.now() + Math.random().toString(16).slice(2, 6), name: f.name || "image", status: "uploading" };
@@ -1069,12 +1206,11 @@ function acceptFiles(files) {
   });
 }
 
-// ── 滚动吸附（use-stick-to-bottom 思路的极简移植）──────────
 function nearBottom() {
   if (!logEl) return true;
   return logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 48;
 }
-function scrollToBottom(instant) {
+function scrollToBottom() {
   if (!logEl) return;
   logEl.scrollTop = logEl.scrollHeight;
 }
@@ -1084,7 +1220,6 @@ function onUserScroll() {
   if (stuck && jumpBtn) jumpBtn.remove();
 }
 
-// ── 消息渲染 ────────────────────────────────────────────────
 function addMsg(role) {
   var wrap = document.createElement("div");
   wrap.className = "chat-msg chat-msg--" + role;
@@ -1097,20 +1232,14 @@ function addMsg(role) {
   return msgEls[msgEls.length - 1];
 }
 
-/** 给一条消息配一个过程提示槽（**正文之外**，见 chat-status 的注释）。 */
 function attachStatusSlot(msg) {
   var el = document.createElement("div");
   el.className = "chat-status";
   el.textContent = "正在思考…";
-  // 插在 .chat-body 之前：过程提示在视觉与语义上都不属于答案正文，
-  // 放进 body 里会被 renderMessage 当内容、也会被当答案读屏。
   msg.body.parentNode.insertBefore(el, msg.body);
   msg.statusEl = el;
   msg.statusBase = "正在思考…";
   msg.queryStartedAt = Date.now();
-  // 本地秒表（2026-10-19 实测）：服务端只在**阶段切换**时推 status，
-  // 一次工具调用可能等 60 秒不推帧——秒数会冻在旧值上，看起来又像卡死。
-  // 秒数从**本次提问开始**算：用户关心的是「等了多久」。
   if (!msg.statusTick) {
     msg.statusTick = setInterval(function () {
       if (!msg.statusEl || !msg.queryStartedAt) return;
@@ -1122,17 +1251,6 @@ function attachStatusSlot(msg) {
   return el;
 }
 
-/** 把累积的原文重新渲染进消息体（增量解析 + 只追加新块）。
- *
- * 两处「别重算」的克制（2026-10-19 手机端实测「划一下像磕大」）：
- *
- *   ① **续解而不是重解**：parser 返回 restStart，下一轮只把 rest 起点之后
- *      的新文本交回去。整段重解是 O(n²)，长回答到几千字时每来一个 delta
- *      就要把前文重扫一遍，主线程被占满 → 页面滚动掉帧。
- *   ② **不每 delta 动 DOM**：delta 可能一秒来十几个，逐个渲染会让
- *      scrollHeight 读取与 DOM 写入交替发生（layout thrash）。用 rAF 合并，
- *      一帧最多渲染一次。SSE 的最终 done 仍然立刻落盘，不等帧。
- */
 function renderMessage(msg, final) {
   var parsed = parseIncremental(msg.raw.slice(msg.restStart || 0));
   for (var i = 0; i < parsed.blocks.length; i++) {
@@ -1140,7 +1258,6 @@ function renderMessage(msg, final) {
   }
   msg.restStart = (msg.restStart || 0) + parsed.restStart;
 
-  // 尾巴（未闭合）以纯文本预览显示，闭合后会被替换
   if (msg.tailEl) { msg.tailEl.remove(); msg.tailEl = null; }
   if (!final && parsed.rest) {
     var tail = document.createElement("span");
@@ -1149,25 +1266,14 @@ function renderMessage(msg, final) {
     msg.body.appendChild(tail);
     msg.tailEl = tail;
   } else if (final && parsed.rest) {
-    // ⭐ 收尾时还没闭合的尾巴必须**显示出来**（2026-10-19 实测）：
-    // 上游常在最后一句中间结束（或其他原因不再有 delta），
-    // 只清掉 tailEl 会让最后一截正文凭空消失——用户看到的是半句话。
-    // 这里把它当普通段落追加，保证「流结束时面板里的字 >= 已经收到的字」。
     var lastP = document.createElement("p");
     lastP.textContent = parsed.rest;
     msg.body.appendChild(lastP);
-    // 追加后把水位推到末尾：这条尾巴已经被"消费"。
-    // 不推的话，任何后续解析都会从同一位置再取一遍 rest（2026-10-19 调查
-    // 实测的正文重复就是这么来的）。flushRender 现在已幂等，但水位正确是
-    // 更底层的保证，不该依赖调用方只调一次。
     msg.restStart = msg.raw.length;
   }
   if (final) msg.body.classList.remove("chat-cursor");
   else msg.body.classList.add("chat-cursor");
 
-  // 最后一道保险（2026-10-19 实测）：收尾时若正文仍是空的、而 raw 里明明
-  // 有字，说明解析链在某个边界上把内容全丢了。宁可**降级成纯文本**，
-  // 也不能让用户看到一片空白——这比排版难看严重得多。
   if (final && msg.raw && !msg.body.textContent.trim()) {
     msg.body.textContent = msg.raw;
   }
@@ -1176,7 +1282,6 @@ function renderMessage(msg, final) {
   else if (!jumpBtn) showJump();
 }
 
-/** 合并到下一帧再渲染（同一帧来的多个 delta 只算一次）。 */
 function scheduleRender(msg) {
   if (msg.pending) return;
   msg.pending = true;
@@ -1188,41 +1293,14 @@ function scheduleRender(msg) {
   else setTimeout(run, 16);
 }
 
-/** 立刻渲染并标记收尾（绕过 rAF，保证最终状态不丢）。 */
 function flushRender(msg) {
-  // ⚠️ 幂等（2026-10-19 调查发现的真 bug）：done 事件会 flush 一次，
-  // 随后 SSE 正常结束的 finish() 又 flush 一次；停止分支、error 分支同理。
-  //
-  // 而 renderMessage(final) 会把**未闭合的尾巴**追加成 <p>（答案最后一行
-  // 没有尾换行是最常见的情况），且不推进 restStart ⇒ 第二次 flush 从同一
-  // 位置再解析、再追加一遍，正文重复（实测「第二段第二段」）。
-  //
-  // 收尾只做一次。
   if (msg.done) return;
   msg.done = true;
   renderMessage(msg, true);
 }
 
-// ── 思考 ↔ 输出 的区分（2026-10-19 用户要求）───────────────
-//
-// 面板在模型检索的整段时间里原本完全空白（实测最长 384 秒），用户分不清
-// 是卡死还是在干活。这里给每条机器人消息配一行**过程提示**：
-//   · 灰色、小号、无气泡，与正文（黑字通栏）在视觉上明确分开
-//   · 只在等待期间存在；第一个 delta 到达即移除
-//   · 文案说明「在做什么」，而不是只转圈
-// 标签从 buildToolDefs 派生（文件头 TOOL_LABELS_SRC）——工具改名时这里自动跟随。
-var TOOL_LABEL = ${TOOL_LABELS_SRC};
-
 function setStatus(msg, text) {
-  // 过程提示可能已经被 clearStatus 清掉（第一个 delta 到达时就会清）。
-  // 撤回场景需要它「回来」，所以这里允许重建——没有槽就补一个。
   if (!msg.statusEl) { attachStatusSlot(msg); if (!msg.statusEl) return; }
-  // 秒数一律由本地秒表负责：把服务端可能带的所有「（N 秒）」全剥掉，
-  // 否则会出现「…（15 秒）（16 秒）」这种叠字。
-  // ⚠️ 2026-10-24 修：这里原来写单反斜杠 s/d 形态——本串整体在 CHAT_JS 普通
-  // 模板串里，单个反斜杠会被求值吃掉，产物变成 /（s*d+s*秒s*）/，一个「（N 秒）」
-  // 也剥不掉（防叠字逻辑在产线上是死代码，第六次踩模板串的坑）。
-  // 写双反斜杠才能 cook 出可用的正则；改这里必须在产物里验证。
   msg.statusBase = String(text).replace(/（\\s*\\d+\\s*秒\\s*）/g, "").trim();
   if (!msg.queryStartedAt) msg.queryStartedAt = Date.now();
   msg.statusEl.textContent = msg.statusBase;
@@ -1235,14 +1313,6 @@ function clearStatus(msg) {
   msg.statusEl = null;
 }
 
-/**
- * 耗时诊断行（2026-10-20）：把每轮耗时折成一行小字附在答案末尾。
- *
- * 为什么要显示出来：用户报「每次都 50 秒以上」，而这条链上有四轮工具循环、
- * 换线重试、上下文重放——只看总时长分不清是哪一种。把每轮摊开，
- * 「4×12s」和「1×45s」一眼就分开，不用再靠猜。
- * 只在脚本形态（B 侧）有 timings；本机桥形态没有，就不显示。
- */
 function attachTimings(msg, timings) {
   var total = 0;
   var parts = [];
@@ -1261,7 +1331,6 @@ function attachTimings(msg, timings) {
   msg.body.appendChild(el);
 }
 
-/** 把服务端 status 事件翻成一句人话。**不带秒数**——秒数由本地秒表统一追加。 */
 function statusText(ev) {
   var phase = ev && ev.phase;
   var what = ev && ev.tool ? (TOOL_LABEL[ev.tool] || ev.tool) : "";
@@ -1286,11 +1355,262 @@ function showJump() {
   panel.appendChild(jumpBtn);
 }
 
-// ── SSE 请求 ────────────────────────────────────────────────
+function showToast(text, duration) {
+  var t = document.createElement("div");
+  t.className = "chat-toast";
+  t.textContent = String(text || "");
+  document.body.appendChild(t);
+  setTimeout(function () {
+    t.classList.add("fade-out");
+    setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 220);
+  }, duration || 3000);
+}
+
+// ── 会话管理（中性契约）──
+function renderBookmarks() {
+  if (!bmListEl) return;
+  while (bmListEl.firstChild) bmListEl.removeChild(bmListEl.firstChild);
+
+  var newBtn = document.createElement("button");
+  newBtn.type = "button";
+  newBtn.className = "bm-item bm-new";
+  newBtn.setAttribute("aria-label", "新建会话");
+  var newText = document.createElement("span");
+  newText.className = "bm-title";
+  newText.textContent = "+ 新会话";
+  newBtn.appendChild(newText);
+  newBtn.onclick = function (e) {
+    e.stopPropagation();
+    newSession();
+  };
+  bmListEl.appendChild(newBtn);
+
+  if (!sessionsList || sessionsList.length === 0) {
+    var emptyDiv = document.createElement("div");
+    emptyDiv.className = "bm-empty";
+    emptyDiv.textContent = "暂无会话";
+    bmListEl.appendChild(emptyDiv);
+    return;
+  }
+
+  sessionsList.forEach(function (sess) {
+    var item = document.createElement("div");
+    item.className = "bm-item" + (sess.id === currentSessionId ? " active" : "");
+    item.setAttribute("data-session-id", sess.id);
+    item.setAttribute("role", "button");
+    item.setAttribute("tabindex", "0");
+
+    var titleSpan = document.createElement("span");
+    titleSpan.className = "bm-title";
+    titleSpan.textContent = sess.title || "未命名会话";
+    titleSpan.title = sess.title || "";
+    item.appendChild(titleSpan);
+
+    var delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "bm-del";
+    delBtn.setAttribute("aria-label", "删除会话「" + (sess.title || "未命名") + "」");
+    delBtn.title = "删除会话";
+    delBtn.textContent = "×";
+    delBtn.onclick = function (e) {
+      e.stopPropagation();
+      deleteSession(sess.id);
+    };
+    item.appendChild(delBtn);
+
+    item.onclick = function () {
+      selectSession(sess.id);
+    };
+    item.onkeydown = function (e) {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        selectSession(sess.id);
+      }
+    };
+    bmListEl.appendChild(item);
+  });
+}
+
+function loadSessions() {
+  if (window.__MOCK_SESSIONS__ && Array.isArray(window.__MOCK_SESSIONS__)) {
+    sessionsList = window.__MOCK_SESSIONS__.slice();
+    renderBookmarks();
+    return Promise.resolve(sessionsList);
+  }
+  if (!LOCAL_ONLY) {
+    sessionsList = [];
+    renderBookmarks();
+    return Promise.resolve([]);
+  }
+  return tokenAsync(false).then(function (tk) {
+    return fetch(withToken(BRIDGE + "/chat/sessions", tk), {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    }).then(function (res) {
+      if (!res.ok) return { ok: false };
+      return res.json();
+    }).then(function (data) {
+      if (data && data.ok && Array.isArray(data.sessions)) {
+        sessionsList = data.sessions;
+      } else {
+        sessionsList = [];
+      }
+      renderBookmarks();
+      return sessionsList;
+    }).catch(function () {
+      sessionsList = [];
+      renderBookmarks();
+      return [];
+    });
+  }).catch(function () {
+    sessionsList = [];
+    renderBookmarks();
+    return [];
+  });
+}
+
+function selectSession(id) {
+  if (!id) return Promise.resolve();
+  if (busy) {
+    try { stopAnswerRef(); } catch (e) {}
+  }
+  currentSessionId = id;
+  renderBookmarks();
+  openPanel();
+
+  if (logEl) {
+    while (logEl.firstChild) logEl.removeChild(logEl.firstChild);
+    var skeleton = document.createElement("div");
+    skeleton.className = "chat-skeleton";
+    skeleton.textContent = "加载历史消息…";
+    logEl.appendChild(skeleton);
+  }
+  msgEls = [];
+
+  if (window.__MOCK_MESSAGES__ && window.__MOCK_MESSAGES__[id]) {
+    renderHistoryMessages(window.__MOCK_MESSAGES__[id]);
+    return Promise.resolve();
+  }
+
+  return tokenAsync(false).then(function (tk) {
+    return fetch(withToken(BRIDGE + "/chat/sessions/" + encodeURIComponent(id) + "/messages", tk), {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    }).then(function (res) {
+      if (!res.ok) return { ok: false };
+      return res.json();
+    }).then(function (data) {
+      if (logEl && logEl.querySelector(".chat-skeleton")) {
+        logEl.removeChild(logEl.querySelector(".chat-skeleton"));
+      }
+      if (data && data.ok && Array.isArray(data.messages)) {
+        renderHistoryMessages(data.messages);
+      } else {
+        var notice = addMsg("bot");
+        notice.body.textContent = "这一场的记录暂时读不到";
+        notice.done = true;
+      }
+    }).catch(function () {
+      if (logEl && logEl.querySelector(".chat-skeleton")) {
+        logEl.removeChild(logEl.querySelector(".chat-skeleton"));
+      }
+      var notice = addMsg("bot");
+      notice.body.textContent = "这一场的记录暂时读不到";
+      notice.done = true;
+    });
+  });
+}
+
+function renderHistoryMessages(messages) {
+  if (!logEl) return;
+  while (logEl.firstChild) logEl.removeChild(logEl.firstChild);
+  msgEls = [];
+  messages.forEach(function (m) {
+    var r = m.role === "assistant" ? "bot" : "user";
+    var msgObj = addMsg(r);
+    msgObj.raw = m.text || "";
+    if (r === "user") {
+      msgObj.body.textContent = msgObj.raw;
+    } else {
+      flushRender(msgObj);
+    }
+  });
+  stuck = true;
+  scrollToBottom();
+}
+
+function newSession() {
+  if (busy) {
+    try { stopAnswerRef(); } catch (e) {}
+  }
+  if (!LOCAL_ONLY) {
+    currentSessionId = null;
+    if (logEl) {
+      while (logEl.firstChild) logEl.removeChild(logEl.firstChild);
+      showLocalOnlyNotice();
+    }
+    openPanel();
+    return Promise.resolve(null);
+  }
+  return tokenAsync(false).then(function (tk) {
+    return fetch(withToken(BRIDGE + "/chat/sessions/new", tk), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    }).then(function (res) {
+      if (!res.ok) return { ok: false };
+      return res.json();
+    }).then(function (data) {
+      if (data && data.ok && data.id) {
+        currentSessionId = data.id;
+        if (logEl) while (logEl.firstChild) logEl.removeChild(logEl.firstChild);
+        msgEls = [];
+        showEmpty();
+        renderBookmarks();
+        openPanel();
+        if (inputEl && !(window.innerWidth <= 860)) inputEl.focus();
+        loadSessions();
+        return data.id;
+      } else {
+        showToast("开新会话失败");
+        return null;
+      }
+    }).catch(function () {
+      showToast("开新会话失败");
+      return null;
+    });
+  });
+}
+
+function deleteSession(id) {
+  if (!id) return Promise.resolve();
+  sessionsList = sessionsList.filter(function (s) { return s.id !== id; });
+  renderBookmarks();
+  showToast("已从列表移除");
+
+  if (currentSessionId === id) {
+    currentSessionId = null;
+    if (logEl) while (logEl.firstChild) logEl.removeChild(logEl.firstChild);
+    msgEls = [];
+    showEmpty();
+  }
+
+  if (!LOCAL_ONLY) return Promise.resolve();
+
+  return tokenAsync(false).then(function (tk) {
+    return fetch(withToken(BRIDGE + "/chat/sessions/" + encodeURIComponent(id) + "/delete", tk), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    }).then(function () {
+      return loadSessions();
+    }).catch(function () {
+      return loadSessions();
+    });
+  });
+}
+
+// ── SSE 问答交互 ──
 function askChat(text) {
   if (busy) return;
-  // 底层兜底（2026-10-19）：UI 已经禁用了输入框，但 __chatPanel.ask 是暴露的，
-  // 别让任何调用路径在非本机环境发出请求。
   if (!LOCAL_ONLY) {
     var nope = addMsg("bot");
     nope.body.textContent = "学习助手只在你自己电脑上可用（要连本地桥进程）。";
@@ -1300,7 +1620,6 @@ function askChat(text) {
   var userMsg = addMsg("user");
   userMsg.body.textContent = text;
 
-  // 取走已就绪的附件（上传中的不算——它们还没 fileInfo，发出去等于丢图）
   var ready = [];
   var stillUploading = 0;
   for (var ai = 0; ai < pending_attach.length; ai++) {
@@ -1313,7 +1632,6 @@ function askChat(text) {
   });
   renderAttachBar();
   if (stillUploading && !ready.length && !text) {
-    // 只有图还在传、又没写字：别发空消息，等图
     var wait = addMsg("bot");
     wait.body.textContent = "（图片还在上传，稍等一下再发）";
     wait.done = true;
@@ -1326,7 +1644,6 @@ function askChat(text) {
   if (sendBtn) {
     sendBtn.classList.add("stop");
     sendBtn.disabled = false;
-    // ▢ 而不是 ⏹：实心方块在一堆图标里显得过重，且部分安卓字体会画成彩色 emoji
     sendBtn.textContent = "■";
     sendBtn.setAttribute("aria-label", "停止回答");
     sendBtn.title = "停止回答";
@@ -1334,98 +1651,64 @@ function askChat(text) {
   if (attachBtn) attachBtn.disabled = true;
   stream = (typeof AbortController !== "undefined") ? new AbortController() : null;
 
-  // 发问前兜一次：SPA 换页/脚本晚到都可能让工具表为空，这里补载最便宜。
-  try { if (window.__webmcpEnable) window.__webmcpEnable(); } catch (e) { /* 无 loader */ }
-  // 2026-10-25：payload 不带任何会话标识——桥只持有一场对话，身份由上游发。
+  try { if (window.__webmcpEnable) window.__webmcpEnable(); } catch (e) {}
+
+  // ⚠️ 2026-10-26（身份闸门抓到）：这里原来把 currentSessionId 作为 sessionId
+  // 塞进发问 payload。两处都错：
+  //   ① sessionId 是自造名（一处约定：会话身份只用后端发放的那一个值，不另起名）；
+  //   ② 10-25 定案后桥只持有**一场**对话，发问根本不需要会话标识——
+  //      切会话走 /chat/sessions/:id/messages 读历史，新建走 /chat/sessions/new。
+  // currentSessionId 只保留为**本地 UI 状态**（判断哪个书签高亮），不再跨边界传播。
+  // （注：本文件是模板字符串，注释里写代码名用直角引号——反引号会提前闭合。）
   var payload = { text: text };
   if (ready.length) payload.attachments = ready;
   var body = JSON.stringify(payload);
 
-  /**
-   * 停止回答：**两步都要做**，但顺序不能反。
-   *
-   *   ① POST /chat/cancel —— 让**上游**停下（真正的取消在这里）
-   *   ② 断本地 SSE —— 同时断，让面板立刻不再追字
-   *
-   * ⚠️ 2026-10-19 实测：先 abort 再发 cancel 不行——SSE 一断，
-   * 桥那边的 res.on('close') 立刻触发，/chat 的 handler 认为客户端
-   * 走了就直接收尾，**再来的 cancel 找不到在飞的提问**（返回 cancelled:false）。
-   * 于是上游继续生成、token 照烧，用户看到的「已停止」只是本地假象。
-   *
-   * 现在：cancel 请求**先发出去**（不等响应），下一拍再 abort。
-   * 用 setTimeout(0) 而不是 await —— 取消要立刻生效，不能等网络往返。
-   */
-  /** 事件统一入口（2026-10-20 提升到 askChat 顶层）：
-   *  SSE 行解析后的 ev 与 transport 的 ev 同一词汇，走同一处理。
-   *  ⚠️ 原先定义在 attempt().then 回调内部——transport 分派点在它之前 return，
-   *  作用域不可达（实测报 handleEventPlain is not defined，busy 永卡）。 */
   function handleEventPlain(ev) {
-      if (ev.type === "delta") {
-        // 答案已开始：过程提示该退了（思考与输出的分界就在这里）
-        clearStatus(botMsg);
-        botMsg.raw += String(ev.text || "");
-        if (botMsg.raw.length > MAX_MESSAGE_CHARS) botMsg.raw = botMsg.raw.slice(0, MAX_MESSAGE_CHARS);
-        scheduleRender(botMsg);
-      } else if (ev.type === "status") {
-        var s = statusText(ev);
-        if (s) setStatus(botMsg, s);
-      } else if (ev.type === "done") {
-        clearStatus(botMsg);
-        // 诊断（2026-10-20 查「每次都 50 秒」）：把每轮耗时附在答案末尾，
-        // 折叠成一行小字。用户据此能直接看出是「一轮就慢」还是「四轮叠加」，
-        // 不用再靠猜。没有 timings（本机桥形态）就什么都不加。
-        if (Array.isArray(ev.timings) && ev.timings.length) {
-          try { attachTimings(botMsg, ev.timings); } catch (e) { /* 诊断不影响正文 */ }
-        }
-        // ⚠️ 2026-10-19 实测 bug：done.text 是**完整答案**，不是增量。
-        // 旧代码只在 raw 为空时把它塞进 raw，然后又走「续解」路径——
-        // 此时 restStart 已经推进到旧文本末尾，raw.slice(restStart) 从
-        // 答案中间开始，解析出来的块全乱、面板显示空白（实测流结束、busy 复位、
-        // 正文一个字都没有）。
-        //
-        // 正确处理分两种：
-        //   · raw 为空（没走流式）⇒ 用它当全文，restStart 归零后整体渲染
-        //   · raw 有值（已流过 delta）⇒ 通常 done.text 是同一份答案的副本；
-        //     但**不总是**：流出去的是未清洗原文，done.text 才是 cleanAnswer
-        //     之后的版本（think 块、工具调用标记都会在服务端被剥掉）。
-        //     2026-10-19 调查实测：先说话再吐 function_calls 时，面板会永久
-        //     保留那段 XML。所以这里以 **done.text 为准**重建一次，
-        //     而不是只在 raw 为空时才用。
-        if (ev.text) {
-          var clean = String(ev.text);
-          if (clean !== botMsg.raw) {
-            botMsg.raw = clean;
-            botMsg.restStart = 0;
-            while (botMsg.body.firstChild) botMsg.body.removeChild(botMsg.body.firstChild);
-            botMsg.tailEl = null;
-          }
-        }
-        flushRender(botMsg);
-      } else if (ev.type === "error") {
-        clearStatus(botMsg);
-        botMsg.raw = botMsg.raw || ("（" + describeFailure(new Error(ev.reason || "未知")) + "）");
-        flushRender(botMsg);
-      }
-      // ev.type === "tool" 不显示
-    }
-
-  /** 收尾（2026-10-20 提升到 askChat 顶层）：
-   *  ⚠️ 原先定义在 attempt().then 回调闭包里——transport 分派（提前 return 的分支）
-   *  引用不到它，实测 ReferenceError 静默吞掉 → busy 永卡、按钮不复位。
-   *  与 handleEventPlain 一同提升，两种传输形态共用。 */
-  function finish() {
+    if (ev.type === "delta") {
       clearStatus(botMsg);
-      if (!botMsg.raw) {
-        botMsg.body.textContent = "（没有收到回答）";
-        botMsg.done = true;
-      } else {
-        flushRender(botMsg);
+      botMsg.raw += String(ev.text || "");
+      if (botMsg.raw.length > MAX_MESSAGE_CHARS) botMsg.raw = botMsg.raw.slice(0, MAX_MESSAGE_CHARS);
+      scheduleRender(botMsg);
+    } else if (ev.type === "status") {
+      var s = statusText(ev);
+      if (s) setStatus(botMsg, s);
+    } else if (ev.type === "done") {
+      clearStatus(botMsg);
+      if (Array.isArray(ev.timings) && ev.timings.length) {
+        try { attachTimings(botMsg, ev.timings); } catch (e) {}
       }
-      busy = false;
-      resetSendButton();
-      if (attachBtn) attachBtn.disabled = false;
-      stream = null;
+      if (ev.text) {
+        var clean = String(ev.text);
+        if (clean !== botMsg.raw) {
+          botMsg.raw = clean;
+          botMsg.restStart = 0;
+          while (botMsg.body.firstChild) botMsg.body.removeChild(botMsg.body.firstChild);
+          botMsg.tailEl = null;
+        }
+      }
+      flushRender(botMsg);
+      loadSessions();
+    } else if (ev.type === "error") {
+      clearStatus(botMsg);
+      botMsg.raw = botMsg.raw || ("（" + describeFailure(new Error(ev.reason || "未知")) + "）");
+      flushRender(botMsg);
     }
+  }
+
+  function finish() {
+    clearStatus(botMsg);
+    if (!botMsg.raw) {
+      botMsg.body.textContent = "（没有收到回答）";
+      botMsg.done = true;
+    } else {
+      flushRender(botMsg);
+    }
+    busy = false;
+    resetSendButton();
+    if (attachBtn) attachBtn.disabled = false;
+    stream = null;
+  }
 
   function stopAnswer() {
     if (!busy) return;
@@ -1436,42 +1719,26 @@ function askChat(text) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
-    }).catch(function () { /* 断网也要把本地停掉 */ });
-    // 先把 cancel 交出去，再断流。0ms 足够让请求离开事件循环（fetch 同步入队），
-    // 又不会让用户感觉「按了没反应」。
+    }).catch(function () {});
     setTimeout(function () {
-      if (stream) { try { stream.abort(); } catch (e) { /* 已断 */ } }
+      if (stream) { try { stream.abort(); } catch (e) {} }
     }, 0);
     return cancelReq;
   }
-  // 暴露给表单的 submit 处理器（它在 askChat 外面，拿不到闭包里的 stopAnswer）
   stopAnswerRef = stopAnswer;
 
-  // ── 双形态分派 ─────────────────────────────────────────
-  //
-  // 2026-10-25 重建（方案-插件重启 §0.1）：transport 分支回归。
-  // 与旧版的关键差别——**这次 transport 只提供「一次 ask」，不跑工具循环**。
-  // 旧版失败根因就是 B 侧又养了一套 chatsvc/toolcycle（handoff §0.133）。
-  // 现在工具循环在 A 侧（站点协议栈），transport 只当管道。
-  //
-  // 契约：fn = { ask(payload, onEvent) → Promise<{ok,text?,reason?}>, cancel() → {cancelled} }
-  //   payload = { text, sessionId?, tools? }
-  //   onEvent 的 ev 词汇与 SSE 完全一致：delta / status / tool / done / error
-  // ⇒ handleEventPlain 与 finish 可以原样复用（它们在 2026-10-20 就为此提升到了顶层）。
   if (transport) {
     var tp = transport;
     var stopRef = null;
     stopAnswerRef = function () {
-      // 用户点停止：通知对端真停（通道内会转给上游 cancel），本地立刻收尾。
-      try { if (stopRef) stopRef(); } catch (e) { /* 对端不在 */ }
+      try { if (stopRef) stopRef(); } catch (e) {}
       finish();
     };
     try {
-      stopRef = function () { try { tp.cancel(); } catch (e) { /* 忽略 */ } };
+      stopRef = function () { try { tp.cancel(); } catch (e) {} };
       var tpRes = tp.ask(payload, handleEventPlain);
       if (tpRes && typeof tpRes.then === 'function') {
         tpRes.then(function (r) {
-          // 对端没发终态事件时兜底（正常路径下 onEvent 已经发过 done/error）
           if (r && r.ok === false && r.reason) handleEventPlain({ type: "error", reason: String(r.reason) });
           finish();
         }).catch(function (e) {
@@ -1487,9 +1754,7 @@ function askChat(text) {
     }
     return;
   }
-  // ── 本机桥形态（默认，原链不动）──────────────────────────
 
-  /** 发一次 /chat。401/403 时刷新一次 token 再试——桥可能重装过（新 token）。 */
   function attempt(n) {
     return tokenAsync(n > 1).then(function (tk) {
       return fetch(withToken(BRIDGE + "/chat", tk), {
@@ -1521,18 +1786,15 @@ function askChat(text) {
     }
     function handleEvent(raw) {
       var line = raw.split("\\n").filter(function (l) { return l.indexOf("data:") === 0; })[0];
-      if (!line) return;                     // 注释/心跳
+      if (!line) return;
       var ev;
       try { ev = JSON.parse(line.slice(5).trim()); } catch (e) { return; }
       handleEventPlain(ev);
     }
-
     return pump();
   }).catch(function (e) {
     clearStatus(botMsg);
     if (e && e.name === "AbortError") {
-      // 用户点的「停止」：保留已收到的正文，补一句收尾标记，
-      // **不当错误**（否则用户会以为请求失败了）。
       flushRender(botMsg);
       if (!botMsg.raw) {
         botMsg.body.textContent = "（已停止）";
@@ -1554,7 +1816,6 @@ function askChat(text) {
   });
 }
 
-/** 把发送按钮恢复成「发送」态（停止与结束共用）。 */
 function resetSendButton() {
   if (!sendBtn) return;
   sendBtn.classList.remove("stop");
@@ -1565,57 +1826,31 @@ function resetSendButton() {
   stopAnswerRef = function () {};
 }
 
-/**
- * 把请求失败翻译成人能照着做的句子。
- *
- * HTTP 401 这种原文对用户毫无信息量——它其实意味着「桥在跑但 token 对不上」
- * （桥重装过 / 换了 BRIDGE_TOKEN），处理动作是刷新页面让面板重新握手。
- */
 function describeFailure(e) {
   var msg = String((e && e.message) || e);
-  // ⚠️ 2026-10-22 修：这里原来写 /^HTTP (\\d{3})$/ 的单反斜杠形态。本文件整体是一个
-  // **普通模板字符串**（CHAT_JS 由反引号包住），模板串会把单个反斜杠 d 当成转义吃掉
-  // ⇒ 产物里变成 /^HTTP (d{3})$/，永远匹配不上「HTTP 429」这类消息 ⇒ 下面四个分支
-  // （401/403/404/413/429）全是死代码。修法：写双反斜杠，让模板串求值后得到单反斜杠 d。
-  // **这是本仓第五次踩模板串的坑**（前四次：drawer-sync 正则、注释里的反引号 ×3）。
-  // 改这里务必在产物里验证，注释里也不能出现反引号。
   var m = msg.match(/^HTTP (\\d{3})$/);
   if (m) {
     var code = Number(m[1]);
     if (code === 401 || code === 403) return "本地桥拒绝了这次请求，刷新页面再试（token 可能已更换）";
     if (code === 404) return "本地桥没有 /chat 端点，先更新桥脚本";
     if (code === 413) return "这条消息太长";
-    // 速率闸（2026-10-19）：连点或脚本连发时触发。要说清"等一下"，不是"坏了"
     if (code === 429) return "发得太快了，等几秒再问";
   }
   if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) {
-    // 2026-10-22 更正：这句以前写「先在电脑上跑 node bridge.mjs」——两阶段重构后
-    // 那个文件已不存在，提示指向一个做不到的动作，把用户带偏。
-    // 现在链路是「油猴脚本 → 跨 origin 通道 → 上游」，失败的真实原因通常是
-    // 脚本没装/没生效，或两环密文解不开（AES-GCM 认证失败 ⇒ 脚本静默休眠）。
     return "连不上助手：检查油猴脚本是否已安装并启用（脚本没生效时不会建立通道）";
   }
   return msg;
 }
 
-// ── 面板开关 ────────────────────────────────────────────────
-// ── 宽度拖拽（桌面档）──────────────────────────────────────
-// 与左侧边栏同一套手法（shirone-reader.js 的 sidebar-resizer）：按下记起点，
-// 移动改 CSS 变量，松开落 localStorage，双击复位。
-//
-// 两处与左栏不同，都是「右边」这个位置带来的：
-//   ① 方向相反——手柄在面板左缘，往左拖是变宽，所以 dx 取负；
-//   ② 上限更宽——助手要放代码块和表格，允许到 720px（左栏导航到 580 就够）。
+// ── 宽度调整 ──
 var CHAT_W = "chat-width";
 var CHAT_W_KEY = "shirone-chat-width";
-var CHAT_W_DEFAULT = 240;
+var CHAT_W_DEFAULT = 360;
 var CHAT_W_MIN = 240;
 var CHAT_W_MAX = 720;
-// 正文列至少留这么宽，否则拖着拖着把文章挤没了
 var CHAT_MAIN_MIN = 420;
 
 function chatMaxWidth() {
-  // 可视宽度减掉左栏与正文的最小宽度；夹在 [MIN, MAX] 之间
   var sidebar = 0;
   var d = document.querySelector(".m3-drawer");
   if (d && window.innerWidth > 860) sidebar = d.getBoundingClientRect().width || 0;
@@ -1631,12 +1866,11 @@ function applyChatWidth(w, persist) {
   if (v > max) v = max;
   document.documentElement.style.setProperty("--" + CHAT_W, v + "px");
   if (persist) {
-    try { localStorage.setItem(CHAT_W_KEY, String(v)); } catch (e) { /* 隐私模式 */ }
+    try { localStorage.setItem(CHAT_W_KEY, String(v)); } catch (e) {}
   }
   return v;
 }
 
-/** 恢复已保存的宽度（只在桌面档有意义；窄屏那条规则根本不用这个变量）。 */
 function restoreChatWidth() {
   if (window.innerWidth <= 860) return;
   try {
@@ -1645,7 +1879,7 @@ function restoreChatWidth() {
     var n = parseInt(s, 10);
     if (isNaN(n) || n < CHAT_W_MIN) return;
     applyChatWidth(n, false);
-  } catch (e) { /* 无 localStorage */ }
+  } catch (e) {}
 }
 
 function buildResizer() {
@@ -1670,7 +1904,6 @@ function buildResizer() {
 
   window.addEventListener("mousemove", function (e) {
     if (!dragging) return;
-    // 往左拖 = 变宽，所以取负
     applyChatWidth(startW + (startX - e.clientX), false);
   });
 
@@ -1686,7 +1919,6 @@ function buildResizer() {
     applyChatWidth(CHAT_W_DEFAULT, true);
   });
 
-  // 触屏：桌面档在平板上也可能命中（>1200px 的横屏平板）
   el.addEventListener("touchstart", function (e) {
     if (window.innerWidth <= 860 || !e.touches.length) return;
     dragging = true;
@@ -1710,6 +1942,84 @@ function buildResizer() {
   return el;
 }
 
+// ── DOM 挂载 ──
+function buildDock() {
+  if (dockEl) return;
+  dockEl = document.createElement("div");
+  dockEl.id = "chat-dock";
+
+  var edge = document.createElement("div");
+  edge.className = "chat-edge";
+  edge.setAttribute("tabindex", "0");
+  edge.setAttribute("aria-label", "会话列表");
+
+  mobileHandle = document.createElement("button");
+  mobileHandle.type = "button";
+  mobileHandle.className = "chat-mobile-handle";
+  mobileHandle.setAttribute("aria-label", "会话列表");
+  mobileHandle.setAttribute("aria-expanded", "false");
+  mobileHandle.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>';
+  mobileHandle.onclick = function (e) {
+    e.stopPropagation();
+    var isOpen = dockEl.classList.toggle("open");
+    mobileHandle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+  };
+
+  var bmBar = document.createElement("aside");
+  bmBar.className = "chat-bookmarks";
+  bmBar.setAttribute("aria-label", "会话书签");
+
+  bmListEl = document.createElement("div");
+  bmListEl.className = "bm-list";
+  bmBar.appendChild(bmListEl);
+
+  dockEl.appendChild(edge);
+  dockEl.appendChild(mobileHandle);
+  dockEl.appendChild(bmBar);
+
+  document.body.appendChild(dockEl);
+
+  var openTimer = null;
+  var closeTimer = null;
+
+  function onEdgeEnter() {
+    if (window.innerWidth <= 860) return;
+    if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
+    if (!openTimer) {
+      openTimer = setTimeout(function () {
+        openTimer = null;
+        dockEl.classList.add("open");
+      }, 80);
+    }
+  }
+
+  function onDockLeave() {
+    if (window.innerWidth <= 860) return;
+    if (openTimer) { clearTimeout(openTimer); openTimer = null; }
+    if (!closeTimer) {
+      closeTimer = setTimeout(function () {
+        closeTimer = null;
+        dockEl.classList.remove("open");
+      }, 500);
+    }
+  }
+
+  edge.addEventListener("mouseenter", onEdgeEnter);
+  dockEl.addEventListener("mouseenter", function () {
+    if (window.innerWidth <= 860) return;
+    if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
+  });
+  dockEl.addEventListener("mouseleave", onDockLeave);
+
+  edge.addEventListener("focus", function () { dockEl.classList.add("open"); });
+  dockEl.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") {
+      dockEl.classList.remove("open");
+      edge.focus();
+    }
+  });
+}
+
 function buildPanel() {
   if (panel) return;
   panel = document.createElement("aside");
@@ -1725,7 +2035,6 @@ function buildPanel() {
   var closeBtn = document.createElement("button");
   closeBtn.className = "chat-head-btn";
   closeBtn.setAttribute("aria-label", "关闭");
-  // 叉号用 SVG，不用字符：字符 ✕ 在部分安卓字体里会被渲染成彩色 emoji 或偏移基线
   var x = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   x.setAttribute("width", "16"); x.setAttribute("height", "16");
   x.setAttribute("viewBox", "0 0 24 24"); x.setAttribute("fill", "none");
@@ -1749,11 +2058,9 @@ function buildPanel() {
   var form = document.createElement("form");
   form.className = "chat-input";
 
-  // 附件条（输入区上方）：待发图片缩略图
   attachBar = document.createElement("div");
   attachBar.className = "chat-attach-bar";
 
-  // 隐藏的文件选择器：回形针按钮点它就等价于点「选择文件」
   fileInput = document.createElement("input");
   fileInput.type = "file";
   fileInput.accept = "image/*";
@@ -1761,18 +2068,14 @@ function buildPanel() {
   fileInput.style.display = "none";
   fileInput.addEventListener("change", function () {
     acceptFiles(fileInput.files);
-    fileInput.value = "";      // 允许连续选同一个文件
+    fileInput.value = "";
   });
-
-  // 2026-10-26 站长定案：联网开关整块删除（协议无字段、按钮骗人，见上方 CSS 注释）。
-  // 旧实现与互斥逻辑在 git 历史里，官方真实通道找到后从历史复活，别凭记忆重写。
 
   attachBtn = document.createElement("button");
   attachBtn.type = "button";
   attachBtn.className = "chat-attach-btn";
   attachBtn.setAttribute("aria-label", "添加图片");
   attachBtn.title = "添加图片（也可以直接粘贴或拖进来）";
-  attachBtn.innerHTML = "";
   (function () {
     var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("width", "18"); svg.setAttribute("height", "18");
@@ -1800,7 +2103,6 @@ function buildPanel() {
       form.requestSubmit ? form.requestSubmit() : sendNow();
     }
   });
-  // 粘贴图片：截图后直接 Ctrl+V 是最自然的上图方式
   inputEl.addEventListener("paste", function (e) {
     var items = (e.clipboardData && e.clipboardData.items) || [];
     var files = [];
@@ -1818,16 +2120,15 @@ function buildPanel() {
   sendBtn.type = "submit";
   sendBtn.setAttribute("aria-label", "发送");
   sendBtn.textContent = "↑";
+
   form.appendChild(attachBtn); form.appendChild(inputEl); form.appendChild(sendBtn);
   form.appendChild(fileInput);
   form.addEventListener("submit", function (e) {
     e.preventDefault();
-    // busy 时这个按钮就是「停止」：走真正的取消，不只是断本地流
     if (busy) { stopAnswerRef(); return; }
     sendNow();
   });
 
-  // 拖图进面板 = 附件
   panel.addEventListener("dragover", function (e) {
     if (!e.dataTransfer || Array.prototype.indexOf.call(e.dataTransfer.types || [], "Files") < 0) return;
     e.preventDefault();
@@ -1847,49 +2148,30 @@ function buildPanel() {
   panel.appendChild(logEl);
   panel.appendChild(attachBar);
   panel.appendChild(form);
-  // 拖拽手柄放最后（z-index 已够高，顺序只为「不挡已有子元素」）
   panel.appendChild(buildResizer());
 
-  // 挂载点必须同时满足两件事（2026-10-19 实测桌面档跑到正文上方，就是这里没做对）：
-  //   ① **桌面档**要作为 .layout-container 的 flex 子项排在正文右侧（原来挂在
-  //      #search-panel 后面 = .main-column 里、.layout-container 之前 ⇒ 横在正文上方）；
-  //   ② **手机/中等档**是 position:fixed，祖先不能有 transform / filter / contain:paint，
-  //      否则包含块被改，抽屉就不贴视口边。.layout-container 只有 overflow-x:clip，
-  //      不建立固定定位包含块。
-  // .m3-toc 在 SPA 里会被整块替换，而 panel 是它的**后一个兄弟**，不会跟着被换掉。
-  var anchor = document.querySelector(".layout-container .m3-toc");
-  if (!anchor) anchor = document.querySelector(".layout-container");
-  if (anchor && anchor.parentNode) {
-    anchor.parentNode.insertBefore(panel, anchor.nextSibling);
-  } else {
-    var search = document.getElementById("search-panel");
-    (search && search.parentNode ? search.parentNode : document.body).appendChild(panel);
-  }
+  // 挂载点在 body 直下（SPA 替换范围之外，保证不被 replaceWith 销毁）
+  document.body.appendChild(panel);
 
-  // 手机抽屉遮罩：与左侧边栏同款手法，点它关面板。
-  // 遮罩要 **inset:0 盖全屏**，所以挂在 body 下，避开 .layout-container 的 overflow 裁剪。
   if (!backdrop) {
     backdrop = document.createElement("div");
     backdrop.className = "chat-backdrop";
-    backdrop.addEventListener("click", close);
+    backdrop.addEventListener("click", function () {
+      close();
+      if (dockEl) dockEl.classList.remove("open");
+    });
     document.body.appendChild(backdrop);
   }
-
-  ensureKatex();
 }
 
 function sendNow() {
   var t = String(inputEl && inputEl.value || "").trim();
   if (busy) return;
-  // 只有图没写字也要能发（「这图里是什么」是最常见的用法，
-  // 让人再打一遍字是多余的）。附件里至少一张 ready 就放行。
   var hasReadyImage = false;
   for (var i = 0; i < pending_attach.length; i++) {
     if (pending_attach[i].status === "ready") { hasReadyImage = true; break; }
   }
   if (!t && !hasReadyImage) return;
-  // 桥端要求 text 非空（它没法区分「空问题」和「坏包」）。只发图时补一个问题——
-  // 上游对「图里有什么」这类极简问法配合度最高（实测比任务式描述更少被拦）。
   if (!t) t = "图里有什么？";
   inputEl.value = "";
   inputEl.style.height = "auto";
@@ -1911,29 +2193,6 @@ function showEmpty() {
   logEl.appendChild(box);
 }
 
-function openPanel() {
-  buildPanel();
-  open = true;
-  document.body.classList.add("chat-open");
-  restoreChatWidth();
-  var btn = document.getElementById("assistant-toggle");
-  if (btn) btn.setAttribute("aria-expanded", "true");
-  if (logEl && !logEl.children.length) {
-    if (LOCAL_ONLY) showEmpty();
-    else showLocalOnlyNotice();
-  }
-  // 手机上不自动抢焦点：会立刻弹键盘，把抽屉顶成半屏
-  if (inputEl && LOCAL_ONLY && !(window.innerWidth <= 860)) inputEl.focus();
-  stuck = true;
-  scrollToBottom();
-}
-
-/**
- * 非本机环境下的说明（不发任何请求）。
- *
- * 为什么不干脆隐藏按钮：站长会在线上域名自测，看不见入口反而困惑。
- * 为什么不静默禁用：用户会以为坏了。说清楚「这是本机功能」最省事。
- */
 function showLocalOnlyNotice() {
   if (inputEl) { inputEl.disabled = true; inputEl.placeholder = "仅本机可用"; }
   if (sendBtn) sendBtn.disabled = true;
@@ -1948,6 +2207,35 @@ function showLocalOnlyNotice() {
   logEl.appendChild(box);
 }
 
+// ── 唤醒流水线（按需冷启动）──
+function ensureInitialized() {
+  if (initialized) return;
+  initialized = true;
+
+  buildDock();
+  buildPanel();
+
+  try { if (window.__webmcpEnable) window.__webmcpEnable(); } catch (e) {}
+  ensureKatex();
+  loadSessions();
+}
+
+function openPanel() {
+  ensureInitialized();
+  open = true;
+  document.body.classList.add("chat-open");
+  restoreChatWidth();
+  var btn = document.getElementById("assistant-toggle");
+  if (btn) btn.setAttribute("aria-expanded", "true");
+  if (logEl && !logEl.children.length) {
+    if (LOCAL_ONLY) showEmpty();
+    else showLocalOnlyNotice();
+  }
+  if (inputEl && LOCAL_ONLY && !(window.innerWidth <= 860)) inputEl.focus();
+  stuck = true;
+  scrollToBottom();
+}
+
 function close() {
   open = false;
   document.body.classList.remove("chat-open");
@@ -1956,30 +2244,33 @@ function close() {
   if (inputEl) inputEl.blur();
 }
 
-function toggle() { open ? close() : openPanel(); }
+function toggle() {
+  ensureInitialized();
+  open ? close() : openPanel();
+}
 
-// ── 接线 ────────────────────────────────────────────────────
+// ── 事件绑定（冷态监听）──
 var toggleBtn = document.getElementById("assistant-toggle");
-if (toggleBtn) toggleBtn.addEventListener("click", function (e) { e.stopPropagation(); toggle(); });
+if (toggleBtn) {
+  toggleBtn.addEventListener("click", function (e) {
+    e.stopPropagation();
+    toggle();
+  });
+}
 
 document.addEventListener("keydown", function (e) {
   if (e.key === "Escape" && open) {
-    // 输入框有内容时先不清空，只关面板
     close();
   }
 });
 
-// SPA 导航钩子：面板不销毁，只更新「当前页」感知（历史保留）
+// SPA 导航钩子：面板与书签树驻留 body，仅同步位置
 window.__chatSync = function () {
   if (!open) return;
-  // 目前不需要额外动作：下一轮 ask 时 contextProvider 会取新页信息。
-  // 这里只做滚动位置复位，避免换页后仍停在旧位置。
   stuck = true;
   scrollToBottom();
 };
 
-// 窗口变窄时把面板宽度收回合法区间（否则 720px 的记忆值会把正文挤没）。
-// 只夹不存——存了就把用户原本的偏好改掉了，窗口再变宽时回不去。
 var resizeQueued = false;
 window.addEventListener("resize", function () {
   if (resizeQueued) return;
@@ -1991,38 +2282,49 @@ window.addEventListener("resize", function () {
   });
 }, { passive: true });
 
-window.__chatPanel = { open: openPanel, close: close, toggle: toggle, ask: askChat, get isOpen() { return open; } };
+window.__chatPanel = {
+  open: openPanel,
+  close: close,
+  toggle: toggle,
+  ask: askChat,
+  get isOpen() { return open; },
+  getState: function () {
+    return {
+      initialized: initialized,
+      open: open,
+      busy: busy,
+      currentSessionId: currentSessionId,
+      sessions: sessionsList.slice(),
+    };
+  },
+  selectSession: function (id) {
+    ensureInitialized();
+    return selectSession(id);
+  },
+  deleteSession: function (id) {
+    ensureInitialized();
+    return deleteSession(id);
+  },
+  newSession: function () {
+    ensureInitialized();
+    return newSession();
+  },
+};
 
-// 2026-10-25（生产验收）：面板是「我要用页面工具」最直接的信号——打开即启用。
-// loader 的形态 3 默认不加载 polyfill（普通读者不付 281KB），但没有这个开关时
-// 用户必须自己记着带 ?webmcp=1 或手写 localStorage，忘了就工具零注册、
-// 提示词整段被跳过、模型只会回「我没有 site_* 工具」。
-try {
-  var __origOpen = openPanel;
-  openPanel = function () { try { if (window.__webmcpEnable) window.__webmcpEnable(); } catch (e) {} return __origOpen.apply(this, arguments); };
-  window.__chatPanel.open = openPanel;
-} catch (e) { /* 只读绑定：忽略 */ }
-
-// ── setTransport 钩子（2026-10-20，契约见 chat-panel-hook 文档）──
-// fn = {ask, cancel, upload} 或 null（恢复本机桥）。ready 超时指引走 showNotice。
 window.__chatPanel.setTransport = function (fn) {
   var prev = transport;
   transport = fn || null;
-  // 切换前收尾在飞的一问（若正在跑）——两种形态切换的干净边界。
-  // ⚠️ 2026-10-20 无人值守实测：旧形态的 stopAnswerRef 依赖悬死 Promise 落定
-  // 才复位 busy；transport 形态失联时永不落定。这里直接本地收尾，不赌对端。
   if (busy) {
-    try { stopAnswerRef(); } catch (e) { /* 已停 */ }
-    // 旧 transport 的在飞状态也要收（它不会因为换了对象就自己清）——
-    // 否则同一个 transport 对象被复用时下一问仍撞「上一问还没结束」。
-    try { if (prev && typeof prev.abandon === "function") prev.abandon("连接方式已切换"); } catch (e) { /* 已收 */ }
-    // 为确保切换立刻干净：再挂一个 2s 的强制复位（比兜底更短）。
+    try { stopAnswerRef(); } catch (e) {}
+    try { if (prev && typeof prev.abandon === "function") prev.abandon("连接方式已切换"); } catch (e) {}
     setTimeout(function () {
       if (busy) { busy = false; resetSendButton(); if (attachBtn) attachBtn.disabled = false; stream = null; }
     }, 2000);
   }
 };
+
 window.__chatPanel.showNotice = function (text) {
+  ensureInitialized();
   var notice = addMsg("bot");
   notice.body.textContent = String(text || "");
   notice.done = true;
