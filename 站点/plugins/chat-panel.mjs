@@ -38,17 +38,13 @@ const TOOL_LABELS_SRC = JSON.stringify(
 export const CHAT_CSS = `
 /* ── 学习助手面板与会话书签条（重构版）────────────────────────
    布局三档：
-     · > 1200px  右侧热区悬停滑出书签条，面板浮层覆盖（可拖拽 240-720px）
-     · 861-1200  右侧热区悬停滑出书签条，面板浮层（最大宽度受限）
+     · > 1200px  融入 site-shell 桌面三栏流（左侧会话列表，右侧对话区）
+     · 861-1200  融入 site-shell 三栏流
      · ≤ 860px   右缘常驻 20×56px 把手，点击滑出书签抽屉，面板全屏抽屉
    与 TOC 互斥由 body.chat-open 控制。 */
 
 :root {
-  --chat-width: 360px;
-}
-
-body.chat-open .m3-toc {
-  display: none;
+  --chat-width: 380px;
 }
 
 body.chat-resizing {
@@ -57,6 +53,12 @@ body.chat-resizing {
 }
 
 body.chat-resizing .chat-panel {
+  transition: none !important;
+  user-select: none;
+}
+
+body.chat-resizing aside.chat-sessions,
+body.chat-resizing aside.chat-dialog {
   transition: none !important;
   user-select: none;
 }
@@ -74,14 +76,18 @@ body.chat-resizing .chat-panel {
 .chat-resizer:hover, .chat-resizer.dragging {
   background-color: color-mix(in srgb, var(--md-sys-color-primary) 30%, transparent);
 }
+.chat-resizer-right {
+  left: auto;
+  right: -3px;
+}
 
 .chat-panel {
-  display: none;
+  display: flex;
   flex-direction: column;
   min-height: 0;
   background-color: var(--md-sys-color-surface-container-lowest);
   border-left: 1px solid var(--md-sys-color-outline-variant);
-  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.12);
+  box-shadow: none;
   z-index: 90;
   box-sizing: border-box;
 }
@@ -92,77 +98,25 @@ body.chat-open .chat-panel {
 
 /* ── 桌面档 (≥ 1201px) ── */
 @media (min-width: 1201px) {
-  #chat-dock {
-    position: fixed;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    z-index: 70;
-    pointer-events: none;
-  }
   #chat-dock .chat-edge {
-    position: fixed;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    width: 3px;
-    background: color-mix(in srgb, var(--md-sys-color-primary) 35%, transparent);
-    cursor: pointer;
-    pointer-events: auto;
-    transition: background 150ms;
-  }
-  #chat-dock .chat-edge::before {
-    content: '';
-    position: absolute;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    width: 13px;
-  }
-  #chat-dock .chat-edge:hover,
-  #chat-dock .chat-edge:focus-visible {
-    background: var(--md-sys-color-primary);
+    display: none;
   }
   #chat-dock .chat-mobile-handle {
     display: none;
   }
   #chat-dock .chat-bookmarks {
-    position: fixed;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    width: 240px;
-    background: var(--md-sys-color-surface-container-low);
-    border-left: 1px solid var(--md-sys-color-outline-variant);
-    box-shadow: -4px 0 16px rgba(0, 0, 0, 0.08);
+    position: static;
+    width: 100%;
+    height: 100%;
+    transform: none;
+    box-shadow: none;
+    border-left: none;
     display: flex;
     flex-direction: column;
-    transform: translateX(100%);
-    transition: transform 220ms cubic-bezier(.2, .8, .2, 1);
     pointer-events: auto;
-    /* ⚠️ 2026-10-26 修（真机实测）：书签条必须**浮在对话面板之上**。
-       面板 z-index 90，原先书签条只有 72 ⇒ 面板一打开就把书签条整个盖住
-       （elementFromPoint 在书签条区域返回的是 chat-log）。取 92：高于面板 90，
-       低于 #search-panel 的 95，保证任何面板状态下都能切会话。 */
-    z-index: 92;
-  }
-  #chat-dock.open .chat-bookmarks,
-  #chat-dock:focus-within .chat-bookmarks {
-    transform: translateX(0);
-  }
-  .chat-panel {
-    position: fixed;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    width: var(--chat-width);
-    max-width: 720px;
-    min-width: 240px;
-    transform: translateX(100%);
-    transition: transform 220ms cubic-bezier(.2, .8, .2, 1);
   }
   body.chat-open .chat-panel {
-    transform: translateX(0);
+    width: var(--chat-width);
   }
   .chat-resizer {
     display: block;
@@ -171,83 +125,33 @@ body.chat-open .chat-panel {
 
 /* ── 平板档 (861px – 1200px) ── */
 @media (min-width: 861px) and (max-width: 1200px) {
-  #chat-dock {
-    position: fixed;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    z-index: 70;
-    pointer-events: none;
-  }
   #chat-dock .chat-edge {
-    position: fixed;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    width: 3px;
-    background: color-mix(in srgb, var(--md-sys-color-primary) 35%, transparent);
-    cursor: pointer;
-    pointer-events: auto;
-    transition: background 150ms;
-  }
-  #chat-dock .chat-edge::before {
-    content: '';
-    position: absolute;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    width: 13px;
-  }
-  #chat-dock .chat-edge:hover,
-  #chat-dock .chat-edge:focus-visible {
-    background: var(--md-sys-color-primary);
+    display: none;
   }
   #chat-dock .chat-mobile-handle {
     display: none;
   }
   #chat-dock .chat-bookmarks {
-    position: fixed;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    width: 220px;
-    background: var(--md-sys-color-surface-container-low);
-    border-left: 1px solid var(--md-sys-color-outline-variant);
-    box-shadow: -4px 0 16px rgba(0, 0, 0, 0.08);
+    position: static;
+    width: 100%;
+    height: 100%;
+    transform: none;
+    box-shadow: none;
+    border-left: none;
     display: flex;
     flex-direction: column;
-    transform: translateX(100%);
-    transition: transform 220ms cubic-bezier(.2, .8, .2, 1);
     pointer-events: auto;
-    /* ⚠️ 2026-10-26 修（真机实测）：书签条必须**浮在对话面板之上**。
-       面板 z-index 90，原先书签条只有 72 ⇒ 面板一打开就把书签条整个盖住
-       （elementFromPoint 在书签条区域返回的是 chat-log）。取 92：高于面板 90，
-       低于 #search-panel 的 95，保证任何面板状态下都能切会话。 */
-    z-index: 92;
-  }
-  #chat-dock.open .chat-bookmarks,
-  #chat-dock:focus-within .chat-bookmarks {
-    transform: translateX(0);
-  }
-  .chat-panel {
-    position: fixed;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    width: min(380px, 85vw);
-    transform: translateX(100%);
-    transition: transform 220ms cubic-bezier(.2, .8, .2, 1);
-  }
-  body.chat-open .chat-panel {
-    transform: translateX(0);
   }
   .chat-resizer {
-    display: none;
+    display: block;
   }
 }
 
 /* ── 手机档 (≤ 860px 独立设计) ── */
 @media (max-width: 860px) {
+  body.chat-open .m3-toc {
+    display: none;
+  }
   #chat-dock .chat-edge {
     display: none;
   }
@@ -1369,6 +1273,7 @@ function showToast(text, duration) {
 // ── 会话管理（中性契约）──
 function renderBookmarks() {
   if (!bmListEl) return;
+  var prevScroll = bmListEl.scrollTop;
   while (bmListEl.firstChild) bmListEl.removeChild(bmListEl.firstChild);
 
   var newBtn = document.createElement("button");
@@ -1390,6 +1295,7 @@ function renderBookmarks() {
     emptyDiv.className = "bm-empty";
     emptyDiv.textContent = "暂无会话";
     bmListEl.appendChild(emptyDiv);
+    bmListEl.scrollTop = prevScroll;
     return;
   }
 
@@ -1429,6 +1335,7 @@ function renderBookmarks() {
     };
     bmListEl.appendChild(item);
   });
+  bmListEl.scrollTop = prevScroll;
 }
 
 function loadSessions() {
@@ -1475,7 +1382,13 @@ function selectSession(id) {
     try { stopAnswerRef(); } catch (e) {}
   }
   currentSessionId = id;
-  renderBookmarks();
+  if (bmListEl) {
+    var items = bmListEl.querySelectorAll(".bm-item");
+    for (var bi = 0; bi < items.length; bi++) {
+      var it = items[bi];
+      it.classList.toggle("active", it.getAttribute("data-session-id") === id);
+    }
+  }
   openPanel();
 
   if (logEl) {
@@ -1843,20 +1756,38 @@ function describeFailure(e) {
 }
 
 // ── 宽度调整 ──
-var CHAT_W = "chat-width";
-var CHAT_W_KEY = "shirone-chat-width";
-var CHAT_W_DEFAULT = 360;
-var CHAT_W_MIN = 240;
+var SESS_W = "chat-sessions-width";
+var SESS_W_KEY = "shirone-chat-sessions-width";
+var SESS_W_DEFAULT = 280;
+var SESS_W_MIN = 200;
+var SESS_W_MAX = 420;
+
+var CHAT_W = "chat-dialog-width";
+var CHAT_W_KEY = "shirone-chat-dialog-width";
+var CHAT_W_LEGACY_KEY = "shirone-chat-width";
+var CHAT_W_DEFAULT = 380;
+var CHAT_W_MIN = 300;
 var CHAT_W_MAX = 720;
 var CHAT_MAIN_MIN = 420;
 
 function chatMaxWidth() {
   var sidebar = 0;
-  var d = document.querySelector(".m3-drawer");
+  var d = (typeof document.querySelector === "function") ? document.querySelector(".m3-drawer") : null;
   if (d && window.innerWidth > 860) sidebar = d.getBoundingClientRect().width || 0;
   var room = Math.floor(window.innerWidth - sidebar - CHAT_MAIN_MIN);
   if (room < CHAT_W_MIN) return CHAT_W_MIN;
   return Math.min(CHAT_W_MAX, room);
+}
+
+function applySessionsWidth(w, persist) {
+  var v = Math.round(w);
+  if (v < SESS_W_MIN) v = SESS_W_MIN;
+  if (v > SESS_W_MAX) v = SESS_W_MAX;
+  document.documentElement.style.setProperty("--" + SESS_W, v + "px");
+  if (persist) {
+    try { localStorage.setItem(SESS_W_KEY, String(v)); } catch (e) {}
+  }
+  return v;
 }
 
 function applyChatWidth(w, persist) {
@@ -1865,8 +1796,12 @@ function applyChatWidth(w, persist) {
   if (v < CHAT_W_MIN) v = CHAT_W_MIN;
   if (v > max) v = max;
   document.documentElement.style.setProperty("--" + CHAT_W, v + "px");
+  document.documentElement.style.setProperty("--chat-width", v + "px");
   if (persist) {
-    try { localStorage.setItem(CHAT_W_KEY, String(v)); } catch (e) {}
+    try {
+      localStorage.setItem(CHAT_W_KEY, String(v));
+      localStorage.setItem(CHAT_W_LEGACY_KEY, String(v));
+    } catch (e) {}
   }
   return v;
 }
@@ -1874,7 +1809,14 @@ function applyChatWidth(w, persist) {
 function restoreChatWidth() {
   if (window.innerWidth <= 860) return;
   try {
-    var s = localStorage.getItem(CHAT_W_KEY);
+    var sw = localStorage.getItem(SESS_W_KEY);
+    if (sw) {
+      var sn = parseInt(sw, 10);
+      if (!isNaN(sn) && sn >= SESS_W_MIN) applySessionsWidth(sn, false);
+    }
+  } catch (e) {}
+  try {
+    var s = localStorage.getItem(CHAT_W_KEY) || localStorage.getItem(CHAT_W_LEGACY_KEY);
     if (!s) return;
     var n = parseInt(s, 10);
     if (isNaN(n) || n < CHAT_W_MIN) return;
@@ -1882,9 +1824,69 @@ function restoreChatWidth() {
   } catch (e) {}
 }
 
+function buildSessionsResizer() {
+  var el = document.createElement("div");
+  el.className = "chat-resizer chat-resizer-right";
+  el.id = "chat-sessions-resizer";
+  el.title = "按住拖拽调整会话列表宽度，双击恢复默认";
+
+  var dragging = false;
+  var startX = 0;
+  var startW = 0;
+
+  el.addEventListener("mousedown", function (e) {
+    if (window.innerWidth <= 860) return;
+    dragging = true;
+    startX = e.clientX;
+    startW = dockEl ? dockEl.getBoundingClientRect().width : SESS_W_DEFAULT;
+    el.classList.add("dragging");
+    document.body.classList.add("chat-resizing");
+    e.preventDefault();
+  });
+
+  window.addEventListener("mousemove", function (e) {
+    if (!dragging) return;
+    applySessionsWidth(startW + (e.clientX - startX), false);
+  });
+
+  window.addEventListener("mouseup", function () {
+    if (!dragging) return;
+    dragging = false;
+    el.classList.remove("dragging");
+    document.body.classList.remove("chat-resizing");
+    if (dockEl) applySessionsWidth(dockEl.getBoundingClientRect().width, true);
+  });
+
+  el.addEventListener("dblclick", function () {
+    applySessionsWidth(SESS_W_DEFAULT, true);
+  });
+
+  el.addEventListener("touchstart", function (e) {
+    if (window.innerWidth <= 860 || !e.touches.length) return;
+    dragging = true;
+    startX = e.touches[0].clientX;
+    startW = dockEl ? dockEl.getBoundingClientRect().width : SESS_W_DEFAULT;
+    el.classList.add("dragging");
+    document.body.classList.add("chat-resizing");
+  }, { passive: true });
+  el.addEventListener("touchmove", function (e) {
+    if (!dragging || !e.touches.length) return;
+    applySessionsWidth(startW + (e.touches[0].clientX - startX), false);
+  }, { passive: true });
+  el.addEventListener("touchend", function () {
+    if (!dragging) return;
+    dragging = false;
+    el.classList.remove("dragging");
+    document.body.classList.remove("chat-resizing");
+    if (dockEl) applySessionsWidth(dockEl.getBoundingClientRect().width, true);
+  });
+
+  return el;
+}
+
 function buildResizer() {
   var el = document.createElement("div");
-  el.className = "chat-resizer";
+  el.className = "chat-resizer chat-resizer-left";
   el.id = "chat-resizer";
   el.title = "按住拖拽调整助手宽度，双击恢复默认";
 
@@ -1896,7 +1898,7 @@ function buildResizer() {
     if (window.innerWidth <= 860) return;
     dragging = true;
     startX = e.clientX;
-    startW = panel.getBoundingClientRect().width;
+    startW = panel ? panel.getBoundingClientRect().width : CHAT_W_DEFAULT;
     el.classList.add("dragging");
     document.body.classList.add("chat-resizing");
     e.preventDefault();
@@ -1923,7 +1925,7 @@ function buildResizer() {
     if (window.innerWidth <= 860 || !e.touches.length) return;
     dragging = true;
     startX = e.touches[0].clientX;
-    startW = panel.getBoundingClientRect().width;
+    startW = panel ? panel.getBoundingClientRect().width : CHAT_W_DEFAULT;
     el.classList.add("dragging");
     document.body.classList.add("chat-resizing");
   }, { passive: true });
@@ -1945,8 +1947,10 @@ function buildResizer() {
 // ── DOM 挂载 ──
 function buildDock() {
   if (dockEl) return;
-  dockEl = document.createElement("div");
+  dockEl = document.createElement("aside");
   dockEl.id = "chat-dock";
+  dockEl.className = "chat-sessions";
+  dockEl.setAttribute("aria-label", "会话列表");
 
   var edge = document.createElement("div");
   edge.className = "chat-edge";
@@ -1976,8 +1980,23 @@ function buildDock() {
   dockEl.appendChild(edge);
   dockEl.appendChild(mobileHandle);
   dockEl.appendChild(bmBar);
+  dockEl.appendChild(buildSessionsResizer());
 
-  document.body.appendChild(dockEl);
+  var siteShell = (typeof document.querySelector === "function") ? document.querySelector(".site-shell") : null;
+  if (siteShell) {
+    var drawer = (typeof siteShell.querySelector === "function") ? siteShell.querySelector(".m3-drawer") : null;
+    if (drawer && drawer.parentNode === siteShell) {
+      if (typeof drawer.after === "function") {
+        drawer.after(dockEl);
+      } else {
+        siteShell.insertBefore(dockEl, drawer.nextSibling);
+      }
+    } else {
+      siteShell.insertBefore(dockEl, siteShell.firstChild);
+    }
+  } else {
+    document.body.appendChild(dockEl);
+  }
 
   var openTimer = null;
   var closeTimer = null;
@@ -2012,19 +2031,13 @@ function buildDock() {
   dockEl.addEventListener("mouseleave", onDockLeave);
 
   edge.addEventListener("focus", function () { dockEl.classList.add("open"); });
-  dockEl.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") {
-      dockEl.classList.remove("open");
-      edge.focus();
-    }
-  });
 }
 
 function buildPanel() {
   if (panel) return;
   panel = document.createElement("aside");
   panel.id = "chat-panel";
-  panel.className = "chat-panel";
+  panel.className = "chat-panel chat-dialog";
   panel.setAttribute("aria-label", "学习助手");
 
   var head = document.createElement("div");
@@ -2150,8 +2163,12 @@ function buildPanel() {
   panel.appendChild(form);
   panel.appendChild(buildResizer());
 
-  // 挂载点在 body 直下（SPA 替换范围之外，保证不被 replaceWith 销毁）
-  document.body.appendChild(panel);
+  var siteShell = (typeof document.querySelector === "function") ? document.querySelector(".site-shell") : null;
+  if (siteShell) {
+    siteShell.appendChild(panel);
+  } else {
+    document.body.appendChild(panel);
+  }
 
   if (!backdrop) {
     backdrop = document.createElement("div");
@@ -2223,6 +2240,11 @@ function ensureInitialized() {
 function openPanel() {
   ensureInitialized();
   open = true;
+  if (!document.body.dataset) document.body.dataset = {};
+  if (document.body.dataset.sidebarWasCollapsed === undefined) {
+    document.body.dataset.sidebarWasCollapsed = (document.body.classList && document.body.classList.contains("sidebar-collapsed")) ? "true" : "false";
+  }
+  document.body.classList.add("sidebar-collapsed");
   document.body.classList.add("chat-open");
   restoreChatWidth();
   var btn = document.getElementById("assistant-toggle");
@@ -2239,6 +2261,17 @@ function openPanel() {
 function close() {
   open = false;
   document.body.classList.remove("chat-open");
+  if (dockEl) dockEl.classList.remove("open");
+  if (mobileHandle) mobileHandle.setAttribute("aria-expanded", "false");
+  var wasCollapsed = document.body.dataset && document.body.dataset.sidebarWasCollapsed === "true";
+  if (document.body.dataset) delete document.body.dataset.sidebarWasCollapsed;
+  if (!wasCollapsed) {
+    setTimeout(function () {
+      if (!open) {
+        document.body.classList.remove("sidebar-collapsed");
+      }
+    }, 120);
+  }
   var btn = document.getElementById("assistant-toggle");
   if (btn) btn.setAttribute("aria-expanded", "false");
   if (inputEl) inputEl.blur();
@@ -2258,9 +2291,10 @@ if (toggleBtn) {
   });
 }
 
-document.addEventListener("keydown", function (e) {
-  if (e.key === "Escape" && open) {
-    close();
+window.addEventListener("keydown", function (e) {
+  if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S")) {
+    e.preventDefault();
+    toggle();
   }
 });
 
