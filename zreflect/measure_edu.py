@@ -79,10 +79,11 @@ HOOKTESTS_CMD = (
 # 实测）与 TAP「# tests N」都认；测试名里出现「tests 3」字样也不会误取
 # （旧 grep -o 取首个匹配，先命中测试名就数错）。没读到汇总行 ⇒ 同样非零退出
 # （宁缺勿假：node 崩了不许把 0 交给台账）。
-# 2026-10-25 修：旧命令只跑**单层** glob `plugins/*.test.mjs`（334 项），
-# 漏掉 `plugins/assistant/` 下 5 个文件的 143 项。而项目自己的 `npm test`
-# 声明的是 `node --test plugins/`（递归，477 项）——台账量的是子集，等于
-# 每次引用都在低估覆盖面。改与 npm test 同口径（递归）。
+# 2026-10-25 修：旧命令只跑**单层** glob `plugins/*.test.mjs`，会漏掉子目录里的
+# 测试文件。而项目自己的 `npm test` 声明的是 `node --test plugins/`（递归）——
+# 台账量的是子集，等于每次引用都在低估覆盖面。改与 npm test 同口径（递归）。
+# 2026-10-26：`plugins/assistant/` 整体移出仓库（助手协议栈归 node 侧，真相源在
+# `.zcode/学习通API/protocol/`），计数随之回落；递归口径不变，将来加子目录仍自动覆盖。
 PLUGIN_TESTS_CMD = (
     "cd 站点 && node --test plugins/ 2>&1 | awk "
     "'NF==3 && $3 ~ /^[0-9]+$/ && ($2==\"tests\"||$2==\"fail\"||$2==\"cancelled\") "
