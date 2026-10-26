@@ -746,8 +746,13 @@ body.sidebar-resizing .m3-drawer {
 .drawer-nav-item.active .drawer-nav-link,
 /* 组节点 active（票 B，2026-10-22）：有索引页的组标题就是 drawer-nav-link，
    停在该组索引页时 drawer-sync 给 li.drawer-nav-group 打 active——这里补命中，
-   让组标题与叶子同款强调（primary-container 背景 + 600 字重）。 */
-.drawer-nav-group.active .drawer-nav-link {
+   让组标题与叶子同款强调（primary-container 背景 + 600 字重）。
+   ⚠️ 2026-10-26 修（站长手机截图实测「父组高亮时所有子项跟着蓝」）：
+   原选择器是**后代** `.drawer-nav-group.active .drawer-nav-link` —— 子项本身也是
+   `.drawer-nav-link`，且都在该组的后代树里，于是父组一 active，整组子项全部上背景。
+   改成**只命中标题那一层**（`> .nav-group-header >` 直系）。同文件 .expanded 那条
+   chevron 规则本来就是这么写的（>.nav-group-header），此处是对齐那个先例。 */
+.drawer-nav-group.active > .nav-group-header > .drawer-nav-link {
   background-color: var(--md-sys-color-primary-container);
   color: var(--md-sys-color-on-primary-container);
   font-weight: 600;

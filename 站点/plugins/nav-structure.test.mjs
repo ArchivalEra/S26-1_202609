@@ -232,3 +232,38 @@ test('T5b-④ drawer-sync 产物靠 nav JSON 判定，不再有 data-path 全等
   assert.ok(iProvider < iConsumer,
     '加载顺序：nav-structure.js 必须在 drawer-sync.js 之前（否则运行时 undefined）');
 });
+
+// ── 侧栏 active 的「应用层」契约（2026-10-26）────────────────────
+//
+// 背景（站长手机截图实测）：父组「课堂笔记」高亮时，它下面**所有子项跟着蓝底**。
+// 根因不是判定函数（isActive 是精确相等、collectActive 有 8 条测试护着），
+// 而是把判定结果落到 DOM/样式的**三处写法不一致**：
+//   ① CSS 用**后代**选择器 `.drawer-nav-group.active .drawer-nav-link` ——
+//      子项本身也是 .drawer-nav-link 且在组内后代树里 ⇒ 整组上背景；
+//   ② build.mjs 的组节点分支漏了 active 类 ⇒ 首屏进目录页时先无高亮、再闪出来。
+// 下面三条把这两个应用层前提钉住。判定函数本身不在此重复测（上面已有）。
+test('CSS：组节点 active 只命中标题那一层，不许用后代选择器波及子项', () => {
+  const raw = readFileSync(path.join(HERE, '../assets/theme/shirone-reader.css'), 'utf8');
+  // 剥掉注释再判——注释里会引用旧写法作说明（第一次写这条测试时就被自己的注释误伤了）
+  const css = raw.replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.ok(css.includes('.drawer-nav-group.active > .nav-group-header > .drawer-nav-link'),
+    '组节点 active 的高亮规则必须用直系子选择器（> .nav-group-header >）限定到标题层');
+  assert.ok(!/\.drawer-nav-group\.active\s+\.drawer-nav-link/.test(css),
+    '不许再有后代选择器（会波及该组全部子项——2026-10-26 手机截图的蓝底 bug 就是这个）');
+});
+
+test('构建期：组节点也输出 active 类（与运行时 collectActive 对齐，消首帧闪烁）', () => {
+  const src = readFileSync(path.join(HERE, '../build.mjs'), 'utf8');
+  // 组节点模板串里必须出现 nodeActive
+  const groupTpl = src.slice(src.indexOf("out += `<li class=\"drawer-nav-group"), src.indexOf("out += `<li class=\"drawer-nav-group") + 300);
+  assert.ok(groupTpl.includes('nodeActive'), '组节点 <li> 的 class 里必须拼上 active（nodeActive）');
+  assert.ok(groupTpl.includes('nodeExpanded'), 'expanded 照旧保留');
+});
+
+test('DOM 层级：组标题链接确实在 .nav-group-header 下（上面那两条的前提）', () => {
+  const html = needDist('课程/形势与政策/课堂笔记/index.html');
+  // 组节点结构：li.drawer-nav-group > div.nav-group-header > a.drawer-nav-link
+  assert.ok(/<li class="drawer-nav-group[^"]*"[^>]*>\s*<div class="nav-group-header[^"]*">\s*<a[^>]*class="drawer-nav-link"/.test(html),
+    '组标题链接必须是 .drawer-nav-group > .nav-group-header > a.drawer-nav-link 这一层——'
+    + '若结构变了，直系选择器就会失配（静默失去高亮，不报错）');
+});
