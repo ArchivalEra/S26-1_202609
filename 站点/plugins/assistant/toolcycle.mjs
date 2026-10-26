@@ -586,12 +586,23 @@ export function createToolSession({
         results.push(x);
       }
 
-      // ⭐ 视觉链路（2026-10-19）：模型调 site_image 拿到 dataUrl 后，
-      // 页面侧已经把 webp 转成 jpeg 了；这里负责「上传 + 带图追问」——
-      // 否则 dataUrl 只是一串 base64，模型自己看不见自己取到的图。
+      // ⭐ 视觉链路（2026-10-19，2026-10-26 扩展到截图）：模型拿到 dataUrl 后，
+      // 这里负责「上传 + 带图追问」——否则 dataUrl 只是一串 base64，模型看不见。
+      //
+      // ⚠️ 2026-10-26 修（端到端实测抓出）：这里原先只认 `site_image`，
+      // **`site_capture_view` 被排除在外**。于是模型调截图、工具回了图（实测 263KB JPEG、
+      // 625×2364），但 `slimForFeed` 在回喂时把 dataUrl 剥掉（它必须剥，否则撞单条上限），
+      // 图从来没送到模型眼前——模型只能看见「截图成功了」这行字，然后回一句
+      // 「根据法律内容，涉及敏感词，我不能回复」。截图工具的描述写着「供看不见页面的
+      // 模型查看版面」，行为与描述不符。
+      //
+      // 现在两个工具都走这条链：`site_image`（取站内具体图片）与
+      // `site_capture_view`（截版面/元素）。判据只看「返回值里有没有 dataUrl」，
+      // 不按工具名分叉——将来再加取图类工具不必改这里。
+      const VISION_TOOLS = new Set(['site_image', 'site_capture_view']);
       const uploaded = [];
       for (const x of results) {
-        if (!x.ok || x.call.name !== 'site_image' || !upload) continue;
+        if (!x.ok || !VISION_TOOLS.has(x.call.name) || !upload) continue;
         const v = x.value || {};
         if (!v.ok || !v.dataUrl) continue;
         const bytes = dataUrlBytes(v.dataUrl);

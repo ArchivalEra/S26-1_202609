@@ -58,6 +58,10 @@ export function chaoxingAdapter(upstream, hostOpts = {}) {
     async open(cfg) {
       const a = createAssistant({
         base: upstream.base, unitId: upstream.unitId, robotId: upstream.robotId,
+        // 图片 CDN 根：模型调 site_image / site_capture_view 后要把图上传给上游看，
+        // uploadImage 拼 star4 URL 时必须有它。不传 ⇒ uploadImage 抛错 ⇒ 视觉链路断
+        // （2026-10-25 审计 C1 记过「全仓没有调用方传它」，2026-10-26 补上）。
+        cdnBase: upstream.cdnBase,
         isLLMPlanning: Number(cfg.isLLMPlanning) === 1 ? 1 : 0,
         log,
         trace,
@@ -90,7 +94,7 @@ export function chaoxingAdapter(upstream, hostOpts = {}) {
  * 建管理器。
  * @param {object} [opts]
  * @param {{open: Function}} [opts.adapter]   seam：默认 chaoxingAdapter()（需 opts.upstream）
- * @param {{base: string, unitId: string|number, robotId: string|number}} [opts.upstream]
+ * @param {{base: string, unitId: string|number, robotId: string|number, cdnBase?: string}} [opts.upstream]
  * @param {number} [opts.reconnectAttempts]   传输层换线重试上限，默认 2
  * @param {number} [opts.deadlineMs]          单次 ask 墙钟上限，默认 360000
  */
