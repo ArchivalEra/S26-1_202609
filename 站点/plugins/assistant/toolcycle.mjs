@@ -488,19 +488,15 @@ export function createToolSession({
       const streamOpts0 = lastRound && opts && opts.onChunk
         ? opts
         : (opts && opts.onChunk ? { ...opts, onChunk: null } : opts);
-      // 🔬 2026-10-25：把工具定义**结构化**随每轮提问递上去（实验路 A）。
+      // ⛔ 2026-10-26 删除「工具定义随帧递上去」（实验路 A）——联合测试抓出的真凶。
       //
-      // 只在 `tools` 非空时加。加了之后 proto 会把它塞进帧的 msg.tools——
-      // 让上游的工具表和提示词里的文字清单**指向同一批工具**，而不是只靠文字描述
-      // 让模型猜「这些东西存不存在」。
-      //
-      // 变的是「有没有这个字段」，不变的是回喂/解析/工具循环——全部照旧。
-      {
-        try { console.error('[实验] toolcycle 收到 tools=' + (Array.isArray(tools) ? tools.length : typeof tools)); } catch { }
-      }
+      // 该实验 2026-10-25 已证伪：上游**静默忽略** msg.tools，不报错，
+      // 模型照样列它自己的 ls/read_file/glob。更要命的是它把帧撑爆：
+      // 11 个工具序列化 3533 字符 + 回喂预算 1800 ⇒ 第 2 轮起每帧约 5333 字符，
+      // 远超上游单条上限（1000–2000），实测第 9 次工具调用后上游回
+      // 「输入信息过多，请重新输入」。一个没用的字段还在吃上下文，纯损失。
       const streamOpts = {
         ...(streamOpts0 || {}),
-        ...(tools && tools.length ? { tools } : {}),
         // ⚠️ 2026-10-25（长任务真凶之二）：**中间轮的回喂不进转录**。
         //
         // 第 1 轮是用户真问题（要记）；第 2 轮起 `prompt` 是上一轮工具的原始结果
