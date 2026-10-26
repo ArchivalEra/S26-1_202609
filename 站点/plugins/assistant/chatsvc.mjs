@@ -32,7 +32,6 @@
 //     ask(h, text, emit, attach) → Promise<{status, text, calls}>
 //     cancel(h)               → {cancelled}
 //     upload(h, bytes, opts)  → fileInfo
-//     snapshot(h?)            → 单会话 / 全部
 //     attach(conversationId)  → handle|null   按上游真名找回
 //     close(h?)
 //     traceFrames(h)          → 帧级日志（ZHEN_TRACE>=3 时有内容）
@@ -229,11 +228,6 @@ export function createChatService({
     if (Array.isArray(next)) currentTools = next;
   }
 
-  /** 会话状态（纯数据）。 */
-  function snapshot(h) {
-    return mgr.snapshot(h == null ? undefined : h);
-  }
-
   /**
    * 中止正在进行的回答（2026-10-19）。
    *
@@ -275,5 +269,5 @@ export function createChatService({
     try { return mgr.traceFrames(h) || []; } catch { return []; }
   }
 
-  return { open, attach, ask, cancel, upload, setTools, snapshot, close, traceFrames };
+  return { open, attach, ask, cancel, upload, setTools, close, traceFrames };
 }

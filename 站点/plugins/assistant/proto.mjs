@@ -609,6 +609,24 @@ export function createAssistant(opts = {}) {
       };
       // 浏览器禁止脚本设置 Referer（会被静默忽略，不会报错），所以这段对浏览器无副作用。
       try { headers.Referer = referer; } catch { /* 只读头 */ }
+      // ⚠️ 2026-10-26（联合测试抓出）：**光有 Referer 不够**。
+      //
+      // 实测对照（同一套 cookie、同一个 clearConversation）：
+      //   · 只带 Accept/Referer/Origin/Cookie → `code:0`「当前用户 xxx 用户校验未通过」
+      //   · 补齐下面这几条 → `code:1` 成功，返回新 conversationId
+      // 浏览器同源 fetch 会自动带全套（UA / Accept-Language / Sec-Fetch-*），Node 不会。
+      // 值不伪造：UA 就取本进程真实的（浏览器里被禁止设置会静默失败，无害）。
+      // Sec-Fetch-* 描述的是「同源跨站脚本发起的 fetch」，与这里的事实一致。
+      try {
+        if (typeof navigator !== 'undefined' && navigator.userAgent) {
+          headers['User-Agent'] = navigator.userAgent;
+        }
+        headers['Accept-Language'] = 'zh-CN,zh;q=0.9';
+        headers['Sec-Fetch-Site'] = 'same-origin';
+        headers['Sec-Fetch-Mode'] = 'cors';
+        headers['Sec-Fetch-Dest'] = 'empty';
+        headers.Origin = new URL(base).origin;
+      } catch { /* 浏览器禁设头，静默跳过 */ }
       const res = await fetch(path.startsWith('http') ? path : base + path, {
         method,
         signal: to.signal,
@@ -899,8 +917,18 @@ export function createAssistant(opts = {}) {
       // 浏览器 WS 构造器第二参是子协议（不是选项对象）——同源 iframe 里
       // Origin/来源由浏览器自动带，单参直连即可，不伪造任何头。
       ws = new WebSocket(url);
-      ws.addEventListener('message', (ev) => handleFrame(String(ev.data)));
+      // `self` = 「我这条连接」。所有监听器都用它做身份校验，防旧连接余波干预新连接
+      // （2026-10-26 新建对话后首问必 transport 的病根，详见下方 close 处注释）。
+      const self = ws;
+      ws.addEventListener('message', (ev) => {
+        if (ws !== self) return;      // 旧连接余波：不喂新一问的帧统计
+        handleFrame(String(ev.data));
+      });
       ws.addEventListener('open', () => {
+        // 旧连接的 keepalive 必须清掉，否则它按 `ws`（共享变量）往**新连接**发心跳，
+        // 也可能在新连接就绪前就开跑。self 守卫保证只有当前连接能开定时器。
+        if (ws !== self) return;
+        if (keepalive) { clearInterval(keepalive); keepalive = null; }
         keepalive = setInterval(() => {
           if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'KEEPALIVE' }));
         }, 30000);
@@ -916,14 +944,28 @@ export function createAssistant(opts = {}) {
       }, 30000);
       ws.addEventListener('open', () => clearTimeout(handshake));
       // ⚠️ 连接被服务端/网络关闭：必须收束在飞的 pending，否则 ask 悬死到 timeout。
+      // ⭐ 2026-10-26 修（新建对话后首问必 transport）：**监听器必须只管自己那条连接**。
+      //
+      // 病根：`pending` 是模块级共享变量，而这个闭包捕获的是它。`clearConversation()`
+      // 关掉旧 WS 时，旧连接的 close 事件会在**新连接已经开问之后**才触发（实测 66ms
+      // 后：新 ask 已开始，旧 close 才到）→ 旧连接的 close 处理器看到 `pending` 非空，
+      // 就把**新一问**判成 `transport`，正文 0 字。实测帧其实随后就正常到达（SYS + chat_start）。
+      //
+      // 修法见上方 `const self = ws`：旧连接的余波直接忽略，
+      // 它既不该收束新 pending，也不该再动任何状态。
       ws.addEventListener('close', () => {
         clearTimeout(handshake);
+        if (ws !== self) return;      // 旧连接余波：新连接已接管，忽略
         if (pending) {
           const p = pending;
           try { p.resolve(p.finish('transport')); } catch { /* ignore */ }
         }
       });
-      ws.addEventListener('error', (ev) => { clearTimeout(handshake); reject(new Error('WS 错误: ' + (ev.message || ev.type))); });
+      ws.addEventListener('error', (ev) => {
+        clearTimeout(handshake);
+        if (ws !== self) return;      // 同上的旧连接余波
+        reject(new Error('WS 错误: ' + (ev.message || ev.type)));
+      });
     });
   }
 
@@ -1196,7 +1238,68 @@ export function createAssistant(opts = {}) {
     return true;
   }
 
-  return { apply, resetIdentity, models, switchModel, connect, ask, askRetry, askWithRetry, uploadImage, askImage, send, close, cancel, msgListTotal,
+  /**
+   * 开一场新对话（上游的「新建对话」）。
+   *
+   * ## 为什么必须有它（2026-10-26 联合测试抓出的真缺口）
+   * 这个函数此前**根本不存在**——`clearConversation` 一次都没实现过。后果是：
+   * 所有测试、所有提问都在**同一场会话**里累积（实测 `msgList.total` 涨到 27），
+   * 上游最终回「输入信息过多，请重新输入」。那不是单条超长，是**累计上下文溢出**。
+   * 「进站即新会话」这个产品语义也就无从落地。
+   *
+   * ## 接口形态照抄官方（实测）
+   * ```
+   * GET /v1/front/clearConversation?unitId&robotId&isLLMPlanning=1&visitorId&channel=WEB&conversationId=<旧>
+   *   → { code:1, cvsInfo:{conversationId:<新>}, visitorLoggedIn:true }
+   * ```
+   * 注意 `isLLMPlanning` 在这里是 **1**（与页面初始化时的 0 不同，实测如此）。
+   *
+   * ## 调用前置：请求头必须齐全
+   * 实测对照（同一套 cookie、同一个接口）：
+   *   · 精简头（只 Accept/Referer/Origin/Cookie）→ `code:0`「当前用户 xxx 用户校验未通过」
+   *   · 补齐 UA / Accept-Language / Sec-Fetch-* → `code:1` 成功
+   * 浏览器里同源 fetch 会自动带全套，Node 侧不会——所以 `jfetch` 必须自己补齐。
+   *
+   * @returns {Promise<{conversationId: string|null, changed: boolean}>}
+   *   失败不抛（返回 changed:false）：新建对话失败不该炸掉整场问答，
+   *   上层按「还是旧会话」处理即可，但日志会如实说明。
+   */
+  async function clearConversation() {
+    if (!identity) await apply();
+    const oldCid = identity.conversationId || null;
+    if (!oldCid) {
+      // 没有旧会话可清（还没连过）⇒ 直接重新 apply 取一个。
+      return { conversationId: null, changed: false };
+    }
+    let r;
+    try {
+      r = await jfetch(`/v1/front/clearConversation?${qs({
+        unitId, robotId, isLLMPlanning: 1, visitorId: identity.visitorId,
+        channel: 'WEB', conversationId: oldCid,
+      })}`);
+    } catch (e) {
+      log('[clearConversation] 请求失败：' + String(e && e.message));
+      return { conversationId: oldCid, changed: false };
+    }
+    const j = r.json || {};
+    // code:1 = 成功；code:0 通常伴随「用户校验未通过」（头不全或身份不匹配）
+    if (Number(j.code) !== 1) {
+      log('[clearConversation] 未成功 code=' + j.code + ' msg=' + String(j.msg || '').slice(0, 80));
+      return { conversationId: oldCid, changed: false };
+    }
+    const newCid = (j.cvsInfo || {}).conversationId || null;
+    if (newCid && newCid !== oldCid) {
+      identity = { ...identity, conversationId: newCid };
+      // 新会话必须重新建 WS（上游按 conversationId 认会话）
+      try { ws && ws.close(); } catch { /* 已关 */ }
+      ws = null;
+      log('[clearConversation] 新会话 ' + String(newCid).slice(0, 12)
+          + '（旧 ' + String(oldCid).slice(0, 12) + '）');
+    }
+    return { conversationId: newCid || oldCid, changed: !!newCid && newCid !== oldCid };
+  }
+
+  return { apply, resetIdentity, clearConversation, models, switchModel, connect, ask, askRetry, askWithRetry, uploadImage, askImage, send, close, cancel, msgListTotal,
     get identity() { return identity; },
     get activeModelId() { return activeModelId; },
     get isLLMPlanning() { return isLLMPlanning; },

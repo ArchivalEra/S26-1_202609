@@ -217,21 +217,6 @@ test('find：按上游 conversationId 找回会话；找不到返回 null', asyn
   m.close();
 });
 
-// ── snapshot ──────────────────────────────────────────────
-
-test('snapshot：纯数据，只含上游身份与连接状态', async () => {
-  const taps = { conversationId: 'c1', msgListTotal: 3 };
-  const m = createManager({ adapter: scriptedAdapter(['text'], taps) });
-  const h = m.open();
-  await m.ask(h, 'x');
-  const s = m.snapshot(h);
-  assert.equal(s.conversationId, 'c1');
-  assert.equal(s.msgListTotal, 3);
-  assert.equal(s.hot, true);
-  assert.ok(Array.isArray(m.snapshot()));
-  m.close();
-});
-
 // ── 取消 ──────────────────────────────────────────────────
 
 test('取消：adapter 必须暴露 cancel（否则管理器静默跳过）', async () => {

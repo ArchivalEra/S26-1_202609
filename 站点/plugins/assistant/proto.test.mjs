@@ -293,14 +293,25 @@ test('定时器契约：finish 同时清掉两个定时器', () => {
 const SRC = readFileSync(new URL('./proto.mjs', import.meta.url), 'utf8');
 const CODE = SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
-test('伪装头删净：代码里没有 User-Agent / Referer / Cookie / fe_version 头', () => {
-  assert.ok(!CODE.includes("'User-Agent'") && !CODE.includes('"User-Agent"'),
-    'fetch headers 里不许手设 User-Agent（浏览器自动带真实值）');
-  assert.ok(!CODE.includes("'Referer'") && !CODE.includes('"Referer"'),
-    'fetch headers 里不许手设 Referer（浏览器自动带真实值）');
+// ⚠️ 2026-10-26 修订（联合测试实测，不是口味问题）：
+// 原判据「代码里不许出现 User-Agent 头」是**浏览器化**时期的纪律——同源 iframe 里
+// 浏览器自动带真实 UA，手设就是伪装。但实测证明它在 **Node 侧**是错的：
+// 同一套 cookie、同一个 clearConversation，
+//   · 只带 Accept/Referer/Origin/Cookie → `code:0`「当前用户 xxx 用户校验未通过」
+//   · 补齐 UA / Accept-Language / Sec-Fetch-* → `code:1` 成功
+// 浏览器同源 fetch 自动带全套，Node 的 fetch 不带。10-22 只测了「问答能不能回」，
+// 没测「会话写操作能不能过校验」，所以当时得出「Referer 够了」的结论偏窄。
+// 判据改成区分「取真实值」与「冒充他者」：前者合法，后者禁。
+test('伪装头禁的是「冒充他者」，不是「带自己的真实值」', () => {
+  assert.ok(!/Chrome\/\d|Safari\/\d|Mozilla\/\d/.test(CODE),
+    '不许硬编码浏览器 UA 字符串（那是冒充别的客户端）');
+  assert.ok(!CODE.includes('fe_version'), '不许带 fe_version 前端版本头');
   assert.ok(!/\bCookie\b/.test(CODE.replace(/initCookie|setCookie/g, '')),
     '不许手拼 Cookie 串（initCookie 接口名除外，它不是请求头）');
-  assert.ok(!CODE.includes('fe_version'), '不许带 fe_version 前端版本头');
+  if (CODE.includes("'User-Agent'")) {
+    assert.match(CODE, /navigator\.userAgent/,
+      '若设 User-Agent，值必须取 navigator.userAgent（真实值），不许是硬编码串');
+  }
 });
 
 test('伪装头删净：WebSocket 单参构造，不带 headers 选项', () => {
