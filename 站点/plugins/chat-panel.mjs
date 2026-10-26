@@ -2231,6 +2231,10 @@ function ensureInitialized() {
 
   buildDock();
   buildPanel();
+  if (typeof window !== "undefined" && window.innerWidth > 860) {
+    if (dockEl) void dockEl.offsetWidth;
+    if (panel) void panel.offsetWidth;
+  }
 
   try { if (window.__webmcpEnable) window.__webmcpEnable(); } catch (e) {}
   ensureKatex();
@@ -2266,11 +2270,7 @@ function close() {
   var wasCollapsed = document.body.dataset && document.body.dataset.sidebarWasCollapsed === "true";
   if (document.body.dataset) delete document.body.dataset.sidebarWasCollapsed;
   if (!wasCollapsed) {
-    setTimeout(function () {
-      if (!open) {
-        document.body.classList.remove("sidebar-collapsed");
-      }
-    }, 120);
+    document.body.classList.remove("sidebar-collapsed");
   }
   var btn = document.getElementById("assistant-toggle");
   if (btn) btn.setAttribute("aria-expanded", "false");

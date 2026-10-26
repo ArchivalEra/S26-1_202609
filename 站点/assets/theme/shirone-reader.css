@@ -491,7 +491,7 @@ body {
 /* Sidebar Column (整列导航栏) */
 .m3-drawer {
   width: var(--sidebar-width);
-  min-width: 240px;
+  min-width: 0;
   max-width: 580px;
   height: 100vh;
   height: 100dvh;
@@ -525,6 +525,7 @@ body {
     border-right: 1px solid var(--md-sys-color-outline-variant);
     pointer-events: none;
     z-index: 0;
+    transition: width 0.25s cubic-bezier(0.2, 0, 0, 1), border-right-color 0.2s;
   }
   body.sidebar-collapsed .site-shell::before {
     width: 0;
@@ -686,30 +687,34 @@ body.sidebar-resizing .m3-drawer {
     opacity: 0;
     pointer-events: none;
     box-sizing: border-box;
-    transition: width 0.22s cubic-bezier(0.2, 0, 0, 1), opacity 0.2s;
-    transition-delay: 0s;
+    transition: width 0.25s cubic-bezier(0.2, 0, 0, 1), opacity 0.2s;
   }
 
   body.chat-open aside.chat-sessions {
     width: var(--chat-sessions-width);
-    min-width: var(--chat-sessions-min);
+    min-width: 0;
     max-width: var(--chat-sessions-max);
     opacity: 1;
     pointer-events: auto;
-    overflow: visible;
+    overflow: hidden;
     border-right: 1px solid var(--md-sys-color-outline-variant);
-    transition: width 0.25s cubic-bezier(0.2, 0, 0, 1) 0.12s, opacity 0.2s 0.12s;
+    transition: width 0.25s cubic-bezier(0.2, 0, 0, 1), opacity 0.2s;
   }
 
   body.chat-open aside.chat-dialog {
     width: var(--chat-dialog-width);
-    min-width: var(--chat-dialog-min);
+    min-width: 0;
     max-width: var(--chat-dialog-max);
     opacity: 1;
     pointer-events: auto;
-    overflow: visible;
+    overflow: hidden;
     border-left: 1px solid var(--md-sys-color-outline-variant);
-    transition: width 0.25s cubic-bezier(0.2, 0, 0, 1) 0.12s, opacity 0.2s 0.12s;
+    transition: width 0.25s cubic-bezier(0.2, 0, 0, 1), opacity 0.2s;
+  }
+
+  body.chat-resizing aside.chat-sessions,
+  body.chat-resizing aside.chat-dialog {
+    overflow: visible;
   }
 }
 
