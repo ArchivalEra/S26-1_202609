@@ -328,10 +328,11 @@ test('CHAT_CSS：不允许出现会覆盖手机档 fixed 的无条件 position',
   }
 });
 
-test('CHAT_JS：面板挂到 .layout-container 内，遮罩挂 body', () => {
-  // 桌面档面板是 flex 子项，必须排在正文右侧（挂在 .main-column 里会横在正文上方）；
-  // 手机档遮罩要盖全屏，挂在 body 才不会被 overflow 裁剪。
-  assert.match(CHAT_JS, /\.layout-container \.m3-toc/, '桌面档要以 TOC 为锚点插入');
+test('CHAT_JS：面板、书签条与遮罩挂到 body 直下（SPA 替换范围之外）', () => {
+  // 面板、书签条脱离 SPA 的 .layout-container / .article-content 替换范围，
+  // 避免切页面被销毁或横在正文上方；遮罩要盖全屏，挂在 body 才不会被 overflow 裁剪。
+  assert.match(CHAT_JS, /document\.body\.appendChild\(dockEl\)/, '书签坞要挂 body');
+  assert.match(CHAT_JS, /document\.body\.appendChild\(panel\)/, '面板要挂 body');
   assert.match(CHAT_JS, /document\.body\.appendChild\(backdrop\)/, '遮罩要挂 body');
 });
 
@@ -663,4 +664,144 @@ test('TOOL_LABEL 从 buildToolDefs 派生：标签集与 defs 一致，site_view
   assert.equal(expected.site_capture_view, '截图查看版面', '截图是 capture_view 的职责');
   // 全覆盖：每个注册工具都有标签（少一条会在面板上显示裸工具名）
   assert.equal(Object.keys(expected).length, defs.length);
+});
+
+// ── 2026-10-26 架构重写守卫（冷态、书签条、会话管理、中性契约）────
+
+function createTestSandbox({ onFetch } = {}) {
+  const toggleBtn = {
+    id: 'assistant-toggle',
+    listeners: {},
+    addEventListener(type, fn) { this.listeners[type] = fn; },
+    setAttribute() {},
+    getAttribute() { return null; },
+  };
+  const body = {
+    children: [],
+    classList: { add() {}, remove() {}, contains() { return false; } },
+    appendChild(c) { this.children.push(c); return c; },
+  };
+  function makeElem(tag) {
+    return {
+      tagName: tag.toUpperCase(),
+      children: [],
+      classList: {
+        classes: new Set(),
+        add(c) { this.classes.add(c); },
+        remove(c) { this.classes.delete(c); },
+        contains(c) { return this.classes.has(c); },
+      },
+      attrs: {},
+      setAttribute(k, v) { this.attrs[k] = String(v); },
+      getAttribute(k) { return this.attrs[k] !== undefined ? this.attrs[k] : null; },
+      appendChild(c) { this.children.push(c); return c; },
+      addEventListener(type, fn) { (this._listeners ||= {})[type] = fn; },
+      focus() {},
+      blur() {},
+      style: {},
+      getBoundingClientRect() { return { width: 360, height: 600 }; },
+    };
+  }
+  const doc = {
+    body,
+    documentElement: { getAttribute: () => './' },
+    head: { appendChild() {} },
+    getElementById(id) { if (id === 'assistant-toggle') return toggleBtn; return null; },
+    createElement(tag) { return makeElem(tag); },
+    createElementNS(ns, tag) { return makeElem(tag); },
+    createTextNode(t) { return { nodeType: 3, textContent: t }; },
+    addEventListener() {},
+    removeEventListener() {},
+  };
+  const sandbox = {
+    document: doc,
+    location: { hostname: '127.0.0.1', search: '' },
+    localStorage: { getItem() { return null; }, setItem() {} },
+    fetch: onFetch || (() => Promise.resolve({ ok: true, json: () => Promise.resolve([]) })),
+    requestAnimationFrame: (fn) => setTimeout(fn, 0),
+    setTimeout,
+    clearTimeout,
+    addEventListener() {},
+    removeEventListener() {},
+    console,
+  };
+  sandbox.window = sandbox;
+  return { sandbox, toggleBtn, body, doc };
+}
+
+test('冷态惰性注水：初始执行 0 fetch、0 面板 DOM；点击 #assistant-toggle 才按需建树与拉取会话', async () => {
+  const { runInNewContext } = await import('node:vm');
+  const fetchCalls = [];
+  const { sandbox, toggleBtn, body } = createTestSandbox({
+    onFetch: (url, opts) => {
+      fetchCalls.push({ url, opts });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+    },
+  });
+
+  // ① 初次加载执行
+  runInNewContext(CHAT_JS, sandbox);
+  assert.equal(fetchCalls.length, 0, '冷态下绝不发任何网络请求');
+  assert.equal(body.children.length, 0, '冷态下不往 body 插入面板或书签 DOM');
+
+  // ② 触发点击
+  assert.ok(typeof toggleBtn.listeners.click === 'function', '必须监听 #assistant-toggle 的 click');
+  toggleBtn.listeners.click({ stopPropagation() {} });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  // ③ 唤醒后
+  assert.ok(fetchCalls.length >= 1, '唤醒后必须触发网络请求');
+  assert.ok(fetchCalls.some((c) => /\/chat\/sessions/.test(c.url)), '必须触发拉取会话列表');
+  assert.equal(body.children.length, 3, '唤醒后向 body 挂载书签坞、面板与遮罩');
+  const idsOrClasses = body.children.map((c) => c.id || c.className || c.tagName);
+  assert.ok(idsOrClasses.includes('chat-dock'), 'body 直下必须包含 chat-dock');
+  assert.ok(idsOrClasses.includes('chat-panel'), 'body 直下必须包含 chat-panel');
+  assert.ok(idsOrClasses.includes('chat-backdrop'), 'body 直下必须包含 chat-backdrop');
+});
+
+test('会话管理契约：中性 API 路径与乐观删除 + Toast 提示', () => {
+  // 必须采用全中性 REST 路径
+  assert.match(CHAT_JS, /\/chat\/sessions["']/, '拉取会话列表端点');
+  assert.match(CHAT_JS, /\/chat\/sessions\/new["']/, '新建会话端点');
+  assert.match(CHAT_JS, /\/chat\/sessions\/"\s*\+\s*encodeURIComponent\(id\)\s*\+\s*"\/(?:delete|messages)/, '删除与切会话路径中性编码');
+
+  // 乐观更新与 Toast
+  assert.match(CHAT_JS, /showToast\("已从列表移除"\)/, '删除时必须有轻量 Toast 提示');
+  assert.match(CHAT_JS, /function showToast/, 'Toast 展示函数');
+  assert.match(CHAT_CSS, /\.chat-toast/, 'Toast 样式');
+});
+
+test('网络异常优雅降级：离线或拉取会话失败时降级显示，不抛未捕获异常', async () => {
+  const { runInNewContext } = await import('node:vm');
+  const { sandbox, toggleBtn } = createTestSandbox({
+    onFetch: () => Promise.reject(new Error('Connection refused')),
+  });
+
+  runInNewContext(CHAT_JS, sandbox);
+  assert.doesNotThrow(() => {
+    toggleBtn.listeners.click({ stopPropagation() {} });
+  }, '网络异常时点开助手绝不抛未捕获异常崩溃');
+
+  // 源码中应具备 "+ 新会话" 与 "暂无会话" 降级占位
+  assert.match(CHAT_JS, /bm-new/, '必须有新建会话按钮');
+  assert.match(CHAT_JS, /bm-empty/, '必须有空会话占位');
+  assert.match(CHAT_JS, /暂无会话/, '必须有暂无会话文案');
+});
+
+test('移动端与无障碍契约：20×56px 侧边把手在 CSS 与 JS 中齐备', () => {
+  // CSS 结构与尺寸
+  assert.match(CHAT_CSS, /\.chat-mobile-handle[\s\S]*?width:\s*20px/, '手机把手宽 20px');
+  assert.match(CHAT_CSS, /\.chat-mobile-handle[\s\S]*?height:\s*56px/, '手机把手高 56px');
+  assert.match(CHAT_CSS, /@media \(max-width: 860px\)[\s\S]*?#chat-dock \.chat-mobile-handle[\s\S]*?display:\s*flex/, '手机档把手必须显示');
+  assert.match(CHAT_CSS, /#chat-dock \.chat-mobile-handle[\s\S]*?display:\s*none/, '宽屏档把手必须隐藏');
+
+  // JS 无障碍属性
+  assert.match(CHAT_JS, /mobileHandle\.setAttribute\("aria-label",\s*"会话列表"\)/, '无障碍名称');
+  assert.match(CHAT_JS, /mobileHandle\.setAttribute\("aria-expanded"/, '展开状态透出');
+});
+
+test('安全与厂商隔离硬闸：CHAT_JS 与 CHAT_CSS 绝不泄漏超星厂商语义', () => {
+  const forbidden = /chaoxing|robot-lc|visitor|msgList|conversationId|visitorVc|passport2/i;
+  assert.doesNotMatch(CHAT_JS, forbidden, 'CHAT_JS 严禁出现任何超星专有词');
+  assert.doesNotMatch(CHAT_CSS, forbidden, 'CHAT_CSS 严禁出现任何超星专有词');
 });
