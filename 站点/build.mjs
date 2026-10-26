@@ -1235,7 +1235,12 @@ for (const relPath of TARGET_FILES) {
         const titleHtml = node.indexHref
           ? `<a href="${rootRel}${node.indexHref}" data-path="${node.indexHref}" class="drawer-nav-link"><span>${node.label}</span></a>`
           : `<span class="drawer-section-title-text">${node.label}</span>`;
-        out += `<li class="drawer-nav-group ${nodeExpanded ? 'expanded' : 'collapsed'}" data-node-id="${attrEsc(node.id)}">
+        // ⚠️ 2026-10-26 修（首帧闪烁）：组节点此前**不输出 active 类**——
+        // 只有运行时 drawer-sync 的 recompute() 会补上，于是「首屏直进目录页」时
+        // 侧栏先无高亮、几十~一两百毫秒后才闪出来。
+        // 判定用的就是上面那一个 nodeActive（与运行时 collectActive 同一份 isActive），
+        // 两边输出对齐即可，不新增任何判定逻辑。
+        out += `<li class="drawer-nav-group ${nodeActive ? 'active' : ''} ${nodeExpanded ? 'expanded' : 'collapsed'}" data-node-id="${attrEsc(node.id)}">
           <div class="nav-group-header ${node.indexHref ? '' : 'nav-header-clickable'}">
             ${titleHtml}
             <button class="nav-collapse-btn" aria-label="折叠或展开 ${node.label}" title="折叠/展开">
