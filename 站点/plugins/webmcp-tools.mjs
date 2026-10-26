@@ -699,36 +699,75 @@ export function createPageView(doc, loc, winOverride) {
   function readContent(o) {
     const opt = o || {};
     const what = opt.what || 'page';
-    // 硬上限 12000（Coze MCP-Builder 定案：中文 1 字≈1 token，12k 字符不爆上下文）
-    // 2026-10-23：改用 asInt 做「宽容类型转换 + 语义严格」——
-    // "6000" 能转就转，"abc" / -5 / 50000 拒并给可落地 hint（Phase 2 定案 ③）。
-    const mc = asInt(opt.maxChars, { name: 'maxChars', def: 8000, min: 1, max: 12000 });
-    if (!mc.ok) return { ok: false, reason: mc.reason, hint: mc.hint, param: 'maxChars' };
+    // ⚠️ 2026-10-26（站长定案）：**默认只给前 30 行**，不再默认 8000 字符。
+    //
+    // 为什么换口径：node 侧实测，工具循环每轮把整份回喂重发一遍，上游按**累计**
+    // 算输入额——4 轮 × 1224 字就撞「输入信息过长」。回喂层截到 1100 字是被动的
+    // 补救；真正的源头是这里默认给太多。改成 30 行后，单个信封约 300–600 字，
+    // 同样的总预算能跑十倍以上的轮次。
+    //
+    // 两个独立的量，别混：
+    //   · limit   行数（默认 30，硬上限 400 行）——**主口径**
+    //   · maxChars 字符硬顶（默认 12000，兜底防单行超长把一页撑爆）
+    // 只给行数会让「一行一万字」的页面失控，所以字符顶同时保留。
+    const ln = asInt(opt.limit != null ? opt.limit : opt.maxLines,
+      { name: 'limit', def: 30, min: 1, max: 400 });
+    if (!ln.ok) return { ok: false, reason: ln.reason, hint: ln.hint, param: 'limit' };
     const of = asInt(opt.offset, { name: 'offset', def: 0, min: 0 });
     if (!of.ok) return { ok: false, reason: of.reason, hint: of.hint, param: 'offset' };
+    const mc = asInt(opt.maxChars, { name: 'maxChars', def: 12000, min: 1, max: 20000 });
+    if (!mc.ok) return { ok: false, reason: mc.reason, hint: mc.hint, param: 'maxChars' };
+    const limitLines = ln.value;
+    const offset = of.value;      // 行号偏移（注意：旧版这里是字符偏移，语义已变）
     const maxChars = mc.value;
-    const offset = of.value;
     const article = first(S.article) || (doc && doc.body) || doc;
 
-    // ⭐ 2026-10-23 分页（Coze MCP-Builder Phase 1 定案的 offset+limit 口径）：
-    // 旧版超 maxChars 直接截断，**没有翻页手段**——19,735 字的攻略页整页读会丢
-    // 后半段（调查 C 的盲区 4）。现在 offset+limit 切窗，返回带元数据
-    // total_chars / offset / limit / has_more，模型自己判断要不要继续翻。
-    // 用 offset 不用 cursor：每次调用都重读 DOM（零缓存），cursor 编码的偏移在
-    // DOM 变化后同样失效，反而多一层状态。
+    // ⭐ 2026-10-23 分页（Coze MCP-Builder Phase 1 的 offset+limit 口径）。
+    // 2026-10-26 改口径：**offset/limit 现在是行号，不是字符数**。
+    // 理由是模型读写文本天然按行思考（「读第 30 行往后」比「从第 1204 个字符起」自然），
+    // 而且行数切分不会把一行表格拦腰截断。
+    // 字符顶 maxChars 仍然兜底：单行超长时按字符切，并在 has_more 里如实反映。
     const clip = (s) => {
       const t = String(s || '');
-      const total = t.length;
-      const from = Math.min(offset, total);
-      const slice = t.slice(from, from + maxChars);
+      const lines = t.split('\n');
+      const totalLines = lines.length;
+      const totalChars = t.length;
+      const fromLine = Math.min(offset, totalLines);
+      // 按行取窗口；同时用字符顶二次收窄（防单行超长）
+      const picked = [];
+      let used = 0;
+      let i = fromLine;
+      for (; i < totalLines && picked.length < limitLines; i++) {
+        const one = lines[i];
+        if (used + one.length + 1 > maxChars && picked.length > 0) break;
+        picked.push(one);
+        used += one.length + 1;
+      }
+      const text = picked.join('\n');
+      const nextOffset = fromLine + picked.length;
+      const hasMore = nextOffset < totalLines;
       return {
-        text: slice,
-        totalChars: total,
-        total_chars: total,          // 双写：snake_case 是 MCP 侧惯用名
-        offset: from,
-        limit: maxChars,
-        has_more: from + slice.length < total,
-        truncated: from + slice.length < total,
+        text,
+        // ── 完整变量集（站长要求：一次给全，别让模型猜）──
+        total_chars: totalChars,
+        totalChars,                       // 双写：camelCase 是站内惯用名
+        total_lines: totalLines,
+        totalLines,
+        offset: fromLine,                 // 本段起始**行号**
+        limit: limitLines,                // 请求的**行数**
+        returned_lines: picked.length,    // 实际给了几行
+        returnedLines: picked.length,
+        chars: text.length,               // 本段字符数（用于估回喂预算）
+        next_offset: hasMore ? nextOffset : null,   // 续读就用这个值
+        nextOffset: hasMore ? nextOffset : null,
+        has_more: hasMore,
+        truncated: hasMore,
+        // 给人/模型看的一句话：默认口径 + 怎么要更长
+        hint: hasMore
+          ? `默认只给 ${limitLines} 行（本段 ${picked.length}/${totalLines} 行）。`
+            + `要接着读后半段：site_read，what=${what}，offset=${nextOffset}，limit=${limitLines}`
+            + `（或一次多要点：limit=100；行数硬上限 400）`
+          : undefined,
       };
     };
 
@@ -1656,14 +1695,17 @@ export function buildToolDefs(doc, win) {
       name: 'site_read',
       label: '读取页面正文',
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      description: '读页面内容（Markdown）。what=page 读整页正文（长页用 offset+maxChars 分页，返回带 total_chars/offset/limit/has_more，按 has_more 继续翻）；outline 只列小节标题；section 读某一节（给 query 标题片段；找不到时返回 candidates 供重试）；panel 读某个折叠面板；symbols 列出本页所有可查符号。',
+      description: '读页面内容（Markdown）。**默认只给前 30 行**——够判断这一页讲什么；要更多必须显式给 offset/limit。'
+        + 'what=page 读整页正文；outline 只列小节标题；section 读某一节（给 query 标题片段）；panel 读某个折叠面板；symbols 列出本页所有可查符号。'
+        + '返回值里带完整分页变量：total_lines / total_chars / offset / limit / returned_lines / next_offset / has_more。',
       inputSchema: {
         type: 'object',
         properties: {
           what: { type: 'string', enum: ['page', 'outline', 'section', 'panel', 'symbols'] },
           query: { type: 'string' },
-          maxChars: { type: 'number', description: '单次返回上限（默认 8000，硬上限 12000）' },
-          offset: { type: 'number', description: '字符偏移（默认 0）。长页分页：先读 0，看 has_more 再按 offset 续读' },
+          limit: { type: 'number', description: '本次要几**行**（默认 30，硬上限 400）。想一次读完整页就给大数，例如 limit=200' },
+          offset: { type: 'number', description: '从第几**行**开始（默认 0，行号从 0 数）。续读直接填上次返回值里的 next_offset' },
+          maxChars: { type: 'number', description: '字符硬顶（默认 12000，防单行超长撑爆）。一般不用填' },
           includeCollapsed: { type: 'boolean' },
           links: { type: 'boolean' },
         },
@@ -1899,6 +1941,115 @@ export function registerTools(doc, nav) {
  * @returns {Promise<{ok:boolean, value?:any, effect?:object, error?:string}>}
  *   恒 resolve——失败也回 `{ok:false, error}`，由工具循环按「失败也回喂」消费。
  */
+
+/**
+ * 工具结果 → **可回喂的文本**（信封）。2026-10-26 站长定案：信封归 MCP 侧。
+ *
+ * ## 为什么必须在这一侧（这是架构判断，不是偏好）
+ * 知道「这个工具返回什么形状」的，只有工具自己。把它放在 node 侧的结果是：
+ * `toolcycle.mjs` 里堆了一整套按工具名分叉的特判（site_read 截到 1100、
+ * site_index 按课程压缩、site_list_images 只留 12 条…）——每加一个工具就要
+ * 回去改那一处的分支。**接口泄漏**：工具的形状知识跑到了调用方。
+ *
+ * 现在这一侧产出 `feed`：一句「我是谁、成没成、关键元数据」，加正文。
+ * node 侧只管把它塞进消息、按单条上限兜底，**不认识任何工具名**。
+ *
+ * ## 单条长度（硬约束，2026-10-26 实测）
+ * 上游限制的是**单条消息的字符数**，实测 900 过 / 1100 过 / 1300 拒。
+ * 取 950 为安全线（信封本身也占额度）。这不是「上下文预算」，是单条上限——
+ * 豆包窗口 256K 与这条限制无关。
+ *
+ * @param {string} name 工具名
+ * @param {object} args 调用参数
+ * @param {{ok:boolean, value?:any, error?:string}} r runTool 的返回
+ * @returns {string} 可直接作为一条消息发送的文本
+ */
+export function feedText(name, args, r) {
+  const SINGLE_MSG_LIMIT = 950;
+  const a = args || {};
+  const argStr = Object.keys(a)
+    .filter((k) => a[k] !== undefined && a[k] !== '' && k !== '_positional')
+    .map((k) => k + '=' + String(a[k]).slice(0, 40))
+    .join(' | ');
+  const head = '[工具返回：' + name + (argStr ? ' | ' + argStr : '') + (r && r.ok ? '' : ' | 失败') + ']';
+
+  if (!r || !r.ok) {
+    const err = String((r && r.error) || '执行失败');
+    const hint = /not_found|没找到/.test(err)
+      ? '\n建议下一步：换一个更短的关键词重试，或先用 site_read，what=outline 看全部标题。'
+      : '\n建议下一步：换个参数重试；连续失败就直接告诉用户当前做不到。';
+    return (head + '\n- 原因：' + err + hint).slice(0, SINGLE_MSG_LIMIT);
+  }
+
+  const v = r.value;
+  if (!v || typeof v !== 'object') {
+    return (head + '\n' + String(v == null ? '' : v)).slice(0, SINGLE_MSG_LIMIT);
+  }
+
+  // ── 元数据在前（模型据此判断要不要续读）──
+  const meta = [];
+  if (v.ok === false) meta.push('执行未成功：' + String(v.reason || ''));
+  if (v.title) meta.push('标题：' + v.title);
+  if (v.what) meta.push('类型：' + v.what);
+  // 行/字符分页（site_read 的主口径）
+  if (v.total_lines != null) {
+    meta.push('本段 ' + (v.returned_lines != null ? v.returned_lines : '?') + '/' + v.total_lines + ' 行');
+  }
+  if (v.has_more) {
+    meta.push('还有更多：下一段用 offset=' + v.next_offset + '（或一次多要点 limit=100）');
+  }
+  if (v.total_chars != null && v.total_lines == null) meta.push('总字数：' + v.total_chars);
+  if (Array.isArray(v.outline)) meta.push('小节数：' + v.outline.length);
+  if (v.count != null) meta.push('条目数：' + v.count);
+  if (Array.isArray(v.candidates) && v.candidates.length) {
+    meta.push('候选：' + v.candidates.map((c) => '「' + c + '」').join(' / '));
+  }
+  if (v.hint) meta.push('提示：' + String(v.hint).slice(0, 200));
+
+  // ⭐ site_index 的**按结构降级**（2026-10-26，从 node 侧搬过来）：
+  // 全站树铺开远超单条上限，硬砍会在某门课中间截断 ⇒ 模型只看到前一两门，
+  // 于是自信地说「本站只有工程数学」（2026-10-19 实测教训：**截断让工具撒谎**）。
+  // 这里按顶层缩进分组，每门课压成「课程名（N 页）」一行——每门课都还在，
+  // 模型知道有哪些课、也知道自己看不到细节，可以再 site_index(scope=course)。
+  if (name === 'site_index' && typeof v.text === 'string') {
+    const lines = String(v.text).replace(/%[0-9A-Fa-f]{2}/g, '').replace(/`/g, '').split('\n');
+    const cleaned = lines.join('\n');
+    if (cleaned.length > 700) {
+      const groups = [];
+      let cur = null;
+      for (const ln of lines) {
+        const isCourse = /^\s{2}\S/.test(ln) && !/^\s{2}-/.test(ln);
+        if (isCourse) { cur = { title: ln.trim(), count: 0 }; groups.push(cur); }
+        else if (cur && /^\s+-/.test(ln)) cur.count += 1;
+        else if (!cur) groups.push({ title: ln.trim(), count: 0, raw: true });
+      }
+      const compressed = groups.map((g) => g.raw ? g.title : '  ' + g.title + '（' + g.count + ' 页）');
+      return (head + '\n'
+        + '- 全站共 ' + groups.filter((g) => !g.raw).length + ' 门课（清单较大，已压缩为课程级摘要）\n'
+        + '---正文开始---\n' + compressed.join('\n') + '\n---正文结束---\n'
+        + '（要看某门课的完整页面清单，用 site_index，scope=course）').slice(0, SINGLE_MSG_LIMIT);
+    }
+  }
+
+  // 正文：优先 text；没有 text 就压成紧凑 JSON（不整段 dump 原始对象）
+  let body = '';
+  if (typeof v.text === 'string' && v.text) body = v.text;
+  else {
+    try { body = JSON.stringify(v); } catch { body = String(v); }
+  }
+
+  const headLen = head.length + 1 + meta.join('\n').length + 1;
+  const room = Math.max(120, SINGLE_MSG_LIMIT - headLen);
+  let cut = '';
+  if (body.length > room) {
+    cut = '\n…（本条已截断：原文 ' + body.length + ' 字，只给了开头。需要更多用 offset/limit 续读）';
+    body = body.slice(0, Math.max(80, room - cut.length));
+  }
+  const out = head + '\n' + (meta.length ? meta.join('\n') + '\n' : '')
+    + '---正文开始---\n' + body + '\n---正文结束---' + cut;
+  return out.slice(0, SINGLE_MSG_LIMIT);
+}
+
 export async function runTool(doc, name, args) {
   // 分派唯一真相（issue #18 P0-1）：直接取 buildToolDefs 的 execute——
   // 注册（WebMCP）与执行（工具循环）走同一份实现、同一套参数解包。
@@ -1912,9 +2063,16 @@ export async function runTool(doc, name, args) {
   }
   try {
     const value = await def.execute(args || {});
-    return { ok: !(value && typeof value === 'object' && value.ok === false), value };
+    const ok = !(value && typeof value === 'object' && value.ok === false);
+    const out = { ok, value };
+    // ⭐ 2026-10-26：**信封在 MCP 侧产出**（feedText），随结果一起交出去。
+    // 调用方（站点协议栈 / 桥）只管搬运，不认识任何工具名、不按名字分叉。
+    out.feed = feedText(name, args || {}, out);
+    return out;
   } catch (e) {
-    return { ok: false, error: String((e && e.message) || e) };
+    const out = { ok: false, error: String((e && e.message) || e) };
+    out.feed = feedText(name, args || {}, out);
+    return out;
   }
 }
 
@@ -1950,6 +2108,9 @@ var renderMarkdown = ${renderMarkdown.toString()};
 var createPageView = ${createPageView.toString()};
 var buildToolDefs = ${buildToolDefs.toString()};
 var registerTools = ${registerTools.toString()};
+// ⚠️ 2026-10-26：feedText 必须与 runTool 一起内联——runTool 里调用它，
+// 漏了就是运行时「feedText is not defined」（实测踩到，整条工具链直接挂）。
+var feedText = ${feedText.toString()};
 // 阶段二 T11：站点侧协议栈的 invoke 入口（runTool 依赖 createPageView，已在上面）
 var runTool = ${runTool.toString()};
 registerTools(document, typeof navigator !== "undefined" ? navigator : null);

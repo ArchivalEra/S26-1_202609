@@ -854,8 +854,19 @@ export function createAssistant(opts = {}) {
     if (!pending) return;
 
     const mp = j.mobileProperties || {};
-    // ① 进展判定：只认**正文类**帧。逐字推送的思考帧（tool_call_thought/sub_agent_thought）
-    //    和 KEEPALIVE 都会把看门狗喂饱——实测助手模式因此空转过 414 秒。
+    // ① 进展判定：分两个时间戳，别再混用一个。
+    //
+    // ⚠️ 2026-10-26 修（真机实测抓出，这条误杀了正常的长任务）：
+    //   旧实现只在一个地方更新 `lastFrameAt` —— **仅有正文帧时**。注释的理由是
+    //   「thinking 帧会喂饱看门狗，实测因此空转 414 秒」。那个理由本身没错（不能
+    //   让空转永远不死），但一刀切下去的后果是**正在认真思考的长任务被误判冻死**：
+    //   实测 R3 收了 499 帧（大量 tool_call_thought + tool_call_chunk）、30 秒还没
+    //   吐正文 ⇒ 判 frozen ⇒ 上层重试 ⇒ 重发完整长 prompt（138K tokens）白烧一次。
+    //
+    //   现在分开：`lastAnyFrameAt` 每收到一帧就更新（活着的证据），
+    //   `lastFrameAt` 只在有正文时更新（真进展的证据）。看门狗用前者判「死」，
+    //   用后者判「只转圈不出活」——两者阈值不同，见下面的 idle/starve 双判据。
+    pending.lastAnyFrameAt = Date.now();
     const chunks = extractChunks(j);
     if (chunks.length) {
       pending.frames += 1;
@@ -917,6 +928,32 @@ export function createAssistant(opts = {}) {
     const terminal = terminalKind(j);
     if (terminal) {
       pending.terminal = terminal;
+      // ⭐ 2026-10-26：把 finish 帧里的 **token 统计**暴露出来。
+      //
+      // 为什么必须有（不是诊断装饰）：上游的硬限制是**输入累计 token**，
+      // 不是我们发的字符数。没有这个数只能靠猜——今天的教训：
+      // 回喂压到 90 字符仍被拦，因为 promptTokens 已经是 36.7K 基线。
+      // 有了它才能判断「哪一侧在涨：我们的回喂，还是上游自己的历史」。
+      //
+      // 位置：finish 帧的 mobileProperties.extInfo（JSON 字符串），字段
+      // totalTokens / promptTokens / completionTokens。缺就保持 null，不编 0。
+      const ext = (j.mobileProperties && j.mobileProperties.extInfo) || null;
+      if (ext) {
+        try {
+          const e = typeof ext === 'string' ? JSON.parse(ext) : ext;
+          if (e && (e.promptTokens != null || e.totalTokens != null)) {
+            pending.tokens = {
+              prompt: typeof e.promptTokens === 'number' ? e.promptTokens : null,
+              completion: typeof e.completionTokens === 'number' ? e.completionTokens : null,
+              total: typeof e.totalTokens === 'number' ? e.totalTokens : null,
+              model: (j.mobileProperties && j.mobileProperties.chatModelConfig) || null,
+            };
+            log('[token]', 'prompt=' + pending.tokens.prompt,
+                'completion=' + pending.tokens.completion,
+                'total=' + pending.tokens.total, 'model=' + pending.tokens.model);
+          }
+        } catch { /* 非 JSON 就不报 */ }
+      }
       pending.resolve(pending.finish());
     }
   }
@@ -1011,6 +1048,7 @@ export function createAssistant(opts = {}) {
         // 流式回调：单次 ask 的 askOpts.onChunk 优先，其次构造时的 onChunk
         onChunk: (typeof perAskOnChunk === 'function' ? perAskOnChunk : externalOnChunk),
         terminal: null,     // 终止类型（terminalKind 的返回值）
+        tokens: null,       // finish 帧的 token 统计 {prompt, completion, total, model}
         // ⭐ 2026-10-23（长任务实测发现）：模型会把 site_* 行包进它自己的沙箱工具
         //   （execute("echo \"site_read，what=outline\"") 或 read_file）——意图全在，
         //   只是通道选错。tool_call_chunk 按 tool_call_id 拼接收集于此，
@@ -1034,6 +1072,10 @@ export function createAssistant(opts = {}) {
           // 停止要单独成 status：若混进 frozen，管理器会把它当「通道冻死」
           // 而**关闭连接并重试**——用户点了停止，反而触发重连重问。
           const status = reason === 'cancelled' ? (txt ? 'partial' : 'cancelled')
+            // ⭐ 2026-10-26：思考很久但一直没正文（看门狗第 ② 条判据）。
+            // 有正文 ⇒ 按 partial 交回（用户至少拿到半截，不再白问一场）；
+            // 没正文 ⇒ frozen，让上层换线重试。
+            : reason === 'starvation_partial' ? (txt ? 'partial' : 'frozen')
             : reason === 'deadline' ? 'deadline'
             : reason === 'transport' ? 'transport'
             : isTooLongText(txt) ? 'too_long'
@@ -1054,6 +1096,9 @@ export function createAssistant(opts = {}) {
             text: txt, confirmed: pending.confirmed, modelId: mid,
             frames: pending.frames, status, terminal: pending.terminal,
             ms: Date.now() - startedAt,
+            // ⭐ token 统计（2026-10-26）：上游的硬限制是输入累计 token，
+            // 上层（管理器/面板）要看得到它才能判断离阈值还有多远。
+            tokens: pending.tokens,
             // 帧级日志（2026-10-25）：这一问收了多少帧（相对基线），供上层诊断
             tracedFrames: framesTotal,
             // 沙箱调用（2026-10-23）：模型用它的 execute/read_file 包 site_* 行时，
@@ -1093,12 +1138,27 @@ export function createAssistant(opts = {}) {
         } catch { /* 无 log */ }
       }
       ws.send(JSON.stringify(f));
-      // 空闲看门狗：服务端偶发推两三帧就冻住（§0.47 的时序坑），
-      // 与其干等满 timeout，不如 idleMs 无新帧就收工，好让上层重试。
+      // 空闲看门狗：**双判据**（2026-10-26 重写）。
+      //
+      //   ① 真死了：`idleMs` 内**一帧都没收到** ⇒ 连接/服务端冻住，收工重试。
+      //      这是原意（§0.47 的时序坑），保留。
+      //   ② 只转圈不出活：`starveMs` 内**一直没有正文**（但还在收帧）⇒ 模型在
+      //      长篇思考/反复调工具。给它的额度比 ① 宽得多（默认 3× idleMs，
+      //      实测 R3 从 30s 拉到 90s 就够它把 911 字吐完）。
+      //      这条**不直接判死**：它把已收到的正文按 partial 交回（有正文就不亏），
+      //      没正文才判 frozen。
+      const starveMs = Math.max(pending.idleMs, Number(pending.idleMs) * 3);
       const idle = setInterval(() => {
         if (!pending) { clearInterval(idle); return; }
-        if (Date.now() - pending.lastFrameAt > pending.idleMs) {
+        const now = Date.now();
+        // ① 一帧都没有 ⇒ 真冻死
+        if (now - (pending.lastAnyFrameAt || pending.lastFrameAt) > pending.idleMs) {
           resolve(pending.finish('frozen'));
+          return;
+        }
+        // ② 一直在收帧，但很久没正文 ⇒ 判「饿死」，有正文就当 partial 交回
+        if (now - pending.lastFrameAt > starveMs) {
+          resolve(pending.finish(pending.text ? 'starvation_partial' : 'frozen'));
         }
       }, 1000);
       pending.idleTimer = idle;
@@ -1345,6 +1405,13 @@ export function createAssistant(opts = {}) {
         // `site_<工具>，参数=值` 的调用形态，就是过程话 → 丢。
         // 用「行首 + 已知工具名 + 全角逗号」判，避免误伤正文里偶然提到的词。
         if (/^\s*site_[a-z_]+\s*[，,]/m.test(text)) continue;
+        // ⚠️ 2026-10-26（同一批数据里抓出的第二类过程话）：**模型的英文思考**。
+        // 上游把 CoT 也作为 OUT 记录存档（实测三条：「The user is asking me to
+        // explore a course material site…」「The user is asking me to read the
+        // current page…」）。它们对用户毫无意义，回放时只会让历史乱七八糟。
+        // 判据：整段**没有中日韩字符**但有一段英文句子 ⇒ 视为思考过程，丢。
+        // 不用「含英文就丢」——正常答案里也有英文术语与代码。
+        if (!/[\u4e00-\u9fff]/.test(text) && /[a-zA-Z]{3,}\s+[a-zA-Z]{3,}/.test(text)) continue;
       }
       text = text.trim();
       if (!text) continue;

@@ -354,20 +354,8 @@ test('附件落账时机：该轮失败（transport）不落账，下一轮仍�
   assert.equal(taps.fileInfos[1].length, 1, '上一轮失败未落账 ⇒ 这一轮还要带');
 });
 
-test('回喂瘦身：图片清单只回前 12 条 + omitted 计数（35 张全塞会撞单条上限）', async () => {
-  const taps = {};
-  const images = Array.from({ length: 35 }, (_, i) => ({
-    index: i, ext: 'webp', uploadable: false, natural: { w: 200, h: 100 },
-    alt: '图 ' + (i + 1) + '：' + '很长的说明'.repeat(8),
-  }));
-  const mgr = scriptedMgr(['call:site_list_images', 'answer:看完了'], taps);
-  const invoke = async () => ({ value: { ok: true, total: 35, needConvert: 35, hint: '要转码', images } });
-  const ts = createToolSession({ mgr, session: HANDLE, invoke, tools: TOOLS });
-  await ts.run('这一页有哪些图');
-  const feed = taps.prompts[1];
-  assert.ok(feed.length < 4000, `回喂应瘦身（实际 ${feed.length} 字）`);
-  assert.match(feed, /"omitted":23/);
-});
+// 2026-10-26：「图片清单只回前 12 条」这条已随 slimForFeed 一起删除——
+// 截断/瘦身现在由工具侧（webmcp-tools.mjs 的 feedText）负责，那里有自己的测试。
 
 test('回喂是纯搬运：只有工具结果，没有引导语 / 不复述任务', async () => {
   // 2026-10-25 站长定案：上游自己会规划工具调用，回喂不许夹带任何引导。
@@ -617,12 +605,17 @@ test('站点地图回喂：不按行号硬砍（截断会伪造出「没有这�
     'site_index 不许按行数硬砍');
 });
 
-test('站点地图回喂：超预算时按课程降级并明示总数', () => {
-  const src = readFileSync(new URL('./toolcycle.mjs', import.meta.url), 'utf8');
-  const siteIndexBlock = src.slice(src.indexOf("name === 'site_index'"), src.indexOf("name === 'site_list_images'"));
-  assert.match(siteIndexBlock, /MAX_TREE/, '要有字符预算');
-  assert.match(siteIndexBlock, /压缩为课程级摘要/, '超预算要降级成课程级摘要');
-  assert.match(siteIndexBlock, /scope="course"/, '要告诉模型怎么取细节');
+// 2026-10-26（信封归 MCP 侧）：这条判据跟着逻辑搬家——降级实现从
+// toolcycle.mjs 搬到了 webmcp-tools.mjs 的 feedText。**保留这道防线**：
+// 它守的是一个真实教训（硬砍会让模型说「本站只有工程数学」）。
+test('站点地图信封：超预算时按课程降级并明示总数（实现在 MCP 侧 feedText）', () => {
+  const src = readFileSync(new URL('../webmcp-tools.mjs', import.meta.url), 'utf8');
+  const i = src.indexOf('function feedText');
+  assert.ok(i > 0, 'feedText 必须存在（信封的唯一产地）');
+  const block = src.slice(i, src.indexOf('export async function runTool', i));
+  assert.match(block, /site_index/, '要专门处理站点地图');
+  assert.match(block, /压缩为课程级摘要/, '超预算要降级成课程级摘要');
+  assert.match(block, /scope=course/, '要告诉模型怎么取细节');
 });
 
 // ── 流式转发（2026-10-19 调查补测）────────────────────────────
