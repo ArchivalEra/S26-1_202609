@@ -328,12 +328,13 @@ test('CHAT_CSS：不允许出现会覆盖手机档 fixed 的无条件 position',
   }
 });
 
-test('CHAT_JS：面板、书签条与遮罩挂到 body 直下（SPA 替换范围之外）', () => {
-  // 面板、书签条脱离 SPA 的 .layout-container / .article-content 替换范围，
-  // 避免切页面被销毁或横在正文上方；遮罩要盖全屏，挂在 body 才不会被 overflow 裁剪。
-  assert.match(CHAT_JS, /document\.body\.appendChild\(dockEl\)/, '书签坞要挂 body');
-  assert.match(CHAT_JS, /document\.body\.appendChild\(panel\)/, '面板要挂 body');
-  assert.match(CHAT_JS, /document\.body\.appendChild\(backdrop\)/, '遮罩要挂 body');
+test('CHAT_JS：面板与书签栏优先挂载到 .site-shell，且保留挂载到 body 的优雅回退', () => {
+  assert.match(CHAT_JS, /siteShell\.querySelector\("\.m3-drawer"\)/, '查找站点抽屉');
+  assert.match(CHAT_JS, /drawer\.after\(dockEl\)/, '会话列表插入站点抽屉后');
+  assert.match(CHAT_JS, /siteShell\.appendChild\(panel\)/, '对话面板挂入 site-shell');
+  assert.match(CHAT_JS, /document\.body\.appendChild\(dockEl\)/, '回退书签坞挂 body');
+  assert.match(CHAT_JS, /document\.body\.appendChild\(panel\)/, '回退面板挂 body');
+  assert.match(CHAT_JS, /document\.body\.appendChild\(backdrop\)/, '遮罩挂 body');
 });
 
 test('CHAT_JS：流式渲染续解 + 帧合并', () => {
@@ -668,65 +669,161 @@ test('TOOL_LABEL 从 buildToolDefs 派生：标签集与 defs 一致，site_view
 
 // ── 2026-10-26 架构重写守卫（冷态、书签条、会话管理、中性契约）────
 
-function createTestSandbox({ onFetch } = {}) {
+function createTestSandbox({ onFetch, withSiteShell = false } = {}) {
+  const windowListeners = {};
+  const docListeners = {};
   const toggleBtn = {
     id: 'assistant-toggle',
     listeners: {},
+    attrs: {},
     addEventListener(type, fn) { this.listeners[type] = fn; },
-    setAttribute() {},
-    getAttribute() { return null; },
+    setAttribute(k, v) { this.attrs[k] = String(v); },
+    getAttribute(k) { return this.attrs[k] || null; },
   };
-  const body = {
-    children: [],
-    classList: { add() {}, remove() {}, contains() { return false; } },
-    appendChild(c) { this.children.push(c); return c; },
-  };
-  function makeElem(tag) {
-    return {
+  function makeElem(tag, id = '', className = '') {
+    const classes = new Set(className ? className.split(/\s+/).filter(Boolean) : []);
+    const el = {
       tagName: tag.toUpperCase(),
+      id,
       children: [],
-      classList: {
-        classes: new Set(),
-        add(c) { this.classes.add(c); },
-        remove(c) { this.classes.delete(c); },
-        contains(c) { return this.classes.has(c); },
-      },
+      childNodes: [],
+      parentNode: null,
+      dataset: {},
       attrs: {},
-      setAttribute(k, v) { this.attrs[k] = String(v); },
-      getAttribute(k) { return this.attrs[k] !== undefined ? this.attrs[k] : null; },
-      appendChild(c) { this.children.push(c); return c; },
-      addEventListener(type, fn) { (this._listeners ||= {})[type] = fn; },
+      get className() { return Array.from(classes).join(' '); },
+      set className(v) {
+        classes.clear();
+        String(v || '').split(/\s+/).filter(Boolean).forEach((c) => classes.add(c));
+      },
+      classList: {
+        classes,
+        add(c) { classes.add(c); },
+        remove(c) { classes.delete(c); },
+        contains(c) { return classes.has(c); },
+        toggle(c, force) {
+          const res = force !== undefined ? Boolean(force) : !classes.has(c);
+          if (res) classes.add(c); else classes.delete(c);
+          return res;
+        },
+      },
+      setAttribute(k, v) { el.attrs[k] = String(v); },
+      getAttribute(k) { return el.attrs[k] !== undefined ? el.attrs[k] : null; },
+      appendChild(c) {
+        c.parentNode = el;
+        el.children.push(c);
+        el.childNodes.push(c);
+        return c;
+      },
+      insertBefore(newChild, refChild) {
+        newChild.parentNode = el;
+        const idx = el.children.indexOf(refChild);
+        if (idx >= 0) {
+          el.children.splice(idx, 0, newChild);
+          el.childNodes.splice(idx, 0, newChild);
+        } else {
+          el.children.push(newChild);
+          el.childNodes.push(newChild);
+        }
+        return newChild;
+      },
+      removeChild(c) {
+        const idx = el.children.indexOf(c);
+        if (idx >= 0) {
+          el.children.splice(idx, 1);
+          el.childNodes.splice(idx, 1);
+          c.parentNode = null;
+        }
+        return c;
+      },
+      after(newChild) {
+        if (!el.parentNode) return;
+        el.parentNode.insertBefore(newChild, el.nextSibling);
+      },
+      get firstChild() { return el.children[0] || null; },
+      get nextSibling() {
+        if (!el.parentNode) return null;
+        const siblings = el.parentNode.children;
+        const idx = siblings.indexOf(el);
+        return idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1] : null;
+      },
+      addEventListener(type, fn) { ((el._listeners ||= {})[type] ||= []).push(fn); },
+      querySelectorAll(selector) {
+        const results = [];
+        function walk(node) {
+          for (const ch of node.children) {
+            if (selector === '.bm-item' && ch.classList.contains('bm-item')) results.push(ch);
+            else if (selector === '.m3-drawer' && ch.classList.contains('m3-drawer')) results.push(ch);
+            else if (selector === '.site-shell' && ch.classList.contains('site-shell')) results.push(ch);
+            walk(ch);
+          }
+        }
+        walk(el);
+        return results;
+      },
+      querySelector(selector) {
+        const list = el.querySelectorAll(selector);
+        return list[0] || null;
+      },
       focus() {},
       blur() {},
-      style: {},
+      style: { setProperty() {}, height: '' },
+      scrollTop: 0,
       getBoundingClientRect() { return { width: 360, height: 600 }; },
     };
+    return el;
   }
+
+  const body = makeElem('body');
+  let siteShell = null;
+  let drawer = null;
+  if (withSiteShell) {
+    siteShell = makeElem('div', 'site-shell', 'site-shell');
+    drawer = makeElem('aside', 'm3-drawer', 'm3-drawer');
+    const mainCol = makeElem('div', 'main-column', 'main-column');
+    siteShell.appendChild(drawer);
+    siteShell.appendChild(mainCol);
+    body.appendChild(siteShell);
+  }
+
   const doc = {
     body,
-    documentElement: { getAttribute: () => './' },
+    documentElement: { getAttribute: () => './', style: { setProperty() {} } },
     head: { appendChild() {} },
-    getElementById(id) { if (id === 'assistant-toggle') return toggleBtn; return null; },
+    getElementById(id) {
+      if (id === 'assistant-toggle') return toggleBtn;
+      return null;
+    },
     createElement(tag) { return makeElem(tag); },
     createElementNS(ns, tag) { return makeElem(tag); },
     createTextNode(t) { return { nodeType: 3, textContent: t }; },
-    addEventListener() {},
+    addEventListener(type, fn) { (docListeners[type] ||= []).push(fn); },
     removeEventListener() {},
+    querySelector(sel) {
+      if (sel === '.site-shell') return siteShell;
+      if (sel === '.m3-drawer') return drawer;
+      return null;
+    },
   };
+
+  const store = {};
   const sandbox = {
     document: doc,
     location: { hostname: '127.0.0.1', search: '' },
-    localStorage: { getItem() { return null; }, setItem() {} },
+    localStorage: {
+      getItem(k) { return store[k] !== undefined ? store[k] : null; },
+      setItem(k, v) { store[k] = String(v); },
+    },
     fetch: onFetch || (() => Promise.resolve({ ok: true, json: () => Promise.resolve([]) })),
     requestAnimationFrame: (fn) => setTimeout(fn, 0),
     setTimeout,
     clearTimeout,
-    addEventListener() {},
+    addEventListener(type, fn) { (windowListeners[type] ||= []).push(fn); },
     removeEventListener() {},
+    innerWidth: 1440,
     console,
   };
   sandbox.window = sandbox;
-  return { sandbox, toggleBtn, body, doc };
+  return { sandbox, toggleBtn, body, siteShell, drawer, doc, windowListeners, docListeners };
 }
 
 test('冷态惰性注水：初始执行 0 fetch、0 面板 DOM；点击 #assistant-toggle 才按需建树与拉取会话', async () => {
@@ -804,4 +901,179 @@ test('安全与厂商隔离硬闸：CHAT_JS 与 CHAT_CSS 绝不泄漏超星厂�
   const forbidden = /chaoxing|robot-lc|visitor|msgList|conversationId|visitorVc|passport2/i;
   assert.doesNotMatch(CHAT_JS, forbidden, 'CHAT_JS 严禁出现任何超星专有词');
   assert.doesNotMatch(CHAT_CSS, forbidden, 'CHAT_CSS 严禁出现任何超星专有词');
+});
+
+// ── 2026-10-26 助手侧栏化三栏融入与交互测试 ─────────────────
+
+test('DOM 挂载：优先挂入 .site-shell 参与 Flex 流，位置与主内容并列', async () => {
+  const { runInNewContext } = await import('node:vm');
+  const { sandbox, toggleBtn, siteShell, body } = createTestSandbox({
+    withSiteShell: true,
+  });
+  runInNewContext(CHAT_JS, sandbox);
+
+  toggleBtn.listeners.click({ stopPropagation() {} });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  // 验证 siteShell 的子项顺序：[m3-drawer, chat-dock (chat-sessions), main-column, chat-panel (chat-dialog)]
+  assert.equal(siteShell.children.length, 4, 'siteShell 内应有 4 个 flex 子项');
+  assert.equal(siteShell.children[0].id, 'm3-drawer', '左栏首位为站点目录');
+  assert.equal(siteShell.children[1].id, 'chat-dock', '第二位为会话列表');
+  assert.ok(siteShell.children[1].classList.contains('chat-sessions'));
+  assert.equal(siteShell.children[2].id, 'main-column', '第三位为主内容列');
+  assert.equal(siteShell.children[3].id, 'chat-panel', '第四位为对话区');
+  assert.ok(siteShell.children[3].classList.contains('chat-dialog'));
+
+  // 遮罩在 body 直下
+  assert.ok(body.children.some((c) => c.className === 'chat-backdrop'));
+});
+
+test('全局快捷键：Ctrl+S / Cmd+S 触发助手开关并 preventDefault；禁用 Escape 关面板', async () => {
+  const { runInNewContext } = await import('node:vm');
+  const { sandbox, windowListeners } = createTestSandbox();
+  runInNewContext(CHAT_JS, sandbox);
+
+  const keydownFns = windowListeners.keydown || [];
+  assert.ok(keydownFns.length > 0, 'window 上必须挂有 keydown 监听器');
+
+  // ① 按 Escape：不得唤醒或关闭助手
+  let escPrevented = false;
+  keydownFns.forEach((fn) => fn({ key: 'Escape', preventDefault() { escPrevented = true; } }));
+  assert.equal(sandbox.window.__chatPanel.isOpen, false, 'Escape 不得打开助手');
+  assert.equal(escPrevented, false);
+
+  // ② 按 Ctrl+S：阻止浏览器默认保存行为，并打开助手
+  let ctrlSPrevented = false;
+  keydownFns.forEach((fn) => fn({
+    ctrlKey: true,
+    key: 's',
+    preventDefault() { ctrlSPrevented = true; },
+  }));
+  assert.equal(ctrlSPrevented, true, 'Ctrl+S 必须调用 preventDefault');
+  assert.equal(sandbox.window.__chatPanel.isOpen, true, 'Ctrl+S 必须打开助手');
+
+  // ③ Escape 在助手打开时也不得关闭助手（用户定案：不允许使用 esc）
+  keydownFns.forEach((fn) => fn({ key: 'Escape', preventDefault() {} }));
+  assert.equal(sandbox.window.__chatPanel.isOpen, true, 'Escape 绝不得关闭助手');
+
+  // ④ 按 Cmd+S (metaKey)：关闭助手
+  let cmdSPrevented = false;
+  keydownFns.forEach((fn) => fn({
+    metaKey: true,
+    key: 'S',
+    preventDefault() { cmdSPrevented = true; },
+  }));
+  assert.equal(cmdSPrevented, true, 'Cmd+S 必须调用 preventDefault');
+  assert.equal(sandbox.window.__chatPanel.isOpen, false, 'Cmd+S 必须关闭助手');
+});
+
+test('状态记忆：开助手记录 sidebar-collapsed，关助手准确恢复原始状态', async () => {
+  const { runInNewContext } = await import('node:vm');
+
+  // 场景 A：用户原先未收起侧边栏
+  {
+    const { sandbox, body } = createTestSandbox();
+    runInNewContext(CHAT_JS, sandbox);
+
+    assert.equal(body.classList.contains('sidebar-collapsed'), false);
+    sandbox.window.__chatPanel.open();
+    assert.equal(body.classList.contains('sidebar-collapsed'), true, '开助手后收起左栏');
+    assert.equal(body.dataset.sidebarWasCollapsed, 'false', '记录原先未收起');
+
+    sandbox.window.__chatPanel.close();
+    assert.equal(body.dataset.sidebarWasCollapsed, undefined, '关闭后清空标记');
+    await new Promise((resolve) => setTimeout(resolve, 140));
+    assert.equal(body.classList.contains('sidebar-collapsed'), false, '未收起态恢复展开');
+  }
+
+  // 场景 B：用户原先已自行收起侧边栏（不擅自展开）
+  {
+    const { sandbox, body } = createTestSandbox();
+    body.classList.add('sidebar-collapsed');
+    runInNewContext(CHAT_JS, sandbox);
+
+    sandbox.window.__chatPanel.open();
+    assert.equal(body.dataset.sidebarWasCollapsed, 'true', '记录原先已收起');
+
+    sandbox.window.__chatPanel.close();
+    await new Promise((resolve) => setTimeout(resolve, 140));
+    assert.equal(body.classList.contains('sidebar-collapsed'), true, '原本收起态保持收起，不擅自展开');
+  }
+});
+
+test('Bug 5.1 根治：关闭助手后会话目录与把手状态彻底收回', async () => {
+  const { runInNewContext } = await import('node:vm');
+  const { sandbox, body } = createTestSandbox();
+  runInNewContext(CHAT_JS, sandbox);
+
+  sandbox.window.__chatPanel.open();
+  const dock = body.children.find((c) => c.id === 'chat-dock');
+  assert.ok(dock, '找到 chat-dock');
+
+  // 模拟手机把手展开会话列表
+  dock.classList.add('open');
+  const handle = dock.children.find((c) => c.className === 'chat-mobile-handle');
+  assert.ok(handle, '找到 mobileHandle');
+  handle.setAttribute('aria-expanded', 'true');
+
+  // 关闭助手
+  sandbox.window.__chatPanel.close();
+  assert.equal(dock.classList.contains('open'), false, 'close() 必须移除 dock 的 open 类');
+  assert.equal(handle.getAttribute('aria-expanded'), 'false', '把手无障碍态必须重置为 false');
+});
+
+test('Bug 5.2 根治：selectSession 仅切 active 类，保持滚动位置不归零', async () => {
+  const { runInNewContext } = await import('node:vm');
+  const { sandbox } = createTestSandbox();
+  sandbox.window.__MOCK_SESSIONS__ = [
+    { id: 'sess-1', title: '会话 1' },
+    { id: 'sess-2', title: '会话 2' },
+  ];
+  sandbox.window.__MOCK_MESSAGES__ = {
+    'sess-1': [{ role: 'user', text: '你好' }],
+    'sess-2': [{ role: 'user', text: '第二会话' }],
+  };
+  runInNewContext(CHAT_JS, sandbox);
+
+  sandbox.window.__chatPanel.open();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  const bmList = sandbox.document.body.children
+    .find((c) => c.id === 'chat-dock').children
+    .find((c) => c.className === 'chat-bookmarks').children[0];
+
+  assert.ok(bmList && bmList.className === 'bm-list');
+  const items = bmList.querySelectorAll('.bm-item');
+  assert.equal(items.length, 3, '包含 1 个新建按钮 + 2 个会话项');
+
+  // 模拟滚动到 200px
+  bmList.scrollTop = 200;
+
+  // 切换会话
+  await sandbox.window.__chatPanel.selectSession('sess-2');
+
+  // 滚动条未被清零
+  assert.equal(bmList.scrollTop, 200, '选择会话后 scrollTop 必须保持');
+
+  // active 类正确更新
+  const item1 = items.find((it) => it.getAttribute('data-session-id') === 'sess-1');
+  const item2 = items.find((it) => it.getAttribute('data-session-id') === 'sess-2');
+  assert.equal(item1.classList.contains('active'), false);
+  assert.equal(item2.classList.contains('active'), true);
+});
+
+test('双栏独立拖拽与持久化：会话栏与对话区具备各自的尺寸区间与 localStorage 键名', () => {
+  // 会话栏变量与范围
+  assert.match(CHAT_JS, /shirone-chat-sessions-width/, '会话栏持久化键名');
+  assert.match(CHAT_JS, /SESS_W_MIN = 200/, '会话栏下限 200');
+  assert.match(CHAT_JS, /SESS_W_MAX = 420/, '会话栏上限 420');
+  assert.match(CHAT_JS, /SESS_W_DEFAULT = 280/, '会话栏默认 280');
+  assert.match(CHAT_JS, /buildSessionsResizer/, '会话栏独立拖拽手柄');
+
+  // 对话区变量与范围
+  assert.match(CHAT_JS, /shirone-chat-dialog-width/, '对话区持久化键名');
+  assert.match(CHAT_JS, /CHAT_W_MIN = 300/, '对话区下限 300');
+  assert.match(CHAT_JS, /CHAT_W_MAX = 720/, '对话区上限 720');
+  assert.match(CHAT_JS, /CHAT_W_DEFAULT = 380/, '对话区默认 380');
+  assert.match(CHAT_JS, /buildResizer/, '对话区独立拖拽手柄');
 });

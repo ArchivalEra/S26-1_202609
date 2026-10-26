@@ -41,6 +41,12 @@
   --header-height: 60px;
   --sidebar-width: 320px;
   --toc-width: 240px;
+  --chat-sessions-width: 280px;
+  --chat-sessions-min: 200px;
+  --chat-sessions-max: 420px;
+  --chat-dialog-width: 380px;
+  --chat-dialog-min: 300px;
+  --chat-dialog-max: 720px;
 }
 
 [data-theme="dark"] {
@@ -650,6 +656,60 @@ body.sidebar-resizing .m3-drawer {
     overflow: hidden !important;
     opacity: 0;
     pointer-events: none;
+  }
+
+  /* 助手展开时本节 TOC 收起 */
+  body.chat-open .m3-toc {
+    width: 0 !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* 助手两栏（Flex 子项）在桌面端的开合与过渡 */
+  aside.chat-sessions,
+  aside.chat-dialog {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    height: 100vh;
+    height: 100dvh;
+    position: sticky;
+    top: 0;
+    width: 0;
+    min-width: 0;
+    padding: 0;
+    border: none;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
+    box-sizing: border-box;
+    transition: width 0.22s cubic-bezier(0.2, 0, 0, 1), opacity 0.2s;
+    transition-delay: 0s;
+  }
+
+  body.chat-open aside.chat-sessions {
+    width: var(--chat-sessions-width);
+    min-width: var(--chat-sessions-min);
+    max-width: var(--chat-sessions-max);
+    opacity: 1;
+    pointer-events: auto;
+    overflow: visible;
+    border-right: 1px solid var(--md-sys-color-outline-variant);
+    transition: width 0.25s cubic-bezier(0.2, 0, 0, 1) 0.12s, opacity 0.2s 0.12s;
+  }
+
+  body.chat-open aside.chat-dialog {
+    width: var(--chat-dialog-width);
+    min-width: var(--chat-dialog-min);
+    max-width: var(--chat-dialog-max);
+    opacity: 1;
+    pointer-events: auto;
+    overflow: visible;
+    border-left: 1px solid var(--md-sys-color-outline-variant);
+    transition: width 0.25s cubic-bezier(0.2, 0, 0, 1) 0.12s, opacity 0.2s 0.12s;
   }
 }
 
@@ -1501,6 +1561,7 @@ a.sym-gloss:hover {
   position: sticky;
   top: var(--header-height);
   overflow-y: auto;
+  transition: width 0.25s cubic-bezier(0.2, 0, 0, 1), opacity 0.2s, padding 0.25s;
 }
 
 .toc-title {
