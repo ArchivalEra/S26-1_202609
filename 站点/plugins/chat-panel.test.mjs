@@ -146,43 +146,24 @@ test('renderMathInto：KaTeX 抛错时错误走 textContent（不注入错误串
 
 // ── 字符串完整性 ───────────────────────────────────────────
 
-// ── 联网开关 ↔ 附件互斥（2026-10-25，官方语义照抄）──────────────
+// ── 联网开关已删除（2026-10-26 站长定案）──────────────────────
 //
-// 实测（.zcode/会话语义/实测-多会话与联网-20261025.md §五）：
-// 官方开启联网时给附件加 disabled 属性 + cursor:not-allowed，
-// **没有** .disabled 类、不改 pointer-events、不置灰。
-// 这组测试钉住「我们照抄的是同一个判据」，防止将来有人改用 class。
+// 实测（.zcode/会话语义/实测-多会话与联网-20261025.md §5.1）：上游 WS 协议里
+// 没有联网字段——按钮只能改自己的 UI 态、影响不到上游，等于骗用户。
+// 定案：删。官方真实通道找到之前不复活；复活时从 git 历史取旧实现，
+// 别凭记忆重写。这组断言钉住「确实删干净了」，防止半截复活。
 
-test('联网按钮存在于 CHAT_JS（构造 + 点击绑定）', () => {
-  assert.ok(CHAT_JS.includes('chat-web-btn'), '联网按钮的 class 必须在');
-  assert.ok(CHAT_JS.includes('"联网搜索"'), '要有 aria-label');
-  assert.match(CHAT_JS, /webBtn\.addEventListener\("click"/, '点击要绑 setWebSearch');
+test('联网开关物理删除：按钮/状态变量/互斥逻辑都不在 CHAT_JS', () => {
+  for (const frag of ['chat-web-btn', 'webBtn', 'webSearch', 'setWebSearch', '联网搜索']) {
+    assert.ok(!CHAT_JS.includes(frag), `不允许出现 ${frag}（已删除的功能，复活须先找到官方真实通道）`);
+  }
 });
 
-test('互斥判据是 disabled 属性，不是 class（照抄官方）', () => {
-  // 找到 setWebSearch 的函数体
-  const i = CHAT_JS.indexOf('function setWebSearch');
-  assert.ok(i > 0, 'setWebSearch 必须在');
-  const body = CHAT_JS.slice(i, CHAT_JS.indexOf('\n  }', i) + 4);
-  assert.match(body, /attachBtn\.disabled = true/, '开启联网要设 disabled 属性');
-  assert.match(body, /attachBtn\.disabled = false/, '关闭联网要清 disabled 属性');
-  assert.doesNotMatch(body, /classList\.(add|remove)\(["']disabled/, '不许改用 .disabled 类');
-  assert.doesNotMatch(body, /pointerEvents/, '不许改 pointer-events（官方没改）');
-});
-
-test('联网按钮用 active 类 + aria-pressed 表示开启（与官方 .tool-button.active 同判据）', () => {
-  const i = CHAT_JS.indexOf('function setWebSearch');
-  const body = CHAT_JS.slice(i, CHAT_JS.indexOf('\n  }', i) + 4);
-  assert.match(body, /classList\.toggle\("active"/, '开启态用 active 类');
-  assert.match(body, /aria-pressed/, '无障碍状态要同步');
-});
-
-test('附件按钮排在联网按钮之前（与官方同一行、顺序一致）', () => {
+test('附件按钮不再被联网互斥禁用：appendChild 行只剩 attach → input → send', () => {
   const i = CHAT_JS.indexOf('form.appendChild(attachBtn)');
   assert.ok(i > 0);
-  const line = CHAT_JS.slice(i, i + 120);   // 同一行：attach → web → input → send
-  assert.ok(line.indexOf('attachBtn') < line.indexOf('webBtn'), '附件在联网左边');
-  assert.ok(line.indexOf('webBtn') < line.indexOf('inputEl'), '联网在输入框左边');
+  const line = CHAT_JS.slice(i, i + 120);
+  assert.ok(line.indexOf('inputEl') > 0 && line.indexOf('sendBtn') > 0, '输入框与发送键仍在');
 });
 
 test('CHAT_JS：语法可解析', () => {
