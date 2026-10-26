@@ -403,6 +403,24 @@ export function extractChunks(j) {
 
   if (mp.type === 'MIX') {
     if (mp.subType === 'message_chunk' && mp.content) out.push(String(mp.content));
+    // ⚠️ 2026-10-26（历史回放实测）：**存档记录**与**实时帧**形态不同。
+    // 实时帧一帧一片（subType=message_chunk）；历史里整个回答被压成一条记录，
+    // subType=finish，而 mp.content 是个**数组**：
+    //   [{subType:'message_chunk', content:'正文片段'}, …, {subType:'finish', content:''}]
+    // 只认实时形态时，历史里的助手回复会全部抽成空（实测 6 条消息只剩 user）。
+    // 这里把数组形态也接上，同样只取 message_chunk 分片——推理/工具/终止分片丢弃。
+    // 注意：存档里 `mp.content` 常常是**字符串形式的 JSON 数组**（实测），
+    // 不是真数组——所以先试解析，解析不出来才当单段处理。
+    let parts = mp.content;
+    if (typeof parts === 'string') {
+      try { const parsed = JSON.parse(parts); if (Array.isArray(parsed)) parts = parsed; } catch { /* 不是 JSON */ }
+    }
+    if (Array.isArray(parts)) {
+      for (const part of parts) {
+        if (!part || typeof part !== 'object') continue;
+        if (part.subType === 'message_chunk' && part.content) out.push(String(part.content));
+      }
+    }
     return out;
   }
   if (mp.type === 'MACHINE_READ' && mp.content) {
@@ -1222,15 +1240,128 @@ export function createAssistant(opts = {}) {
     if (!identity) await apply();
     if (!identity.conversationId) return null;
     try {
-      const r = await jfetch(`/v1/front/msgList?${qs({
-        pageNo: 1, pageSize: 1, conversationId: identity.conversationId,
-        scene: '', unitId, robotId,
-      })}&safeformat=json`, { timeoutMs: 10000 });
-      const d = (r.json && r.json.data) || {};
+      const d = await fetchMsgPage(identity.conversationId, 1, 1);
       const total = typeof d.total === 'number' ? d.total : null;
       log('[msgList] total=' + total + ' conversationId=' + String(identity.conversationId).slice(0, 12));
       return total;
     } catch { return null; }
+  }
+
+  /**
+   * 取一页消息（`msgList` 的原始 `data`）。`msgListTotal` 与 `listMessages` 共用它——
+   * 同一个接口只读一次口径，避免「判条数」和「取内容」两套解析漂移。
+   * @returns {Promise<{records:Array, total:number}>}
+   */
+  async function fetchMsgPage(conversationId, pageNo, pageSize) {
+    const r = await jfetch(`/v1/front/msgList?${qs({
+      pageNo, pageSize, conversationId, scene: '', unitId, robotId,
+    })}&safeformat=json`, { timeoutMs: 15000 });
+    const d = (r.json && r.json.data) || {};
+    return {
+      records: Array.isArray(d.records) ? d.records : [],
+      total: typeof d.total === 'number' ? d.total : 0,
+    };
+  }
+
+  /**
+   * 会话列表。返回**中性形状**：`[{ id, title, group, createdAt, canResume }]`。
+   *
+   * 为什么在这里而不在调用方：列表是上游的一个接口，取值口径（分组怎么来的、
+   * 标题取哪个字段、时间单位）只该有一处实现。上层（桥）只管把它转成 HTTP JSON。
+   *
+   * 实测形状（2026-10-26）：`data` 是分组数组，每组 `{timeRange, list:[...]}`；
+   * 条目里 `conversationName` 就是标题（服务端按首句自动生成，我们原样透传）。
+   * 未登录/匿名态 `data` 是空数组——这是上游正常行为，不是错误。
+   *
+   * @returns {Promise<Array<{id:string,title:string,group:string,createdAt:number|null,canResume:boolean}>>}
+   */
+  async function listConversations() {
+    if (!identity) await apply();
+    const r = await jfetch(`/v1/front/conversationList?${qs({
+      pageNo: 1, pageSize: 50, unitId, robotId,
+    })}`, { timeoutMs: 15000 });
+    const groups = (r.json && Array.isArray(r.json.data)) ? r.json.data : [];
+    const out = [];
+    for (const g of groups) {
+      const group = String((g && g.timeRange) || '');
+      for (const it of ((g && g.list) || [])) {
+        if (!it || !it.conversationId) continue;
+        out.push({
+          id: String(it.conversationId),
+          title: String(it.conversationName || ''),
+          group,
+          createdAt: typeof it.timestamp === 'number' ? it.timestamp : null,
+          canResume: it.canResume !== false,
+        });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * 某会话的消息，已翻成中性形状 `[{ role, text, at }]`。
+   *
+   * ## 两边的正文位置不同（实测，这是本函数存在的全部理由）
+   * · 用户发的（`direction: 'IN'`）：正文在 `messageBody.question`（JSON 字符串内）
+   * · 助手回的（`direction: 'OUT'`）：正文在 `messageBody.mobileProperties.content`，
+   *   那是一个**分片数组**，每片 `subType==='message_chunk'` 的 `content` 才是正文。
+   *   其余分片是推理过程（`tool_call_chunk` / `tool_call_result` / `finish`）——
+   *   **必须丢弃**，否则用户会看到模型的思考草稿。
+   *
+   * 依赖 `extractChunks`（本文件已导出的那一个）——它与实时问答链路共用同一套
+   * 正文抽取规则，历史回放与实时回答才不会给出两种文本。
+   *
+   * @param {string} conversationId
+   * @returns {Promise<Array<{role:'user'|'assistant', text:string, at:number|null}>>}
+   */
+  async function listMessages(conversationId) {
+    const { records } = await fetchMsgPage(conversationId, 1, 200);
+    const out = [];
+    for (const rec of records) {
+      let body = null;
+      try { body = JSON.parse(rec.messageBody || '{}'); } catch { body = null; }
+      if (!body) continue;
+      const isUser = rec.direction === 'IN';
+      let text = '';
+      if (isUser) {
+        text = String(body.question || body.visibleQuestion || '');
+        // ⚠️ 2026-10-26（真实数据抓出）：工具循环的**中间回喂**也以 `direction=IN`
+        // 存进了历史——实测正文形如「[工具返回：site_read | what=outline] …」。
+        // 那不是用户说的话，是系统喂给模型的工具结果；渲染到界面上会让用户
+        // 看见一堆自己从没发过的消息。丢弃（判据用回喂信封的固定前缀，
+        // 与 toolcycle 的 envelope() 同源）。
+        if (text.startsWith('[工具返回：')) continue;
+        // 首轮提示词拼的上下文头（toolcycle 的 contextProvider 段）同样以 IN 存档，
+        // 实测形如「你在【课程资料站】的：《电子技术作业》… 可用工具：…」。
+        // 同上：不是用户说的，丢。
+        if (text.startsWith('你在【课程资料站】的：')) continue;
+      } else {
+        // 助手侧：只有 message_chunk 是正文；其余分片（推理/工具/终止）丢弃。
+        const chunks = extractChunks(body);
+        text = chunks.map((c) => String(c)).join('');
+        // ⚠️ 2026-10-26（真实数据抓出）：工具循环的**中间轮**也以 OUT 存档，
+        // 内容是「打算调什么」的过程话（实测「我读第一节…\nsite_read, what=section, query=…」）。
+        // 那不是给用户看的答案。判据与本仓解析器同源：正文里出现一行
+        // `site_<工具>，参数=值` 的调用形态，就是过程话 → 丢。
+        // 用「行首 + 已知工具名 + 全角逗号」判，避免误伤正文里偶然提到的词。
+        if (/^\s*site_[a-z_]+\s*[，,]/m.test(text)) continue;
+      }
+      text = text.trim();
+      if (!text) continue;
+      out.push({
+        role: isUser ? 'user' : 'assistant',
+        text,
+        at: typeof rec.sendTime === 'number' ? rec.sendTime
+          : (typeof rec.createTime === 'number' ? rec.createTime : null),
+      });
+    }
+    // ⚠️ 2026-10-26（真实数据抓出）：上游给的记录**不是时间升序**——实测同一会话里
+    // 最终答案排在最前、用户问题在中间。按 `at` 升序重排；`at` 缺失的保持相对位置。
+    out.sort((x, y) => {
+      if (x.at == null || y.at == null) return 0;
+      return x.at - y.at;
+    });
+    return out;
   }
 
   function resetIdentity() {
@@ -1299,7 +1430,7 @@ export function createAssistant(opts = {}) {
     return { conversationId: newCid || oldCid, changed: !!newCid && newCid !== oldCid };
   }
 
-  return { apply, resetIdentity, clearConversation, models, switchModel, connect, ask, askRetry, askWithRetry, uploadImage, askImage, send, close, cancel, msgListTotal,
+  return { apply, resetIdentity, clearConversation, models, switchModel, connect, ask, askRetry, askWithRetry, uploadImage, askImage, send, close, cancel, msgListTotal, listConversations, listMessages,
     get identity() { return identity; },
     get activeModelId() { return activeModelId; },
     get isLLMPlanning() { return isLLMPlanning; },
