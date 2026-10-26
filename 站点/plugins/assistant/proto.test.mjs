@@ -330,7 +330,7 @@ test('base 参数化：createAssistant 无 base/unitId/robotId 时直接抛错�
   // 三要素齐全 + 假地址：能建出实例（不触网——apply/connect 都不调）
   const a = createAssistant({ base: 'https://up.example', unitId: 'u1', robotId: 'r1' });
   assert.equal(a.identity, null, '未 connect 前 identity 为空');
-  assert.equal(a.planning, 0, '默认普通模式');
+  assert.equal(a.isLLMPlanning, 0, '默认普通模式');
   assert.equal(typeof a.ask, 'function');
 });
 
