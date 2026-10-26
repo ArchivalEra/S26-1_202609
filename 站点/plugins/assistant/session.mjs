@@ -79,6 +79,9 @@ export function chaoxingAdapter(upstream, hostOpts = {}) {
         cancel: () => a.cancel(),
         // 上游真名（只读）：本通道所在的那一场对话。未连上时是 null。
         conversationId: () => (a.identity && a.identity.conversationId) || null,
+        // 开新会话（上游的「新建对话」）。适配器只做转发，决策权在调用方：
+        // 谁想换场谁调它，不看本地状态。
+        clearConversation: () => a.clearConversation(),
         // 「当前会话是不是新的」判据：上游 msgList 的 total。
         // 建连后调一次即可（同一个 conversationId 下 total 只会增）。
         msgListTotal: () => a.msgListTotal(),
@@ -349,6 +352,25 @@ export function createManager(opts = {}) {
     /** 全部会话句柄。 */
     conversations() {
       return [...records.keys()];
+    },
+
+    /**
+     * 在这场会话上**换一个新对话**（上游的「新建对话」）。
+     *
+     * 换场而非新开：调用方手里的句柄继续有效，只是它背后的上游会话身份变了。
+     * 缓存 `msgListTotal` 必须清零——否则「新会话才发工具清单」的判据会拿旧值。
+     *
+     * @returns {Promise<{conversationId: string|null, changed: boolean}>}
+     */
+    async newConversation(h) {
+      const rec = recOf(h);
+      const ch = await ensureChannel(h);
+      if (typeof ch.clearConversation !== 'function') {
+        throw new Error('当前通道不支持新建会话');
+      }
+      const r = await ch.clearConversation();
+      rec.msgListTotal = 0;
+      return r;
     },
 
     /** 某会话的历史条数（上游 msgList.total）。null = 还没连过 / 取不到。

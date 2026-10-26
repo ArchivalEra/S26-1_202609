@@ -101,6 +101,24 @@ export function createChatService({
   }
 
   /**
+   * 开一场新对话（在**已有句柄**上换场，不新开句柄）。
+   *
+   * 为什么换场而不是新 open：产品路径上「新建对话」之后接着提问的，还是同一个
+   * UI 会话位——新开一个句柄会让引用四处散落。这里让管理器直接在这场上换掉上游会话
+   * 身份（`conversationId` 变了，句柄对象不变），调用方手里的引用继续有效。
+   *
+   * @param {object} h 现有句柄
+   * @returns {Promise<{conversationId: string|null, changed: boolean}>}
+   */
+  async function newConversation(h) {
+    // 换场逻辑在管理器（它持有通道与缓存），这里只转发——不在这里摸内部记录。
+    if (typeof mgr.newConversation !== 'function') {
+      throw new Error('管理器不支持新建会话');
+    }
+    return mgr.newConversation(h);
+  }
+
+  /**
    * 问一句，事件通过 emit 流出去。
    *
    * 保证：
@@ -269,5 +287,5 @@ export function createChatService({
     try { return mgr.traceFrames(h) || []; } catch { return []; }
   }
 
-  return { open, attach, ask, cancel, upload, setTools, close, traceFrames };
+  return { open, attach, newConversation, ask, cancel, upload, setTools, close, traceFrames };
 }
