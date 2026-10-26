@@ -35,11 +35,15 @@ PROBLEMS_CMD = (
     "for s in re.findall(r'(?:选|填|计|判|画图)\\s*([0-9][0-9、,\\s]*)', "
     "re.sub(r'（[^）]*）','',ln[4:]))))\""
 )
-# 符号词条：三个符号包的 glossary-dict 围栏里 `sym-` 开头的行数合计。
+# 符号词条：全部符号包（通用包 + 每门课的 0.0-符号入门）的 glossary-dict 围栏里
+# `sym-` 开头行数合计。
+# 2026-10-25 修：旧命令**硬编码四个包**，漏了 `课程/电子技术/教材解析/0.0-符号入门.md`
+# ——该包 2026-10-12 随「五包体系」入库，此后 13 天里台账一直少记它（179 实为 4 包，
+# 补上电子技术是 213）。硬编码包名 = 加包就静默漏记，改用 glob 自动发现：
+# 包注册表 `站点/符号环境.mjs` 增包时，这条命令自动跟上，不必手改清单。
 GLOSSARY_CMD = (
     "awk '/^:::glossary-dict/{f=1;next} /^:::/{f=0} f&&/^sym-/{n++} END{print n}' "
-    "站点/符号包/通用.md 课程/电机学/教材解析/0.0-符号入门.md "
-    "课程/工程数学/教材解析/0.0-符号入门.md 课程/电路原理/教材解析/0.0-符号入门.md"
+    "站点/符号包/通用.md 课程/*/教材解析/0.0-符号入门.md"
 )
 # 站点页数：待渲染清单的条数（与钩子的 check_build_targets 同一份清单）。
 # 2026-10-15：清单从 站点/build.mjs 搬到 站点/页面清单.mjs（build 与 MCP 读层共用同一份），
@@ -59,8 +63,12 @@ HOOKTESTS_CMD = (
 # 实测）与 TAP「# tests N」都认；测试名里出现「tests 3」字样也不会误取
 # （旧 grep -o 取首个匹配，先命中测试名就数错）。没读到汇总行 ⇒ 同样非零退出
 # （宁缺勿假：node 崩了不许把 0 交给台账）。
+# 2026-10-25 修：旧命令只跑**单层** glob `plugins/*.test.mjs`（334 项），
+# 漏掉 `plugins/assistant/` 下 5 个文件的 143 项。而项目自己的 `npm test`
+# 声明的是 `node --test plugins/`（递归，477 项）——台账量的是子集，等于
+# 每次引用都在低估覆盖面。改与 npm test 同口径（递归）。
 PLUGIN_TESTS_CMD = (
-    "cd 站点 && node --test plugins/*.test.mjs 2>&1 | awk "
+    "cd 站点 && node --test plugins/ 2>&1 | awk "
     "'NF==3 && $3 ~ /^[0-9]+$/ && ($2==\"tests\"||$2==\"fail\"||$2==\"cancelled\") "
     "{v[$2]=$3} "
     "END {t=v[\"tests\"]; f=v[\"fail\"]+0; c=v[\"cancelled\"]+0; "
@@ -93,8 +101,8 @@ TABLE = [
      "习题册题数（合并题号的标题按题号展开计数）"),
     ("figures", "ls 课程/电路原理/作业/figures/ | wc -l",
      "课程/电路原理/作业/figures/", "习题册配图张数"),
-    ("glossary_entries", GLOSSARY_CMD, "课程/*/教材解析/0.0-符号入门.md",
-     "三个符号包的词条合计（电机学 / 电路原理 / 工程数学）"),
+    ("glossary_entries", GLOSSARY_CMD, "站点/符号包/通用.md + 课程/*/教材解析/0.0-符号入门.md",
+     "全部符号包的词条合计（通用 + 电机学 / 电路原理 / 工程数学 / 电子技术）"),
     ("sitepages", SITEPAGES_CMD, "站点/build.mjs", "站点页数（TARGET_FILES 条数）"),
     ("md_files", "git ls-files '*.md' | wc -l", "repo", "受管 Markdown 篇数"),
     ("hooktests", HOOKTESTS_CMD, ".githooks/test-update-readme.py", "钩子集成测试项数",
