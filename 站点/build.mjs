@@ -213,8 +213,6 @@ fs.writeFileSync(path.join(webmcpDir, 'webmcp-relay.js'), WEBMCP_RELAY_JS);
 // 学习助手面板（2026-10-19）：JS + CSS 都是构建期写盘，SW 会自动预缓存
 fs.writeFileSync(path.join(webmcpDir, 'chat-panel.js'), CHAT_JS);
 fs.writeFileSync(path.join(webmcpDir, 'chat-panel.css'), CHAT_CSS);
-// 站点侧助手协议栈（2026-10-22 阶段二 T11）：把 plugins/assistant/ 的 ES module
-// 与 assistant-wire.mjs 打成一个自包含 IIFE——工具循环在站点内跑，插件只剩通道。
 // 部署根探测（2026-10-20）：修「无前缀入口下相对链接退到域名根」的线上 404。
 // 原样拷贝源文件（内含全局暴露，模板里同步加载并立即调用 fixSiteRoot()）。
 fs.writeFileSync(path.join(webmcpDir, 'site-root.js'), fs.readFileSync(path.join(SITE_DIR, 'plugins', 'site-root.mjs'), 'utf8'));
