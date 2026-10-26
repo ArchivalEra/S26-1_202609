@@ -114,7 +114,7 @@ function bridgeAdapter(bridge, toolsProvider) {
  * @param {Function} [p.contextProvider] () → {title, course, path?, sections?}
  * @param {string[]} [p.navToolNames] 放行进提示词的工具名（默认全量放行）
  * @param {number} [p.rounds=4] 工具闭环最多轮数
- * @returns createChatService 的返回值：{ask, cancel, upload, setTools, snapshot, close}
+ * @returns createChatService 的返回值：{ask, cancel, upload, setTools, close}
  */
 export function createAssistantClient({
   bridge, tools = [], invoke, contextProvider = null, navToolNames = null, rounds = 4,

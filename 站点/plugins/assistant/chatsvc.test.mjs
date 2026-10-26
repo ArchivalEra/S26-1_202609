@@ -36,7 +36,6 @@ function fakeMgr(script, taps = {}) {
       }
       return { text: s.replace(/^answer:/, ''), status: 'ok', calls: [] };
     },
-    snapshot(h) { return h == null ? [{ conversationId: null, turns: 1 }] : { conversationId: null, turns: 1 }; },
     find() { return null; },
     close() {},
   };
@@ -190,21 +189,12 @@ test('同一句柄的多次 ask 复用同一个管理器会话', async () => {
   assert.equal(taps.opened, 1, '同一句柄不该重复 open');
 });
 
-test('snapshot：无参返回全部，带参返回单会话', async () => {
-  const mgr = fakeMgr(['answer:a']);
-  const svc = createChatService({ mgr, tools: TOOLS, invoke: async () => ({}) });
-  const h = svc.open();
-  await svc.ask(h, '问', () => {});
-  assert.ok(svc.snapshot(h), '带句柄能拿到快照');
-  assert.ok(Array.isArray(svc.snapshot()), '不带参返回列表');
-});
-
 test('attach()：按上游 conversationId 找回会话；找不到返回 null', async () => {
   const mgr = {
     open() { return { conversationId: null }; },
     find(cid) { return cid === 'up-1' ? 'FOUND' : null; },
     async ask() { return { text: 'x', status: 'ok' }; },
-    snapshot() { return null; }, close() {},
+    close() {},
   };
   const svc = createChatService({ mgr, tools: TOOLS, invoke: async () => ({}) });
   assert.equal(svc.attach('up-1'), 'FOUND');
@@ -251,7 +241,7 @@ test('C1：upload(bytes, opts) 的字节原样到达 mgr.uploadImage（不被 id
       taps.uploads.push({ h, bytesType: typeof bytes, bytesLen: bytes && bytes.length, opts });
       return { objectId: 'obj-c1', filePath: 'x' };
     },
-    snapshot() { return null; }, find() { return null; }, close() {},
+    find() { return null; }, close() {},
   };
   const svc = createChatService({ mgr, tools: TOOLS, invoke: async () => ({ value: {} }) });
   const fi = await svc.upload(HANDLE, new Uint8Array([1, 2, 3]), { filename: 'a.png' });

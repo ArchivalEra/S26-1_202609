@@ -39,8 +39,9 @@
 //   I4 传输失败管理器扛（换线重试 ≤ reconnectAttempts）；内容失败原样上抛。
 //   I5 身份只来自上游：`conversationId` 只读转发，本地不生产任何会话标识。
 //
-// ## 热槽 2 个（不是 1）：双会话比较是真实场景，乒乓成本不该由用户付。
-//   LRU 逐出；在飞会话即 MRU，不可能被逐出。
+// ## 热连接不再有上限（2026-10-26 靶子 1 删除 LRU 热槽）
+//   每个会话建连后就一直热着，直到调用方 close。
+//   会话数量上限由上层（chatsvc 的 maxConversations）负责，这里不重复调度。
 
 import { createAssistant } from './proto.mjs';
 
@@ -90,13 +91,11 @@ export function chaoxingAdapter(upstream, hostOpts = {}) {
  * @param {object} [opts]
  * @param {{open: Function}} [opts.adapter]   seam：默认 chaoxingAdapter()（需 opts.upstream）
  * @param {{base: string, unitId: string|number, robotId: string|number}} [opts.upstream]
- * @param {number} [opts.hotSlots]            热连接上限，默认 2
  * @param {number} [opts.reconnectAttempts]   传输层换线重试上限，默认 2
  * @param {number} [opts.deadlineMs]          单次 ask 墙钟上限，默认 360000
  */
 export function createManager(opts = {}) {
   const adapter = opts.adapter || chaoxingAdapter(opts.upstream || {});
-  const hotSlots = opts.hotSlots != null ? opts.hotSlots : 2;
   const reconnectAttempts = opts.reconnectAttempts != null ? opts.reconnectAttempts : 2;
   const openTimeoutMs = opts.openTimeoutMs != null ? opts.openTimeoutMs : 45000;
   const retryBackoffMs = opts.retryBackoffMs != null ? opts.retryBackoffMs : 2000;
@@ -104,7 +103,6 @@ export function createManager(opts = {}) {
 
   /** 会话记录（内部）。**不作为调用方句柄暴露**——外面拿到的是 handle。 */
   const records = new Map();   // handle → record
-  const hotOrder = [];         // LRU 序（MRU 在尾），元素是 handle
   let closed = false;
   let chain = Promise.resolve();   // 全局串行队列（I1）
 
@@ -129,31 +127,13 @@ export function createManager(opts = {}) {
       // 建连时缓存的（见 ensureChannel）。null = 还没连过 / 取不到。
       return rec.msgListTotal != null ? rec.msgListTotal : null;
     },
-    /** 第几次建连（诊断用：换线会递增）。 */
-    get generation() { return rec.generation || 0; },
-    /** 当前是否有热连接。 */
-    get hot() { return !!rec.channel; },
-    /** 配置（只读副本）。 */
-    get config() { return { ...rec.cfg }; },
+    // 2026-10-26 语义大逃杀（靶子 2）：这里原有 `hot` 与 `config` 两个 getter，
+    // 全仓零读者（hot 的唯一读者是 snapshot 测试，而 snapshot 已删）——删掉。
+    // 保留 conversationId（chatsvc.attach 用于找回会话）与 msgListTotal
+    // （toolcycle 判新会话/旧会话）。句柄对象本身删不掉：实测用 conversationId
+    // 当 Map 键会让两场本地会话撞同一个键（visitor/apply 连续三次返回同一 cid），
+    // 第二场覆盖第一场 ⇒ 会话丢失 + 热通道泄漏。对象身份是它真正在解决的问题。
   });
-
-  const touch = (h) => {
-    const i = hotOrder.indexOf(h);
-    if (i >= 0) hotOrder.splice(i, 1);
-    hotOrder.push(h);
-  };
-
-  /** 逐出最久未用的热连接（在飞的即 MRU，不会被逐）。 */
-  const evictIfNeeded = () => {
-    while (hotOrder.length > hotSlots) {
-      const victim = hotOrder.shift();
-      const rec = records.get(victim);
-      if (rec && rec.channel) {
-        try { rec.channel.close(); } catch { /* ignore */ }
-        rec.channel = null;
-      }
-    }
-  };
 
   const recOf = (h) => {
     const rec = records.get(h);
@@ -166,7 +146,6 @@ export function createManager(opts = {}) {
   const ensureChannel = async (h) => {
     const rec = recOf(h);
     if (rec.channel) return rec.channel;
-    rec.generation += 1;
     // 超时定时器**必须在 open 胜出时清掉**（P1-7 教训：漏一个就吊住事件循环）。
     let openTimer = null;
     try {
@@ -177,8 +156,6 @@ export function createManager(opts = {}) {
     } finally {
       if (openTimer) { clearTimeout(openTimer); openTimer = null; }
     }
-    touch(h);
-    evictIfNeeded();
     // ⚠️ 2026-10-25 修：`msgListTotal()` 是 **async**（要发一次 HTTP），
     // 旧实现把它当同步值读 ⇒ 拿到的是 Promise 对象，`typeof === 'number'` 恒假
     // ⇒ 判据永远认为「新会话」，第二次提问照样发工具清单（实测提示词 1286 字）。
@@ -217,15 +194,13 @@ export function createManager(opts = {}) {
     let attempt = 0;
     for (;;) {
       if (Date.now() - t0 > deadlineMs) {
-        return { text: '', calls: [], attempts: attempt,
-                 generation: rec.generation, status: 'deadline' };
+        return { text: '', calls: [], attempts: attempt, status: 'deadline' };
       }
       let ch;
       try {
         ch = await ensureChannel(h);
       } catch (e) {
-        return { text: '', calls: [], attempts: attempt, error: String(e.message || e),
-                 generation: rec.generation, status: 'transport' };
+        return { text: '', calls: [], attempts: attempt, error: String(e.message || e), status: 'transport' };
       }
       try {
         // 墙钟兜底必须罩住挂死的 ask：用 Promise.race，永不返回的通道也能收束。
@@ -251,14 +226,12 @@ export function createManager(opts = {}) {
         if (wasCancelled) rec.cancelRequested = false;
         if (st === 'partial' || st === 'cancelled' || wasCancelled) {
           return { text: txt, calls: [], attempts: attempt,
-                   generation: rec.generation,
                    status: st === 'cancelled' ? 'cancelled' : 'partial', cancelled: true };
         }
         // **frozen 但有正文**时不许丢（长任务后期误杀的主要损失点）：
         // 有正文就按 partial 交回，比丢掉重试再拿个空答案好。
         if (st === 'frozen' && txt) {
-          return { text: txt, calls: [], attempts: attempt,
-                   generation: rec.generation, status: 'partial', error: 'frozen_with_text' };
+          return { text: txt, calls: [], attempts: attempt, status: 'partial', error: 'frozen_with_text' };
         }
         if (st === 'frozen' || st === 'transport' || st === 'empty') {
           dropChannel(rec);
@@ -266,29 +239,24 @@ export function createManager(opts = {}) {
           if (st === 'empty') {
             // 有终止帧却零正文 = 上游真的答了空。重试一次即可，不要无限换线。
             if (attempt > 1 || Date.now() - t0 > deadlineMs) {
-              return { text: '', calls: [], attempts: attempt, error: 'empty',
-                       generation: rec.generation, status: 'empty' };
+              return { text: '', calls: [], attempts: attempt, error: 'empty', status: 'empty' };
             }
           } else if (attempt > reconnectAttempts || Date.now() - t0 > deadlineMs) {
             // 优先带 adapter 给的**真实原因**（r.error），没有才退回枚举值。
-            return { text: '', calls: [], attempts: attempt, error: (r && r.error) || st,
-                     generation: rec.generation, status: st };
+            return { text: '', calls: [], attempts: attempt, error: (r && r.error) || st, status: st };
           }
           continue;   // 换线重试
         }
         // too_long / context_missing：**不再特殊处理**（站长定案）。
         // 上游自己压缩上下文；它若仍拒绝，如实把原文交回去，让上层按内容失败处理。
         if (st === 'deadline') {
-          return { text: txt, calls: [], attempts: attempt + 1, error: 'deadline',
-                   generation: rec.generation, status: 'deadline' };
+          return { text: txt, calls: [], attempts: attempt + 1, error: 'deadline', status: 'deadline' };
         }
-        touch(h);
         return {
           text: txt, calls: r.calls || [], attempts: attempt + 1,
           // sandboxCalls 必须透传（审计 C2）：proto 产出、toolcycle 消费，
           // 中间这一层断过 ⇒ 拦截机制从上线起从未生效。
-          sandboxCalls: r.sandboxCalls || [],
-          generation: rec.generation, terminal: r.terminal,
+          sandboxCalls: r.sandboxCalls || [], terminal: r.terminal,
           status: st === 'blocked' ? 'blocked' : 'ok',
           // 耗时诊断：这份是唯一实现，缺了面板永远显示「0.0s」。
           ms: Date.now() - t0,
@@ -300,12 +268,10 @@ export function createManager(opts = {}) {
         attempt += 1;
         // 墙钟到点：不再重试，收束返回（避免 deadline 后又开新连接白跑）
         if (String(e.message) === 'deadline' || Date.now() - t0 > deadlineMs) {
-          return { text: '', calls: [], attempts: attempt, error: 'deadline',
-                   generation: rec.generation, status: 'deadline' };
+          return { text: '', calls: [], attempts: attempt, error: 'deadline', status: 'deadline' };
         }
         if (attempt > reconnectAttempts) {
-          return { text: '', calls: [], attempts: attempt, error: String(e.message || e),
-                   generation: rec.generation, status: 'transport' };
+          return { text: '', calls: [], attempts: attempt, error: String(e.message || e), status: 'transport' };
         }
         await new Promise((r2) => setTimeout(r2, Math.min(retryBackoffMs * attempt, 60000)));
       }
@@ -318,7 +284,7 @@ export function createManager(opts = {}) {
       if (closed) throw new Error('管理器已关闭');
       const rec = {
         cfg: { isLLMPlanning: Number(cfg.isLLMPlanning) === 1 ? 1 : 0, modelId: cfg.modelId || 559 },
-        channel: null, generation: 0,
+        channel: null,
         msgListTotal: null,   // 建连后取一次（上游 msgList.total）
         cancelRequested: false, deadlineTimer: null,
       };
@@ -336,16 +302,6 @@ export function createManager(opts = {}) {
       const run = chain.then(() => doAsk(h, text, askOpts));
       chain = run.catch(() => {});   // 队列不断链
       return run;
-    },
-
-    /** 主动拆掉热连接（下次 ask 走冷启动）。 */
-    rotate(h) {
-      const rec = records.get(h);
-      if (!rec) return false;
-      dropChannel(rec);
-      const i = hotOrder.indexOf(h);
-      if (i >= 0) hotOrder.splice(i, 1);
-      return true;
     },
 
     /**
@@ -384,21 +340,6 @@ export function createManager(opts = {}) {
       });
       chain = run.catch(() => {});
       return run;
-    },
-
-    /** 只读快照（纯数据）。不带参 = 全部会话；带参 = 单会话。 */
-    snapshot(h) {
-      const one = (rec, handle) => ({
-        conversationId: handle.conversationId,
-        msgListTotal: handle.msgListTotal,
-        generation: rec.generation,
-        hot: !!rec.channel, config: rec.cfg,
-      });
-      if (h != null) {
-        const rec = records.get(h);
-        return rec ? one(rec, h) : null;
-      }
-      return [...records.entries()].map(([handle, rec]) => one(rec, handle));
     },
 
     /** 全部会话句柄。 */
@@ -450,8 +391,6 @@ export function createManager(opts = {}) {
         const rec = records.get(h);
         if (rec) {
           dropChannel(rec);
-          const i = hotOrder.indexOf(h);
-          if (i >= 0) hotOrder.splice(i, 1);
           records.delete(h);
         }
         return;
@@ -459,7 +398,6 @@ export function createManager(opts = {}) {
       closed = true;
       for (const [, rec] of records) dropChannel(rec);
       records.clear();
-      hotOrder.length = 0;
     },
   };
 }
