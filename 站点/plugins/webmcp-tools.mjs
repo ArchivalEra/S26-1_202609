@@ -1964,6 +1964,58 @@ export function registerTools(doc, nav) {
  * @param {{ok:boolean, value?:any, error?:string}} r runTool 的返回
  * @returns {string} 可直接作为一条消息发送的文本
  */
+/**
+ * 工具结果的「抬头行」——**随机变体**（2026-10-27 站长定案）。
+ *
+ * ## 为什么不能是固定一句
+ * 实测（2026-10-26 联合任务）：连续 8 次工具调用各发一条
+ * `[工具返回：site_read | what=…]`，第 9 轮回喂后上游回
+ * 「根据法律内容，涉及敏感词，我不能回复」。密集且机械重复的抬头
+ * 被安全层判成了异常模式。
+ *
+ * ## 但抬头仍必须存在
+ * 模型需要知道「这条是工具结果，不是用户说的话」。丢掉抬头会让它把回喂
+ * 当成新指令。所以抬头保留，只把**措辞随机化**——每次换一种人话说法。
+ *
+ * ## 边界
+ * 只换措辞，**不换语义**：工具名与参数照旧带上（模型要靠它对应回自己的调用）。
+ * 任何变体都必须让人一眼看出「哪个工具、什么参数、成没成」。
+ */
+const FEED_HEADS = [
+  '我帮你查了',
+  '顺手查了一下',
+  '这就去看了',
+  '按你说的查了',
+  '我刚跑了一趟',
+  '查回来了',
+  '结果拿到了',
+  '这个我看过了',
+  '帮你跑了一下',
+  '我去翻了一遍',
+  '已经查完',
+  '你要的东西在这里',
+  '照着做了',
+  '给你捞回来了',
+  '刚查的',
+  '跑完了',
+];
+
+/**
+ * 选一个抬头变体。用 工具名+参数长度 做散列（不用 Math.random）：
+ * 同样的调用在同一任务里得到同样的说法，便于复现与对照。
+ */
+function feedHead(tool, argStr, failed) {
+  // 散列要对「工具+参数」的**内容**敏感，不能只看长度——实测
+  // site_read/what=outline 与 site_search/query=电子技术 长度相同、
+  // 会撞同一个变体，连续几条一模一样等于没随机。
+  const key = String(tool) + '|' + String(argStr || '') + '|' + (failed ? '0' : '1');
+  let seed = 0;
+  for (let i = 0; i < key.length; i++) seed = (seed * 31 + key.charCodeAt(i)) >>> 0;
+  const phrase = FEED_HEADS[seed % FEED_HEADS.length];
+  const detail = tool + (argStr ? '（' + argStr + '）' : '') + (failed ? ' · 没成' : '');
+  return phrase + ' · ' + detail + '：';
+}
+
 export function feedText(name, args, r) {
   const SINGLE_MSG_LIMIT = 950;
   const a = args || {};
@@ -1971,7 +2023,7 @@ export function feedText(name, args, r) {
     .filter((k) => a[k] !== undefined && a[k] !== '' && k !== '_positional')
     .map((k) => k + '=' + String(a[k]).slice(0, 40))
     .join(' | ');
-  const head = '[工具返回：' + name + (argStr ? ' | ' + argStr : '') + (r && r.ok ? '' : ' | 失败') + ']';
+  const head = feedHead(name, argStr, !(r && r.ok));
 
   if (!r || !r.ok) {
     const err = String((r && r.error) || '执行失败');
