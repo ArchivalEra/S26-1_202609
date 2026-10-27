@@ -12,7 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   PAGE_SELECTORS, textOf, hasClass, renderMarkdown, createPageView, buildToolDefs, registerTools,
-  serializeSelectors, WEBMCP_TOOLS_JS, runTool,
+  serializeSelectors, WEBMCP_TOOLS_JS, runTool, feedText,
 } from './webmcp-tools.mjs';
 
 // ---------------------------------------------------------------- 假 DOM
@@ -1390,4 +1390,34 @@ test('runTool：未知工具名报错不抛异常（恒 resolve 契约）', asyn
   const r = await runTool(fakeDoc(), 'site_no_such', {});
   assert.equal(r.ok, false);
   assert.match(r.error, /site_no_such/);
+});
+
+// ── 回喂抬头随机化（2026-10-27 站长定案）─────────────────────
+//
+// 病灶：固定 `[工具返回：…]` 连发 8 条后，第 9 轮上游回「涉及敏感词」。
+// 修法：抬头换成十几个人话变体（语义不变——工具名与参数照旧带上）。
+test('feedText：抬头必须随机化，不许退回固定「[工具返回：」形态', () => {
+  const r = { ok: true, value: { text: '- 首页 index' } };
+  const feeds = [
+    feedText('site_read', { what: 'outline' }, r),
+    feedText('site_search', { query: '电子技术' }, r),
+    feedText('site_index', { scope: 'all' }, r),
+    feedText('site_navigate', { to: 'page', path: '课程/x.html' }, r),
+    feedText('site_get_page_info', {}, r),
+    feedText('site_read', { what: 'section', query: '已登记' }, r),
+  ];
+  for (const f of feeds) {
+    assert.doesNotMatch(f, /^\[工具返回：/, '不许回落固定抬头');
+    assert.match(f, /·\s*site_[a-z_]+/, '每条都必须点明工具名');
+  }
+  const heads = feeds.map((f) => f.split(' · ')[0]);
+  assert.ok(new Set(heads).size >= 4, `抬头变体至少 4 种（实测 ${new Set(heads).size} 种）`);
+});
+
+test('feedText：失败信封的抬头也随机化且标注没成', () => {
+  const f = feedText('site_read', { what: 'section' }, { ok: false, error: 'not_found' });
+  assert.doesNotMatch(f, /^\[工具返回：/);
+  assert.match(f, /·\s*site_read/, '工具名在场');
+  assert.match(f, /没成/, '失败要明示');
+  assert.match(f, /原因：/, '失败带原因');
 });
