@@ -1421,3 +1421,56 @@ test('feedText：失败信封的抬头也随机化且标注没成', () => {
   assert.match(f, /没成/, '失败要明示');
   assert.match(f, /原因：/, '失败带原因');
 });
+
+// ── 内联完整性（2026-10-27，同一坑第二次）────────────────────
+//
+// `WEBMCP_TOOLS_JS` 是构建期用 toString() 把函数拼成字符串塞进页面的。
+// **没有自动依赖追踪**：被内联的函数里每调用一个新函数，都得手动加进那个模板。
+// 漏了的症状极隐蔽——模块测试全绿（Node 里同作用域都拿得到），
+// 只有真浏览器才抛 `X is not defined`，表现是「工具调用全部超时」。
+//
+// 实测代价：feedHead（抬头随机化）漏内联 ⇒ 6 次 site_* 全失败，桥侧只看到超时。
+//
+// 判据：模板里每个 `var X = <某函数>.toString()` 的内联体，如果它调用了**另一个
+// 也在内联清单里的项目函数**，那个函数必须真的在模板里有 `var Y =` 定义。
+// 只查「项目函数之间的依赖」，不碰语言内置与 DOM（整段扫会刷出几十个假阳性）。
+test('内联完整性：被内联函数之间的依赖不能断', () => {
+  const defined = new Set();
+  const defRe = /^var (\w+) = /gm;
+  let m;
+  while ((m = defRe.exec(WEBMCP_TOOLS_JS)) !== null) defined.add(m[1]);
+
+  // 已知会被内联的项目函数全集（新增内联函数时请同时加进这个清单）
+  const projectFns = [
+    'textOf', 'hasClass', 'childrenOf', 'isTextNode', 'renderMarkdown',
+    'createPageView', 'buildToolDefs', 'registerTools', 'feedHead', 'feedText', 'runTool',
+  ];
+
+  // 从模板中把每个函数的**实际源码段**切出来：`var X = ` 到下一个 `var Y = ` 之间
+  const bodies = {};
+  const marks = [];
+  for (const fn of projectFns) {
+    const i = WEBMCP_TOOLS_JS.indexOf('var ' + fn + ' = ');
+    if (i > -1) marks.push({ fn, i });
+  }
+  marks.sort((a, b) => a.i - b.i);
+  for (let k = 0; k < marks.length; k++) {
+    const from = marks[k].i;
+    const to = k + 1 < marks.length ? marks[k + 1].i : WEBMCP_TOOLS_JS.length;
+    bodies[marks[k].fn] = WEBMCP_TOOLS_JS.slice(from, to);
+  }
+
+  const problems = [];
+  for (const [fn, body] of Object.entries(bodies)) {
+    for (const dep of projectFns) {
+      if (dep === fn) continue;
+      if (!new RegExp('(?<![.\\w$])' + dep + '\\s*\\(').test(body)) continue;
+      if (!defined.has(dep)) problems.push(`${fn} → ${dep}`);
+    }
+  }
+  assert.deepEqual(problems, [],
+    `这些依赖漏了内联（浏览器里会 X is not defined）：${problems.join(', ')}`);
+  // 正向：feedHead 与 feedText 都必须在（漏过两次的地方）
+  assert.ok(defined.has('feedHead'), 'feedHead 必须在内联清单里');
+  assert.ok(defined.has('feedText'), 'feedText 必须在内联清单里');
+});
