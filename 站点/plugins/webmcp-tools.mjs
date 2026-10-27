@@ -1980,38 +1980,25 @@ export function registerTools(doc, nav) {
  * ## 边界
  * 只换措辞，**不换语义**：工具名与参数照旧带上（模型要靠它对应回自己的调用）。
  * 任何变体都必须让人一眼看出「哪个工具、什么参数、成没成」。
- */
-const FEED_HEADS = [
-  '我帮你查了',
-  '顺手查了一下',
-  '这就去看了',
-  '按你说的查了',
-  '我刚跑了一趟',
-  '查回来了',
-  '结果拿到了',
-  '这个我看过了',
-  '帮你跑了一下',
-  '我去翻了一遍',
-  '已经查完',
-  '你要的东西在这里',
-  '照着做了',
-  '给你捞回来了',
-  '刚查的',
-  '跑完了',
-];
-
-/**
- * 选一个抬头变体。用 工具名+参数长度 做散列（不用 Math.random）：
- * 同样的调用在同一任务里得到同样的说法，便于复现与对照。
+ *
+ * ⚠️ 2026-10-27（内联坑第三次）：词表**必须定义在函数内部**。
+ * 模块级 `const`（哪怕是 `FEED_HEADS` 这种）不会被 `toString()` 带进产物，
+ * 浏览器里就抛 `FEED_HEADS is not defined`。放进函数体，内联自动生效。
+ *
+ * 散列对「工具+参数」的**内容**敏感（不用 Math.random）：同样的调用得到
+ * 同样的说法，便于复现；只看长度会让不同调用撞同一个变体。
  */
 function feedHead(tool, argStr, failed) {
-  // 散列要对「工具+参数」的**内容**敏感，不能只看长度——实测
-  // site_read/what=outline 与 site_search/query=电子技术 长度相同、
-  // 会撞同一个变体，连续几条一模一样等于没随机。
+  const HEADS = [
+    '我帮你查了', '顺手查了一下', '这就去看了', '按你说的查了',
+    '我刚跑了一趟', '查回来了', '结果拿到了', '这个我看过了',
+    '帮你跑了一下', '我去翻了一遍', '已经查完', '你要的东西在这里',
+    '照着做了', '给你捞回来了', '刚查的', '跑完了',
+  ];
   const key = String(tool) + '|' + String(argStr || '') + '|' + (failed ? '0' : '1');
   let seed = 0;
   for (let i = 0; i < key.length; i++) seed = (seed * 31 + key.charCodeAt(i)) >>> 0;
-  const phrase = FEED_HEADS[seed % FEED_HEADS.length];
+  const phrase = HEADS[seed % HEADS.length];
   const detail = tool + (argStr ? '（' + argStr + '）' : '') + (failed ? ' · 没成' : '');
   return phrase + ' · ' + detail + '：';
 }
@@ -2162,6 +2149,11 @@ var buildToolDefs = ${buildToolDefs.toString()};
 var registerTools = ${registerTools.toString()};
 // ⚠️ 2026-10-26：feedText 必须与 runTool 一起内联——runTool 里调用它，
 // 漏了就是运行时「feedText is not defined」（实测踩到，整条工具链直接挂）。
+// ⚠️ 2026-10-27（同一坑第二次）：feedHead 也必须内联。它是「抬头随机化」抽出的
+// 顶层函数，忘了加进这一行 ⇒ 浏览器里每次 site_* 都抛「feedHead is not defined」
+// ⇒ 工具调用全失败、桥侧只看到 30 秒超时。**凡是被 toString() 内联的函数的依赖，
+// 都得手动加进这里，没有自动追踪**。加完请在页面内跑一次 __mcpTools.runTool 冒烟。
+var feedHead = ${feedHead.toString()};
 var feedText = ${feedText.toString()};
 // 阶段二 T11：站点侧协议栈的 invoke 入口（runTool 依赖 createPageView，已在上面）
 var runTool = ${runTool.toString()};
