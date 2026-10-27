@@ -224,7 +224,16 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
           if (r && r.ok === false) {
             // 失败也要把 feed 带回去（失败信封里有「建议下一步」）
             feedOut = r.feed || null;
-            throw new Error(r.error || '工具执行失败');
+            // ⚠️ 2026-10-27 修（实测「工具执行失败：工具执行失败」）：r 里可能是
+            // {ok:false, value:{ok:false,reason:'...'}}（工具自己返回软失败），
+            // 此时 r.error 为空，落到兜底文案；再被外层的 catch 包一层就变成
+            // 两个「工具执行失败」连读，真实原因（reason）彻底丢失。
+            // 这里把 value/reason 一起挖出来。
+            var why = r.error
+              || (r.value && typeof r.value === 'object' && (r.value.reason || r.value.error))
+              || (typeof r.value === 'string' ? r.value.slice(0, 120) : '')
+              || '工具返回 ok:false 但没给原因';
+            throw new Error(String(why));
           }
           value = r && Object.prototype.hasOwnProperty.call(r, 'value') ? r.value : r;
           feedOut = (r && typeof r.feed === 'string') ? r.feed : null;
@@ -268,6 +277,12 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
     window.__bridgeReconnect = { fails: 0 };
     window.__bridgeReconnect.tick = setInterval(() => {
       const b = window.__bridgeReconnect;
+      // ⭐ 2026-10-27（单标签页）：被别的标签页占着了就永久停——重连只会一遍遍被拒。
+      if (window.__bridgeDormant) {
+        clearInterval(window.__bridgeReconnect.tick);
+        window.__bridgeReconnect = null;
+        return;
+      }
       const cur = window.__mcpBridge && window.__mcpBridge.es;
       // 连接活着（readyState 1）就算好
       if (cur && cur.readyState === 1) { b.fails = 0; return; }
@@ -319,7 +334,23 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
     // 桥会立刻推一帧 hello{clientId}；等 200ms 让那帧先到，再报到。
     setTimeout(() => { report().catch(() => {}); }, 200);
   };
-  es.onerror = () => console.warn('[bridge] SSE 错误（看门狗会处理重连）');
+  // ⭐ 2026-10-27 站长定案（单标签页）：另一个标签页已经占着桥时，桥会回 409。
+  // EventSource 不暴露状态码，所以这里**探一次**——但必须用 HEAD：
+  // GET 会真的建一条 SSE（桥若空闲就被它占住了，等于自己抢自己）。
+  // 若探到 409，就标成「休眠」，看门狗看见标志永久停止重连（刷新后才有机会）。
+  // 不这么做的话，被拒的页面会每 4s 重连、每 4s 被拒，无限刷屏。
+  es.onerror = () => {
+    fetch(withToken(BRIDGE + '/events'), { method: 'HEAD', cache: 'no-store' })
+      .then((r) => {
+        if (r.status === 409) {
+          window.__bridgeDormant = true;
+          console.warn('[bridge] 已有另一个标签页在用桥（单标签页模式）——本页休眠，关闭另一页后刷新本页');
+        } else {
+          console.warn('[bridge] SSE 错误（看门狗会处理重连）');
+        }
+      })
+      .catch(() => console.warn('[bridge] SSE 错误（看门狗会处理重连）'));
+  };
   es.onmessage = (ev) => {
     let msg = null;
     try { msg = JSON.parse(ev.data); } catch (e) { return; }
