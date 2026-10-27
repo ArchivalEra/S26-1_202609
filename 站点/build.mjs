@@ -35,10 +35,30 @@ const argvCanonical = process.argv.includes('--canonical-root')
   ? process.argv[process.argv.indexOf('--canonical-root') + 1] : null;
 const CANONICAL_ROOT = argvCanonical ? (argvCanonical.endsWith('/') ? argvCanonical : argvCanonical + '/') : '/';
 
+// 学习助手激活材料（2026-10-27 单向锁模型，设计见 .zcode/设计-加解密模块-20261026.md）：
+//   <html data-assistant-key> = K_page，32 字节随机数的 base64url
+// 站点**只埋这一件**。它单独无处可用：没有插件内置的 C_upstream 密文，K_page
+// 这串随机字节打不开任何东西；反过来 C_upstream 没有这把钥匙也解不出上游配置。
+// 两件合体才出 material（见 .zcode/userscript/vault.mjs）。
+//
+// ⚠️ 不传 --assistant-secrets 时**不埋**：本机构建与 CI 未配 secret 都落这一档，
+// 页面没有钥匙 ⇒ 插件探测到无钥匙 ⇒ 永久休眠。这是特性不是遗漏（设计文档 §八）。
+// 传法：--assistant-secrets <secrets.json>，文件形如 {kPage, cUpstream}。
+// 只校验 kPage（站点要埋的那件）；cUpstream 是插件产物，站点侧不需要。
+const argvSecrets = process.argv.includes('--assistant-secrets')
+  ? process.argv[process.argv.indexOf('--assistant-secrets') + 1] : null;
+let ASSISTANT_KEY = null;      // K_page 钥匙（base64url）
+if (argvSecrets) {
+  const sec = JSON.parse(fs.readFileSync(argvSecrets, 'utf8'));
+  if (!sec.kPage) throw new Error('--assistant-secrets 文件缺 kPage');
+  ASSISTANT_KEY = sec.kPage;
+}
+
 console.log(`[build] Starting static site generation...`);
 console.log(`[build] Repo Root: ${ROOT}`);
 console.log(`[build] Output: ${DIST_DIR}`);
 console.log(`[build] Canonical Root: ${CANONICAL_ROOT}`);
+console.log(`[build] Assistant: ${ASSISTANT_KEY ? '埋入页面钥匙' : '未埋（无 --assistant-secrets）'}`);
 
 // 1. 页面清单：唯一真相源在 ./页面清单.mjs（build 与 MCP 读层共用），此处 import
 
@@ -1344,7 +1364,7 @@ for (const relPath of TARGET_FILES) {
 
   // Final HTML Document
   const finalHtml = `<!DOCTYPE html>
-<html lang="zh-CN" data-depth="${rootRel === './' ? 0 : rootRel.split('../').length - 1}" data-root="${rootRel}" data-canonical-root="${CANONICAL_ROOT}">
+<html lang="zh-CN" data-depth="${rootRel === './' ? 0 : rootRel.split('../').length - 1}" data-root="${rootRel}" data-canonical-root="${CANONICAL_ROOT}"${ASSISTANT_KEY ? ` data-assistant-key="${ASSISTANT_KEY}"` : ''}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
