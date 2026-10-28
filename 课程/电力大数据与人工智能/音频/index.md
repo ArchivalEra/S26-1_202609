@@ -1,9 +1,9 @@
 ---
 id: okf.course.power_bigdata_ai.audio.index
-name: 电力大数据与人工智能音频索引
+name: 音频
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-11"
+last_updated: "2026-10-28"
 stewards:
   - team: 电力大数据与人工智能课程学习记录
 course: 电力大数据与人工智能
@@ -11,7 +11,7 @@ category: 音频
 sources: []
 ---
 
-# 电力大数据与人工智能音频记录
+# 音频
 
 [返回课程索引](../index.md) · [音频记录模板](../../../模板/音频记录.md)
 

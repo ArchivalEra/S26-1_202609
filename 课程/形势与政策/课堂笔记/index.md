@@ -1,9 +1,9 @@
 ---
 id: okf.course.situation_policy.notes.index
-name: 形势与政策课堂笔记索引
+name: 课堂笔记
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-12"
+last_updated: "2026-10-28"
 stewards:
   - team: 形势与政策课程学习记录
 course: 形势与政策
@@ -11,7 +11,7 @@ category: 课堂笔记
 sources: []
 ---
 
-# 形势与政策课堂笔记
+# 课堂笔记
 
 [返回课程索引](../index.md) · [课堂笔记模板](../../../模板/课堂笔记.md)
 

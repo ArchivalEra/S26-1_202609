@@ -1,4 +1,4 @@
-# 学期学习仓库
+# 首页
 
 2026 年秋季学期 · 六门课的学习记录。**[在线阅读站 →](https://archivalera.github.io/S26-1_202609/)**（isui.ren 镜像：`/repo/S26-1_202609/`）
 
@@ -34,7 +34,7 @@
 | 电路原理 | 197 | [进入](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/index.md) |
 
 共 **6** 门课程、**278** 份资料。
-<!-- 仓库内容摘要（不含 README）：4f2caabf6f85c76ccfb63689cf1c63be32d703e3ff4caa994077390d5433a3aa -->
+<!-- 仓库内容摘要（不含 README）：236342b13a4a0cf59f92f46acb6c75a22c45850c39159fa9dca83bdd4f1966ea -->
 
 <!-- AUTO-CATALOG:END -->
 

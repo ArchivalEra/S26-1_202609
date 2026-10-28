@@ -1,9 +1,9 @@
 ---
 id: okf.course.situation_policy.originals.index
-name: 形势与政策原始资料索引
+name: 原始资料
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-19"
+last_updated: "2026-10-28"
 stewards:
   - team: 形势与政策课程学习记录
 course: 形势与政策
@@ -15,7 +15,7 @@ sources:
   - 形策考.txt
 ---
 
-# 形势与政策原始资料
+# 原始资料
 
 [返回课程索引](../index.md)
 

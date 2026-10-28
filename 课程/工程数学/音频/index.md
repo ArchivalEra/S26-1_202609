@@ -1,9 +1,9 @@
 ---
 id: okf.course.engineering_math.audio.index
-name: 工程数学音频索引
+name: 音频
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-11"
+last_updated: "2026-10-28"
 stewards:
   - team: 工程数学课程学习记录
 course: 工程数学
@@ -11,7 +11,7 @@ category: 音频
 sources: []
 ---
 
-# 工程数学音频记录
+# 音频
 
 [返回课程索引](../index.md) · [音频记录模板](../../../模板/音频记录.md)
 

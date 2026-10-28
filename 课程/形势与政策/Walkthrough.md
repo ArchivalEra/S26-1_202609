@@ -1,16 +1,16 @@
 ---
 id: okf.course.situation_and_policy.walkthrough
-name: 形势与政策 Walkthrough
+name: Walkthrough
 type: Guide
 spec_version: "0.2"
-last_updated: "2026-10-19"
+last_updated: "2026-10-28"
 stewards:
   - team: 形势与政策课程学习记录
 course: 形势与政策
 category: Walkthrough
 ---
 
-# 形势与政策 · Walkthrough
+# Walkthrough
 
 > **这条时间线把每次课要带走的东西串起来**：左边是你上到哪，右边是你该会什么。
 > **考点从笔记严格摘录**，一条不落；要展开看[备考](./备考.md)，要细节看笔记。

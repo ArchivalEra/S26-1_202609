@@ -1,16 +1,16 @@
 ---
 id: okf.course.power_bigdata_ai.walkthrough
-name: 电力大数据与人工智能 Walkthrough
+name: Walkthrough
 type: Guide
 spec_version: "0.2"
-last_updated: "2026-10-14"
+last_updated: "2026-10-28"
 stewards:
   - team: 电力大数据与人工智能课程学习记录
 course: 电力大数据与人工智能
 category: Walkthrough
 ---
 
-# 电力大数据与人工智能 · Walkthrough
+# Walkthrough
 
 > **这条时间线把每次课要带走的东西串起来**：左边是你上到哪，右边是你该会什么。
 > 每一条都链到详细位置——读这一页掌握骨架，点进去补细节。

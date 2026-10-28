@@ -1,6 +1,6 @@
 ---
 id: okf.course.electronics.homework.index
-name: 电子技术作业索引
+name: 作业
 type: CatalogIndex
 spec_version: "0.2"
 last_updated: "2026-10-28"
@@ -11,7 +11,7 @@ category: 作业
 sources: []
 ---
 
-# 电子技术作业
+# 作业
 
 [返回课程索引](../index.md) · [作业模板](../../../模板/作业.md)
 

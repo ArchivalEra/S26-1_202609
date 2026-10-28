@@ -1,9 +1,9 @@
 ---
 id: okf.course.electric_machinery.index
-name: 电机学课程索引
+name: 电机学
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-18"
+last_updated: "2026-10-28"
 stewards:
   - team: 电机学课程学习记录
 course: 电机学

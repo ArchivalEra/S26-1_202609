@@ -1,6 +1,6 @@
 ---
 id: okf.course.electronics.originals.index
-name: 电子技术原始资料索引
+name: 原始资料
 type: CatalogIndex
 spec_version: "0.2"
 last_updated: "2026-10-28"
@@ -18,7 +18,7 @@ sources:
   - 学习通作业截图 2 张（页眉「2026-9-28作业」，2026-10-10 收到；登记见本页第四节）
 ---
 
-# 电子技术原始资料
+# 原始资料
 
 [返回课程索引](../index.md)
 

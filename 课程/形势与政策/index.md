@@ -1,9 +1,9 @@
 ---
 id: okf.course.situation_policy.index
-name: 形势与政策课程索引
+name: 形势与政策
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-18"
+last_updated: "2026-10-28"
 stewards:
   - team: 形势与政策课程学习记录
 course: 形势与政策

@@ -1,6 +1,6 @@
 ---
 id: okf.course.electronics.index
-name: 电子技术课程索引
+name: 电子技术
 type: CatalogIndex
 spec_version: "0.2"
 last_updated: "2026-10-28"

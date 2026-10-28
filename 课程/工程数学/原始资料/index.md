@@ -1,6 +1,6 @@
 ---
 id: okf.course.engineering_math.originals.index
-name: 工程数学原始资料索引
+name: 原始资料
 type: CatalogIndex
 spec_version: "0.2"
 last_updated: "2026-10-28"
@@ -13,7 +13,7 @@ sources:
   - 教材照片登记（60 张，2026-09-17 拍摄；原件由拍摄者本地保存，不入库）
 ---
 
-# 工程数学原始资料
+# 原始资料
 
 [返回课程索引](../index.md)
 

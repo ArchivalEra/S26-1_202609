@@ -1,9 +1,9 @@
 ---
 id: okf.course.electric_machinery.textbook.index
-name: 电机学教材解析索引
+name: 教材解析
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-15"
+last_updated: "2026-10-28"
 stewards:
   - team: 电机学课程学习记录
 course: 电机学
@@ -12,7 +12,7 @@ sources:
   - 教材《电机学》（第三版）第一章照片 22 张（登记见 原始资料/index.md）
 ---
 
-# 电机学教材解析
+# 教材解析
 
 [返回课程索引](../index.md) · [教材章节解析模板](../../../模板/教材章节解析.md)
 

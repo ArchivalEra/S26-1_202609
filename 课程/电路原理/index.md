@@ -1,9 +1,9 @@
 ---
 id: okf.course.circuit_theory.index
-name: 电路原理课程索引
+name: 电路原理
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-18"
+last_updated: "2026-10-28"
 stewards:
   - team: 电路原理课程学习记录
 course: 电路原理
