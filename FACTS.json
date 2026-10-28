@@ -1,13 +1,13 @@
 {
  "schema": 1,
- "generated": "2026-10-28T12:47:13+0800",
+ "generated": "2026-10-28T12:57:19+0800",
  "_why": "事实台账：每条 = 一个**测出来**的值 + 复跑命令 + 出处。别手改，跑 zreflect/facts.py。",
  "facts": {
   "courses": {
    "value": 6,
    "cmd": "ls -d 课程/*/ | wc -l",
    "source": "课程/",
-   "measured_at": "2026-10-28T12:46:59+0800",
+   "measured_at": "2026-10-28T12:57:06+0800",
    "first_seen": "2026-10-10",
    "note": "课程门数"
   },
@@ -15,7 +15,7 @@
    "value": 25,
    "cmd": "find 课程 -path '*/课堂笔记/*.md' ! -name 'index.md' | wc -l",
    "source": "课程/",
-   "measured_at": "2026-10-28T12:46:59+0800",
+   "measured_at": "2026-10-28T12:57:06+0800",
    "first_seen": "2026-10-14",
    "note": "课堂笔记篇数（不含索引）"
   },
@@ -23,7 +23,7 @@
    "value": 23,
    "cmd": "find 课程 -path '*/作业/*.md' ! -name 'index.md' | wc -l",
    "source": "课程/",
-   "measured_at": "2026-10-28T12:46:59+0800",
+   "measured_at": "2026-10-28T12:57:06+0800",
    "first_seen": "2026-10-28",
    "note": "作业页数（不含索引）"
   },
@@ -31,7 +31,7 @@
    "value": 27,
    "cmd": "find 课程 -path '*/教材解析/*.md' ! -name 'index.md' | wc -l",
    "source": "课程/",
-   "measured_at": "2026-10-28T12:46:59+0800",
+   "measured_at": "2026-10-28T12:57:06+0800",
    "first_seen": "2026-10-28",
    "note": "教材解析篇数（不含索引）"
   },
@@ -39,7 +39,7 @@
    "value": 278,
    "cmd": "python3 -c \"import re,glob;print(sum(len(re.findall(r'[0-9]+',s)) for f in glob.glob('课程/电路原理/作业/2026-09-28-习题册第*.md') for ln in open(f,encoding='utf-8') if ln.startswith('### ') for s in re.findall(r'(?:选|填|计|判|画图)\\s*([0-9][0-9、,\\s]*)', re.sub(r'（[^）]*）','',ln[4:]))))\"",
    "source": "课程/电路原理/作业/",
-   "measured_at": "2026-10-28T12:46:59+0800",
+   "measured_at": "2026-10-28T12:57:06+0800",
    "first_seen": "2026-10-10",
    "note": "习题册题数（合并题号的标题按题号展开计数）"
   },
@@ -47,7 +47,7 @@
    "value": 174,
    "cmd": "ls 课程/电路原理/作业/figures/ | wc -l",
    "source": "课程/电路原理/作业/figures/",
-   "measured_at": "2026-10-28T12:46:59+0800",
+   "measured_at": "2026-10-28T12:57:06+0800",
    "first_seen": "2026-10-14",
    "note": "习题册配图张数"
   },
@@ -55,7 +55,7 @@
    "value": 219,
    "cmd": "awk '/^:::glossary-dict/{f=1;next} /^:::/{f=0} f&&/^sym-/{n++} END{print n}' 站点/符号包/通用.md 课程/*/教材解析/0.0-符号入门.md",
    "source": "站点/符号包/通用.md + 课程/*/教材解析/0.0-符号入门.md",
-   "measured_at": "2026-10-28T12:46:59+0800",
+   "measured_at": "2026-10-28T12:57:06+0800",
    "first_seen": "2026-10-28",
    "note": "全部符号包的词条合计（通用 + 电机学 / 电路原理 / 工程数学 / 电子技术）"
   },
@@ -63,7 +63,7 @@
    "value": 5,
    "cmd": "grep -cE \"^  '[^']+': '[^']+.md',$\" 站点/符号环境.mjs",
    "source": "站点/符号环境.mjs",
-   "measured_at": "2026-10-28T12:46:59+0800",
+   "measured_at": "2026-10-28T12:57:06+0800",
    "first_seen": "2026-10-26",
    "note": "符号包个数（SYMBOL_PACKS 注册表条数；正文引用它，别手抄「三包/五包」——会随加包腐烂）"
   },
@@ -71,7 +71,7 @@
    "value": 74,
    "cmd": "cd .zcode/学习通API && node --test chaoxing.test.mjs 判据.test.mjs bridge.test.mjs 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2==\"tests\"||$2==\"fail\"||$2==\"cancelled\") {v[$2]=$3} END {t=v[\"tests\"]; f=v[\"fail\"]+0; c=v[\"cancelled\"]+0; if (t==\"\") {print \"lab_tests：没读到 tests 汇总行\" > \"/dev/stderr\"; exit 1} print t; if (f+c>0) {print \"lab_tests：fail=\" f \" cancelled=\" c \" ⇒ 红测试，非零退出\" > \"/dev/stderr\"; exit 1}}'",
    "source": ".zcode/学习通API/",
-   "measured_at": "2026-10-28T12:47:00+0800",
+   "measured_at": "2026-10-28T12:57:07+0800",
    "first_seen": "2026-10-27",
    "note": "lab 回归测试项数（canonical 三件；与 lab 闸同一套文件，改名单两边一起红）"
   },
@@ -79,7 +79,7 @@
    "value": 126,
    "cmd": "sed -n '/^export const TARGET_FILES = \\[/,/^\\];/p' 站点/页面清单.mjs | grep -c \"^  '\"",
    "source": "站点/build.mjs",
-   "measured_at": "2026-10-28T12:47:00+0800",
+   "measured_at": "2026-10-28T12:57:07+0800",
    "first_seen": "2026-10-28",
    "note": "站点页数（TARGET_FILES 条数）"
   },
@@ -87,7 +87,7 @@
    "value": 154,
    "cmd": "git ls-files '*.md' | wc -l",
    "source": "repo",
-   "measured_at": "2026-10-28T12:47:00+0800",
+   "measured_at": "2026-10-28T12:57:07+0800",
    "first_seen": "2026-10-28",
    "note": "受管 Markdown 篇数"
   },
@@ -95,7 +95,7 @@
    "value": 28,
    "cmd": "python3 .githooks/test-update-readme.py 2>&1 | grep -oE 'Ran [0-9]+ tests' | awk '{print $2}'",
    "source": ".githooks/test-update-readme.py",
-   "measured_at": "2026-10-28T12:47:12+0800",
+   "measured_at": "2026-10-28T12:57:19+0800",
    "first_seen": "2026-10-22",
    "note": "钩子集成测试项数",
    "replay": false,
@@ -106,15 +106,15 @@
    "value": 351,
    "cmd": "cd 站点 && node --test plugins/ 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2==\"tests\"||$2==\"fail\"||$2==\"cancelled\") {v[$2]=$3} END {t=v[\"tests\"]; f=v[\"fail\"]+0; c=v[\"cancelled\"]+0; if (t==\"\") {print \"plugin_tests：没读到 tests 汇总行（node --test 没跑完？）\" > \"/dev/stderr\"; exit 1} print t; if (f+c>0) {print \"plugin_tests：fail=\" f \" cancelled=\" c \" ⇒ 红测试，非零退出（issue #18 决策 #7）\" > \"/dev/stderr\"; exit 1}}'",
    "source": "站点/plugins/",
-   "measured_at": "2026-10-28T12:47:13+0800",
+   "measured_at": "2026-10-28T12:57:19+0800",
    "first_seen": "2026-10-27",
    "note": "站点插件测试项数（fail+cancelled>0 ⇒ 复跑非零退出）"
   },
   "handoff_lines": {
-   "value": 1008,
+   "value": 1014,
    "cmd": "wc -l < .zcode/handoff.md",
    "source": ".zcode/handoff.md",
-   "measured_at": "2026-10-28T12:47:13+0800",
+   "measured_at": "2026-10-28T12:57:19+0800",
    "first_seen": "2026-10-28",
    "note": "进度手记总行数（超 ~1500 行该归档精简）"
   },
@@ -122,7 +122,7 @@
    "value": 17,
    "cmd": "grep -c '^### 0\\.' .zcode/handoff.md",
    "source": ".zcode/handoff.md",
-   "measured_at": "2026-10-28T12:47:13+0800",
+   "measured_at": "2026-10-28T12:57:19+0800",
    "first_seen": "2026-10-28",
    "note": "进度手记节数（### 0.x 条目数）"
   }
