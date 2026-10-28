@@ -372,8 +372,12 @@ const KIND_PARSERS = {
  * 图内标签的写法约定（**故意做得极窄**）：
  *
  *   `Y`        普通文字
- *   `Q̅`        Unicode 上划线（组合字符 U+0305）——作者直接打
- *   `D~1~`     下标记法：`~x~` → 下标 x
+ *   `Y~1~`     下标记法：`~x~` → 下标 x
+ *   `^B^`      **上划线（取反）**：`^…^` → 在文字上方画一条横线（`^B^` 读作 B̄）
+ *
+ * ⚠️ 2026-10-28 三签抓到：图注里写 `B̄`（上划线）而图里写 `nB`（n 前缀），
+ * 两套否定记法在页面上**没有任何映射说明**，读者要自己猜它们是同一个东西。
+ * 现在图内直接支持上划线，**图与图注用同一套记法**，不需要猜。
  *
  * 为什么不做成 LaTeX：`<span class="katex">` 塞进 SVG `<text>` 会毁掉
  * 文本布局（KaTeX 输出一整棵 span 树 + MathML，SVG 只认文本与 tspan）。
@@ -390,6 +394,16 @@ export function labelToTspans(label, opts = {}) {
   let i = 0;
   let buf = '';
   while (i < text.length) {
+    // 上划线：`^…^`
+    if (text[i] === '^') {
+      const end = text.indexOf('^', i + 1);
+      if (end > i + 1) {
+        if (buf) { parts.push({ kind: 'base', text: buf }); buf = ''; }
+        parts.push({ kind: 'over', text: text.slice(i + 1, end) });
+        i = end + 1;
+        continue;
+      }
+    }
     if (text[i] === '~') {
       const end = text.indexOf('~', i + 1);
       if (end > i + 1) {
@@ -404,10 +418,17 @@ export function labelToTspans(label, opts = {}) {
   }
   if (buf) parts.push({ kind: 'base', text: buf });
   return parts
-    .map((p) =>
-      p.kind === 'sub'
-        ? `<tspan baseline-shift="sub" font-size="${opts.subSize || 0.72}em">${esc(p.text)}</tspan>`
-        : esc(p.text))
+    .map((p) => {
+      if (p.kind === 'sub') {
+        return `<tspan baseline-shift="sub" font-size="${opts.subSize || 0.72}em">${esc(p.text)}</tspan>`;
+      }
+      // 上划线：`^_^` 包起来的那段加一条横线。用 text-decoration 而不是另画 path，
+      // 这样字号变化时线的位置自动跟着走（SVG 的 text-decoration 是浏览器实现的）。
+      if (p.kind === 'over') {
+        return `<tspan text-decoration="overline">${esc(p.text)}</tspan>`;
+      }
+      return esc(p.text);
+    })
     .join('');
 }
 
@@ -433,7 +454,10 @@ const GATE_GEOM = {
   nor:  { w: 64, h: 52, label: '≥1', outBubble: true },
   xor:  { w: 64, h: 52, label: '=1' },
   xnor: { w: 64, h: 52, label: '=1', outBubble: true },
-  not:  { w: 52, h: 40, label: '1' },
+  // ⚠️ not 与 buf 的区别**只在输出端的取反小圆圈**——本课约定「非门是方框内写 1
+  // 且输出端加小圆圈」。2026-10-28 三签抓到：这两者曾共用同一份几何、都没有圆圈，
+  // 于是画出的是缓冲器（nB = B），图注却写 Y = A·B̄ —— **图和图注矛盾，读者会做错题**。
+  not:  { w: 52, h: 40, label: '1', outBubble: true },
   buf:  { w: 52, h: 40, label: '1' },
 };
 
@@ -485,6 +509,9 @@ function drawLogic(payload, opts = {}) {
 
   // 同列内平均分布；列间距按最宽的门算
   const COL_GAP = 96;
+  const PAD_X_IN = 10;
+  const OUT_LEAD = 26;        // 门输出到标签的引线长度
+  const OUT_LABEL_SLOT = 34;  // 输出标签的预留槽位（够放 Y / nB / B̄ 这类）
   const ROW_GAP = 26;
   const PAD = 28;
   const pos = [];
@@ -503,8 +530,24 @@ function drawLogic(payload, opts = {}) {
     });
   });
 
-  const width = PAD * 2 + (colCount - 1) * COL_GAP + GATE_GEOM.or.w + 76;
   const height = PAD * 2 + (maxRows - 1) * (GATE_GEOM.and.h + ROW_GAP) + GATE_GEOM.and.h;
+  // 宽度由「最后一个门的右边缘 + 引出线段 + 输出标签宽度」算出，
+  // 不用固定余量去猜——猜大了右边空一大块，整张图看起来左偏
+  // （2026-10-28 站长实测指出：viewBox 宽 196，最右元素只到 122，空了 74px）。
+  // 构建期**不追求精确宽度**：文字的真实宽度只有浏览器量得准（字体、字距、
+  // 上划线的组合 tspan 都会影响）。这里给一个宽松的 viewBox 保证不裁切，
+  // 精确的「包围盒 + 等边距」由客户端 getBBox() 校正（见 FIGURES_JS 的 fitViewBox）。
+  //
+  // 为什么不在构建期估：2026-10-28 站长指出「这图偏左」，我先试着按字数估宽、
+  // 又试着加固定槽位——两次都是人肉调常数，估大一点就右侧空一块、估小一点就裁字。
+  // 排版这种事交给排版引擎，别在构建期猜。
+  const lastGate = pos[pos.length - 1] || { x: PAD, y: 0 };
+  const lastGeom = GATE_GEOM[clauses[clauses.length - 1].op] || GATE_GEOM.and;
+  const outRight = lastGate.x + lastGeom.w + (lastGeom.outBubble ? 11 : 0) + OUT_LEAD + 80;
+  const width = Math.max(
+    outRight + PAD_X_IN,
+    PAD * 2 + (colCount - 1) * COL_GAP + GATE_GEOM.or.w + PAD_X_IN
+  );
 
   // 端点坐标：标签 → {x, y}
   const portPos = new Map();
@@ -517,14 +560,18 @@ function drawLogic(payload, opts = {}) {
       }
     }
   });
+  // 输入端点的纵向分布：**收在门的实际高度范围内**，而不是铺满整张画布。
+  // 铺满会让 B、C 一个贴顶一个贴底（实测 B@32 / C@84，门只有 52 高），
+  // 线从很远处斜着汇进来，读不出「这两根是同一个门的两个输入」。
+  const firstGate = pos[0] || { y: height / 2 };
+  const gateSpan = GATE_GEOM.and.h;
   const inputRows = Math.max(inputLabels.length, 1);
-  const inputPitch = inputRows > 1
-    ? (height - PAD * 2) / (inputRows - 1)
-    : 0;
+  const inputPitch = inputRows > 1 ? gateSpan / (inputRows + 1) : 0;
+  const inputTop = firstGate.y - gateSpan / 2;
   inputLabels.forEach((label, i) => {
     portPos.set(label, {
-      x: 8,
-      y: inputRows > 1 ? PAD + i * inputPitch : height / 2,
+      x: PAD_X_IN,
+      y: inputRows > 1 ? inputTop + inputPitch * (i + 1) : firstGate.y,
     });
   });
 
@@ -593,14 +640,20 @@ function drawLogic(payload, opts = {}) {
     const g = GATE_GEOM[ci.op] || GATE_GEOM.and;
     const p = pos[clauses.indexOf(ci)];
     const bx = g.outBubble ? p.x + g.w + 11 : p.x + g.w;
-    const ex = bx + 26;
+    const ex = bx + OUT_LEAD;
     body.push(`<line x1="${bx}" y1="${p.y}" x2="${ex}" y2="${p.y}" stroke="currentColor" stroke-width="1.6"/>`);
-    body.push(`<text x="${ex + 4}" y="${p.y + 4}">${labelToTspans(label)}</text>`);
+    // 输出标签**左对齐接在引线末端**（text-anchor=start，x=ex+4），
+    // 宽度由 DRAW_OUT_SLOT 预留——几何量出来的宽度就不必估字形，
+    // 右侧留白与左侧 PAD_X_IN 相等（2026-10-28 修「整张图偏左」）。
+    body.push(`<text x="${ex + 4}" y="${p.y + Math.round(font * 0.35)}">${labelToTspans(label)}</text>`);
   });
   // 输入端标签
+  const baseline = Math.round(font * 0.35);
   inputLabels.forEach((label) => {
     const pp = portPos.get(label);
-    body.push(`<text x="${pp.x}" y="${pp.y + 4}" text-anchor="start">${labelToTspans(label)}</text>`);
+    // 标签放在线的**左端上方**而不是压在线头上：线从 x=10 起画，
+    // 标签锚在同样的 x 但垂直居中于端点，读者一眼对上「这个字母是这根线」
+    body.push(`<text x="${pp.x}" y="${pp.y + baseline}" text-anchor="start">${labelToTspans(label)}</text>`);
   });
   body.push(`</g>`);
 
@@ -1116,6 +1169,31 @@ export const FIGURES_JS = String.raw`(function () {
     svg.setAttribute("viewBox", [cx - w / 2, cy - h / 2, w, h].join(" "));
   }
 
+  /**
+   * 自动贴合：用 getBBox() 量真实内容包围盒（**含文字实际宽度**），
+   * 把 viewBox 设成「包围盒 + 四边等距的边距」。
+   *
+   * 为什么必须由浏览器量：文字宽度取决于实际字体、字距、上下标的组合 tspan，
+   * 构建期估不准。2026-10-28 站长指出「这图偏左」，我先按字数估、又加固定槽位，
+   * 两次都是人肉调常数——估大右侧空一块、估小裁掉字。排版交给排版引擎。
+   *
+   * 只在首帧跑一次；缩放/复位都基于这个校正后的 viewBox。
+   */
+  function fitViewBox(fig) {
+    var svg = fig.querySelector("svg");
+    if (!svg || typeof svg.getBBox !== "function") return;
+    var b;
+    try { b = svg.getBBox(); } catch (e) { return; }
+    if (!b || !isFinite(b.width) || !isFinite(b.height) || b.width <= 0 || b.height <= 0) return;
+    // 四边同一个边距：内容在画布里天然居中，不偏左也不偏右
+    var M = Math.max(6, Math.round(Math.min(b.width, b.height) * 0.12));
+    var vb = [b.x - M, b.y - M, b.width + M * 2, b.height + M * 2]
+      .map(function (n) { return Math.round(n * 100) / 100; }).join(" ");
+    svg.setAttribute("viewBox", vb);
+    // 记下校正后的 viewBox 供「复位」用（覆盖构建期那个宽松值）
+    fig.setAttribute("data-viewbox", vb);
+  }
+
   function setupFig(fig) {
     if (fig.__figReady) return;
     fig.__figReady = true;
@@ -1124,6 +1202,11 @@ export const FIGURES_JS = String.raw`(function () {
 
     var svg = fig.querySelector("svg");
     if (!svg) return;
+    // 首帧贴合：字体加载完再量才准（webfont 晚到会改变文字宽度）
+    fitViewBox(fig);
+    if (document.fonts && document.fonts.ready && document.fonts.ready.then) {
+      document.fonts.ready.then(function () { fitViewBox(fig); }).catch(function () {});
+    }
     // 元件可聚焦：给每个门加 tabindex（SVG 元素也能收焦点）
     var comps = fig.querySelectorAll(".fig-comp");
     for (var i = 0; i < comps.length; i++) {
@@ -1154,16 +1237,142 @@ export const FIGURES_JS = String.raw`(function () {
       ev.preventDefault();
       zoom(fig, ev.deltaY > 0 ? 1.15 : 0.87);
     }, { passive: false });
+    // 双击复位。**必须排除缩放条与符号锚点**——否则连点两下「＋」会既放大又复位，
+    // 读者看到的是「按了没反应」（2026-10-28 站长实测指出）。
     fig.addEventListener("dblclick", function (ev) {
-      if (ev.target.closest && ev.target.closest("a.sym-gloss")) return;
+      var t = ev.target;
+      if (t.closest && (t.closest("a.sym-gloss") || t.closest(".fig-zoom"))) return;
       var orig = fig.getAttribute("data-viewbox");
       if (orig) svg.setAttribute("viewBox", orig);
     });
   }
 
+  /**
+   * 全屏查看（灯箱）。**所有图**都能点开——图元渲染的 SVG 与位图（<img>）都算。
+   *
+   * 纯前端、零依赖、**不进 MCP**：这是给人用的阅读体验，不是给 AI 的数据通道。
+   * AI 读的仍是 <details> 结构表与 figure-index JSON，与这里无关。
+   *
+   * 打开方式：点图本身；关闭：点背景 / 按 Esc / 再点一次图。
+   */
+  var lb = null;
+  function ensureLightbox() {
+    if (lb) return lb;
+    lb = document.createElement("div");
+    lb.className = "fig-lightbox";
+    lb.setAttribute("role", "dialog");
+    lb.setAttribute("aria-modal", "true");
+    lb.setAttribute("aria-label", "全屏查看");
+    lb.innerHTML = '<button type="button" class="fig-lightbox-close" aria-label="关闭">×</button>' +
+                   '<div class="fig-lightbox-body"></div>';
+    lb.addEventListener("click", function (ev) {
+      // 点背景或关闭按钮即关；点图本身不关（允许在灯箱里缩放）
+      if (ev.target === lb || (ev.target.closest && ev.target.closest(".fig-lightbox-close"))) closeLightbox();
+    });
+    document.body.appendChild(lb);
+    document.addEventListener("keydown", function (ev) {
+      if (ev.key === "Escape" && lb && lb.classList.contains("is-open")) closeLightbox();
+    });
+    return lb;
+  }
+
+  function openLightbox(sourceEl, label) {
+    var box = ensureLightbox();
+    var body = box.querySelector(".fig-lightbox-body");
+    body.innerHTML = "";
+    var clone;
+    if (sourceEl.tagName && sourceEl.tagName.toLowerCase() === "img") {
+      clone = document.createElement("img");
+      clone.src = sourceEl.getAttribute("src");
+      clone.alt = sourceEl.getAttribute("alt") || "";
+    } else {
+      // SVG：整块克隆（含图内符号的锚点，气泡仍可用）
+      clone = sourceEl.cloneNode(true);
+      clone.removeAttribute("style");
+      clone.style.maxWidth = "none";
+      clone.style.width = "auto";
+      clone.style.height = "auto";
+    }
+    // ⚠️ SVGElement 的 className 是**只读**的（SVGAnimatedString），
+    // 用 clone.className 赋值会抛 TypeError 并中断整个 openLightbox——
+    // 表现为「点了完全没反应」（2026-10-28 实测抓到）。SVG 走 setAttribute，
+    // HTML 元素两法皆可。
+    if (clone.tagName && clone.tagName.toLowerCase() === "svg") {
+      clone.setAttribute("class", "fig-lightbox-content");
+    } else {
+      clone.className = "fig-lightbox-content";
+    }
+    body.appendChild(clone);
+    if (label) {
+      var cap = document.createElement("p");
+      cap.className = "fig-lightbox-caption";
+      cap.textContent = label;
+      body.appendChild(cap);
+    }
+    box.classList.add("is-open");
+    document.documentElement.style.overflow = "hidden";
+  }
+
+  function closeLightbox() {
+    if (!lb) return;
+    lb.classList.remove("is-open");
+    document.documentElement.style.overflow = "";
+    var body = lb.querySelector(".fig-lightbox-body");
+    if (body) body.innerHTML = "";
+  }
+
+  /** 给「所有图」挂全屏入口：figure.fig 里的 svg、正文里的 img。 */
+  function setupLightbox() {
+    // ① 图元渲染的 SVG
+    var figs = document.querySelectorAll("figure.fig");
+    for (var i = 0; i < figs.length; i++) {
+      if (figs[i].__lbReady) continue;
+      var svg = figs[i].querySelector("svg");
+      // ⚠️ 标记必须在**成功绑定之后**才设。先前写成「先设 __lbReady 再检查 svg」，
+      // 首轮若 SVG 还没进 DOM 就永久跳过——灯箱对这张图永远不生效，
+      // 而 __lbReady 已经是 true，后续 boot() 也不会重试（2026-10-28 实测踩到）。
+      if (!svg) continue;
+      svg.classList.add("fig-zoomable");
+      svg.setAttribute("title", "点击全屏查看");
+      (function (figEl, svgEl) {
+        svgEl.addEventListener("click", function (ev) {
+          // 点图内符号时先让气泡处理，不全屏
+          if (ev.target.closest && ev.target.closest("a.sym-gloss")) return;
+          // 点元件/连线时是「选中」，也不全屏
+          if (ev.target.closest && (ev.target.closest(".fig-comp") || ev.target.closest(".fig-wire"))) return;
+          var capEl = figEl.querySelector("figcaption");
+          openLightbox(svgEl, capEl ? capEl.textContent.trim() : "");
+        });
+      })(figs[i], svg);
+      figs[i].__lbReady = true;   // 绑定成功才标记
+    }
+    // ② 位图（习题册那 169 张走这条）
+    var imgs = document.querySelectorAll(".article-content img");
+    for (var j = 0; j < imgs.length; j++) {
+      var im = imgs[j];
+      if (im.__lbReady) continue;
+      im.__lbReady = true;
+      im.classList.add("fig-zoomable");
+      im.setAttribute("title", "点击全屏查看");
+      im.setAttribute("tabindex", "0");
+      (function (img) {
+        img.addEventListener("click", function () {
+          openLightbox(img, img.getAttribute("alt") || "");
+        });
+        img.addEventListener("keydown", function (ev) {
+          if (ev.key === "Enter" || ev.key === " ") {
+            ev.preventDefault();
+            openLightbox(img, img.getAttribute("alt") || "");
+          }
+        });
+      })(im);
+    }
+  }
+
   function boot() {
     var figs = document.querySelectorAll("figure.fig");
     for (var i = 0; i < figs.length; i++) setupFig(figs[i]);
+    setupLightbox();
   }
 
   if (document.readyState === "loading") {
@@ -1210,6 +1419,43 @@ export const FIGURES_CSS = `
   cursor: pointer; font-size: .85em; line-height: 1; }
 .fig-zoom button:hover { background: var(--md-sys-color-surface-container, #f2f2f6); }
 .fig { position: relative; }
+/* ── 全屏查看（灯箱）：所有图都能点开，纯前端、不进 MCP ─────────────────── */
+.fig-zoomable { cursor: zoom-in; }
+.article-content img.fig-zoomable { transition: opacity .15s; }
+.article-content img.fig-zoomable:hover { opacity: .9; }
+.fig-lightbox {
+  display: none; position: fixed; inset: 0; z-index: 9999;
+  background: rgba(0, 0, 0, .88);
+  align-items: center; justify-content: center;
+  padding: 2vmin; cursor: zoom-out;
+}
+.fig-lightbox.is-open { display: flex; }
+.fig-lightbox-body {
+  display: flex; flex-direction: column; align-items: center; gap: .8em;
+  max-width: 100%; max-height: 100%;
+}
+.fig-lightbox-content {
+  max-width: 96vw; max-height: 86vh; width: auto; height: auto;
+  background: var(--md-sys-color-surface, #fff); border-radius: 8px;
+  cursor: default;
+}
+svg.fig-lightbox-content { padding: 1.2vmin; }
+.fig-lightbox-caption {
+  margin: 0; color: #e6e1e5; font-size: .9em; text-align: center;
+  max-width: 90vw;
+}
+.fig-lightbox-close {
+  position: absolute; top: 1.2vmin; right: 1.6vmin;
+  width: 2.6em; height: 2.6em; border-radius: 50%;
+  border: none; background: rgba(255, 255, 255, .14); color: #fff;
+  font-size: 1.4em; line-height: 1; cursor: pointer;
+}
+.fig-lightbox-close:hover { background: rgba(255, 255, 255, .28); }
+@media (max-width: 600px) {
+  .fig-lightbox { padding: 1vmin; }
+  .fig-lightbox-content { max-height: 80vh; }
+}
+
 /* 图中的符号锚点：只加下划线提示，不抢正文气泡的样式 */
 .fig-svg a.sym-gloss { text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; cursor: pointer; }
 .fig-svg a.sym-gloss:focus-visible { outline: 2px solid var(--md-sys-color-primary, #3b82f6); outline-offset: 2px; }

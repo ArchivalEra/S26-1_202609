@@ -2,10 +2,17 @@
 //
 // ## 设计（2026-10-17 大重构方案 §4）
 // 首屏完整 HTML（服务端渲染照旧——直接访问与爬虫拿到全页）；站内点击链接时：
-//   fetch 目标页 → DOMParser 解析 → 只替换三块：
+//   fetch 目标页 → DOMParser 解析 → 替换五块：
 //     ① .article-content（正文）
 //     ② .m3-toc（右侧目录）
 //     ③ <title>
+//     ④ 两份面包屑：顶栏 .top-bar-breadcrumbs 与正文 .m3-breadcrumb
+//     ⑤ .meta-chip-bar（来源/状态/更新日期三颗 chip）
+//
+// ⚠️ 2026-10-28 修（站长指出「大标题上方那栏永远是刚进站那页的信息」）：
+// 面包屑此前**不在替换清单里**，所以站点内跳转后它一直显示初页的路径。
+// 两份面包屑都烘死在每页 HTML 里（构建期生成），换页必须整块换掉——
+// 2026-10-22 那次只给链接加了 data-path 让它「点得动」，文案从未更新过。
 //   pushState 改 URL；document 不销毁。
 //
 // ## 为什么对 WebMCP 友好
@@ -92,6 +99,24 @@ function navigate(rawUrl, hash, push) {
     // drawer-sync 用它做【纯字符串】 active 判定——零 pathname 解析、部署前缀无关。
     var sp = doc.body && doc.body.getAttribute("data-site-path");
     if (sp) document.body.setAttribute("data-site-path", sp);
+
+    // ③d 面包屑两份 + meta chip 条：这三处烘死在每页 HTML 里、又都在
+    // .article-content 之外，SPA 不换就永远是初页的信息（2026-10-28 修）。
+    // 整块 replaceWith 而不是改文字：面包屑的**层级深度随页面变**
+    // （首页 1 段、课程页 2 段、教材解析章节页 5 段），逐段改会留下残段。
+    var crumbSelectors = [".top-bar-breadcrumbs", ".m3-breadcrumb"];
+    for (var ci = 0; ci < crumbSelectors.length; ci++) {
+      var sel = crumbSelectors[ci];
+      var nextCrumb = doc.querySelector(sel);
+      var curCrumb = document.querySelector(sel);
+      if (nextCrumb && curCrumb) curCrumb.replaceWith(nextCrumb);
+    }
+    // meta chip 条可能在新页不存在（例如 README / 课程索引没有 course 字段）——
+    // 那种情况要**删掉旧页的**，否则会挂着上一页的课程/状态标签。
+    var nextChips = doc.querySelector(".meta-chip-bar");
+    var curChips = document.querySelector(".meta-chip-bar");
+    if (nextChips && curChips) curChips.replaceWith(nextChips);
+    else if (curChips && !nextChips) curChips.remove();
 
     // ④ 侧栏 active 态（drawer 里当前页高亮由 theme 脚本管；这里触发它的重扫）
     // （shirone-reader 的 active 类基于 URL data 属性——换页后由 __readerRescan 处理）

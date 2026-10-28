@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import {
   parseFigureLib,
@@ -301,6 +302,38 @@ test('标签：未闭合的 ~ 原样保留（不吞字）', () => {
   assert.equal(labelToTspans('A~B'), 'A~B');
 });
 
+// ── 取反记法（三签抓到的图与图注不一致）────────────────────────────────
+
+test('标签：^B^ 渲染上划线（图注与图内用同一套否定记法）', () => {
+  const out = labelToTspans('^B^');
+  assert.ok(out.includes('text-decoration="overline"'), '上划线未生效');
+  assert.ok(out.includes('>B</tspan>'));
+});
+
+test('标签：上划线可与下标组合（R̄_D 这类器件记号）', () => {
+  const out = labelToTspans('^R^~D~');
+  assert.ok(out.includes('overline'));
+  assert.ok(out.includes('baseline-shift="sub"'));
+});
+
+test('门符号：非门必须有取反圈（否则画成了缓冲器，与图注矛盾）', () => {
+  // 三签实测：not 与 buf 曾共用几何、都没有圈，画出的是缓冲器 nB=B，
+  // 而图注写 Y=A·B̄ —— 图和图注给出不同答案，读者必做错题。
+  const lib = parseFigureLib('f | not B -> ^B^ ; and A ^B^ -> Y');
+  const r = renderFigures(':::figure f', { lib });
+  const html = restoreFigures(r.source, r.figures);
+  const notBlock = html.slice(html.indexOf('data-op="not"'));
+  assert.ok(/data-op="not"[\s\S]{0,400}?<circle/.test(notBlock), '非门缺取反圈');
+});
+
+test('门符号：与门不带取反圈（别把非门的圈泄漏给其它门）', () => {
+  const lib = parseFigureLib('f | and A B -> Y');
+  const r = renderFigures(':::figure f', { lib });
+  const html = restoreFigures(r.source, r.figures);
+  const andBlock = html.slice(html.indexOf('data-op="and"'));
+  assert.ok(!/data-op="and"[\s\S]{0,300}?<circle/.test(andBlock), '与门不该有取反圈');
+});
+
 // ── 图内符号：复用现有气泡锚点 ───────────────────────────────────────────
 
 test('符号：图内标签挂词条后产出 a.sym-gloss（包 tspan，不包裸文本）', () => {
@@ -358,6 +391,83 @@ test('onHit：命中条目必须带 title/text，否则宿主烘焙时会把它�
   assert.equal(got.text, 'X');
 });
 
+// ── 布局与语义：三签该抓的那几类（2026-10-28 站长实测指出的）────────────
+
+const coordsOf = (html) => {
+  const texts = [...html.matchAll(/<text x="([\d.]+)" y="([\d.]+)"[^>]*>([^<]*)<\/text>/g)]
+    .map((m) => ({ x: +m[1], y: +m[2], label: m[3] }));
+  const wires = [...html.matchAll(/data-net="([^"]+)"[^>]*d="([^"]+)"/g)]
+    .map((m) => ({ net: m[1], d: m[2] }));
+  const vb = (html.match(/viewBox="([^"]+)"/) || [])[1];
+  return { texts, wires, vb };
+};
+
+test('布局：输入端点的纵向范围收在门高内（不铺满整张画布）', () => {
+  const lib = parseFigureLib('f | and B C -> Y');
+  const r = renderFigures(':::figure f', { lib });
+  const { texts, vb } = coordsOf(restoreFigures(r.source, r.figures));
+  const h = +vb.split(/\s+/)[3];
+  const ins = texts.filter((t) => t.label === 'B' || t.label === 'C');
+  assert.equal(ins.length, 2);
+  // 两个输入标签的纵向跨度不该超过画布高度的一半——超过就是把端点铺满画布
+  const span = Math.abs(ins[0].y - ins[1].y);
+  assert.ok(span < h / 2, `输入跨度 ${span} 应小于画布高度一半 ${h / 2}`);
+});
+
+test('布局：多输入均匀分布（三输入等距）', () => {
+  const lib = parseFigureLib('f | or A B C -> Y');
+  const r = renderFigures(':::figure f', { lib });
+  const { texts } = coordsOf(restoreFigures(r.source, r.figures));
+  const ys = ['A', 'B', 'C'].map((l) => texts.find((t) => t.label === l).y);
+  const d1 = Math.round((ys[1] - ys[0]) * 100) / 100;
+  const d2 = Math.round((ys[2] - ys[1]) * 100) / 100;
+  assert.ok(Math.abs(d1 - d2) < 0.5, `三输入应等距，实得 ${d1} 与 ${d2}`);
+});
+
+test('布局：所有文字落在画布内（不越界）', () => {
+  const lib = parseFigureLib(['a | and B C -> Y', 'b | or A B C -> Y', 'c | not B -> nB ; and A nB -> Y'].join('\n'));
+  for (const id of ['a', 'b', 'c']) {
+    const r = renderFigures(`:::figure ${id}`, { lib });
+    const { texts, vb } = coordsOf(restoreFigures(r.source, r.figures));
+    const [, , w, h] = vb.split(/\s+/).map(Number);
+    for (const t of texts) {
+      assert.ok(t.x >= 0 && t.x <= w, `${id} 的「${t.label}」x=${t.x} 超出画布宽 ${w}`);
+      assert.ok(t.y >= 0 && t.y <= h, `${id} 的「${t.label}」y=${t.y} 超出画布高 ${h}`);
+    }
+  }
+});
+
+test('语义：逻辑变量不挂器件词条（防「B 弹出基极电位」这类误导）', () => {
+  // 这是实测抓到的真错：图里 B 是逻辑输入（0/1），却被挂上 sym-VB（晶体管基极电位）。
+  // 词条语义与图元语义不符，比不挂更糟——读者会被引到完全无关的知识点上。
+  const lib = parseFigureLib('f | and B@sym-VB C -> Y');
+  const r = renderFigures(':::figure f', {
+    lib,
+    lookupGloss: (id) => (id === 'sym-VB'
+      ? { title: '$V_B$：基极电位', text: '晶体管基极对地电位', href: '#sym-VB' }
+      : null),
+  });
+  // 模块本身允许挂载（它是通用机制），所以这里锁的是**图库内容**：
+  // 电子技术图库里的逻辑电路图不得出现 @sym-V 开头的器件词条。
+  const libText = readFileSync(new URL('../图库/电子技术.figures.txt', import.meta.url), 'utf-8');
+  const logicLines = libText.split('\n').filter((l) => /\|\s*(and|or|not|nand|nor|xor|xnor)\s/.test(l));
+  for (const line of logicLines) {
+    assert.ok(!/@sym-(VB|VC|VE|Uce|Ube|Ib|Ic|Ie)\b/.test(line),
+      `逻辑门图里挂了器件词条（语义不符）：${line.trim()}`);
+  }
+});
+
+test('语义：同一张图的端口要么都挂词条、要么都不挂（不一致也是错）', () => {
+  const libText = readFileSync(new URL('../图库/电子技术.figures.txt', import.meta.url), 'utf-8');
+  const logicLines = libText.split('\n').filter((l) => /\|\s*(and|or|not|nand|nor|xor|xnor)\s/.test(l));
+  for (const line of logicLines) {
+    const tagged = (line.match(/@[a-z]/gi) || []).length;
+    const labels = (line.split('|')[1] || '').split(/\s+/).filter((t) => /^(?:!?[A-Za-z0-9]+)(?:@\S+)?$/.test(t) && t !== '->');
+    assert.ok(tagged === 0 || tagged === labels.length,
+      `端口挂载不一致（${tagged}/${labels.length}）：${line.trim()}`);
+  }
+});
+
 // ── 交互层：图必须真的能操作（2026-10-28 站长实测「这图我能操作吗」）─────
 
 test('交互层：SVG 里元件与连线都带可寻址属性', () => {
@@ -394,6 +504,69 @@ test('交互层：客户端脚本含四个必需能力（选中 / 高亮 / 面�
   // 键盘可达
   assert.match(FIGURES_JS, /keydown/, '缺键盘处理');
   assert.match(FIGURES_JS, /setAttribute\("tabindex"/, '元件不可 Tab 聚焦');
+});
+
+test('交互层：双击复位避开缩放条与符号（连点两下「＋」不该被重置）', () => {
+  // 实测抓到的真错：dblclick 复位没排除 .fig-zoom，连点两下放大按钮会
+  // 「先放大再复位」，读者看到的是按了没反应。
+  const dbl = FIGURES_JS.slice(FIGURES_JS.indexOf('addEventListener("dblclick"'));
+  const block = dbl.slice(0, dbl.indexOf('});') + 3);
+  assert.match(block, /closest\("\.fig-zoom"\)/, '双击复位未排除缩放条');
+  assert.match(block, /closest\("a\.sym-gloss"\)/, '双击复位未排除符号锚点');
+});
+
+test('全屏查看：SVG 与位图都挂了灯箱（不只图元，习题册 img 也要）', () => {
+  // 站长要求：「所有图片都能点击然后全屏查看」。图元渲染的 SVG 只是一类，
+  // 电路原理习题册那 169 张位图是另一类，两条都要挂。
+  assert.match(FIGURES_JS, /querySelectorAll\("figure\.fig"\)/, '未处理图元的 SVG');
+  assert.match(FIGURES_JS, /querySelectorAll\("\.article-content img"\)/, '未处理正文位图');
+  assert.match(FIGURES_JS, /function openLightbox/, '缺灯箱打开');
+  assert.match(FIGURES_JS, /function closeLightbox/, '缺灯箱关闭');
+  // 关闭方式：Esc + 点背景
+  assert.match(FIGURES_JS, /Escape/, '缺 Esc 关闭');
+});
+
+test('全屏查看：点图内符号或元件时不触发全屏（与气泡/选中不抢事件）', () => {
+  const lb = FIGURES_JS.slice(FIGURES_JS.indexOf('setupLightbox'));
+  assert.match(lb, /closest\("a\.sym-gloss"\)/, '点符号时未让出事件');
+  assert.match(lb, /closest\("\.fig-comp"\)/, '点元件时未让出事件');
+  assert.match(lb, /closest\("\.fig-wire"\)/, '点连线时未让出事件');
+});
+
+test('全屏查看：SVG 克隆用 setAttribute 设类名（className 在 SVGElement 上只读）', () => {
+  // 实测真错：克隆的 SVG 上写 clone.className 会抛
+  // TypeError: Cannot set property className of #<SVGElement> which has only a getter
+  // —— 整个 openLightbox 中断，表现为「点了完全没反应」。
+  const lb = FIGURES_JS.slice(FIGURES_JS.indexOf('function openLightbox'));
+  assert.match(lb, /setAttribute\("class", "fig-lightbox-content"\)/, 'SVG 未用 setAttribute 设类名');
+});
+
+test('全屏查看：就绪标记必须在绑定成功之后（否则首轮没 SVG 就永久跳过）', () => {
+  // 实测真错：__lbReady = true 写在「检查 svg 是否存在」之前，
+  // 首轮 SVG 还没进 DOM ⇒ 永久跳过该图，且后续 boot() 因已标记不再重试。
+  const lb = FIGURES_JS.slice(FIGURES_JS.indexOf('function setupLightbox'), FIGURES_JS.indexOf('function boot'));
+  const iCheck = lb.indexOf('if (!svg) continue;');
+  const iReady = lb.indexOf('figs[i].__lbReady = true');
+  assert.ok(iCheck >= 0 && iReady >= 0, '找不到就绪标记或 svg 检查');
+  assert.ok(iReady > iCheck, '__lbReady 必须在 svg 检查之后才设');
+});
+
+test('全屏查看：纯前端能力，不写任何 MCP 工具或选择器', () => {
+  // 站长定案：「这个东西不能暴露给 MCP，豆包只需要能看到 detail 就够了」。
+  // 灯箱是给人看的，AI 读的仍是 <details> 结构表——这里锁死两边不串。
+  const lbStart = FIGURES_JS.indexOf('var lb = null;');
+  const lbEnd = FIGURES_JS.indexOf('function boot()');
+  const lbCode = FIGURES_JS.slice(lbStart, lbEnd);
+  assert.ok(!/modelContext|registerTool|site_/.test(lbCode), '灯箱代码里不该出现 MCP 工具痕迹');
+});
+
+test('自动贴合：viewBox 由 getBBox 量出（不靠构建期猜字宽）', () => {
+  // 站长定案：「这种东西应该做成全自动的」。构建期估宽两次都偏（估大右空、估小裁字），
+  // 正解是让浏览器用 getBBox() 量真实包围盒（含文字实际宽度）。
+  assert.match(FIGURES_JS, /function fitViewBox/, '缺自动贴合');
+  assert.match(FIGURES_JS, /getBBox\(\)/, '未用 getBBox 量真实边界');
+  // 字体未就绪时量出来偏窄，webfont 到了要重量
+  assert.match(FIGURES_JS, /document\.fonts\.ready/, '字体加载后未重量');
 });
 
 test('交互层：CSS 含选中/高亮/面板/缩放条四类样式', () => {
