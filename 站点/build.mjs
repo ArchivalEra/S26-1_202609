@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { marked, yaml } from './vendor.mjs';
 import katex from './assets/katex/katex.mjs';
 import { renderCollapse } from './plugins/collapse.mjs';
+import { parseFigureLib, renderFigures, restoreFigures, buildFigureIndex, FIGURES_CSS } from './plugins/figures.mjs';
 import { DISCLOSURE_ANCHOR_JS } from './plugins/disclosure-anchor.mjs';
 import { parseGlossaryDict, parseGlossaryMatch, renderGlossary, glossifyTex, applySymbolExclusions, peelNotationFences, GLOSSARY_JS } from './plugins/math-glossary.mjs';
 import { SYMBOL_PACKS, COURSE_ENV, BUILD_PHASES } from './符号环境.mjs';
@@ -126,6 +127,12 @@ for (const course of fs.readdirSync(path.join(ROOT, '课程'), { withFileTypes: 
 const disclosureAnchorDist = path.join(DIST_DIR, 'assets', 'plugins', 'disclosure-anchor.js');
 fs.mkdirSync(path.dirname(disclosureAnchorDist), { recursive: true });
 fs.writeFileSync(disclosureAnchorDist, DISCLOSURE_ANCHOR_JS);
+
+// 图元样式（2026-10-28）：与 SEARCH_CSS / CHAT_CSS 同款——模块导出字符串，构建期写盘。
+// 可拆卸：删掉本段与页面模板里的对应 <link> 即回退（图仍渲染，只是没有排版）。
+const figuresCssDist = path.join(DIST_DIR, 'assets', 'plugins', 'figures.css');
+fs.mkdirSync(path.dirname(figuresCssDist), { recursive: true });
+fs.writeFileSync(figuresCssDist, FIGURES_CSS);
 
 // 符号包：构建期环境变量包络的「定义集」。每包 = 一页 :::glossary-dict / :::glossary-match
 // 围栏（内容侧维护），包注册表与课程环境表见 站点/符号环境.mjs。三层显式锚定
@@ -930,6 +937,7 @@ for (const relPath of TARGET_FILES) {
     (msg) => glossaryWarn.add(`${relPath}：${msg}`),
   );
   const glossaryHits = new Map(); // key → {title, text, href}（按需烘焙气泡 JSON）
+  const pageFigures = [];        // Step 2.4 解析出的图元 IR（Step 6.5 还原成 <figure>）
 
   // Step 1: Protect Code Fences
   const codeBlocks = [];
@@ -1010,6 +1018,68 @@ for (const relPath of TARGET_FILES) {
     mathPlainOf[id] = plain;
     return `@@MATH_INLINE_${id}@@`;
   });
+
+  // Step 2.4: 图元 :::figure → @@FIGURE_n@@ 占位符（2026-10-28）
+  //
+  // 位置是刻意的：在公式提取（Step 2）**之后**、折叠块（Step 2.5）**之前**。
+  //   · 之后：图注里的 $…$ 已是单行占位符，本模块不必懂公式；
+  //   · 之前：解答层的图**就写在 :::collapse 面板里**（实测 17 张），
+  //     图先换成单行占位符，collapse 的裸 `:::` 深度计数就不会把
+  //     figure 的闭合当自己要配对的（块式围栏会打坏折叠块，实测过）。
+  //
+  // 为什么吐占位符而不是 raw HTML：Step 2.6 的 autoWrapTerms 会伸手进正文，
+  // 把 `<text>B</text>` 改成 `<text>[B]{#sym-B}</text>`，随后变成 `<a>` 直接
+  // 套在 `<text>` 里——SVG 的 `<a>` 不许包裸文本，是非法 SVG。占位符让 SVG
+  // 在 Step 6 之后才落地，从根上避开这一步。
+  //
+  // 图元定义住在 站点/图库/<课程>.figures.txt（改一处、三处引用全对）。
+  // 实现见 站点/plugins/figures.mjs（独立可拆卸：删文件 + 摘掉这几行即回退）。
+  {
+    const courseName = courseOf(relPath);
+    const libFile = courseName ? `站点/图库/${courseName}.figures.txt` : null;
+    const libPath = libFile ? path.join(ROOT, libFile) : null;
+    // 页面里写了 :::figure 但本课没有图库 / 图库读不到 ⇒ **硬错**，不许静默把指令
+    // 漏进正文（那会变成页面上的一行字面 `:::figure xxx`，读者与 AI 都当正文读）。
+    if (raw.includes(':::figure')) {
+      if (!courseName) {
+        throw new Error(`${relPath}：页面里有 :::figure，但它不属于任何课程（无法定位图库）`);
+      }
+      if (!libPath || !fs.existsSync(libPath)) {
+        throw new Error(`${relPath}：页面里有 :::figure，但图库 ${libFile} 不存在——先建图库或去掉该指令`);
+      }
+    }
+    if (libPath && fs.existsSync(libPath)) {
+      const lib = parseFigureLib(fs.readFileSync(libPath, 'utf-8'), libFile);
+      const figOut = renderFigures(raw, {
+        lib,
+        libName: libFile,
+        pagePath: relPath,
+        // 图内标签 → 词条：只查本页符号环境，零回退
+        // 返回值要给全：restore 只取 href，但 onHit 还要 title/text 才能烘出真气泡
+        lookupGloss: (label) => {
+          const entry = pageTexDict[label];
+          if (!entry || entry.bubble === false) return null;
+          return {
+            key: label,
+            href: entry.href || notationHrefOf(label, entry),
+            title: entry.title,
+            text: entry.text,
+            senses: entry.senses,
+          };
+        },
+        // 图内符号必须在这时并入 glossaryHits——气泡词典是按页烘焙的「实际命中集」，
+        // 晚于 Step 2.6 的烘焙就只剩一条空气泡（这本页 JSON 里没有该词条）。
+        onHit: (key, entry) => {
+          const hit = { title: entry.title, text: entry.text, href: entry.href };
+          if (entry.senses) hit.senses = entry.senses;
+          glossaryHits.set(key, hit);
+        },
+      });
+      raw = figOut.source;
+      pageFigures.push(...figOut.figures);
+      for (const w of figOut.warnings) console.warn(`[图] ${relPath}：${w}`);
+    }
+  }
 
   // Step 2.5: 折叠块 :::collapse → 原生 <details>（零 JS）
   //
@@ -1175,6 +1245,18 @@ for (const relPath of TARGET_FILES) {
     const math = mathBlocks[parseInt(id)];
     return math.html;
   });
+
+  // Step 6.5: 图元还原 @@FIGURE_n@@ → 完整 <figure>（2026-10-28）
+  //
+  // 为什么放到这么晚：Step 2.6 的 autoWrapTerms 会伸手进正文把术语包成令牌，
+  // 那一刻正文里**必须还没有 SVG**（否则它会把 `<text>B</text>` 改成
+  // `<text>[B]{#sym-B}</text>`，随后产生非法的 `<text><a>B</a></text>`）。
+  // marked 也已经跑完，SVG 里的 `*`、`|`、`[]()` 不会被当 Markdown 语法。
+  if (pageFigures.length) {
+    // 不需要 lookupGloss：图内符号在 Step 2.4 解析期就已按 `@词条` 解析完，
+    // IR.symbols 里带着 key/href，restore 只按标签做替换。
+    htmlContent = restoreFigures(htmlContent, pageFigures);
+  }
 
   // Extract TOC headings —— **必须在公式还原之后**。
   //
@@ -1440,6 +1522,7 @@ for (const relPath of TARGET_FILES) {
   <link rel="stylesheet" href="${rootRel}${assetUrl('assets/theme/shirone-reader.css')}">
   <link rel="stylesheet" href="${rootRel}${assetUrl('assets/plugins/site-search.css')}">
   <link rel="stylesheet" href="${rootRel}${assetUrl('assets/plugins/chat-panel.css')}">
+  <link rel="stylesheet" href="${rootRel}${assetUrl('assets/plugins/figures.css')}">
   <!-- 站点图标：动画 GIF 为主（Chrome/Firefox/Edge 会动），静态 PNG 作不支持动画时的回退 -->
   <link rel="icon" type="image/gif" href="${rootRel}assets/favicon/favicon.gif">
   <link rel="alternate icon" type="image/png" href="${rootRel}assets/favicon/favicon.png">
@@ -1659,6 +1742,10 @@ for (const relPath of TARGET_FILES) {
   <script src="${rootRel}${assetUrl('assets/theme/shirone-reader.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/disclosure-anchor.js')}" defer></script>
   <script type="application/json" id="sym-glossary-json">${JSON.stringify(glossaryJsonPayload).replace(/<\//g, '<\\/')}</script>
+  <!-- 图元索引烘焙（2026-10-28）：本页所有图的 IR 汇总。
+       三个消费者读同一份——页面交互、site_figure 工具、构建期提到的静态结构表。
+       与 sym-glossary-json / nav-structure-json 同一个范式：构建期烘、客户端不发请求。 -->
+  <script type="application/json" id="figure-index-json">${JSON.stringify(buildFigureIndex(pageFigures)).replace(/<\//g, '<\\/')}</script>
   <!-- 侧栏形状烘焙（阶段一）：nav-structure.mjs（buildNavModel）产出的归一化树 + 判定结果。
        site_index / site_navigate / drawer-sync 三个消费者都读这一份，不再爬侧栏 DOM。 -->
   <script type="application/json" id="nav-structure-json">${JSON.stringify(navJsonPayload).replace(/<\//g, '<\\/')}</script>
