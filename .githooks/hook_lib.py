@@ -505,28 +505,59 @@ def changed_paths(files, base):
     return {p for p in set(files) | set(base) if differs(p)}
 
 
-def check_index_sync(files, base):
-    """课程资料有变动，对应分类索引必须在同一次提交更新。
+def ancestor_indexes(path, files):
+    """该页面的全部祖先 index.md，由近及远，不含自身。
 
-    规则：`课程/<课程>/<类别>/` 下任何文件（不含 index.md）实质变化——
-    新增、删除、修改都算；只改 last_updated 不算（那是推导字段，钩子自动写）——
-    则 `课程/<课程>/<类别>/index.md` 必须同时变化。
-    索引是该类资料的登记处，资料动了索引不动即为过期。
+    「父页面」= 最近一级上级目录里的 index.md；它的父页面再往上一级……直到
+    `课程/index.md`。中间目录若没建 index.md 就跳过——教材解析的章节目录不单独
+    建索引，层级并入最近的分部索引（`第一部分-线性代数/index.md`）。
+    """
+    parts = PurePosixPath(path).parts
+    out, seen = [], set()
+    for i in range(len(parts) - 1, 0, -1):
+        candidate = (PurePosixPath(*parts[:i]) / 'index.md').as_posix()
+        if candidate == path or candidate in seen:
+            continue
+        seen.add(candidate)
+        if candidate in files:
+            out.append(candidate)
+    return out
+
+
+def check_index_sync(files, base):
+    """子页面有变动，父页面必须在同一次提交更新——**层层递进**。
+
+    规则：`课程/` 下任何**页面**（`.md`）实质变化（新增、删除、修改都算；只改
+    last_updated 不算，那是推导字段）⇒ 它**每一层**祖先 index.md 都必须同时变化：
+    `章节目录里的某节 → 分部索引 → 分类索引 → 课程索引 → 课程总索引`。
+
+    **只算 `.md`**：原始资料里的 `.heic`/`.txt`/`figures/` 是内嵌资产不是页面，
+    换一张图不该逼着三层索引一起动；它们归属的登记页（`原始资料/index.md` 等）
+    本身是 `.md`，登记变了自然会往上传导。
+
+    **为什么要把链条拉满（2026-10-28 实弹）**：此前只校验「资料 → 分类索引」
+    一层，上面两层从无校验。于是 `课程/index.md` 里电子技术长期写着「两次作业」
+    （实际六次）、工程数学写着「第 1–2 章教材解析」（实际到第 3 章）——
+    摘要页不更新就腐烂，而且腐烂时没有任何信号：构建照过、链接照通、
+    读者看到的是一句过期的概述。层级由目录结构决定，不写死层数。
     """
     if base is None:
         return
     changed = changed_paths(files, base)
-    stale = {}
+    missing = {}
     for path in sorted(changed):
-        category = classify(path)
-        if not category:
+        if not path.startswith('课程/') or not path.endswith('.md'):
             continue
-        course, kind = category
-        stale.setdefault(f'课程/{course}/{kind}/index.md', []).append(path)
-    problems = [f'{index}：' + '、'.join(items)
-                for index, items in sorted(stale.items()) if index not in changed]
-    if problems:
-        raise ValueError('课程资料有变动，必须在同一次提交更新对应分类索引—— ' + '；'.join(problems))
+        for ancestor in ancestor_indexes(path, files):
+            if ancestor not in changed:
+                missing.setdefault(ancestor, []).append(path)
+    if not missing:
+        return
+    detail = '；'.join(f'{idx}（因 {"、".join(items)}）'
+                      for idx, items in sorted(missing.items()))
+    raise ValueError(
+        '课程资料有变动，必须在同一次提交逐层更新父页面，直到课程总索引——'
+        '每一层都要动（父页面指上级目录的 index.md，摘要/入口内容随之更新）：' + detail)
 
 
 BUILD_SCRIPT = '站点/build.mjs'
