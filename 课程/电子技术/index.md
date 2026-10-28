@@ -3,7 +3,7 @@ id: okf.course.electronics.index
 name: 电子技术课程索引
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-18"
+last_updated: "2026-10-28"
 stewards:
   - team: 电子技术课程学习记录
 course: 电子技术
@@ -20,7 +20,7 @@ sources:
 
 ## 分类
 
-[作业](./作业/index.md) · [教材解析](./教材解析/index.md) · [课堂笔记](./课堂笔记/index.md) · [原始资料](./原始资料/index.md) · [音频](./音频/index.md)
+[技法库](./技法库.md) · [作业](./作业/index.md) · [教材解析](./教材解析/index.md) · [课堂笔记](./课堂笔记/index.md) · [原始资料](./原始资料/index.md) · [音频](./音频/index.md)
 
 ## 材料清单
 

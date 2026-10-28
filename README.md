@@ -29,12 +29,12 @@
 | 工程数学 | 22 | [进入](./%E8%AF%BE%E7%A8%8B/%E5%B7%A5%E7%A8%8B%E6%95%B0%E5%AD%A6/index.md) |
 | 形势与政策 | 7 | [进入](./%E8%AF%BE%E7%A8%8B/%E5%BD%A2%E5%8A%BF%E4%B8%8E%E6%94%BF%E7%AD%96/index.md) |
 | 电力大数据与人工智能 | 10 | [进入](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E5%8A%9B%E5%A4%A7%E6%95%B0%E6%8D%AE%E4%B8%8E%E4%BA%BA%E5%B7%A5%E6%99%BA%E8%83%BD/index.md) |
-| 电子技术 | 17 | [进入](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E5%AD%90%E6%8A%80%E6%9C%AF/index.md) |
+| 电子技术 | 20 | [进入](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E5%AD%90%E6%8A%80%E6%9C%AF/index.md) |
 | 电机学 | 15 | [进入](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E6%9C%BA%E5%AD%A6/index.md) |
 | 电路原理 | 197 | [进入](./%E8%AF%BE%E7%A8%8B/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/index.md) |
 
-共 **6** 门课程、**268** 份资料。
-<!-- 仓库内容摘要（不含 README）：90d5dce17ff6ad42f94743ba573b58a8dfc81aefc8a85de19e5a881582915248 -->
+共 **6** 门课程、**271** 份资料。
+<!-- 仓库内容摘要（不含 README）：c9bde8b7dc4f36e19b730a22cbe9b00ea47dedea35fcd53569e02f8047eab47b -->
 
 <!-- AUTO-CATALOG:END -->
 
