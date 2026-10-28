@@ -346,7 +346,8 @@ const NAV_STRUCTURE = [
             path: "课程/工程数学/作业/index.md",
             children: [
               { label: "作业1", path: "课程/工程数学/作业/2026-09-17-作业1.md" },
-              { label: "作业2", path: "课程/工程数学/作业/2026-10-08-作业2.md" }
+              { label: "作业2", path: "课程/工程数学/作业/2026-10-08-作业2.md" },
+              { label: "作业3（习题 2.3、2.4、3.1）", path: "课程/工程数学/作业/2026-10-16-作业3.md" }
             ]
           },
           {
@@ -387,6 +388,17 @@ const NAV_STRUCTURE = [
                       { label: "2.3 初等变换与初等矩阵", path: "课程/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.3-矩阵的初等变换与初等矩阵.md" },
                       { label: "2.4 矩阵的秩", path: "课程/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.4-矩阵的秩.md" },
                       { label: "2.5 用MATLAB进行矩阵运算", path: "课程/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.5-用MATLAB进行矩阵运算.md" }
+                    ]
+                  },
+                  {
+                    label: "第03章 n维向量与向量空间",
+                    children: [
+                      { label: "★ 通关攻略", path: "课程/工程数学/教材解析/第一部分-线性代数/第3章-n维向量与向量空间/3.0-本章通关攻略.md" },
+                      { label: "3.1 n维向量", path: "课程/工程数学/教材解析/第一部分-线性代数/第3章-n维向量与向量空间/3.1-n维向量.md" },
+                      { label: "3.2 向量组的线性相关性", path: "课程/工程数学/教材解析/第一部分-线性代数/第3章-n维向量与向量空间/3.2-向量组的线性相关性.md" },
+                      { label: "3.3 向量组的秩", path: "课程/工程数学/教材解析/第一部分-线性代数/第3章-n维向量与向量空间/3.3-向量组的秩.md" },
+                      { label: "3.4 向量空间", path: "课程/工程数学/教材解析/第一部分-线性代数/第3章-n维向量与向量空间/3.4-向量空间.md" },
+                      { label: "3.5 用MATLAB进行向量运算", path: "课程/工程数学/教材解析/第一部分-线性代数/第3章-n维向量与向量空间/3.5-用MATLAB进行向量运算.md" }
                     ]
                   }
                 ]
@@ -718,8 +730,20 @@ renderer.heading = function ({ depth, text, tokens }) {
   const forId = inner
     .replace(/@@MATH_INLINE_(\d+)@@/g, (_, i) => mathPlainOf[parseInt(i)] ?? '')
     .replace(/@@MATH_BLOCK_(\d+)@@/g, (_, i) => mathPlainOf[parseInt(i)] ?? '');
-  const clean = forId.replace(/<[^>]+>/g, '');
-  let id = clean
+  let clean = forId.replace(/<[^>]+>/g, '');
+
+  // ⭐ 显式锚点：「标题 {#my-id}」末尾的 {#…} 直接当 id，并从标题文本里剥掉。
+  //
+  // 为什么要支持：技法库用「一题一条」的稳定短锚（#m-adj3、#m-kmap-nand），
+  // 但此前渲染器不识别 {#…}，会把它拼进中文 slug（`三阶整数阵求逆-伴随法逐元算-m-adj3`），
+  // 于是索引里 11 条 href="#m-…" 全部落空、页面上还印着字面花括号（2026-10-28 三签抓出）。
+  //
+  // 支持后两个好处：① 锚点稳定（改标题措辞不破链接）；② 标题与右侧目录不再带 {#…} 字面量。
+  const explicit = clean.match(/\{#([^}\s]+)\}\s*$/);
+  const explicitId = explicit ? explicit[1] : null;
+  if (explicitId) clean = clean.slice(0, explicit.index).trim();
+
+  let id = explicitId || clean
     .toLowerCase()
     .replace(/[^\w\u4e00-\u9fa5]+/g, '-')
     .replace(/^-+|-+$/g, '') || ('h-' + Math.random().toString(36).substring(2, 7));
@@ -732,7 +756,11 @@ renderer.heading = function ({ depth, text, tokens }) {
     id = `${id}-${n}`;
   }
   usedHeadingIds.add(id);
-  return `<h${depth} id="${id}">${inner}</h${depth}>`;
+  // 显示用文本也要剥掉尾部 {#…}，否则页面上会印出字面花括号
+  const shown = explicitId
+    ? inner.replace(/\s*\{#([^}\s]+)\}\s*$/, '').trim()
+    : inner;
+  return `<h${depth} id="${id}">${shown}</h${depth}>`;
 };
 
 marked.use({
@@ -744,7 +772,10 @@ marked.use({
       let pendingMode = null, lastHeading = '';
       const walk = (ts) => {
         for (const t of ts) {
-          if (t.type === 'heading') lastHeading = t.text.replace(/\s+/g, ' ').trim();
+          // 标题里的 {#显式锚点} 不属标题文字，aria-label 里要剥掉（2026-10-28）
+          if (t.type === 'heading') {
+            lastHeading = t.text.replace(/\s*\{[^}\s]+\}\s*$/, '').replace(/\s+/g, ' ').trim();
+          }
           if (t.type === 'html') {
             const m = /<!--\s*table:(compact|cards|matrix)\s*-->/.exec(t.text || '');
             if (m) { pendingMode = 't-' + m[1]; continue; }
@@ -1156,10 +1187,26 @@ for (const relPath of TARGET_FILES) {
   const headingRegex = /<h([23]) id="([^"]+)">([\s\S]*?)<\/h[23]>/g;
   let hMatch;
   while ((hMatch = headingRegex.exec(htmlContent)) !== null) {
+    // TOC 标题取纯文本：**先把 KaTeX 整块换成占位再剥标签**。
+    //
+    // 直接 `<[^>]+>` 剥标签会把一个 KaTeX 公式的三份表示（MathML + annotation +
+    // 视觉 HTML）拼成一串重复文字——实测 `(A\mid E)` 在目录里印成
+    // `(A∣E)(A\mid E)(A∣E)`（2026-10-28 三签抓出）。这里把每个 `<span class="katex">…</span>`
+    // 整体替换成它的 annotation（LaTeX 原文）或占位，再剥其余标签。
+    const rawTitle = hMatch[3]
+      .replace(/<span class="katex">[\s\S]*?<\/span><\/span><\/span>/g,
+        (m0) => {
+          const ann = m0.match(/<annotation encoding="application\/x-tex">([\s\S]*?)<\/annotation>/);
+          return ann ? ann[1].replace(/&amp;/g, '&') : '';
+        })
+      .replace(/<[^>]+>/g, '')
+      .replace(/\{#([^}\s]+)\}/g, '')   // 万一残留显式锚点标记
+      .replace(/\s+/g, ' ')
+      .trim();
     toc.push({
       level: parseInt(hMatch[1]),
       id: hMatch[2],
-      title: hMatch[3].replace(/<[^>]+>/g, '').trim()
+      title: rawTitle,
     });
   }
 
