@@ -18,6 +18,7 @@ import posixpath
 import re
 import subprocess
 import sys
+import unicodedata
 from urllib.parse import quote, unquote, urlsplit
 
 START = '<!-- AUTO-CATALOG:START -->'
@@ -701,10 +702,11 @@ def _balanced_array(text, marker):
 
 
 def _nav_paths(script_text):
-    """在 node 里求值 NAV_STRUCTURE，收集所有节点的 `[path, label]`（去重前）。
+    """在 node 里求值 NAV_STRUCTURE，收集所有节点的 `[path, label, depth]`。
 
     用子进程求值而非正则：结构是嵌套 JS，交给 JS 引擎解析才可靠。
-    返回 `[[path, label], …]`；label 缺失时给空串（对齐检查会跳过这种节点）。
+    label 缺失时给空串（对齐检查会跳过这种节点）；`depth` 是节点在侧栏里的层级，
+    宽度预算按它算（越深越窄，见 NAV_WIDTH_BUDGET）。
     """
     literal = _balanced_array(script_text, 'const NAV_STRUCTURE =')
     if literal is None:
@@ -712,13 +714,13 @@ def _nav_paths(script_text):
     program = (
         'const NAV = ' + literal + ';\n'
         'const out = [];\n'
-        '(function walk(nodes) {\n'
+        '(function walk(nodes, depth) {\n'
         '  for (const node of nodes || []) {\n'
         "    if (typeof node.path === 'string') out.push([node.path, "
-        "typeof node.label === 'string' ? node.label : '']);\n"
-        '    if (Array.isArray(node.children)) walk(node.children);\n'
+        "typeof node.label === 'string' ? node.label : '', depth]);\n"
+        '    if (Array.isArray(node.children)) walk(node.children, depth + 1);\n'
         '  }\n'
-        '})(NAV);\n'
+        '})(NAV, 0);\n'
         'process.stdout.write(JSON.stringify(out));'
     )
     try:
@@ -753,46 +755,101 @@ def _norm_title(text):
     return re.sub(r'\s+', ' ', text).strip()
 
 
+# 侧栏标签的宽度预算，按**实际渲染宽度**实测出来的（2026-10-28）。
+#
+# 侧栏固定 320px（--sidebar-width），每层缩进 20px、左右 padding 各 ~19px，
+# 14.08px 字号下一个全角字 ≈ 14.09px。在真实 Chromium 里逐层量 `.drawer-nav-link`
+# 的 span 可用宽度，得到各层能放下的全角字数：
+#   depth 0 → 18、1 → 17、2 → 15、3 → 14、4 → 13、5 → 11
+# 取的是**实测值本身**，不留虚数：写大了标签就会被省略号截断，那正是要防的事。
+#
+# 为什么按层给而不是一刀切 11：一刀切会把所有页面压到最窄那层的能力，
+# 而 depth 5 只有教材解析的章内小节，depth 3 是绝大多数资料页——按各层真实
+# 宽度给预算，等于「每一层都刚好不截断」，信息保留最多。
+NAV_WIDTH_BUDGET = {0: 18, 1: 17, 2: 15, 3: 14, 4: 13, 5: 11}
+# 更深（理论上不该有）按最窄的算。
+NAV_WIDTH_BUDGET_FLOOR = 11
+
+
+def _label_width(text):
+    """侧栏标签的等效全角宽度：全角/汉字 1.0、ASCII 0.55、空格 0.3。
+
+    与上面实测的「一个全角字 ≈ 14.09px」对表——所以这里算出来的数就是
+    「占多少个全角字的宽度」，直接和 NAV_WIDTH_BUDGET 比。
+    """
+    total = 0.0
+    for ch in text:
+        if ch == ' ':
+            total += 0.3
+        elif unicodedata.east_asian_width(ch) in ('W', 'F', 'A'):
+            total += 1.0
+        elif ch.isascii():
+            total += 0.55
+        else:
+            total += 1.0
+    return total
+
+
 def check_nav_titles(files):
-    """作业页的侧栏标签必须与页面 H1 标题**逐字一致**。
+    """侧栏标签与页面 H1 **必须逐字一致**，且都不得超过该层的宽度预算。
 
-    为什么只查作业：作业页的标题取自**平台页眉逐字**（见 skill 作业线第 1 步），
-    它是内容侧唯一权威；侧栏标签由人工另写一份，两边从不校验 ⇒ 实测 23 个作业页里
-    21 个不一致，而且差的是实质内容（侧栏「2026-9-23作业（习题 1.1、1.3、1.5）」
-    vs 页面「2026-9-23作业：第一章简答题（习题 1.1、1.3、1.5）」——侧栏把章节名丢了）。
+    这是 2026-10-28 站长定案的最终形态（中途试过两个错方向，记在这里防回头）：
+    · 先试「H1 权威、侧栏跟着长长」——错。侧栏是导航，职责是短而可扫；
+      让导航长成内容标题的样子，等于牺牲导航去迁就标题。
+    · 再试「侧栏写简写、H1 自便」——也错。同一份资料两个名字，
+      读者在侧栏认一套、点进去看另一套，找东西对不上号。
 
-    其它页面（章节解析、笔记、索引）的侧栏标签**允许**是简写，不在此校验：
-    它们的标题是整理者自拟的长描述，简写不丢关键信息。
+    **现在的规则**：侧栏标签就是这篇的**正式短名**，H1 等于它，长描述降级进正文。
+    所以两件事一起校验：
+      ① `label == H1`（逐字，只折叠空白）——一个页面只有一个名字；
+      ② `width(label) ≤ 该层预算`——名字短到侧栏放得下，不用省略号截断。
+
+    全部页面都查（不再只管作业页）：短名是站点的导航契约，任何页面都不该例外。
+    实测这条把 112 个页面的 H1 与 125 个标签中的 27 个收敛到了预算内。
     """
     if BUILD_SCRIPT not in files:
         return
     nav = _nav_paths(files[BUILD_SCRIPT].decode())
     if nav is None:
         return
-    problems = []
-    for path, label in nav:
-        # 只查作业页正文（不含作业索引页）
-        parts = PurePosixPath(path).parts
-        if len(parts) < 4 or parts[0] != '课程' or parts[2] != '作业':
-            continue
-        if parts[-1] == 'index.md' or not path.endswith('.md'):
-            continue
-        if not label or path not in files:
+    mismatch, too_wide = [], []
+    seen = {}
+    for path, label, depth in nav:
+        if not path.endswith('.md') or not label or path not in files:
             continue
         title = _h1_title(files[path].decode())
         if title is None:
-            problems.append(f'{path}：页面没有 H1 标题，侧栏标签「{label}」无从对齐')
+            mismatch.append(f'{path}：页面没有 H1 标题，侧栏标签「{label}」无从对齐')
             continue
         want = _norm_title(title)
-        if _norm_title(label) == want:
-            continue
-        problems.append(f'侧栏写「{label}」，页面是「{want}」 ⇒ label 应改为 '
-                        f'{json.dumps(want, ensure_ascii=False)}（{path}）')
-    if problems:
+        if _norm_title(label) != want:
+            mismatch.append(f'侧栏写「{label}」，页面是「{want}」 ⇒ label 应改为 '
+                            f'{json.dumps(want, ensure_ascii=False)}（{path}）')
+        budget = NAV_WIDTH_BUDGET.get(depth, NAV_WIDTH_BUDGET_FLOOR)
+        width = _label_width(label)
+        if width > budget:
+            too_wide.append(f'「{label}」宽 {width:.1f} > 第 {depth} 层预算 {budget}（{path}）')
+        seen.setdefault(path, []).append(label)
+    if mismatch:
         raise ValueError(
-            '作业页的侧栏标签必须与页面 H1 标题逐字一致——同一份作业不能有两个名字'
-            '（窄栏显示不下由 CSS 省略号与悬停提示处理，不靠改名字）：'
-            + '；'.join(problems))
+            '侧栏标签必须与页面 H1 标题逐字一致——一个页面只能有一个正式名字'
+            '（侧栏标签即短名，长描述写进正文）：' + '；'.join(mismatch))
+    if too_wide:
+        raise ValueError(
+            '侧栏标签超出该层的宽度预算，会被省略号截断——把名字改短'
+            '（长描述写进正文 H2；预算来自真实 Chromium 逐层实测，见 NAV_WIDTH_BUDGET）：'
+            + '；'.join(too_wide))
+
+    # 同一个页面被挂了两个不同标签：读者会看到同一份资料在侧栏出现两次，
+    # 且两个名字必然有一个不等于 H1。2026-10-28 实测电机学两处（章组节点
+    # 借子页当落点），改成纯组节点后消除。
+    dup = [f'{p}：{"、".join(f"「{l}」" for l in ls)}'
+           for p, ls in seen.items() if len(set(ls)) > 1]
+    if dup:
+        raise ValueError(
+            '同一页面在侧栏里挂了多个不同标签——一个页面只能有一个入口名：'
+            + '；'.join(dup))
+
 
 
 def check_nav_coverage(files):
@@ -812,7 +869,7 @@ def check_nav_coverage(files):
         # 找不到 NAV_STRUCTURE 定义（脚本被替换/改名）时跳过本校验：yaml 结构本就可能变，
         # 真正该拦的是「清单里的页面没有侧栏入口」，别在定义缺失时误伤。
         return
-    covered = {path for path, _ in nav} | set(NAV_COVERAGE_EXEMPT)
+    covered = {path for path, _, _ in nav} | set(NAV_COVERAGE_EXEMPT)
     missing = sorted(set(targets) - covered)
     if missing:
         raise ValueError(

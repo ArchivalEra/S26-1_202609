@@ -1,9 +1,9 @@
 ---
 id: okf.course.electric_machinery.originals.index
-name: 电机学原始资料索引
+name: 原始资料
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-15"
+last_updated: "2026-10-28"
 stewards:
   - team: 电机学课程学习记录
 course: 电机学
@@ -16,7 +16,7 @@ sources:
   - 用户提供：22 张教材《电机学》（第三版）第一章照片（HEIC，2026-09-24）
 ---
 
-# 电机学原始资料
+# 原始资料
 
 [返回课程索引](../index.md)
 

@@ -1,9 +1,9 @@
 ---
 id: okf.course.power_bigdata_ai.notes.index
-name: 电力大数据与人工智能课堂笔记索引
+name: 课堂笔记
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-14"
+last_updated: "2026-10-28"
 stewards:
   - team: 电力大数据与人工智能课程学习记录
 course: 电力大数据与人工智能
@@ -11,7 +11,7 @@ category: 课堂笔记
 sources: []
 ---
 
-# 电力大数据与人工智能课堂笔记
+# 课堂笔记
 
 [返回课程索引](../index.md) · [课堂笔记模板](../../../模板/课堂笔记.md)
 

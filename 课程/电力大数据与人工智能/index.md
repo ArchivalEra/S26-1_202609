@@ -1,9 +1,9 @@
 ---
 id: okf.course.power_bigdata_ai.index
-name: 电力大数据与人工智能课程索引
+name: 电力大数据与人工智能
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-18"
+last_updated: "2026-10-28"
 stewards:
   - team: 电力大数据与人工智能课程学习记录
 course: 电力大数据与人工智能

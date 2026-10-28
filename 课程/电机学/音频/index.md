@@ -1,9 +1,9 @@
 ---
 id: okf.course.electric_machinery.audio.index
-name: 电机学音频索引
+name: 音频
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-12"
+last_updated: "2026-10-28"
 stewards:
   - team: 电机学课程学习记录
 course: 电机学
@@ -11,7 +11,7 @@ category: 音频
 sources: []
 ---
 
-# 电机学音频记录
+# 音频
 
 [返回课程索引](../index.md) · [音频记录模板](../../../模板/音频记录.md)
 

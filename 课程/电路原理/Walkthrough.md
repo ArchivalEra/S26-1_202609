@@ -1,16 +1,16 @@
 ---
 id: okf.course.circuit_theory.walkthrough
-name: 电路原理 Walkthrough
+name: Walkthrough
 type: Guide
 spec_version: "0.2"
-last_updated: "2026-10-14"
+last_updated: "2026-10-28"
 stewards:
   - team: 电路原理课程学习记录
 course: 电路原理
 category: Walkthrough
 ---
 
-# 电路原理 · Walkthrough
+# Walkthrough
 
 > **这条时间线把每次课要带走的东西串起来**：左边是你上到哪，右边是你该会什么。
 > 每一条都链到详细位置——读这一页掌握骨架，点进去补细节。

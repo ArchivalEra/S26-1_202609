@@ -1,6 +1,6 @@
 ---
 id: okf.course.engineering_math.textbook.part1_index
-name: 第一部分 线性代数 · 章节索引
+name: 第一部分 线性代数
 type: CatalogIndex
 spec_version: "0.2"
 last_updated: "2026-10-28"
@@ -12,7 +12,7 @@ sources:
   - 教材目录页照片（原书目录 p1–p2）；本部分页码范围：原书 p1–p79
 ---
 
-# 第一部分 线性代数 · 章节索引
+# 第一部分 线性代数
 
 [返回教材解析总索引](../index.md) · [返回课程索引](../../index.md)
 

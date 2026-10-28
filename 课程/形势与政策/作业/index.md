@@ -1,9 +1,9 @@
 ---
 id: okf.course.situation_policy.homework.index
-name: 形势与政策作业索引
+name: 作业
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-11"
+last_updated: "2026-10-28"
 stewards:
   - team: 形势与政策课程学习记录
 course: 形势与政策
@@ -11,7 +11,7 @@ category: 作业
 sources: []
 ---
 
-# 形势与政策作业
+# 作业
 
 [返回课程索引](../index.md) · [作业模板](../../../模板/作业.md)
 

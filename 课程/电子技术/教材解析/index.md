@@ -1,6 +1,6 @@
 ---
 id: okf.course.electronics.textbook.index
-name: 电子技术教材解析索引
+name: 教材解析
 type: CatalogIndex
 spec_version: "0.2"
 last_updated: "2026-10-28"
@@ -11,7 +11,7 @@ category: 教材解析
 sources: []
 ---
 
-# 电子技术教材解析
+# 教材解析
 
 [返回课程索引](../index.md) · [教材章节解析模板](../../../模板/教材章节解析.md)
 

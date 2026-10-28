@@ -1,9 +1,9 @@
 ---
 id: okf.course.circuit_theory.textbook.index
-name: 电路原理教材解析索引
+name: 教材解析
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-12"
+last_updated: "2026-10-28"
 stewards:
   - team: 电路原理课程学习记录
 course: 电路原理
@@ -11,7 +11,7 @@ category: 教材解析
 sources: []
 ---
 
-# 电路原理教材解析
+# 教材解析
 
 [返回课程索引](../index.md) · [教材章节解析模板](../../../模板/教材章节解析.md)
 

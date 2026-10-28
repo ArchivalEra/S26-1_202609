@@ -31,13 +31,13 @@ class ReadmeHookTest(unittest.TestCase):
         self.readme = self.write('README.md', '# 学期\n\n' + self.status_block(['工程数学']) +
                                  '\n<!-- AUTO-CATALOG:START -->\n<!-- AUTO-CATALOG:END -->\n')
         self.details = self.write('维护细则.md', '# 维护细则\n\n见[仓库维护条例](./维护条例.md)。\n\n<!-- AUTO-MAINTENANCE:START -->\n<!-- AUTO-MAINTENANCE:END -->\n')
-        self.write('维护条例.md', '# 仓库维护条例\n\n原则性规定。\n')
-        self.write('课程/index.md', '[工程数学](工程数学/index.md)\n')
+        self.write('维护条例.md', '# 维护条例\n\n原则性规定。\n')
+        self.write('课程/index.md', '# 课程总览\n\n[工程数学](工程数学/index.md)\n')
         self.course('工程数学')
         self.note = self.write('课程/工程数学/课堂笔记/2026-09-17-test.md', '# 行列式学习\n\n课堂方法。\n')
-        self.index = self.write('课程/工程数学/课堂笔记/index.md', '[笔记](2026-09-17-test.md)\n')
+        self.index = self.write('课程/工程数学/课堂笔记/index.md', '# 课堂笔记\n\n[笔记](2026-09-17-test.md)\n')
         self.original = self.write('课程/工程数学/原始资料/中文 原文.doc', '<html>课堂转写</html>')
-        self.write('课程/工程数学/原始资料/index.md', '[原文](中文%20原文.doc)\n')
+        self.write('课程/工程数学/原始资料/index.md', '# 原始资料\n\n[原文](中文%20原文.doc)\n')
         self.stage()
         self.git('commit', '-m', '初始化课程')
 
@@ -64,7 +64,8 @@ class ReadmeHookTest(unittest.TestCase):
         self.readme.write_text(text)
 
     def course(self, name):
-        self.write(f'课程/{name}/index.md', ''.join(f'[{kind}]({kind}/index.md)\n' for kind in KINDS))
+        self.write(f'课程/{name}/index.md',
+                   f'# {name}\n\n' + ''.join(f'[{kind}]({kind}/index.md)\n' for kind in KINDS))
         for kind in KINDS:
             self.write(f'课程/{name}/{kind}/index.md', f'# {kind}\n')
 
@@ -578,6 +579,18 @@ class ReadmeHookTest(unittest.TestCase):
         `labels` 可为个别 path 指定自定义 label（默认用 path 本身作文本）。
         """
         labels = labels or {}
+        # 默认 label 取该文件的 H1（新规则要求两者逐字一致）；没有 H1 时退回文件名。
+        auto = {}
+        for pth in nav:
+            if pth in labels:
+                continue
+            f = self.repo / pth
+            if f.is_file() and pth.endswith('.md'):
+                for line in f.read_text().splitlines():
+                    if line.startswith('# '):
+                        auto[pth] = line[2:].strip()
+                        break
+        labels = {**auto, **labels}
         self.write('站点/页面清单.mjs',
                    'export const TARGET_FILES = [\n'
                    + ''.join(f"  '{p}',\n" for p in targets)
@@ -585,7 +598,7 @@ class ReadmeHookTest(unittest.TestCase):
         children = [p for p in nav if p not in ('README.md', '课程/index.md')]
         build = ('// 站点构建脚本（测试夹具）\n'
                  'const NAV_STRUCTURE = [\n'
-                 '  { label: "首页", path: "README.md" },\n'
+                 '  { label: "学期", path: "README.md" },\n'
                  '  {\n'
                  '    label: "课程总览",\n'
                  '    path: "课程/index.md",\n'
@@ -645,38 +658,45 @@ class ReadmeHookTest(unittest.TestCase):
 
     # ── 侧栏标题 = 页面 H1（2026-10-28 新增）────────────────────────────────────
     def test_nav_label_must_match_page_title(self):
-        """作业页的侧栏 label 必须与页面 H1 逐字一致（同一份作业不能有两个名字）。"""
+        """侧栏 label 与页面 H1 必须逐字一致，且都不得超过该层的宽度预算。"""
         hw = '课程/工程数学/作业/2026-09-17-作业1.md'
-        title = '2026-9-17作业：测试作业页'
-        self.write(hw, f'# {title}\n\n正文。\n')
-        self.write('课程/工程数学/作业/index.md',
-                   '[作业1](2026-09-17-作业1.md)\n')
-
+        short = '9-17 作业1'
+        self.write(hw, f'# {short}\n\n正文。\n')
+        self.write('课程/工程数学/作业/index.md', '# 作业\n\n[作业1](2026-09-17-作业1.md)\n')
         targets = self.target_list() + [hw]
-        # ① 侧栏写简写（页面有「：测试作业页」，侧栏没有）→ 拒绝
-        self.nav_site(targets, targets, labels={hw: '作业1'})
+
+        # ① 侧栏写别的名字（与 H1 不一致）→ 拒绝
+        self.nav_site(targets, targets, labels={hw: '作业一'})
         self.stage()
-        self.append('课程/工程数学/作业/index.md', '登记。')
         self.append('课程/工程数学/index.md', '登记。')
         self.append('课程/index.md', '登记。')
         self.stage()
-        result = self.git('commit', '-m', '侧栏用简写', success=False)
+        result = self.git('commit', '-m', '侧栏名不对', success=False)
         self.assertNotEqual(result.returncode, 0)
         msg = result.stdout.decode()
         self.assertIn('侧栏标签必须与页面 H1 标题逐字一致', msg)
-        self.assertIn(title, msg)
+        self.assertIn(short, msg)
 
-        # ② label 改成 H1 原文 → 放行
-        self.nav_site(targets, targets, labels={hw: title})
+        # ② label 与 H1 一致 → 放行
+        self.nav_site(targets, targets, labels={hw: short})
         self.stage()
         self.git('commit', '-m', '侧栏标签与标题对齐')
 
-        # ③ 反过来：页面标题改了、侧栏没跟 → 也拒绝（双向绑定，不是单向）
-        self.write(hw, '# 2026-9-17作业：改过的标题\n\n正文。\n')
+        # ③ 页面标题改了、侧栏没跟 → 也拒绝（双向绑定）
+        self.write(hw, '# 9-17 改过的作业名\n\n正文。\n')
         self.stage()
         result = self.git('commit', '-m', '改标题未同步侧栏', success=False)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('2026-9-17作业：改过的标题', result.stdout.decode())
+        self.assertIn('9-17 改过的作业名', result.stdout.decode())
+
+        # ④ 两边同步但**过长** → 仍拒绝（宽度预算，防侧栏被省略号截断）
+        long = '9-17 作业一：二阶与三阶行列式的计算与书写规范'
+        self.write(hw, f'# {long}\n\n正文。\n')
+        self.nav_site(targets, targets, labels={hw: long})
+        self.stage()
+        result = self.git('commit', '-m', '名字一致但过长', success=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('宽度预算', result.stdout.decode())
 
     def target_list(self):
         """与 setUp 仓库实况对齐的 TARGET_FILES（含 4 个非课程页）。"""

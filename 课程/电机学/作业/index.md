@@ -1,9 +1,9 @@
 ---
 id: okf.course.electric_machinery.homework.index
-name: 电机学作业索引
+name: 作业
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-15"
+last_updated: "2026-10-28"
 stewards:
   - team: 电机学课程学习记录
 course: 电机学
@@ -12,7 +12,7 @@ sources:
   - 学习通任务「1概述（客观题-课前预习测试）」25 题（题面截图登记在 原始资料/index.md）
 ---
 
-# 电机学作业
+# 作业
 
 [返回课程索引](../index.md) · [作业模板](../../../模板/作业.md)
 

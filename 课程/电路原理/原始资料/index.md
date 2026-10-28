@@ -1,9 +1,9 @@
 ---
 id: okf.course.circuit_theory.originals.index
-name: 电路原理原始资料索引
+name: 原始资料
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-15"
+last_updated: "2026-10-28"
 stewards:
   - team: 电路原理课程学习记录
 course: 电路原理
@@ -18,7 +18,7 @@ sources:
   - 20261014_09501115-原文.txt
 ---
 
-# 电路原理原始资料
+# 原始资料
 
 [返回课程索引](../index.md)
 
