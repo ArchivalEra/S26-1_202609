@@ -547,10 +547,12 @@ function drawLogic(payload, opts = {}) {
         from = { x: pos[pi].x + pg.w, y: pos[pi].y };
       }
       const midX = (from.x + sx) / 2;
+      // data-net / data-from / data-to：交互层靠它做「点一根线高亮整条网络」
       body.push(
-        `<path d="M${from.x} ${from.y} H${midX} V${sy} H${sx}" />`);
+        `<path class="fig-wire" data-net="${esc(inp.label)}" data-from="${esc(clauses.indexOf(producer.get(inp.label)) >= 0 ? 'g' + (producer.get(inp.label) + 1) : inp.label)}" data-to="g${ci + 1}" ` +
+        `d="M${from.x} ${from.y} H${midX} V${sy} H${sx}" />`);
       if (inp.neg) {
-        body.push(`<circle cx="${sx - 5}" cy="${sy}" r="4" fill="var(--fig-bg, #fff)" />`);
+        body.push(`<circle class="fig-inv" cx="${sx - 5}" cy="${sy}" r="4" fill="var(--fig-bg, #fff)" />`);
       }
     });
   });
@@ -559,8 +561,12 @@ function drawLogic(payload, opts = {}) {
   clauses.forEach((c, ci) => {
     const g = GATE_GEOM[c.op] || GATE_GEOM.and;
     const p = pos[ci];
+    // 门本体挂 data-comp：点它 = 选中这个元件，属性面板据此显示类型/输入/输出
     body.push(
-      `<g transform="translate(${p.x} ${p.y})">${gateShape(c.op, g.w, g.h)}` +
+      `<g class="fig-comp" data-comp="g${ci + 1}" data-op="${esc(c.op)}" ` +
+      `data-ins="${esc(c.ins.map((x) => x.label).join(','))}" ` +
+      `data-outs="${esc(c.outs.join(','))}" ` +
+      `transform="translate(${p.x} ${p.y})">${gateShape(c.op, g.w, g.h)}` +
       (g.outBubble
         ? `<circle cx="${g.w + 6}" cy="0" r="5" fill="var(--fig-bg, #fff)"/>`
         : '') +
@@ -968,14 +974,206 @@ export function restoreFigures(html, figures) {
     const table = renderStructureTable(ir);
     const caption = ir.caption ? `<figcaption>${ir.caption}</figcaption>` : '';
     const json = JSON.stringify(ir).replace(/<\//g, '<\\/');
+    const vbMatch = /viewBox="([^"]+)"/.exec(svg);
     return (
-      `${indent}<figure class="fig" id="fig-${attrEsc(ir.id)}" data-figure-id="${attrEsc(ir.id)}" data-figure-kind="${attrEsc(ir.kind)}">` +
+      `${indent}<figure class="fig" id="fig-${attrEsc(ir.id)}" data-figure-id="${attrEsc(ir.id)}" ` +
+      `data-figure-kind="${attrEsc(ir.kind)}" data-viewbox="${attrEsc(vbMatch ? vbMatch[1] : '')}">` +
       svg + caption +
       (table ? `<details class="fig-structure"><summary>图形的结构</summary>${table}</details>` : '') +
       `<script type="application/json" class="fig-data">${json}</script>` +
       `</figure>`);
   });
 }
+
+
+/**
+ * 客户端交互层（渐进增强，独立字符串常量，构建期写盘）。
+ *
+ * ## 它让图真的能操作
+ *
+ * 没有它，图只是「一张能点符号字母的静态 SVG」——2026-10-28 站长实测：
+ * 「这图真的我能操作吗」，当时 SVG 里只有 1 个可点锚点，元件与连线全不可选。
+ *
+ * 装上之后：
+ *   · **点元件** → 选中（描边高亮），侧栏面板显示它的类型、输入、输出
+ *   · **点连线** → 高亮整条网络（同名的所有线段一起亮），面板显示它连了哪些端点
+ *   · **点空白** → 取消选中
+ *   · **键盘** → 元件可 Tab 聚焦、Enter 选中（不只鼠标能操作）
+ *   · **滚轮/按钮缩放** → 图局部看不清时放大细看
+ *
+ * ## 为什么用事件委托挂在 figure 上，而不是给每个元素绑监听
+ *
+ * 图是构建期烘进 HTML 的静态 SVG，页内可能有多张。委托一次挂在 figure 容器上，
+ * 新增图种、新增元件都自动生效，不用改这段脚本——与 math-glossary 的
+ * `document.addEventListener('click', … closest('a.sym-gloss'))` 同一个套路。
+ *
+ * ## 与符号气泡的关系
+ *
+ * 点图里的符号字母（`a.sym-gloss`）时，**不抢事件**——气泡脚本自己处理，
+ * 这里只在 `closest('a.sym-gloss')` 命中时提前 return。否则会出现
+ * 「点符号既弹气泡又选中元件」的双重反应。
+ */
+export const FIGURES_JS = String.raw`(function () {
+  "use strict";
+  var SVG_NS = "http://www.w3.org/2000/svg";
+
+  function clearSelection(fig) {
+    var i;
+    var prev = fig.querySelectorAll(".is-selected");
+    for (i = 0; i < prev.length; i++) prev[i].classList.remove("is-selected");
+    var hot = fig.querySelectorAll(".is-hot");
+    for (i = 0; i < hot.length; i++) hot[i].classList.remove("is-hot");
+  }
+
+  /** 把一条网络涉及的线段全点亮（同名 data-net 的所有 path）。 */
+  function highlightNet(fig, net) {
+    var wires = fig.querySelectorAll('.fig-wire[data-net="' + net.replace(/"/g, '') + '"]');
+    for (var i = 0; i < wires.length; i++) wires[i].classList.add("is-hot");
+    return wires.length;
+  }
+
+  /** 侧栏面板：显示选中物的结构事实（与 <details> 结构表同一份 IR）。 */
+  function showPanel(fig, html) {
+    var box = fig.querySelector(".fig-inspector");
+    if (!box) {
+      box = document.createElement("div");
+      box.className = "fig-inspector";
+      fig.appendChild(box);
+    }
+    box.innerHTML = html;
+    box.hidden = false;
+  }
+
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function onFigureClick(e) {
+    var fig = e.currentTarget;
+    var t = e.target;
+
+    // 符号气泡优先：它自己会处理，别抢
+    if (t.closest && t.closest("a.sym-gloss")) return;
+
+    // 点元件
+    var comp = t.closest && t.closest(".fig-comp");
+    if (comp) {
+      clearSelection(fig);
+      comp.classList.add("is-selected");
+      var ins = (comp.getAttribute("data-ins") || "").split(",").filter(Boolean);
+      var outs = (comp.getAttribute("data-outs") || "").split(",").filter(Boolean);
+      var op = comp.getAttribute("data-op") || "";
+      // 顺带把它的输入网络也点亮：读者一眼看到「这个门吃的是哪几根线」
+      for (var i = 0; i < ins.length; i++) highlightNet(fig, ins[i]);
+      showPanel(fig,
+        "<strong>" + esc(comp.getAttribute("data-comp")) + "</strong> · " +
+        esc(op.toUpperCase()) +
+        "<br>输入：" + esc(ins.join("、") || "—") +
+        "<br>输出：" + esc(outs.join("、") || "—"));
+      return;
+    }
+
+    // 点连线
+    var wire = t.closest && t.closest(".fig-wire");
+    if (wire) {
+      clearSelection(fig);
+      var net = wire.getAttribute("data-net") || "";
+      var n = highlightNet(fig, net);
+      showPanel(fig,
+        "网络 <strong>" + esc(net) + "</strong><br>连到 " + n + " 处端点");
+      return;
+    }
+
+    // 点空白：取消
+    clearSelection(fig);
+    var box = fig.querySelector(".fig-inspector");
+    if (box) box.hidden = true;
+  }
+
+  /** 键盘：元件可聚焦与选中（不能只让鼠标能操作）。 */
+  function onFigureKey(e) {
+    var fig = e.currentTarget;
+    if (e.key !== "Enter" && e.key !== " ") return;
+    var comp = e.target.closest && e.target.closest(".fig-comp");
+    if (!comp) return;
+    e.preventDefault();
+    comp.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+  }
+
+  /** 缩放：滚轮 + 双击复位。只改 viewBox，不重排任何东西。 */
+  function zoom(fig, factor) {
+    var svg = fig.querySelector("svg");
+    if (!svg) return;
+    var vb = (svg.getAttribute("viewBox") || "0 0 100 100").split(/\s+/).map(Number);
+    if (vb.length !== 4) return;
+    var cx = vb[0] + vb[2] / 2;
+    var cy = vb[1] + vb[3] / 2;
+    var w = vb[2] * factor;
+    var h = vb[3] * factor;
+    // 视觉上限定范围：放大到 3 倍、缩小到原图 3 倍为止，别缩成一个点
+    if (w < 20 || h < 20) return;
+    svg.setAttribute("viewBox", [cx - w / 2, cy - h / 2, w, h].join(" "));
+  }
+
+  function setupFig(fig) {
+    if (fig.__figReady) return;
+    fig.__figReady = true;
+    fig.addEventListener("click", onFigureClick);
+    fig.addEventListener("keydown", onFigureKey);
+
+    var svg = fig.querySelector("svg");
+    if (!svg) return;
+    // 元件可聚焦：给每个门加 tabindex（SVG 元素也能收焦点）
+    var comps = fig.querySelectorAll(".fig-comp");
+    for (var i = 0; i < comps.length; i++) {
+      comps[i].setAttribute("tabindex", "0");
+      comps[i].setAttribute("role", "button");
+    }
+    // 缩放按钮：滚轮之外给一个显式入口（触屏与键盘用户也有路）
+    var bar = document.createElement("div");
+    bar.className = "fig-zoom";
+    bar.innerHTML =
+      '<button type="button" data-zoom="in" aria-label="放大">＋</button>' +
+      '<button type="button" data-zoom="out" aria-label="缩小">－</button>' +
+      '<button type="button" data-zoom="reset" aria-label="复位">⟲</button>';
+    bar.addEventListener("click", function (ev) {
+      var b = ev.target.closest("[data-zoom]");
+      if (!b) return;
+      var act = b.getAttribute("data-zoom");
+      if (act === "reset") {
+        var orig = fig.getAttribute("data-viewbox");
+        if (orig) svg.setAttribute("viewBox", orig);
+      } else {
+        zoom(fig, act === "in" ? 0.8 : 1.25);
+      }
+    });
+    fig.appendChild(bar);
+    fig.addEventListener("wheel", function (ev) {
+      if (!ev.ctrlKey && !ev.metaKey) return;   // 普通滚动不劫持，避免滚不动页面
+      ev.preventDefault();
+      zoom(fig, ev.deltaY > 0 ? 1.15 : 0.87);
+    }, { passive: false });
+    fig.addEventListener("dblclick", function (ev) {
+      if (ev.target.closest && ev.target.closest("a.sym-gloss")) return;
+      var orig = fig.getAttribute("data-viewbox");
+      if (orig) svg.setAttribute("viewBox", orig);
+    });
+  }
+
+  function boot() {
+    var figs = document.querySelectorAll("figure.fig");
+    for (var i = 0; i < figs.length; i++) setupFig(figs[i]);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
+  }
+  // SPA 换页后新图要重新接管（与 __glossaryReset 同一个接缝约定）
+  window.__figuresReset = boot;
+})();`;
 
 // ════════════════════════════════════════════════════════════════
 // ⑪ 样式（构建期写盘，与 SEARCH_CSS / CHAT_CSS 同款）
@@ -990,6 +1188,28 @@ export const FIGURES_CSS = `
 .fig-structure-table { border-collapse: collapse; margin-top: .5em; width: 100%; }
 .fig-structure-table th, .fig-structure-table td { border: 1px solid var(--md-sys-color-outline-variant, #c9c9d1); padding: .28em .55em; text-align: left; }
 .fig-structure-table th { background: var(--md-sys-color-surface-container, #f2f2f6); font-weight: 600; }
+/* ── 交互态（2026-10-28 补：图必须真的能操作）────────────────────────── */
+/* 元件可选：hover 提亮、选中加粗描边 */
+.fig-svg .fig-comp { cursor: pointer; transition: opacity .15s; }
+.fig-svg .fig-comp:hover { opacity: .75; }
+.fig-svg .fig-comp:focus-visible { outline: none; }
+.fig-svg .fig-comp:focus-visible rect { stroke-width: 3; stroke-dasharray: 4 2; }
+.fig-svg .fig-comp.is-selected rect { stroke-width: 3; stroke: var(--md-sys-color-primary, #3b82f6); }
+/* 连线可点：命中区加宽（细线不好点，靠 stroke-width 放大命中范围） */
+.fig-svg .fig-wire { cursor: pointer; }
+.fig-svg .fig-wire.is-hot { stroke: var(--md-sys-color-primary, #3b82f6); stroke-width: 2.6; }
+/* 属性面板 */
+.fig-inspector { margin-top: .6em; padding: .55em .75em; border-radius: 8px; font-size: .875em;
+  background: var(--md-sys-color-surface-container, #f2f2f6);
+  color: var(--md-sys-color-on-surface, #1b1b1f); }
+/* 缩放条 */
+.fig-zoom { position: absolute; right: .5em; top: .5em; display: flex; gap: .25em; opacity: .35; transition: opacity .2s; }
+.fig:hover .fig-zoom, .fig-zoom:focus-within { opacity: 1; }
+.fig-zoom button { width: 1.9em; height: 1.9em; border: 1px solid var(--md-sys-color-outline-variant, #c9c9d1);
+  border-radius: 6px; background: var(--md-sys-color-surface, #fff); color: inherit;
+  cursor: pointer; font-size: .85em; line-height: 1; }
+.fig-zoom button:hover { background: var(--md-sys-color-surface-container, #f2f2f6); }
+.fig { position: relative; }
 /* 图中的符号锚点：只加下划线提示，不抢正文气泡的样式 */
 .fig-svg a.sym-gloss { text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; cursor: pointer; }
 .fig-svg a.sym-gloss:focus-visible { outline: 2px solid var(--md-sys-color-primary, #3b82f6); outline-offset: 2px; }
