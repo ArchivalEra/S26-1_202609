@@ -10,6 +10,7 @@ import {
   labelToTspans,
   buildFigureIndex,
   FIGURES_CSS,
+  FIGURES_JS,
 } from './figures.mjs';
 
 // ── 图库解析 ─────────────────────────────────────────────────────────────
@@ -355,6 +356,51 @@ test('onHit：命中条目必须带 title/text，否则宿主烘焙时会把它�
   });
   assert.equal(got.title, 'T');
   assert.equal(got.text, 'X');
+});
+
+// ── 交互层：图必须真的能操作（2026-10-28 站长实测「这图我能操作吗」）─────
+
+test('交互层：SVG 里元件与连线都带可寻址属性', () => {
+  const lib = parseFigureLib('f | and B C -> Y');
+  const r = renderFigures(':::figure f | 图', { lib });
+  const html = restoreFigures(r.source, r.figures);
+
+  // 元件可选中：data-comp / data-op / data-ins / data-outs
+  assert.match(html, /class="fig-comp" data-comp="g1" data-op="and"/);
+  assert.match(html, /data-ins="B,C"/);
+  assert.match(html, /data-outs="Y"/);
+
+  // 连线可点：class=fig-wire + data-net
+  assert.match(html, /class="fig-wire" data-net="B"/);
+  assert.match(html, /class="fig-wire" data-net="C"/);
+
+  // figure 记下原始 viewBox，供「复位」用
+  assert.match(html, /data-viewbox="[^"]*"/);
+});
+
+test('交互层：客户端脚本含四个必需能力（选中 / 高亮 / 面板 / 缩放）', () => {
+  // 单元测试跑不了浏览器，但这些字符串是交互能力的可执行契约：
+  // 谁把它们删了，浏览器里就静默失效——而静默失效正是这个仓库反复踩的坑。
+  // 「点元件」在两处出现：鼠标点击与键盘 Enter。用计数而非 match——
+  // 只 match 的话删掉其中一处仍命中另一处而假绿（第一次变异就这么漏掉）。
+  const compHits = (FIGURES_JS.match(/closest\("\.fig-comp"\)/g) || []).length;
+  assert.ok(compHits >= 2, `缺「点元件」处理（应 ≥2 次：点击 + 键盘，实得 ${compHits}）`);
+  assert.match(FIGURES_JS, /closest\("\.fig-wire"\)/, '缺「点连线」处理');
+  assert.match(FIGURES_JS, /fig-inspector/, '缺属性面板');
+  assert.match(FIGURES_JS, /function zoom/, '缺缩放');
+  assert.match(FIGURES_JS, /__figuresReset/, '缺 SPA 换页重挂');
+  // 符号气泡优先：点符号时不能抢事件
+  assert.match(FIGURES_JS, /closest\("a\.sym-gloss"\)\s*\)\s*return/, '符号点击未被让出');
+  // 键盘可达
+  assert.match(FIGURES_JS, /keydown/, '缺键盘处理');
+  assert.match(FIGURES_JS, /setAttribute\("tabindex"/, '元件不可 Tab 聚焦');
+});
+
+test('交互层：CSS 含选中/高亮/面板/缩放条四类样式', () => {
+  assert.match(FIGURES_CSS, /\.fig-comp\.is-selected/);
+  assert.match(FIGURES_CSS, /\.fig-wire\.is-hot/);
+  assert.match(FIGURES_CSS, /\.fig-inspector/);
+  assert.match(FIGURES_CSS, /\.fig-zoom/);
 });
 
 // ── 副作用与纯度 ─────────────────────────────────────────────────────────

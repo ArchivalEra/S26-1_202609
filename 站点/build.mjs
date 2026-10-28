@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { marked, yaml } from './vendor.mjs';
 import katex from './assets/katex/katex.mjs';
 import { renderCollapse } from './plugins/collapse.mjs';
-import { parseFigureLib, renderFigures, restoreFigures, buildFigureIndex, FIGURES_CSS } from './plugins/figures.mjs';
+import { parseFigureLib, renderFigures, restoreFigures, buildFigureIndex, FIGURES_CSS, FIGURES_JS } from './plugins/figures.mjs';
 import { DISCLOSURE_ANCHOR_JS } from './plugins/disclosure-anchor.mjs';
 import { parseGlossaryDict, parseGlossaryMatch, renderGlossary, glossifyTex, applySymbolExclusions, peelNotationFences, GLOSSARY_JS } from './plugins/math-glossary.mjs';
 import { SYMBOL_PACKS, COURSE_ENV, BUILD_PHASES } from './符号环境.mjs';
@@ -133,6 +133,9 @@ fs.writeFileSync(disclosureAnchorDist, DISCLOSURE_ANCHOR_JS);
 const figuresCssDist = path.join(DIST_DIR, 'assets', 'plugins', 'figures.css');
 fs.mkdirSync(path.dirname(figuresCssDist), { recursive: true });
 fs.writeFileSync(figuresCssDist, FIGURES_CSS);
+// 交互层（选中元件 / 高亮网络 / 属性面板 / 缩放）。可拆卸：删本段与模板里的 <script>。
+const figuresJsDist = path.join(DIST_DIR, 'assets', 'plugins', 'figures.js');
+fs.writeFileSync(figuresJsDist, FIGURES_JS);
 
 // 符号包：构建期环境变量包络的「定义集」。每包 = 一页 :::glossary-dict / :::glossary-match
 // 围栏（内容侧维护），包注册表与课程环境表见 站点/符号环境.mjs。三层显式锚定
@@ -1741,6 +1744,7 @@ for (const relPath of TARGET_FILES) {
 
   <script src="${rootRel}${assetUrl('assets/theme/shirone-reader.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/disclosure-anchor.js')}" defer></script>
+  <script src="${rootRel}${assetUrl('assets/plugins/figures.js')}" defer></script>
   <script type="application/json" id="sym-glossary-json">${JSON.stringify(glossaryJsonPayload).replace(/<\//g, '<\\/')}</script>
   <!-- 图元索引烘焙（2026-10-28）：本页所有图的 IR 汇总。
        三个消费者读同一份——页面交互、site_figure 工具、构建期提到的静态结构表。
