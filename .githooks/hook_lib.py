@@ -368,6 +368,7 @@ def validate(files):
                 raise ValueError(f'课程入口缺少分类链接：{index}')
     check_build_targets(files)
     check_nav_coverage(files)
+    check_nav_titles(files)
     check_readme_documents_ui(files)
     check_exam_prep(files)
 
@@ -700,9 +701,10 @@ def _balanced_array(text, marker):
 
 
 def _nav_paths(script_text):
-    """在 node 里求值 NAV_STRUCTURE，收集所有节点的 path（去重前）。
+    """在 node 里求值 NAV_STRUCTURE，收集所有节点的 `[path, label]`（去重前）。
 
     用子进程求值而非正则：结构是嵌套 JS，交给 JS 引擎解析才可靠。
+    返回 `[[path, label], …]`；label 缺失时给空串（对齐检查会跳过这种节点）。
     """
     literal = _balanced_array(script_text, 'const NAV_STRUCTURE =')
     if literal is None:
@@ -712,7 +714,8 @@ def _nav_paths(script_text):
         'const out = [];\n'
         '(function walk(nodes) {\n'
         '  for (const node of nodes || []) {\n'
-        "    if (typeof node.path === 'string') out.push(node.path);\n"
+        "    if (typeof node.path === 'string') out.push([node.path, "
+        "typeof node.label === 'string' ? node.label : '']);\n"
         '    if (Array.isArray(node.children)) walk(node.children);\n'
         '  }\n'
         '})(NAV);\n'
@@ -727,6 +730,69 @@ def _nav_paths(script_text):
         raise ValueError(f'求值 {BUILD_SCRIPT} 的 NAV_STRUCTURE 失败：'
                          + result.stderr.decode().strip())
     return json.loads(result.stdout.decode())
+
+
+
+def _h1_title(text):
+    """页面 H1 标题：首个 `# ` 行的文本；没有 H1 时返回 None。"""
+    for line in text.splitlines():
+        if line.startswith('# '):
+            return line[2:].strip()
+    return None
+
+
+# 侧栏标签与页面标题的比对口径：**逐字相等**（只折叠连续空白与首尾空白——渲染时
+# 空白本就会被 HTML 折叠，把「两个空格」判成不同没有意义）。
+# 为什么不许「侧栏写简写」：同一份作业两个名字，读者在侧栏认的是一套、点进去看的是
+# 另一套，找东西时对不上号。窄栏显示不下的问题用 CSS 省略号 + `title` 悬停解决，
+# **不用改名字的方式解决**——名字是内容事实，栏宽是显示问题，不能拿内容迁就布局。
+
+
+def _norm_title(text):
+    """标题比较用的规范化：折叠连续空白、去首尾。"""
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+def check_nav_titles(files):
+    """作业页的侧栏标签必须与页面 H1 标题**逐字一致**。
+
+    为什么只查作业：作业页的标题取自**平台页眉逐字**（见 skill 作业线第 1 步），
+    它是内容侧唯一权威；侧栏标签由人工另写一份，两边从不校验 ⇒ 实测 23 个作业页里
+    21 个不一致，而且差的是实质内容（侧栏「2026-9-23作业（习题 1.1、1.3、1.5）」
+    vs 页面「2026-9-23作业：第一章简答题（习题 1.1、1.3、1.5）」——侧栏把章节名丢了）。
+
+    其它页面（章节解析、笔记、索引）的侧栏标签**允许**是简写，不在此校验：
+    它们的标题是整理者自拟的长描述，简写不丢关键信息。
+    """
+    if BUILD_SCRIPT not in files:
+        return
+    nav = _nav_paths(files[BUILD_SCRIPT].decode())
+    if nav is None:
+        return
+    problems = []
+    for path, label in nav:
+        # 只查作业页正文（不含作业索引页）
+        parts = PurePosixPath(path).parts
+        if len(parts) < 4 or parts[0] != '课程' or parts[2] != '作业':
+            continue
+        if parts[-1] == 'index.md' or not path.endswith('.md'):
+            continue
+        if not label or path not in files:
+            continue
+        title = _h1_title(files[path].decode())
+        if title is None:
+            problems.append(f'{path}：页面没有 H1 标题，侧栏标签「{label}」无从对齐')
+            continue
+        want = _norm_title(title)
+        if _norm_title(label) == want:
+            continue
+        problems.append(f'侧栏写「{label}」，页面是「{want}」 ⇒ label 应改为 '
+                        f'{json.dumps(want, ensure_ascii=False)}（{path}）')
+    if problems:
+        raise ValueError(
+            '作业页的侧栏标签必须与页面 H1 标题逐字一致——同一份作业不能有两个名字'
+            '（窄栏显示不下由 CSS 省略号与悬停提示处理，不靠改名字）：'
+            + '；'.join(problems))
 
 
 def check_nav_coverage(files):
@@ -746,7 +812,7 @@ def check_nav_coverage(files):
         # 找不到 NAV_STRUCTURE 定义（脚本被替换/改名）时跳过本校验：yaml 结构本就可能变，
         # 真正该拦的是「清单里的页面没有侧栏入口」，别在定义缺失时误伤。
         return
-    covered = set(nav) | set(NAV_COVERAGE_EXEMPT)
+    covered = {path for path, _ in nav} | set(NAV_COVERAGE_EXEMPT)
     missing = sorted(set(targets) - covered)
     if missing:
         raise ValueError(
