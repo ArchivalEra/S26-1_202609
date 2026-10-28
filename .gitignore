@@ -340,6 +340,9 @@
 # 本地磁盘有文件所以本地能过，CI 上 checkout 拿不到文件）
 !/站点/plugins/collapse.mjs
 !/站点/plugins/collapse.test.mjs
+!/站点/plugins/figures.mjs
+!/站点/plugins/figures.test.mjs
+!/站点/图库/电子技术.figures.txt
 # 折叠面板深链接的客户端增强（独立可拆卸模块，同上：漏白名单 CI 必挂）
 !/站点/plugins/disclosure-anchor.mjs
 !/站点/plugins/disclosure-anchor.test.mjs
