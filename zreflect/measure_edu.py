@@ -131,7 +131,8 @@ TABLE = [
      # 见证——来源是「测试文件里声明了多少项」，命令活着、数量对了才算数。
      {"replay": False, "witness": HOOKTESTS_WITNESS,
       # 2026-10-21：25 → 28（阶段一加了 3 项导航覆盖率测试）
-      "witness_expect": "28"}),
+      # 2026-10-28：28 → 29（父页面级联校验：补 test_parent_chain_must_be_updated_level_by_level）
+      "witness_expect": "29"}),
     ("plugin_tests", PLUGIN_TESTS_CMD, "站点/plugins/",
      "站点插件测试项数（fail+cancelled>0 ⇒ 复跑非零退出）"),
     # handoff 体量：见 HANDOFF_LINES_CMD 处的注释。「读不完」本身就是要量的事实。

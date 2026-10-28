@@ -37,21 +37,21 @@ sh gates-selftest.sh                             # 每道闸门先证明自己�
 
 | 键 | 值 | 测于 | 复跑命令 |
 |---|---|---|---|
-| `courses` | **6** | 2026-10-28T15:56:05+0800 | `ls -d 课程/*/ | wc -l` |
-| `figures` | **174** | 2026-10-28T15:56:05+0800 | `ls 课程/电路原理/作业/figures/ | wc -l` |
-| `glossary_entries` | **219** | 2026-10-28T15:56:05+0800 | `awk '/^:::glossary-dict/{f=1;next} /^:::/{f=0} f&&/^sym-/{n++} END{print n}' 站点/符号包/通用.md 课程/*/教材解析/0.0-符号入门.md` |
-| `handoff_lines` | **1065** | 2026-10-28T15:56:18+0800 | `wc -l < .zcode/handoff.md` |
-| `handoff_sections` | **18** | 2026-10-28T15:56:18+0800 | `grep -c '^### 0\.' .zcode/handoff.md` |
-| `homework` | **23** | 2026-10-28T15:56:05+0800 | `find 课程 -path '*/作业/*.md' ! -name 'index.md' | wc -l` |
-| `hooktests` | **28** | 2026-10-28T15:56:18+0800 | `python3 .githooks/test-update-readme.py 2>&1 | grep -oE 'Ran [0-9]+ tests' | awk '{print $2}'` |
-| `lab_tests` | **74** | 2026-10-28T15:56:06+0800 | `cd .zcode/学习通API && node --test chaoxing.test.mjs 判据.test.mjs bridge.test.mjs 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2=="tests"||$2=="fail"||$2=="cancelled") {v[$2]=$3} END {t=v["tests"]; f=v["fail"]+0; c=v["cancelled"]+0; if (t=="") {print "lab_tests：没读到 tests 汇总行" > "/dev/stderr"; exit 1} print t; if (f+c>0) {print "lab_tests：fail=" f " cancelled=" c " ⇒ 红测试，非零退出" > "/dev/stderr"; exit 1}}'` |
-| `md_files` | **154** | 2026-10-28T15:56:06+0800 | `git ls-files '*.md' | wc -l` |
-| `notes` | **25** | 2026-10-28T15:56:05+0800 | `find 课程 -path '*/课堂笔记/*.md' ! -name 'index.md' | wc -l` |
-| `plugin_tests` | **351** | 2026-10-28T15:56:18+0800 | `cd 站点 && node --test plugins/ 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2=="tests"||$2=="fail"||$2=="cancelled") {v[$2]=$3} END {t=v["tests"]; f=v["fail"]+0; c=v["cancelled"]+0; if (t=="") {print "plugin_tests：没读到 tests 汇总行（node --test 没跑完？）" > "/dev/stderr"; exit 1} print t; if (f+c>0) {print "plugin_tests：fail=" f " cancelled=" c " ⇒ 红测试，非零退出（issue #18 决策 #7）" > "/dev/stderr"; exit 1}}'` |
-| `problems` | **278** | 2026-10-28T15:56:05+0800 | `python3 -c "import re,glob;print(sum(len(re.findall(r'[0-9]+',s)) for f in glob.glob('课程/电路原理/作业/2026-09-28-习题册第*.md') for ln in open(f,encoding='utf-8') if ln.startswith('### ') for s in re.findall(r'(?:选|填|计|判|画图)\s*([0-9][0-9、,\s]*)', re.sub(r'（[^）]*）','',ln[4:]))))"` |
-| `sitepages` | **126** | 2026-10-28T15:56:06+0800 | `sed -n '/^export const TARGET_FILES = \[/,/^\];/p' 站点/页面清单.mjs | grep -c "^  '"` |
-| `symbol_packs` | **5** | 2026-10-28T15:56:05+0800 | `grep -cE "^  '[^']+': '[^']+.md',$" 站点/符号环境.mjs` |
-| `textbook` | **27** | 2026-10-28T15:56:05+0800 | `find 课程 -path '*/教材解析/*.md' ! -name 'index.md' | wc -l` |
+| `courses` | **6** | 2026-10-28T16:28:22+0800 | `ls -d 课程/*/ | wc -l` |
+| `figures` | **174** | 2026-10-28T16:28:22+0800 | `ls 课程/电路原理/作业/figures/ | wc -l` |
+| `glossary_entries` | **219** | 2026-10-28T16:28:22+0800 | `awk '/^:::glossary-dict/{f=1;next} /^:::/{f=0} f&&/^sym-/{n++} END{print n}' 站点/符号包/通用.md 课程/*/教材解析/0.0-符号入门.md` |
+| `handoff_lines` | **1095** | 2026-10-28T16:28:35+0800 | `wc -l < .zcode/handoff.md` |
+| `handoff_sections` | **19** | 2026-10-28T16:28:35+0800 | `grep -c '^### 0\.' .zcode/handoff.md` |
+| `homework` | **23** | 2026-10-28T16:28:22+0800 | `find 课程 -path '*/作业/*.md' ! -name 'index.md' | wc -l` |
+| `hooktests` | **29** | 2026-10-28T16:28:34+0800 | `python3 .githooks/test-update-readme.py 2>&1 | grep -oE 'Ran [0-9]+ tests' | awk '{print $2}'` |
+| `lab_tests` | **74** | 2026-10-28T16:28:23+0800 | `cd .zcode/学习通API && node --test chaoxing.test.mjs 判据.test.mjs bridge.test.mjs 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2=="tests"||$2=="fail"||$2=="cancelled") {v[$2]=$3} END {t=v["tests"]; f=v["fail"]+0; c=v["cancelled"]+0; if (t=="") {print "lab_tests：没读到 tests 汇总行" > "/dev/stderr"; exit 1} print t; if (f+c>0) {print "lab_tests：fail=" f " cancelled=" c " ⇒ 红测试，非零退出" > "/dev/stderr"; exit 1}}'` |
+| `md_files` | **154** | 2026-10-28T16:28:23+0800 | `git ls-files '*.md' | wc -l` |
+| `notes` | **25** | 2026-10-28T16:28:22+0800 | `find 课程 -path '*/课堂笔记/*.md' ! -name 'index.md' | wc -l` |
+| `plugin_tests` | **351** | 2026-10-28T16:28:35+0800 | `cd 站点 && node --test plugins/ 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2=="tests"||$2=="fail"||$2=="cancelled") {v[$2]=$3} END {t=v["tests"]; f=v["fail"]+0; c=v["cancelled"]+0; if (t=="") {print "plugin_tests：没读到 tests 汇总行（node --test 没跑完？）" > "/dev/stderr"; exit 1} print t; if (f+c>0) {print "plugin_tests：fail=" f " cancelled=" c " ⇒ 红测试，非零退出（issue #18 决策 #7）" > "/dev/stderr"; exit 1}}'` |
+| `problems` | **278** | 2026-10-28T16:28:22+0800 | `python3 -c "import re,glob;print(sum(len(re.findall(r'[0-9]+',s)) for f in glob.glob('课程/电路原理/作业/2026-09-28-习题册第*.md') for ln in open(f,encoding='utf-8') if ln.startswith('### ') for s in re.findall(r'(?:选|填|计|判|画图)\s*([0-9][0-9、,\s]*)', re.sub(r'（[^）]*）','',ln[4:]))))"` |
+| `sitepages` | **126** | 2026-10-28T16:28:23+0800 | `sed -n '/^export const TARGET_FILES = \[/,/^\];/p' 站点/页面清单.mjs | grep -c "^  '"` |
+| `symbol_packs` | **5** | 2026-10-28T16:28:22+0800 | `grep -cE "^  '[^']+': '[^']+.md',$" 站点/符号环境.mjs` |
+| `textbook` | **27** | 2026-10-28T16:28:22+0800 | `find 课程 -path '*/教材解析/*.md' ! -name 'index.md' | wc -l` |
 
 15 条事实。
 <!-- /AUTO:FACTS -->
