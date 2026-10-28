@@ -2,6 +2,7 @@
 """Exercise commits and pushes exclusively in temporary local repositories."""
 from pathlib import Path
 import datetime
+import json
 import os
 import shutil
 import subprocess
@@ -570,11 +571,13 @@ class ReadmeHookTest(unittest.TestCase):
     # ── 侧栏覆盖（2026-10-21 新增）───────────────────────────────────────────────
     # TARGET_FILES 决定「哪些 md 渲染成页面」，NAV_STRUCTURE 决定「侧栏怎么摆」，
     # 两者原本无一致性校验——漏加导航永远不报错，页面「存在但不可达」。
-    def nav_site(self, targets, nav):
+    def nav_site(self, targets, nav, labels=None):
         """写一份 `页面清单.mjs` + `build.mjs`（NAV_STRUCTURE），返回 build.mjs 路径。
 
         NAV_STRUCTURE 写成嵌套结构并带注释，顺带验证解析器不是正则硬解。
+        `labels` 可为个别 path 指定自定义 label（默认用 path 本身作文本）。
         """
+        labels = labels or {}
         self.write('站点/页面清单.mjs',
                    'export const TARGET_FILES = [\n'
                    + ''.join(f"  '{p}',\n" for p in targets)
@@ -588,7 +591,8 @@ class ReadmeHookTest(unittest.TestCase):
                  '    path: "课程/index.md",\n'
                  '    children: [\n'
                  + ''.join(f'      // 内联注释：{p}\n'
-                           f'      {{ label: "{p}", path: "{p}" }},\n' for p in children)
+                           f'      {{ label: {json.dumps(labels.get(p, p), ensure_ascii=False)}, '
+                           f'path: "{p}" }},\n' for p in children)
                  + '    ]\n'
                  '  }\n'
                  '];\n')
@@ -638,6 +642,41 @@ class ReadmeHookTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(victim, result.stdout.decode())
         self.assertNotIn('站点/符号包/通用.md', result.stdout.decode())
+
+    # ── 侧栏标题 = 页面 H1（2026-10-28 新增）────────────────────────────────────
+    def test_nav_label_must_match_page_title(self):
+        """作业页的侧栏 label 必须与页面 H1 逐字一致（同一份作业不能有两个名字）。"""
+        hw = '课程/工程数学/作业/2026-09-17-作业1.md'
+        title = '2026-9-17作业：测试作业页'
+        self.write(hw, f'# {title}\n\n正文。\n')
+        self.write('课程/工程数学/作业/index.md',
+                   '[作业1](2026-09-17-作业1.md)\n')
+
+        targets = self.target_list() + [hw]
+        # ① 侧栏写简写（页面有「：测试作业页」，侧栏没有）→ 拒绝
+        self.nav_site(targets, targets, labels={hw: '作业1'})
+        self.stage()
+        self.append('课程/工程数学/作业/index.md', '登记。')
+        self.append('课程/工程数学/index.md', '登记。')
+        self.append('课程/index.md', '登记。')
+        self.stage()
+        result = self.git('commit', '-m', '侧栏用简写', success=False)
+        self.assertNotEqual(result.returncode, 0)
+        msg = result.stdout.decode()
+        self.assertIn('侧栏标签必须与页面 H1 标题逐字一致', msg)
+        self.assertIn(title, msg)
+
+        # ② label 改成 H1 原文 → 放行
+        self.nav_site(targets, targets, labels={hw: title})
+        self.stage()
+        self.git('commit', '-m', '侧栏标签与标题对齐')
+
+        # ③ 反过来：页面标题改了、侧栏没跟 → 也拒绝（双向绑定，不是单向）
+        self.write(hw, '# 2026-9-17作业：改过的标题\n\n正文。\n')
+        self.stage()
+        result = self.git('commit', '-m', '改标题未同步侧栏', success=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('2026-9-17作业：改过的标题', result.stdout.decode())
 
     def target_list(self):
         """与 setUp 仓库实况对齐的 TARGET_FILES（含 4 个非课程页）。"""
