@@ -153,21 +153,31 @@ const crumbDataPaths = (html, navClass) => {
   return [...m[1].matchAll(/<a [^>]*data-path="([^"]+)"/g)].map((x) => x[1]);
 };
 
-test('票 A：深层页两份面包屑的 <a> 全带 data-path，值为仓库相对路径', () => {
+test('票 A：深层页面包屑的目录 crumb 用**目录形式** data-path，首页走根', () => {
   const rel = '课程总览/工程数学/教材解析/符号入门.html';
   const html = needDist(rel);
   for (const navClass of ['top-bar-breadcrumbs', 'm3-breadcrumb']) {
     const dps = crumbDataPaths(html, navClass);
-    // 首页/课程总览/工程数学/教材解析 = 4 条真链接（当前页 crumb 是 span）
-    assert.equal(dps.length, 4, `${navClass}: 4 条链接都该带 data-path`);
+    // 2026-10-29 定案：面包屑写**事实上指向的网址**。首页 = `/`（README 即站点根），
+    // 不带 data-path、由 site-root 的无 data-path 分支处理；其余三层是目录形式。
+    // 所以带 data-path 的链接是 3 条（课程总览 / 工程数学 / 教材解析），不是 4 条。
+    assert.equal(dps.length, 3, `${navClass}: 3 条目录 crumb 带 data-path`);
     for (const dp of dps) {
       assert.ok(dp.length > 0, `${navClass}: data-path 非空`);
       assert.ok(!dp.startsWith('../'), `${navClass}: data-path 不得以 ../ 开头（${dp}）`);
       assert.ok(!dp.startsWith('/'), `${navClass}: data-path 不得以 / 开头（${dp}）`);
+      assert.ok(dp.endsWith('/'), `${navClass}: 目录形式必须以 / 结尾（${dp}）`);
     }
   }
-  // 具体锚点：SPA 丢页的那条「课程总览」链接
-  assert.ok(html.includes('data-path="课程总览/index.html"'), '课程总览 crumb 带裸路径 data-path');
+  // 具体锚点：目录形式，不是 index.html 文件名（断言限定在面包屑 nav 内——
+  // 侧栏链接是另一套结构，不在本条判据范围内）
+  for (const navClass of ['top-bar-breadcrumbs', 'm3-breadcrumb']) {
+    const m = html.match(new RegExp(`<nav class="${navClass}"[^>]*>([\\s\\S]*?)</nav>`));
+    assert.ok(m, `页面缺 .${navClass}`);
+    assert.ok(m[1].includes('data-path="课程总览/"'), `${navClass}: 课程总览 crumb 用目录形式`);
+    assert.ok(!m[1].includes('index.html'),
+      `${navClass}: 面包屑不得出现 index.html（读者看到的网址最后一段是层名，不是 index）`);
+  }
 });
 
 test('票 A：浅层页两份面包屑的 <a> 全带 data-path', () => {
@@ -175,10 +185,9 @@ test('票 A：浅层页两份面包屑的 <a> 全带 data-path', () => {
   const html = needDist(rel);
   for (const navClass of ['top-bar-breadcrumbs', 'm3-breadcrumb']) {
     const dps = crumbDataPaths(html, navClass);
-    // 2026-10-29 面包屑改为**逐段照网址出层**：本页是 `课程总览/工程数学/index.html`，
-    // 层级为「首页 / 课程总览 / 工程数学」——末项是当前页，渲染成 <span> 不是链接。
-    // 所以可点链接只有 2 条（首页、课程总览）。旧期望 3 是「逐课硬编码」时代的残留。
-    assert.equal(dps.length, 2, `${navClass}: 2 条链接都该带 data-path`);
+    // 本页是 `课程总览/工程数学/index.html`，层级「首页 / 课程总览 / 工程数学」；
+    // 末项是当前页（<span>）。首页走 `/` 不带 data-path，所以只有 1 条目录 crumb 带它。
+    assert.equal(dps.length, 1, `${navClass}: 只有「课程总览」这一层带 data-path`);
     for (const dp of dps) {
       assert.ok(dp.length > 0 && !dp.startsWith('../') && !dp.startsWith('/'),
         `${navClass}: data-path 形态（${dp}）`);
@@ -208,8 +217,10 @@ test('票 A：href:# 的章节 crumb 与当前页 crumb 不渲染成链接、不
   assert.ok(!html.includes('data-path="#"'), 'href:# 的 crumb 不得带 data-path');
   const m = html.match(/<nav class="m3-breadcrumb"[^>]*>([\s\S]*?)<\/nav>/);
   assert.ok(m, '页面缺 .m3-breadcrumb');
-  // 非最后一条也不是链接的（章节 crumb）在这个构建分支里其实并入 current-crumb 逻辑——
-  // 判据收敛为：面包屑 nav 里所有 <a> 都带 data-path，无一例外
-  const anchorsNoDp = [...m[1].matchAll(/<a (?![^>]*data-path=)[^>]*>/g)];
-  assert.equal(anchorsNoDp.length, 0, '面包屑里的 <a> 要么带 data-path 要么根本不该是 <a>');
+  // 判据收敛为：面包屑 nav 里**唯一的**无 data-path 链接是「首页」（href 指向站点根），
+  // 其余 <a> 都必须带 data-path。首页刻意不带——它的事实网址就是 `/`，给 data-path
+  // 反而要多绕一层反推。
+  const noDp = [...m[1].matchAll(/<a ((?![^>]*data-path=)[^>]*)>([^<]*)</g)];
+  assert.equal(noDp.length, 1, '只允许「首页」这一条无 data-path 的链接');
+  assert.match(noDp[0][2], /首页/, '无 data-path 的那条必须是首页');
 });

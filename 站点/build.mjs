@@ -27,7 +27,7 @@ import { SPA_ROUTER_JS } from './plugins/spa-router.mjs';
 // SW 根除（2026-10-23）：一次性反注册脚本——见下方写盘段注释
 import { SW_KILL_JS } from './plugins/sw-kill.mjs';
 import { DRAWER_SYNC_JS } from './plugins/drawer-sync.mjs';
-import { buildNavModel, isActive, isExpanded, NAV_STRUCTURE_JS } from './plugins/nav-structure.mjs';
+import { buildNavModel, isActive, isExpanded, htmlPathOf, NAV_STRUCTURE_JS } from './plugins/nav-structure.mjs';
 import { WEBMCP_SHIM_JS } from './plugins/webmcp-shim.mjs';
 import { WEBMCP_TOOLS_JS } from './plugins/webmcp-tools.mjs';
 import { TARGET_FILES } from './页面清单.mjs';
@@ -1512,12 +1512,31 @@ for (const relPath of TARGET_FILES) {
 
   const breadcrumbs = [];
   {
-    const htmlOf = (md) => md.replace(/\.md$/, '.html');
+    // 面包屑的 `href` / `dataPath` 写**事实上指向的网址**，不是产物文件名
+    // （2026-10-29 站长定案：「/ 事实意义上指向 README 页，/课程总览 也事实意义上指向
+    //  课程总览索引」）。所以：
+    //   · 首页 → `/`（README 就是站点根），不写 `index.html`；
+    //   · 目录层 → `/课程总览/`、`/课程总览/工程数学/` …（该层的 index 页）。
+    // 这样面包屑文字（`首页`、`课程总览`）与该层网址的最后一段逐字相同，
+    // 「三条逐字一致」才真的成立——写 `index.html` 时最后一段是 `index`，多一层噪声。
+    //
+    // 目录形式能被托管层直接服务（实测 `/`、`/课程总览/`、`/课程总览/工程数学/作业/`
+    // 全部 200；不带尾斜杠 301 到带斜杠）。所以写目录是安全的，且不依赖 index.html 的存在。
+    //
+    // `data-path` 仍是**仓库相对 html 路径**：site-root 与 SPA 用它拼 URL，
+    // 而它的解析基准是「当前 URL 的目录」，不是形态约定。这里给目录形式，
+    // 链接点下去落到的就是该层索引页。
+    const dirHrefOf = (mdPath) => String(mdPath)
+      .replace(/\/?index\.md$/, '')
+      .replace(/\.md$/, '.html');
     // 「首页」只在真正看首页时出现：站长定案「点大标题就能回首页」，
     // 所以面包屑首项不必一直挂一个「首页」——但保留它会多一层噪声。
     // 折中：首页自己不加（否则显示「首页 / 首页」），其余页加。
     if (relPath !== 'README.md') {
-      breadcrumbs.push({ label: '首页', href: `${rootRel}index.html`, dataPath: 'index.html' });
+      // 首页就是站点根 `/`（README 即根）。data-path 给空串没有意义
+      // （模板按 `b.dataPath ?` 判，空串等于不给，链接会落到 site-root 的
+      // 无 data-path 分支去反推，白绕一圈）——所以这里**显式**给 `./`。
+      breadcrumbs.push({ label: '首页', href: `${rootRel}` });
     }
     // 从 `课程总览/` 开始逐段：`课程` → `课程总览/<课>` → `课程总览/<课>/<分类>` …
     // i 从 0 起：第 0 段就是 `课程`，对应「课程总览」那一层。
@@ -1533,10 +1552,11 @@ for (const relPath of TARGET_FILES) {
       const dirName = segs[i];
       const dirMd = segs.slice(0, i + 1).join('/') + '/index.md';
       const hasIndex = navLabelByMdPath.has(dirMd);
+      const dirPath = segs.slice(0, i + 1).join('/') + '/';
       breadcrumbs.push({
         label: dirName,
-        href: hasIndex ? `${rootRel}${htmlOf(dirMd)}` : '#',
-        ...(hasIndex ? { dataPath: htmlOf(dirMd) } : {}),
+        href: hasIndex ? `${rootRel}${dirPath}` : '#',
+        ...(hasIndex ? { dataPath: dirPath } : {}),
       });
     }
   }
@@ -1744,7 +1764,7 @@ for (const relPath of TARGET_FILES) {
   <link rel="alternate icon" type="image/png" href="${rootRel}assets/favicon/favicon.png">
   <link rel="apple-touch-icon" href="${rootRel}assets/favicon/apple-touch-icon.png">
 </head>
-<body data-site-path="${relPath.replace(/\.md$/, '.html')}">
+<body data-site-path="${htmlPathOf(relPath)}">
   <div class="drawer-backdrop" id="drawer-backdrop"></div>
 
   <div class="site-shell">
