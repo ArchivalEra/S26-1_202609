@@ -197,3 +197,88 @@ describe("折叠块：必须避开的坑", () => {
     assert.ok(!String(out).includes("< b"));
   });
 });
+
+// ── 指令行只能放选项，标题必须是列表项（2026-10-29 实弹）────────────
+//
+// 我（主线程）写电机学两份作业时，把标题写在了指令行上：
+//     :::collapse 提示
+//     写出效率公式 …                        ← 这段被当成标题
+//     :::
+// 结果：整段正文成了折叠标题，里面的每一段又被 parseItems 切成了**兄弟面板**
+// —— 线上实测 6 题渲染出 28 个 details，页面满是裸 `**`、中文被挤成竖排。
+//
+// 正确形态（与工程数学作业1 的既有写法一致）：
+//     :::collapse accordion
+//     - 提示
+//       正文…
+//     - 完整解答
+//       正文…
+//     :::
+//
+// 这条闸门守两件事：① 指令行上的词只能是已知选项；② 全站 md 里不许再出现
+// 「指令行带非选项文字」的写法（那必然把正文吞成标题）。
+
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE2 = path.dirname(fileURLToPath(import.meta.url));
+const ROOT2 = path.join(HERE2, '../..');
+
+const KNOWN_OPTS = new Set(['accordion', 'expand']);
+
+describe('折叠块：指令行只许放选项（2026-10-29 实弹）', () => {
+function walkMd(dir, out = []) {
+  for (const name of readdirSync(dir)) {
+    if (name === 'dist' || name === 'node_modules' || name === '.git') continue;
+    const p = path.join(dir, name);
+    const st = statSync(p);
+    if (st.isDirectory()) walkMd(p, out);
+    else if (name.endsWith('.md')) out.push(p);
+  }
+  return out;
+}
+
+  it('指令行只许放选项（标题必须写成列表项，否则正文会被吞成标题）', () => {
+  const bad = [];
+  for (const file of walkMd(path.join(ROOT2, '课程总览'))) {
+    const text = readFileSync(file, 'utf8');
+    text.split('\n').forEach((line, i) => {
+      const m = line.match(/^[\t ]{0,3}:{3,}[\t ]*collapse(?:[\t ]+(.*?))?[\t ]*$/i);
+      if (!m) return;
+      const words = (m[1] || '').trim().split(/[\t ]+/).filter(Boolean);
+      for (const w of words) {
+        if (!KNOWN_OPTS.has(w.toLowerCase())) {
+          bad.push(`${path.relative(ROOT2, file)}:${i + 1} 指令行上有非选项文字「${w}」`);
+        }
+      }
+    });
+  }
+  assert.deepEqual(bad, [],
+    '这些 ::collapse 指令行把标题（或正文）写在了行上，会导致正文被当成折叠标题：\n'
+    + bad.join('\n'));
+});
+
+  it('面板的标题一律来自列表项（同类错误的反向断言）', () => {
+  // 只查我刚踩过的那两页：每个块的第一个非空正文行必须是列表项。
+  const targets = [
+    '课程总览/电机学/作业/2.2.3变压器运行性能.md',
+    '课程总览/电机学/作业/2.3.1三相电力变压器.md',
+  ];
+  const bad = [];
+  for (const rel of targets) {
+    const text = readFileSync(path.join(ROOT2, rel), 'utf8');
+    const lines = text.split('\n');
+    lines.forEach((line, i) => {
+      if (!/^[\t ]{0,3}:{3,}[\t ]*collapse$/i.test(line) && !/^[\t ]{0,3}:{3,}[\t ]*collapse[\t ]+accordion$/i.test(line)) return;
+      // 往下找第一个非空行
+      let j = i + 1;
+      while (j < lines.length && lines[j].trim() === '') j++;
+      if (j < lines.length && !/^[-*+][\t ]+/.test(lines[j])) {
+        bad.push(`${rel}:${j + 1} 该块第一行不是列表项（会被当成标题）：${lines[j].slice(0, 50)}`);
+      }
+    });
+  }
+  assert.deepEqual(bad, [], '这些折叠块缺列表项标题：\n' + bad.join('\n'));
+});
+});

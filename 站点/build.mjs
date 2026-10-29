@@ -1001,24 +1001,47 @@ for (const relPath of TARGET_FILES) {
   // 这不是「记得别取词」的约定，是结构保证：词库为空 ⇒ 判定器手里没有词条
   // ⇒ 结构上产不出锚点 ⇒ 「气泡里套气泡」没有对应的代码路径。
   // 旧实现靠一条禁令加一层 `peelNotationFences` 剥壳，仍会漏。
-  const renderBubbleText = (s) =>
-    String(s)
-      .split(/\$([^$\n]+)\$/g)
-      .map((part, i) => {
-        if (i % 2 === 1) {
-          const out = compileMath({ blocks: [{ raw: part, mode: 'inline' }] },
-            { dictionary: mathDictionary, packs: [] });
-          const bad = out.problems.filter((x) => x.severity === 'error');
-          if (bad.length) {
-            formulaErrors++;
-            console.warn(`[build] ⚠ 气泡公式渲染失败 ${relPath}：${bad[0].message}｜${part.slice(0, 60)}`);
-            return escapeHtmlText('$' + part + '$');
-          }
-          return renderMathDoc(out.docs[0], mathRenderer).html;
-        }
-        return escapeHtmlText(part);
-      })
-      .join('');
+  //
+  // ## 处理顺序：**公式先变占位符 → 再处理行内标记 → 最后把公式插回**
+  //
+  // 2026-10-29 修（用户报「气泡里裸 `**`」）：原先按 `$…$` 分段、只对奇数段做转义，
+  // 于是 `**不是 $1/A$**` 这种「粗体包住一处公式」的写法被切成
+  // `**不是 ` + 公式 + `**` 三段，粗体的两个星号落在不同段里，永远配不上。
+  // 这不是正则写得不够好，而是**顺序错了**：一旦先把公式切走，跨公式的标记就不可能再配对。
+  //
+  // 正确顺序：先把公式换成不含任何标记字符的占位符（`\u0000MATH<i>\u0000`），
+  // 于是整段文字重新连成一个字符串，`**…**` 可以横跨公式位置正常配对；
+  // 处理完粗体/反引号，再把占位符换回渲染好的公式 HTML。
+  //
+  // 只支持**两种**行内标记（粗体、反引号代码），刻意不上 full markdown：
+  // 气泡是「一句话释义」不是文档；未闭合的孤立 `**` 原样保留——宁可看见一个星号，
+  // 也不要把句子吞掉。
+  const renderBubbleText = (s) => {
+    const pieces = [];
+    // ① 抽走公式 → 占位符（\u0000 不会出现在正常文本里，也不会被正则的 * ` $ 匹配到）
+    let text = String(s).replace(/\$([^$\n]+)\$/g, (m, tex) => {
+      const out = compileMath({ blocks: [{ raw: tex, mode: 'inline' }] },
+        { dictionary: mathDictionary, packs: [] });
+      const bad = out.problems.filter((x) => x.severity === 'error');
+      let html;
+      if (bad.length) {
+        formulaErrors++;
+        console.warn(`[build] ⚠ 气泡公式渲染失败 ${relPath}：${bad[0].message}｜${tex.slice(0, 60)}`);
+        html = escapeHtmlText(m);
+      } else {
+        html = renderMathDoc(out.docs[0], mathRenderer).html;
+      }
+      const idx = pieces.length;
+      pieces.push(html);
+      return `\u0000M${idx}\u0000`;
+    });
+    // ② 处理行内标记（此时公式已成占位符，粗体可以横跨公式配对）
+    text = escapeHtmlText(text);
+    text = text.replace(/\*\*([^\n]+?)\*\*/g, '<strong>$1</strong>');
+    text = text.replace(/`([^\n]+?)`/g, '<code>$1</code>');
+    // ③ 公式插回
+    return text.replace(/\u0000M(\d+)\u0000/g, (m, i) => pieces[Number(i)] ?? '');
+  };
   // 同一段文字的**纯文本**版（读屏用）：只脱掉 $ 与 TeX 的反斜杠花括号，够读即可——
   // 标题的 aria-label 不该念出「美元号、反斜杠、下划线」。
   const plainBubbleText = (s) =>
