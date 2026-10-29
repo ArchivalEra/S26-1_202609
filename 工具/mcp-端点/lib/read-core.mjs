@@ -268,7 +268,7 @@ function parseFrontmatter(src) {
 function resolveRef(ref) {
   if (ref.path) return ref.path;
   if (ref.course && ref.category && ref.file) {
-    return ['课程', ref.course, ref.category, ref.file].join('/');
+    return ['课程总览', ref.course, ref.category, ref.file].join('/');
   }
   const err = new Error('read_page 需要 path，或 (course, category, file) 三元组（三者都要给）');
   err.code = 'ambiguous_ref';

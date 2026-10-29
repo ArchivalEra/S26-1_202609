@@ -126,6 +126,204 @@ test('wave：缺格数声明要报错', () => {
     /首行要写成「wave <格数>」/);
 });
 
+// 2026-10-29：这五条锁的是「画得出形状但表达不了原图信息」的那一类缺口。
+// 起因是触发器波形迁移时子代理撞到：没有参考线读不出 CP 窗口、两初态同色看不出重合、
+// 40 格被 CSS 压到标签 6px（于是有人把 40 格降成 20 格，拿边沿精度换字号）。
+
+test('wave：参考线钉在格边界、贯穿全部行（触发器题靠它读 CP 窗口）', () => {
+  const lib = parseFigureLib(['w | wave 8 ; guides 2,4', 'CP: 00110011', 'S: 00001100'].join('\n'));
+  const r = renderFigures(':::figure w', { lib });
+  assert.deepEqual(r.figures[0].payload.guides, [2, 4]);
+  const html = restoreFigures(r.source, r.figures);
+  const g = html.match(/<g class="fig-guides"[^>]*>(.*?)<\/g>/s);
+  assert.ok(g, '应画出 fig-guides 分组');
+  const ys = [...g[1].matchAll(/y1="([\d.]+)"[^>]*y2="([\d.]+)"/g)].map((m) => +m[2]);
+  assert.equal(ys.length, 2, '两条参考线');
+  // 贯穿全部行：每条线的 y2 都要落到最后一行下沿之外
+  const vb = (html.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/) || []);
+  for (const y of ys) assert.ok(y > +vb[2] - 30, `参考线 y2=${y} 应贯穿到底部附近（画布高 ${vb[2]}）`);
+});
+
+test('wave：参考线位置越界要报错（静默丢弃等于假图）', () => {
+  const lib = parseFigureLib(['w | wave 8 ; guides 9', 'A: 00110011'].join('\n'), 'l');
+  assert.throws(() => renderFigures(':::figure w', { lib, libName: 'l' }),
+    /参考线位置「9」必须是 0 到 8 之间的整数/);
+});
+
+test('wave：行级配色（两初态同色就看不出「自 CP₂ 起重合」）', () => {
+  const lib = parseFigureLib(['w | wave 4', '初态 0 [blue]: 0000', '初态 1 [red]: 1100'].join('\n'));
+  const r = renderFigures(':::figure w', { lib });
+  assert.equal(r.figures[0].payload.rows[0].color, 'blue');
+  assert.equal(r.figures[0].payload.rows[1].color, 'red');
+  // 标签里不该残留 [blue]
+  assert.equal(r.figures[0].payload.rows[0].label, '初态 0');
+  const html = restoreFigures(r.source, r.figures);
+  assert.match(html, /class="fig-wave-row" data-color="blue"/);
+  assert.match(html, /class="fig-wave-row" data-color="red"/);
+  assert.match(html, /stroke="#1a5fb4"/);
+  assert.match(html, /stroke="#c01c28"/);
+});
+
+test('wave：不认识的配色要报错', () => {
+  const lib = parseFigureLib(['w | wave 4', 'A [chartreuse]: 0101'].join('\n'), 'l');
+  assert.throws(() => renderFigures(':::figure w', { lib, libName: 'l' }),
+    /不认识的配色「chartreuse」/);
+});
+
+test('wave：行标签可挂词条（与 logic 同一套 @ 语义）', () => {
+  const lib = parseFigureLib(['w | wave 4', '^R^~D~@sym-RDd: 1111'].join('\n'));
+  const r = renderFigures(':::figure w', {
+    lib,
+    lookupGloss: (id) => (id === 'sym-RDd'
+      ? { title: '直接置 0 端', text: '低电平有效，置 Q=0', href: '#sym-RDd' } : null),
+  });
+  assert.equal(r.figures[0].payload.rows[0].term, 'sym-RDd');
+  assert.equal(r.figures[0].payload.rows[0].label, '^R^~D~');
+  const html = restoreFigures(r.source, r.figures);
+  assert.match(html, /data-term="sym-RDd"/);
+});
+
+test('wave：40 格不被压成看不清的字（格宽按目标宽度反解，不写死 34）', () => {
+  // 写死 CELL_W=34 时 40 格 → viewBox 宽 1436，而 .fig-svg 的 max-width 是 720px，
+  // 缩放 0.50 把 12px 标签压成 6px。反解后 viewBox 宽应落在 720 以内。
+  const levels = '01'.repeat(20);
+  const lib = parseFigureLib(['w | wave 40', `A: ${levels}`].join('\n'));
+  const r = renderFigures(':::figure w', { lib });
+  const vb = (restoreFigures(r.source, r.figures).match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/) || []);
+  assert.ok(+vb[1] <= 720, `40 格画布宽 ${vb[1]} 应在 720 上限内，否则会被 CSS 缩放`);
+});
+
+test('wave：电平串长度必须与声明格数一致（短了不许静默画半截）', () => {
+  const lib = parseFigureLib(['w | wave 8', 'A: 0011'].join('\n'), 'l');
+  assert.throws(() => renderFigures(':::figure w', { lib, libName: 'l' }),
+    /只有 4 格，但首行声明了 8 格/);
+  const lib2 = parseFigureLib(['w | wave 4', 'A: 001100'].join('\n'), 'l');
+  assert.throws(() => renderFigures(':::figure w', { lib: lib2, libName: 'l' }),
+    /有 6 格，超过首行声明的 4 格/);
+});
+
+test('wave：高阻段单独成虚线，不把实线拉过去', () => {
+  const lib = parseFigureLib(['w | wave 4', 'A: 01-0'].join('\n'));
+  const html = restoreFigures(...(() => {
+    const r = renderFigures(':::figure w', { lib });
+    return [r.source, r.figures];
+  })());
+  assert.match(html, /stroke-dasharray="4 3"/, '高阻格要画成虚线');
+});
+
+test('wave：结构表带出参考线（AI 也要能读到读图依据）', () => {
+  const lib = parseFigureLib(['w | wave 8 ; guides 2,4', 'CP: 00110011'].join('\n'));
+  const html = restoreFigures(...(() => {
+    const r = renderFigures(':::figure w', { lib });
+    return [r.source, r.figures];
+  })());
+  const detail = html.match(/<details class="fig-structure">.*?<\/details>/s);
+  assert.ok(detail);
+  assert.match(detail[0], /参考线/);
+  assert.match(detail[0], /2、4/);
+});
+
+// ── plot 图种（模拟波形：连续幅值，不是 0/1 电平）────────────────────────
+// 2026-10-29：二极管限幅题的正弦削顶图。`wave` 只画 0/1 两档，用它逼近会画成方波，
+// 而削顶题的信息全在连续曲线上——画成方波等于换了一道题。
+
+const PLOT_LIB = [
+  'f | plot 2 rows 340',
+  '  yrange -24 24',
+  '  ref 10',
+  '  ref -10',
+  '  grid 0',
+  '  row1 axis -20 20 label u~i~',
+  '  row1 curve sine 20 1.0',
+  '  row2 axis -20 20 label u~O~',
+  '  row2 ghost sine 20 1.0',
+  '  row2 curve clip 20 10',
+].join('\n');
+
+test('plot：首行 plot <行数> rows <格数>，两种曲线各自成形', () => {
+  const lib = parseFigureLib(PLOT_LIB);
+  const r = renderFigures(':::figure f', { lib });
+  const p = r.figures[0].payload;
+  assert.equal(p.rowCount, 2);
+  assert.deepEqual(p.yrange, [-24, 24]);
+  assert.deepEqual(p.refs, [10, -10]);
+  assert.equal(p.grid, 0);
+  assert.equal(p.rows[0].curves[0].kind, 'sine');
+  assert.equal(p.rows[1].curves[1].kind, 'clip');
+  assert.equal(p.rows[1].curves[1].param, 10);
+});
+
+test('plot：削顶是真取 min/max，不是画个平台糊过去', () => {
+  const lib = parseFigureLib(PLOT_LIB);
+  const r = renderFigures(':::figure f', { lib });
+  const html = restoreFigures(r.source, r.figures);
+  // 取 clip 那条**粗实线**（stroke-width="2.2"，即实际输出）。
+  // 注意两点：① 不能按「含 2.2 子串」筛——points 里的坐标也含 2.2，会挑错元素；
+  // ② 粗线有两条（row1 的正弦、row2 削顶后的输出），要取**最后**一条。
+  const thick = [...html.matchAll(/<polyline[^>]*\/>/g)]
+    .map((m) => m[0])
+    .filter((s) => s.includes('fig-plot-curve') && s.includes('stroke-width="2.2"'));
+  assert.equal(thick.length, 2, `应有两条粗线（输入正弦 + 输出削顶），实得 ${thick.length}`);
+  const pm = thick[1].match(/points="([^"]+)"/);
+  const ys = pm[1].trim().split(/\s+/).map((s) => Number(s.split(',')[1]));
+  // viewBox 里 y 越小越高。削平意味着**大片采样点落在同一个极值**上。
+  // 未削顶的正弦因为坐标保留一位小数，峰顶附近也会有 7 个点同值——所以阈值要明显高于它。
+  const flatTop = ys.filter((y) => y === Math.min(...ys)).length;
+  const flatBot = ys.filter((y) => y === Math.max(...ys)).length;
+  assert.ok(flatTop > 50, `上削平台点数 ${flatTop} 太少（未削顶的正弦峰顶约 7），削顶没画出来`);
+  assert.ok(flatBot > 50, `下削平台点数 ${flatBot} 太少，削顶没画出来`);
+});
+
+test('plot：ghost 线画成虚线（细虚线对粗线，是限幅题的读法）', () => {
+  const lib = parseFigureLib(PLOT_LIB);
+  const html = restoreFigures(...(() => {
+    const r = renderFigures(':::figure f', { lib });
+    return [r.source, r.figures];
+  })());
+  const ghost = html.match(/<polyline class="fig-plot-curve is-ghost"[^>]*\/>/);
+  assert.ok(ghost, '应有 is-ghost 曲线');
+  assert.match(ghost[0], /stroke-dasharray/, 'ghost 必须是虚线');
+});
+
+test('plot：参考电平线（±10 V）画出来并标注数值', () => {
+  const lib = parseFigureLib(PLOT_LIB);
+  const html = restoreFigures(...(() => {
+    const r = renderFigures(':::figure f', { lib });
+    return [r.source, r.figures];
+  })());
+  assert.match(html, /class="fig-plot-ref"/);
+  assert.match(html, /\+10 V/);
+  assert.match(html, /-10 V/);
+});
+
+test('plot：缺 yrange 要报错（没有纵轴范围，削到几伏就无从谈起）', () => {
+  const lib = parseFigureLib([
+    'f | plot 1 rows 40',
+    '  row1 axis -20 20 label u', '  row1 curve sine 20 1',
+  ].join('\n'), 'l');
+  assert.throws(() => renderFigures(':::figure f', { lib, libName: 'l' }),
+    /缺 yrange/);
+});
+
+test('plot：clip 不写限幅值要报错（否则画成和 sine 一样，题就变了）', () => {
+  const lib = parseFigureLib([
+    'f | plot 1 rows 40', '  yrange -24 24',
+    '  row1 axis -20 20 label u', '  row1 curve clip 20',
+  ].join('\n'), 'l');
+  assert.throws(() => renderFigures(':::figure f', { lib, libName: 'l' }),
+    /clip 必须写限幅值/);
+});
+
+test('plot：没有曲线的行要报错', () => {
+  const lib = parseFigureLib([
+    'f | plot 2 rows 40', '  yrange -24 24',
+    '  row1 axis -20 20 label u', '  row1 curve sine 20 1',
+    '  row2 axis -20 20 label v',
+  ].join('\n'), 'l');
+  assert.throws(() => renderFigures(':::figure f', { lib, libName: 'l' }),
+    /第 2 行没有任何曲线/);
+});
+
 // ── kmap 图种 ────────────────────────────────────────────────────────────
 
 test('kmap：四变量网格 + 圈组', () => {
@@ -158,6 +356,241 @@ test('kmap：行数不匹配要报错', () => {
   const lib = parseFigureLib(['k | kmap 4', '0000', '1111'].join('\n'), 'lib.txt');
   assert.throws(() => renderFigures(':::figure k', { lib, libName: 'lib.txt' }),
     /应有 4 行格值/);
+});
+
+// ── net 图种（元件-引脚-网络）─────────────────────────────────────────────
+
+const netLib = (lines) => parseFigureLib(['x | net', ...lines].join('\n'), 'lib.txt');
+
+test('net：两元件串联电路解析成元件表与网络表', () => {
+  const lib = netLib(['V1 v 24V top bottom', 'R1 r 6Ω top a', 'R2 r 6Ω a bottom']);
+  const r = renderFigures(':::figure x', { lib });
+  const p = r.figures[0].payload;
+  assert.equal(p.comps.length, 3);
+  assert.deepEqual(p.comps[0], {
+    ref: 'V1', type: 'v', value: '24V', pins: ['top', 'bottom'], ctrlPins: null,
+  });
+  // 网络表是**数组**而不是 Map——Map 过 JSON.stringify 会变成 {}，
+  // 拓扑会在 MCP 那一侧整段消失，而页面上看着一切正常。
+  assert.ok(Array.isArray(p.nets), 'nets 必须是数组，不能是 Map');
+  assert.deepEqual(p.nets.map((n) => n.name), ['top', 'bottom', 'a']);
+  assert.deepEqual(p.nets[0].pins, [{ ref: 'V1', pin: 1 }, { ref: 'R1', pin: 1 }]);
+});
+
+test('net：并联支路（三只电阻都跨同一对网络）', () => {
+  const lib = netLib([
+    'I1 i 2A n0 top', 'R1 r 6Ω top n0', 'R2 r 3Ω top n0', 'R3 r 6Ω top n0',
+  ]);
+  const r = renderFigures(':::figure x', { lib });
+  const nets = r.figures[0].payload.nets;
+  assert.equal(nets.find((n) => n.name === 'n0').pins.length, 4);
+  assert.equal(nets.find((n) => n.name === 'top').pins.length, 4);
+});
+
+test('net：payload 能过 JSON.stringify 且拓扑不丢（Map 序列化成 {} 的坑）', () => {
+  const lib = netLib(['V1 v 24V top bottom', 'R1 r 6Ω top bottom']);
+  const r = renderFigures(':::figure x', { lib });
+  const round = JSON.parse(JSON.stringify(r.figures[0]));
+  assert.equal(round.payload.nets.length, 2);
+  assert.equal(round.payload.nets[0].pins.length, 2);
+});
+
+test('net：不认识的元件类型要报错并列出全部可用类型', () => {
+  const lib = netLib(['R1 resistor 6Ω a b']);
+  assert.throws(() => renderFigures(':::figure x', { lib, libName: 'lib.txt' }),
+    /不认识的元件类型「resistor」.*可用.*r.*c.*l.*v.*i.*sw.*d.*vcvs.*vccs.*ccvs.*cccs/s);
+});
+
+test('net：引脚指向不存在的网络要报错（单点网络不是合法电路）', () => {
+  // 「b」只被 R1 一个引脚引用：一根线至少两端，悬空端点不是合法电路图。
+  const lib = netLib(['V1 v 24V a b', 'R1 r 6Ω a c']);
+  assert.throws(() => renderFigures(':::figure x', { lib, libName: 'lib.txt' }),
+    /网络「b」只连了 1 个引脚|网络「c」只连了 1 个引脚/);
+});
+
+test('net：受控源四型分开画（菱形里 +/− 还是箭头决定读者认成电压/电流源）', () => {
+  const lib = netLib([
+    'V1 v 1 a 0', 'R1 r 2 a 0',
+    'E1 vcvs 5 o1 0 a 0',
+    'G1 vccs 2 o1 0 a 0',
+    'H1 ccvs 3 a 0 o1 0',
+    'F1 cccs 4 a 0 o1 0',
+  ]);
+  const r = renderFigures(':::figure x', { lib });
+  const types = r.figures[0].payload.comps.map((c) => c.type);
+  for (const t of ['vcvs', 'vccs', 'ccvs', 'cccs']) {
+    assert.ok(types.includes(t), `缺类型 ${t}`);
+  }
+  const html = restoreFigures(r.source, r.figures);
+  // 四型必须是四个不同的 data-type，不能合成一个 cs
+  for (const t of ['vcvs', 'vccs', 'ccvs', 'cccs']) {
+    assert.match(html, new RegExp(`data-type="${t}"`), `SVG 里没有 ${t}`);
+  }
+  // 压控两型菱形里是 +/−，流控两型是箭头——这里锁「不是同一套记号」
+  const vol = html.slice(html.indexOf('data-type="vcvs"'), html.indexOf('data-type="vccs"'));
+  const cur = html.slice(html.indexOf('data-type="vccs"'), html.indexOf('data-type="ccvs"'));
+  assert.ok(vol !== cur, 'vcvs 与 vccs 画成了同一个符号');
+});
+
+test('net：受控源控制端指向不存在的网络要报错', () => {
+  // o1 要接一个负载才算合法网络（否则先报「网络只连了 1 个引脚」）
+  const lib = netLib(['V1 v 1 a 0', 'R1 r 2 a 0', 'E1 vcvs 5 o1 0 a zz', 'RL r 3 o1 0']);
+  assert.throws(() => renderFigures(':::figure x', { lib, libName: 'lib.txt' }),
+    /控制端指向网络「zz」.*图里没有这个网络/s);
+});
+
+test('net：受控源的段数必须对（少一段就少画一个引脚，不能静默容忍）', () => {
+  // vcvs 是四端：位号 类型 数值 输出1 输出2 控制1 控制2 = 7 段
+  const lib = netLib(['V1 v 1 a 0', 'R1 r 2 a 0', 'E1 vcvs 5 o1 0 a']);
+  assert.throws(() => renderFigures(':::figure x', { lib, libName: 'lib.txt' }),
+    /应写 7 段.*实际 6 段/s);
+});
+
+test('net：两元元件多写一段要报错（受控源字段不许泄漏给电阻）', () => {
+  const lib = netLib(['V1 v 1 a 0', 'R1 r 2 a 0 extra']);
+  assert.throws(() => renderFigures(':::figure x', { lib, libName: 'lib.txt' }),
+    /应写 5 段.*实际 6 段/s);
+});
+
+test('net：控制端不进网络表（控制关系不是电气连接，混进去会让拓扑判错）', () => {
+  const lib = netLib(['V1 v 1 a 0', 'R1 r 2 a 0', 'E1 vcvs 5 o1 0 a 0', 'RL r 3 o1 0']);
+  const r = renderFigures(':::figure x', { lib });
+  const p = r.figures[0].payload;
+  // a 只连 V1.1 与 R1.1——受控源的控制端（E1 的第 5、6 段）**不进网络表**，
+  // 因为「取哪个量」不是电气连接。这正是本测试要守的行为。
+  const a = p.nets.find((n) => n.name === 'a');
+  assert.deepEqual(a.pins.map((x) => `${x.ref}.${x.pin}`), ['V1.1', 'R1.1']);
+});
+
+test('net：单刀双投 spdt 是 3 脚 + 刀位（两地控制灯必须它）', () => {
+  // 2026-10-29：子代理拒绝为「图 7.05 两地控制灯」出图，理由是 sw 只有 2 脚、
+  // 也画不出「刀接在哪侧」——硬拆两只 2 脚开关会画成两处都断（灯永远不亮），是错图。
+  // 那个判断正确，所以补这个元件。
+  const lib = parseFigureLib('f | net\n  V1 v 220V L N\n  S1 spdt - L a b 1\n  S2 spdt - b a c 2\n  H1 r 100 c N');
+  const r = renderFigures(':::figure f', { lib });
+  const comps = r.figures[0].payload.comps;
+  assert.equal(comps[1].type, 'spdt');
+  assert.equal(comps[1].pins.length, 3, 'spdt 必须有 3 个电气引脚');
+  assert.equal(comps[1].pos, 1, '刀位 1');
+  assert.equal(comps[2].pos, 2, '刀位 2');
+});
+
+test('net：spdt 段数写错要报错（多一段少一段都不行）', () => {
+  const lib = parseFigureLib('f | net\n  S1 spdt - L a b', 'lib.txt');
+  assert.throws(() => renderFigures(':::figure f', { lib, libName: 'lib.txt' }),
+    /应写 7 段.*公共端 触点1 触点2 刀位/s);
+});
+
+test('net：spdt 刀位不同则符号不同（刀必须指对触点）', () => {
+  const mk = (pos) => {
+    const lib = parseFigureLib(`f | net\n  V1 v 1 L N\n  S1 spdt - L a b ${pos}\n  R1 r 1 a N\n  R2 r 1 b N`);
+    const r = renderFigures(':::figure f', { lib });
+    return restoreFigures(r.source, r.figures);
+  };
+  const a = mk(1), b = mk(2);
+  // 两张图的 spdt 符号几何必须不同——相同就等于「刀位没画出来」
+  const seg = (h) => {
+    const i = h.indexOf('data-type="spdt"');
+    return h.slice(i, i + 600);
+  };
+  assert.notEqual(seg(a), seg(b), '刀位 1 与 2 画出了同一个符号');
+});
+
+test('net：位号重复要报错', () => {
+  const lib = netLib(['V1 v 1 a 0', 'V1 r 2 a 0']);
+  assert.throws(() => renderFigures(':::figure x', { lib, libName: 'lib.txt' }),
+    /位号「V1」重复/);
+});
+
+test('net：渲染出的 SVG 含可寻址的元件与导线（交互层靠这两个类名）', () => {
+  const lib = netLib(['V1 v 24V top bottom', 'R1 r 6Ω top a', 'R2 r 6Ω a bottom']);
+  const r = renderFigures(':::figure x', { lib });
+  const html = restoreFigures(r.source, r.figures);
+  assert.match(html, /class="fig-comp" data-comp="V1" data-type="v"/);
+  assert.match(html, /class="fig-comp" data-comp="R1" data-type="r"/);
+  assert.match(html, /data-pin1="top" data-pin2="a"/);
+  assert.match(html, /class="fig-wire" data-net="top"/);
+  assert.match(html, /class="fig-wire" data-net="a"/);
+});
+
+test('net：导线只有水平/垂直段（斜线在电路图里等于「没画完」）', () => {
+  const lib = netLib([
+    'V1 v 24V top bottom', 'R1 r 6Ω top a', 'R2 r 6Ω a bottom',
+    'R3 r 3Ω top bottom',   // 再加一条对侧并联支路，逼出走线带
+  ]);
+  const r = renderFigures(':::figure x', { lib });
+  const html = restoreFigures(r.source, r.figures);
+  // 导线 path 里只允许 M/H/V，出现 L 或斜向 a 就是斜线
+  for (const m of html.matchAll(/class="fig-wire" data-net="[^"]*" d="([^"]+)"/g)) {
+    assert.ok(!/[LA]/.test(m[1]), `导线含斜线段：${m[1]}`);
+  }
+});
+
+test('net：每个元件的符号都可辨识（不是空壳）', () => {
+  const lib = netLib([
+    'V1 v 1 a 0', 'R1 r 2 a b', 'C1 c 3 b 0', 'L1 l 4 a 0',
+    'I1 i 5 a 0', 'S1 sw - a 0', 'D1 d - a 0',
+  ]);
+  const r = renderFigures(':::figure x', { lib });
+  const html = restoreFigures(r.source, r.figures);
+  const between = (ref) => {
+    const i = html.indexOf(`data-comp="${ref}"`);
+    const j = html.indexOf('</g>', i);
+    return html.slice(i, j);
+  };
+  const shapes = {
+    R1: /<rect[^>]*width="26"/,            // 电阻：IEC 矩形
+    C1: /<line[^>]*x1="-4\.5"/,            // 电容：两平行极板
+    L1: /a6 6 0 0 1/,                      // 电感：半圆弧
+    V1: /<circle[^>]*r="15"/,              // 电压源：圆
+    I1: /r="15"[\s\S]*Z"/,                 // 电流源：圆 + 箭头
+    S1: /x2="7" y2="-10"/,                 // 开关：倾斜刀片
+    D1: /L-8 9 L8 0 Z/,                    // 二极管：三角
+  };
+  for (const [ref, re] of Object.entries(shapes)) {
+    assert.match(between(ref), re, `${ref} 的符号画不出来`);
+  }
+});
+
+test('net：结构表含元件名、类型、两个引脚与网络表', () => {
+  const lib = netLib(['V1 v 24V top bottom', 'R1 r 6Ω top a', 'R2 r 6Ω a bottom']);
+  const r = renderFigures(':::figure x', { lib });
+  const t = renderStructureTable(r.figures[0]);
+  assert.ok(t.includes('<th>元件</th>'));
+  assert.ok(t.includes('<th>类型</th>'));
+  assert.ok(t.includes('<th>引脚1</th>'));
+  assert.ok(t.includes('<th>引脚2</th>'));
+  assert.ok(t.includes('<td>V1</td>'));
+  assert.ok(t.includes('<td>电压源（v）</td>'));
+  assert.ok(t.includes('<td>电阻（r）</td>'));
+  // 网络表：谁和谁接在一起，这是拓扑的唯一文字投影
+  assert.ok(t.includes('<th>网络</th>'));
+  assert.ok(t.includes('<td>top</td>'));
+  assert.ok(t.includes('V1 的 1 脚、R1 的 1 脚'));
+});
+
+test('net：受控源在结构表里标出控制端与取什么量', () => {
+  const lib = netLib(['V1 v 1 a 0', 'R1 r 2 a 0', 'E1 vcvs 5 o1 0 a 0', 'RL r 3 o1 0']);
+  const r = renderFigures(':::figure x', { lib });
+  const t = renderStructureTable(r.figures[0]);
+  assert.ok(t.includes('<th>控制端</th>'));
+  assert.ok(t.includes('压控电压源（vcvs）'));
+  assert.ok(t.includes('a、0（取电压）'));
+  // 非受控元件这一栏写 —，不写空（空着像「漏填」）
+  assert.ok(t.includes('<td>—</td>'));
+});
+
+test('net：图种不认识时可用列表里含 net', () => {
+  const lib = parseFigureLib('f | xyzzy A B -> Y', 'lib.txt');
+  assert.throws(() => renderFigures(':::figure f', { lib, libName: 'lib.txt' }),
+    /图种不认识（首词「xyzzy」）.*net/s);
+});
+
+test('net：首行不是 net 要报错', () => {
+  const lib = parseFigureLib(['x | netx', 'V1 v 1 a 0'].join('\n'), 'lib.txt');
+  // 首词 netx 不认识 ⇒ 图种都不认识
+  assert.throws(() => renderFigures(':::figure x', { lib, libName: 'lib.txt' }),
+    /图种不认识/);
 });
 
 // ── 指令与占位符 ─────────────────────────────────────────────────────────
@@ -414,6 +847,79 @@ test('布局：输入端点的纵向范围收在门高内（不铺满整张画�
   assert.ok(span < h / 2, `输入跨度 ${span} 应小于画布高度一半 ${h / 2}`);
 });
 
+test('布局：多门分处不同行时，每个输入贴到它自己那只门的输入口高度', () => {
+  // 2026-10-29 三签实测 gate-g：四个输入标签 A/B/C/D 全挤在第一只门那一小段里、
+  // 互相重叠，读者读不出哪个变量进哪只门 ⇒ (A·B+C·D) 与 (A·C+B·D) 只能猜，
+  // 猜错直接做错题。根因是输入端点的纵向分布只参照 `pos[0]`。
+  const lib = parseFigureLib('f | and A B -> _p1 ; and C D -> _p2 ; nor _p1 _p2 -> Y');
+  const html = restoreFigures(...(() => {
+    const r = renderFigures(':::figure f', { lib });
+    return [r.source, r.figures];
+  })());
+  const at = (lab) => {
+    const m = html.match(new RegExp(`<text x="([\\d.]+)" y="([\\d.]+)"[^>]*data-label="${lab}"`));
+    return m ? { x: +m[1], y: +m[2] } : null;
+  };
+  const A = at('A'); const B = at('B'); const C = at('C'); const D = at('D');
+  assert.ok(A && B && C && D, '四个输入标签都要画出来');
+  // A、B 同属上门 ⇒ 彼此靠近；C、D 同属下门 ⇒ 彼此靠近；而上组与下组要明显分开
+  assert.ok(Math.abs(A.y - B.y) < 30, `A 与 B 应贴在同一个门的两个输入口（实得 ${A.y} / ${B.y}）`);
+  assert.ok(Math.abs(C.y - D.y) < 30, `C 与 D 应贴在同一个门（实得 ${C.y} / ${D.y}）`);
+  assert.ok(Math.abs(A.y - C.y) > 30, `上门与下门的输入不该挤在一起（实得 ${A.y} / ${C.y}）`);
+  // 同门两输入的间距要够字高，不能重叠
+  assert.ok(Math.abs(A.y - B.y) > 12, `A 与 B 的纵向间距 ${Math.abs(A.y - B.y)} 太小，标签会叠`);
+});
+
+test('wave：每行画高低电平参考轨（常高/常低的平线才分得出来）', () => {
+  // 2026-10-29 三签实测：门(c) 的输出 Y ≡ 1，整行是一条平线；
+  // 没有参考轨读者不知道这条线是高还是低，直接判错。
+  const lib = parseFigureLib(['w | wave 4', 'C: 0000', 'Y: 1111'].join('\n'));
+  const html = restoreFigures(...(() => {
+    const r = renderFigures(':::figure w', { lib });
+    return [r.source, r.figures];
+  })());
+  const rails = html.match(/<g class="fig-rails"[^>]*>([\s\S]*?)<\/g>/);
+  assert.ok(rails, '应画出 fig-rails 分组');
+  const n = [...rails[1].matchAll(/<line /g)].length;
+  assert.equal(n, 4, `两行 × 两条轨 = 4 条，实得 ${n}`);
+});
+
+test('wave：时间轴与 0 轨拉开距离（贴太近会被读成第二路信号）', () => {
+  const lib = parseFigureLib(['w | wave 4', 'A: 0000'].join('\n'));
+  const html = restoreFigures(...(() => {
+    const r = renderFigures(':::figure w', { lib });
+    return [r.source, r.figures];
+  })());
+  const rail = html.match(/<g class="fig-rails"[^>]*>([\s\S]*?)<\/g>/)[1];
+  const railYs = [...rail.matchAll(/y1="([\d.]+)"/g)].map((m) => +m[1]);
+  const axisG = html.match(/<g class="fig-axis"[^>]*>([\s\S]*?)<\/g>/)[1];
+  const axisYs = [...axisG.matchAll(/<line x1="[^"]*" y1="([\d.]+)"/g)].map((m) => +m[1]);
+  const loRail = Math.max(...railYs);
+  const axisY = Math.max(...axisYs);
+  assert.ok(axisY - loRail >= 8, `时间轴 y=${axisY} 与 0 轨 y=${loRail} 只差 ${axisY - loRail}px，太近`);
+});
+
+test('布局：同列输入标签不得互相压字（间距 ≥ 字高）', () => {
+  // 2026-10-29 三签实测 prob-7-14：`A`（y=50.3）与 `B`（y=59）只差 9px，
+  // 比 13px 字号的字高还小，两个字母糊成一团，读者分不出哪条总线是 A、哪条是 B。
+  const lib = parseFigureLib('f | not B -> ^B^ ; not C -> ^C^ ; not D -> ^D^ ; nand A ^D^ -> _p1 ; nand ^B^ C ^D^ -> _p2 ; nand B ^C^ ^D^ -> _p3 ; nand _p1 _p2 _p3 -> Y');
+  const html = restoreFigures(...(() => {
+    const r = renderFigures(':::figure f', { lib });
+    return [r.source, r.figures];
+  })());
+  // 只取最左列的纯输入标签（x 很小）
+  const ins = [...html.matchAll(/<text x="([\d.]+)" y="([\d.]+)"[^>]*data-label="([^"]*)"/g)]
+    .map((m) => ({ x: +m[1], y: +m[2], label: m[3] }))
+    .filter((t) => t.x < 20)
+    .sort((a, b) => a.y - b.y);
+  assert.ok(ins.length >= 2, '应至少有两个纯输入标签');
+  for (let i = 1; i < ins.length; i += 1) {
+    const gap = ins[i].y - ins[i - 1].y;
+    assert.ok(gap >= 17,
+      `「${ins[i - 1].label}」与「${ins[i].label}」只隔 ${gap.toFixed(1)}px，会压字`);
+  }
+});
+
 test('布局：多输入均匀分布（三输入等距）', () => {
   const lib = parseFigureLib('f | or A B C -> Y');
   const r = renderFigures(':::figure f', { lib });
@@ -435,6 +941,73 @@ test('布局：所有文字落在画布内（不越界）', () => {
       assert.ok(t.y >= 0 && t.y <= h, `${id} 的「${t.label}」y=${t.y} 超出画布高 ${h}`);
     }
   }
+});
+
+test('布局：走线不穿过任何门方框（穿过 = 读者以为信号经过了那只门）', () => {
+  // 2026-10-29 实测：输入端口从最左端直接横穿中间列的门。
+  // 穿透数 y-a-nb 4 段、prob-7-14 17 段、prob-7-16 15 段。
+  // 电路图里「线穿方框」一律读作没画完，而且穿过非门会让读者以为取了反——会做错题。
+  const GEOM = {
+    and: [64, 52], nand: [64, 52], or: [64, 52], nor: [64, 52],
+    xor: [64, 52], xnor: [64, 52], not: [52, 40], buf: [52, 40],
+  };
+  const countPen = (html) => {
+    const gates = [...html.matchAll(
+      /<g class="fig-comp"[^>]*data-op="([a-z]+)"[^>]*transform="translate\(([-\d.]+) ([-\d.]+)\)"/g)]
+      .map((g) => {
+        const [w, h] = GEOM[g[1]] || [64, 52];
+        const x = +g[2]; const y = +g[3];
+        return { x1: x, y1: y - h / 2, x2: x + w, y2: y + h / 2 };
+      });
+    const segs = [];
+    for (const m of html.matchAll(/class="fig-wire"[^>]*d="([^"]+)"/g)) {
+      let cur = null;
+      for (const t of m[1].matchAll(/([MHV])\s*([-\d.]+)(?:\s+([-\d.]+))?/g)) {
+        const op = t[1]; const a = +t[2]; const b = t[3] !== undefined ? +t[3] : null;
+        if (op === 'M') cur = [a, b];
+        else if (op === 'H') { segs.push({ x1: cur[0], y1: cur[1], x2: a, y2: cur[1] }); cur = [a, cur[1]]; }
+        else if (op === 'V') { segs.push({ x1: cur[0], y1: cur[1], x2: cur[0], y2: a }); cur = [cur[0], a]; }
+      }
+    }
+    let n = 0;
+    for (const s of segs) {
+      for (const g of gates) {
+        if (s.y1 === s.y2) {
+          const lo = Math.min(s.x1, s.x2); const hi = Math.max(s.x1, s.x2);
+          if (s.y1 > g.y1 + 1 && s.y1 < g.y2 - 1 && hi > g.x1 + 1 && lo < g.x2 - 1) n += 1;
+        } else if (s.x1 === s.x2) {
+          const lo = Math.min(s.y1, s.y2); const hi = Math.max(s.y1, s.y2);
+          if (s.x1 > g.x1 + 1 && s.x1 < g.x2 - 1 && hi > g.y1 + 1 && lo < g.y2 - 1) n += 1;
+        }
+      }
+    }
+    return n;
+  };
+
+  const lib = parseFigureLib([
+    'a | not B -> ^B^ ; and A ^B^ -> Y',
+    'b | not A -> ^A^ ; not B -> ^B^ ; and A ^B^ -> Y~1~ ; and ^A^ B -> Y~2~ ; and ^A^ ^B^ -> _p1 ; and A B -> _p2 ; or _p1 _p2 -> Y~3~',
+    'c | not B -> ^B^ ; not C -> ^C^ ; not D -> ^D^ ; nand A ^D^ -> _p1 ; nand ^B^ C ^D^ -> _p2 ; nand B ^C^ ^D^ -> _p3 ; nand _p1 _p2 _p3 -> Y',
+  ].join('\n'));
+  for (const id of ['a', 'b', 'c']) {
+    const r = renderFigures(`:::figure ${id}`, { lib });
+    const pen = countPen(restoreFigures(r.source, r.figures));
+    assert.equal(pen, 0, `${id} 有 ${pen} 段走线穿过门方框`);
+  }
+});
+
+test('布局：画布宽度按最右门算，不看子句书写顺序', () => {
+  // 原来宽度取 `pos[clauses.length-1]`，最后一条子句不在最右列时就会裁字
+  // （实测 3 门最小复现宽 226、标签右边界 234，裁掉 8px）。
+  const a = parseFigureLib('f | not B -> nB ; and A nB -> Y ; not C -> nC');
+  const b = parseFigureLib('f | not C -> nC ; not B -> nB ; and A nB -> Y');
+  const wr = (lib, id) => {
+    const r = renderFigures(`:::figure ${id}`, { lib });
+    return +(restoreFigures(r.source, r.figures)
+      .match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/) || [])[1];
+  };
+  // 同样的门、不同的书写顺序 ⇒ 宽度必须一致（布局不依赖顺序）
+  assert.equal(wr(a, 'f'), wr(b, 'f'), '同一组门换个书写顺序，画布宽度就变了');
 });
 
 test('语义：逻辑变量不挂器件词条（防「B 弹出基极电位」这类误导）', () => {

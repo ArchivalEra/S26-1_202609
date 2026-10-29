@@ -30,7 +30,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # （第六章的注释解释了为什么：原书同一道折算题的重复排印，本页按题号保留）。
 PROBLEMS_CMD = (
     "python3 -c \"import re,glob;print(sum(len(re.findall(r'[0-9]+',s)) "
-    "for f in glob.glob('课程/电路原理/作业/2026-09-28-习题册第*.md') "
+    "for f in glob.glob('课程总览/电路原理/作业/习题册第*.md') "
     "for ln in open(f,encoding='utf-8') if ln.startswith('### ') "
     "for s in re.findall(r'(?:选|填|计|判|画图)\\s*([0-9][0-9、,\\s]*)', "
     "re.sub(r'（[^）]*）','',ln[4:]))))\""
@@ -43,7 +43,7 @@ PROBLEMS_CMD = (
 # 包注册表 `站点/符号环境.mjs` 增包时，这条命令自动跟上，不必手改清单。
 GLOSSARY_CMD = (
     "awk '/^:::glossary-dict/{f=1;next} /^:::/{f=0} f&&/^sym-/{n++} END{print n}' "
-    "站点/符号包/通用.md 课程/*/教材解析/0.0-符号入门.md"
+    "站点/符号包/通用.md 课程总览/*/教材解析/符号入门.md"
 )
 # 符号包个数：SYMBOL_PACKS 注册表本身的条数（单一产地——加包即自动 +1）。
 # 2026-10-26 入账动机：STATE/handoff 曾手抄「三个符号包」，实际五个——包数是
@@ -107,18 +107,18 @@ HOOKTESTS_WITNESS = (
     "grep -c 'def test_' .githooks/test-update-readme.py"
 )
 TABLE = [
-    ("courses", "ls -d 课程/*/ | wc -l", "课程/", "课程门数"),
-    ("notes", "find 课程 -path '*/课堂笔记/*.md' ! -name 'index.md' | wc -l",
-     "课程/", "课堂笔记篇数（不含索引）"),
-    ("homework", "find 课程 -path '*/作业/*.md' ! -name 'index.md' | wc -l",
-     "课程/", "作业页数（不含索引）"),
-    ("textbook", "find 课程 -path '*/教材解析/*.md' ! -name 'index.md' | wc -l",
-     "课程/", "教材解析篇数（不含索引）"),
-    ("problems", PROBLEMS_CMD, "课程/电路原理/作业/",
+    ("courses", "ls -d 课程总览/*/ | wc -l", "课程总览/", "课程门数"),
+    ("notes", "find 课程总览 -path '*/课堂笔记/*.md' ! -name 'index.md' | wc -l",
+     "课程总览/", "课堂笔记篇数（不含索引）"),
+    ("homework", "find 课程总览 -path '*/作业/*.md' ! -name 'index.md' | wc -l",
+     "课程总览/", "作业页数（不含索引）"),
+    ("textbook", "find 课程总览 -path '*/教材解析/*.md' ! -name 'index.md' | wc -l",
+     "课程总览/", "教材解析篇数（不含索引）"),
+    ("problems", PROBLEMS_CMD, "课程总览/电路原理/作业/",
      "习题册题数（合并题号的标题按题号展开计数）"),
-    ("figures", "ls 课程/电路原理/作业/figures/ | wc -l",
-     "课程/电路原理/作业/figures/", "习题册配图张数"),
-    ("glossary_entries", GLOSSARY_CMD, "站点/符号包/通用.md + 课程/*/教材解析/0.0-符号入门.md",
+    ("figures", "ls 课程总览/电路原理/作业/figures/ | wc -l",
+     "课程总览/电路原理/作业/figures/", "习题册配图张数"),
+    ("glossary_entries", GLOSSARY_CMD, "站点/符号包/通用.md + 课程总览/*/教材解析/符号入门.md",
      "全部符号包的词条合计（通用 + 电机学 / 电路原理 / 工程数学 / 电子技术）"),
     ("symbol_packs", SYMBOL_PACKS_CMD, "站点/符号环境.mjs",
      "符号包个数（SYMBOL_PACKS 注册表条数；正文引用它，别手抄「三包/五包」——会随加包腐烂）"),
@@ -132,7 +132,8 @@ TABLE = [
      {"replay": False, "witness": HOOKTESTS_WITNESS,
       # 2026-10-21：25 → 28（阶段一加了 3 项导航覆盖率测试）
       # 2026-10-28：28 → 29（父页面级联校验）→ 30（侧栏标题一致性）
-      "witness_expect": "30"}),
+      # 2026-10-29：30 → 31（文件名=侧栏标签这条规则落地，宽度预算拆成独立测试）
+      "witness_expect": "31"}),
     ("plugin_tests", PLUGIN_TESTS_CMD, "站点/plugins/",
      "站点插件测试项数（fail+cancelled>0 ⇒ 复跑非零退出）"),
     # handoff 体量：见 HANDOFF_LINES_CMD 处的注释。「读不完」本身就是要量的事实。

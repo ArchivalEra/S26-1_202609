@@ -9,12 +9,12 @@
   ],
   "checks": [
     {
-      "path": "课程/电路原理/index.md",
+      "path": "课程总览/电路原理/index.md",
       "must_not_contain": ["150 张"],
       "why": "配图张数旧值（实际 171，见台账 figures 键）——R-101 已翻案，旧值不许无标记地回来"
     },
     {
-      "path": "课程/电路原理/作业/index.md",
+      "path": "课程总览/电路原理/作业/index.md",
       "must_not_contain": ["150 张"],
       "why": "同上：配图张数旧值不得回潮"
     },

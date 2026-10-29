@@ -3,11 +3,21 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { marked, yaml } from './vendor.mjs';
-import katex from './assets/katex/katex.mjs';
+// 数学引擎（2026-10-29 重构）：自建 TeX 解析器 → IR → MathLive 渲染。
+// 为什么不再直接用 KaTeX：符号取词寄生在 TeX 字符串上（`\htmlData` 插宏），
+// 四处各自回答「哪段是符号」，于是长出五个补丁函数互相互相修，改一处崩两处。
+// 现在解析成树、判定一次、渲染与标注都是同一棵树的投影。见 站点/math/。
+import { parse as parseMath } from './math/parser.mjs';
+import { compile as compileMath, render as renderMathDoc, probeRenderer } from './math/index.mjs';
+import { compileDictionary } from './math/terms.mjs';
+import { createMathliveRenderer, decorateAnchors, DIALECTS } from './math/render.mjs';
+import * as mathliveSsr from './assets/mathlive/mathlive-ssr.min.mjs';
 import { renderCollapse } from './plugins/collapse.mjs';
 import { parseFigureLib, renderFigures, restoreFigures, buildFigureIndex, FIGURES_CSS, FIGURES_JS } from './plugins/figures.mjs';
 import { DISCLOSURE_ANCHOR_JS } from './plugins/disclosure-anchor.mjs';
-import { parseGlossaryDict, parseGlossaryMatch, renderGlossary, glossifyTex, applySymbolExclusions, peelNotationFences, GLOSSARY_JS } from './plugins/math-glossary.mjs';
+// 正文符号取词（2026-10-29 从 math-glossary.mjs 拆出）：公式内部的符号归 站点/math/，
+// 这里只管**正文**里的 `B`、`p_Fe` 这类文本形式（不是 TeX，靠文本匹配）。
+import { parseGlossaryDict, parseGlossaryMatch, renderGlossary, applySymbolExclusions, GLOSSARY_JS } from './plugins/prose-terms.mjs';
 import { SYMBOL_PACKS, COURSE_ENV, BUILD_PHASES } from './符号环境.mjs';
 import { extractSearchDoc, buildSearchBundle, SEARCH_JS, SEARCH_CSS } from './plugins/site-search.mjs';
 import { WEBMCP_LOADER_JS, WEBMCP_RELAY_JS } from './plugins/webmcp-loader.mjs';
@@ -112,12 +122,12 @@ console.log(`[build] Copied offline assets to dist/assets/`);
 }
 
 // 课程目录内的配图目录（figures/）原样拷进 dist，路径保持相对仓库根。
-for (const course of fs.readdirSync(path.join(ROOT, '课程'), { withFileTypes: true })) {
+for (const course of fs.readdirSync(path.join(ROOT, '课程总览'), { withFileTypes: true })) {
   if (!course.isDirectory()) continue;
-  const figDir = path.join(ROOT, '课程', course.name, '作业', 'figures');
+  const figDir = path.join(ROOT, '课程总览', course.name, '作业', 'figures');
   if (fs.existsSync(figDir)) {
-    copyDir(figDir, path.join(DIST_DIR, '课程', course.name, '作业', 'figures'));
-    console.log(`[build] Copied homework figures: 课程/${course.name}/作业/figures/`);
+    copyDir(figDir, path.join(DIST_DIR, '课程总览', course.name, '作业', 'figures'));
+    console.log(`[build] Copied homework figures: 课程总览/${course.name}/作业/figures/`);
   }
 }
 
@@ -180,9 +190,115 @@ for (const [packName, packPage] of Object.entries(SYMBOL_PACKS)) {
 }
 for (const w of glossaryWarn) console.warn(`[符号] ${w}`);
 console.log(`[符号] 包：${Object.entries(glossaryPacks).map(([n, p]) => `${n}(${Object.keys(p.dict).length} 条)`).join('、')}`);
+/**
+ * 渲染一条公式：编译（解析 + 唯一一次符号判定）→ 渲染 → 包锚点。
+ *
+ * **这是全站唯一一处渲染数学的地方**。旧实现有六处各自调渲染器，每处各自决定
+ * 「要不要取词、错了怎么办、降级成什么」——六个副本就是六个 bug 面。
+ *
+ * @param {string} src     公式源（不含 `$`）
+ * @param {'inline'|'display'} mode
+ * @param {string} relPath 页面路径（诊断定位）
+ * @param {object} env     本页数学环境（词典 + 包 + 排除）
+ * @param {Map}    hits    本页命中集（累加，供气泡 JSON）
+ * @returns {{rendered: string, plain: string}}
+ */
+function renderOneMath(src, mode, relPath, env, hits) {
+  const compiled = compileMath({ blocks: [{ raw: src, mode }] }, env);
+  const doc = compiled.docs[0];
+
+  // 诊断：错误计一次、警告记下。**不嗅探产物字符串**——错误是返回值里的数据。
+  let hasError = false;
+  for (const prob of compiled.problems) {
+    if (prob.severity === 'error') {
+      hasError = true;
+      formulaErrors++;
+      console.warn(`[build] ⚠ 公式渲染失败 ${relPath}：${prob.message}｜${src.slice(0, 60)}`);
+    } else if (prob.code !== 'term-excluded') {
+      // term-excluded 会非常多（每页几十处正常排除），不逐条打印
+      console.warn(`[build] ⚠ ${relPath}：${prob.message}`);
+    }
+  }
+
+  // 命中记账：只记真正绑上的（旧实现在插宏时就记，所以「插了但渲染器不认」的词条
+  // 会进气泡 JSON 却没有锚点——那是空气泡的来源）。
+  for (const t of doc.terms) {
+    const key = `${t.ref.pack}:${t.ref.entry}`;
+    if (!hits.has(key)) {
+      const pack = glossaryPacks[t.ref.pack];
+      const entry = pack?.dict?.[t.ref.entry];
+      if (entry) {
+        hits.set(key, {
+          key,
+          pack: t.ref.pack,
+          entry: t.ref.entry,
+          href: encodeURI(
+            path.relative(path.dirname(path.join(ROOT, relPath)),
+              path.join(ROOT, pack.page)).replace(/\\/g, '/').replace(/\.md$/, '.html'),
+          ) + '#' + t.ref.entry,
+          title: entry.title,
+          text: entry.text,
+          senses: entry.senses,
+        });
+      }
+    }
+  }
+
+  const out = renderMathDoc(doc, mathRenderer, {
+    decorateAnchors,
+    resolveHref: (key) => {
+      const hit = hits.get(key);
+      return hit ? { href: hit.href, label: hit.title } : null;
+    },
+  });
+  for (const prob of out.problems) {
+    if (prob.severity === 'error') {
+      hasError = true;
+      formulaErrors++;
+      console.warn(`[build] ⚠ ${relPath}：${prob.message}`);
+    }
+  }
+
+  const rendered = mode === 'display'
+    // 容器类名：`math-display` 是语义中立的正式名；`katex-scroll-container`
+    // 保留为兼容别名（主题 CSS 与 webmcp 工具还在认它），等两处都改完再删。
+    ? `<div class="math-display katex-scroll-container">${out.html}</div>`
+    : out.html;
+  return { rendered: hasError ? rendered : rendered, plain: doc.plain };
+}
+
 const mathGlossaryDist = path.join(DIST_DIR, 'assets', 'plugins', 'math-glossary.js');
 fs.mkdirSync(path.dirname(mathGlossaryDist), { recursive: true });
 fs.writeFileSync(mathGlossaryDist, GLOSSARY_JS);
+
+// ── 数学引擎（2026-10-29 重构）────────────────────────────────────────────
+// 词典在这里编译一次：把每个词条的 `tex` 形式解析成**形状键**（结构等价类），
+// 于是 `R_L` 与 `R_{L}` 自动同键——旧实现在字符串上比对，写哪个就漏另一个。
+const { dictionary: mathDictionary, problems: dictProblems } = compileDictionary(
+  Object.fromEntries(Object.entries(glossaryPacks).map(([name, pack]) => [name, {
+    page: pack.page,
+    entries: Object.entries(pack.dict).map(([id, e]) => ({
+      id,
+      tex: e.tex || [],
+      bubble: e.bubble !== false,
+    })),
+  }])),
+  { parse: parseMath },
+);
+for (const p of dictProblems) {
+  if (p.severity === 'error') console.error(`[数学] 词典：${p.message}`);
+  else console.warn(`[数学] 词典：${p.message}`);
+}
+
+// 渲染器 + 启动期自检：契约不成立就别开工。
+// 这替代了旧实现「每条公式嗅产物里有没有 katex-error」——检查一次协议，不是嗅一万次。
+const mathRenderer = createMathliveRenderer(mathliveSsr);
+const probeProblems = probeRenderer(mathRenderer);
+if (probeProblems.some((p) => p.severity === 'error')) {
+  throw new Error(`[数学] 渲染器自检失败：${probeProblems[0].message}`);
+}
+console.log(`[数学] 引擎 ${mathRenderer.id}；词典 ${Object.keys(mathDictionary.packs).length} 包；` +
+  `方言已知差异 ${DIALECTS.mathlive.unsupported.length} 项`);
 
 // 全站搜索：构建期生成倒排索引，浏览器端零依赖。实现与设计理由见
 // 站点/plugins/site-search.mjs（那里也记录了为什么弃用 Pagefind：它按单字索引中文，
@@ -314,7 +430,7 @@ for (const relPath of TARGET_FILES) {
     // frontmatter 解析失败 = 硬失败（2026-10-22 悬案 Q1 结算）：这里曾用 console.warn
     // 静默吞掉，字段全空、页面照常生成、全部闸门绿——2026-10-12 实弹：frontmatter 写进
     // 非 YAML 行（注：…），「符号排除」清单静默失效，只有浏览器里逐页点才看得出来。
-    // 构建（node build.mjs）对 课程/**/*.md 与其余全部目标文件逐个走到这里，
+    // 构建（node build.mjs）对 课程总览/**/*.md 与其余全部目标文件逐个走到这里，
     // 坏 YAML 使构建 rc≠0 并指出文件（裸抛只给 vendor 栈，不带文件名——所以要包一层）。
     try {
       frontmatter = yaml.load(fmMatch[1]) || {};
@@ -340,262 +456,268 @@ for (const relPath of TARGET_FILES) {
 
 // 3. Define navigation structure
 const NAV_STRUCTURE = [
-  { label: "首页", path: "README.md" },
+  { label: "README", path: "README.md" },
   {
     label: "课程总览",
-    path: "课程/index.md",
+    path: "课程总览/index.md",
     children: [
       {
         label: "工程数学",
-        path: "课程/工程数学/index.md",
+        path: "课程总览/工程数学/index.md",
         children: [
-          { label: "Walkthrough", path: "课程/工程数学/Walkthrough.md" },
-          { label: "技法库", path: "课程/工程数学/技法库.md" },
+          { label: "Walkthrough", path: "课程总览/工程数学/Walkthrough.md" },
+          { label: "技法库", path: "课程总览/工程数学/技法库.md" },
           {
             label: "作业",
-            path: "课程/工程数学/作业/index.md",
+            path: "课程总览/工程数学/作业/index.md",
             children: [
-              { label: "作业1", path: "课程/工程数学/作业/2026-09-17-作业1.md" },
-              { label: "作业2", path: "课程/工程数学/作业/2026-10-08-作业2.md" },
-              { label: "作业3（习题 2.3、2.4、3.1）", path: "课程/工程数学/作业/2026-10-16-作业3.md" }
+              { label: "作业1", path: "课程总览/工程数学/作业/作业1.md" },
+              { label: "作业2", path: "课程总览/工程数学/作业/作业2.md" },
+              { label: "作业3", path: "课程总览/工程数学/作业/作业3.md" }
             ]
           },
           {
             label: "课堂笔记",
-            path: "课程/工程数学/课堂笔记/index.md",
+            path: "课程总览/工程数学/课堂笔记/index.md",
             children: [
-              { label: "09-17 行列式与沙路法则", path: "课程/工程数学/课堂笔记/2026-09-17-determinants-order-2-3.md" },
-              { label: "09-17 课堂听课整理", path: "课程/工程数学/课堂笔记/2026-09-17-determinants-transcript-notes.md" },
-              { label: "09-24 降阶法与克拉默法则", path: "课程/工程数学/课堂笔记/2026-09-24-降阶法克拉默法则与齐次方程组.md" },
-              { label: "10-08 矩阵与逆", path: "课程/工程数学/课堂笔记/2026-10-08-矩阵的定义与运算及逆的引入.md" },
+              { label: "09-17-行列式与沙路法则", path: "课程总览/工程数学/课堂笔记/09-17-行列式与沙路法则.md" },
+              { label: "09-17-课堂听课整理", path: "课程总览/工程数学/课堂笔记/09-17-课堂听课整理.md" },
+              { label: "09-24-降阶法与克拉默法则", path: "课程总览/工程数学/课堂笔记/09-24-降阶法与克拉默法则.md" },
+              { label: "10-08-矩阵与逆", path: "课程总览/工程数学/课堂笔记/10-08-矩阵与逆.md" },
+              { label: "10-22-矩阵的秩与向量", path: "课程总览/工程数学/课堂笔记/10-22-矩阵的秩与向量.md" },
             ]
           },
           {
             label: "教材解析",
-            path: "课程/工程数学/教材解析/index.md",
+            path: "课程总览/工程数学/教材解析/index.md",
             children: [
-              { label: "符号入门", path: "课程/工程数学/教材解析/0.0-符号入门.md" },
+              { label: "符号入门", path: "课程总览/工程数学/教材解析/符号入门.md" },
               {
-                label: "第一部分 线性代数",
-                path: "课程/工程数学/教材解析/第一部分-线性代数/index.md",
+                label: "第一部分-线性代数",
+                path: "课程总览/工程数学/教材解析/第一部分-线性代数/index.md",
                 children: [
                   {
-                    label: "第01章 行列式",
+                    label: "第1章-行列式",
                     children: [
-                      { label: "★ 通关攻略", path: "课程/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.0-本章通关攻略.md" },
-                      { label: "1.1 二阶与三阶行列式", path: "课程/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.1-二阶与三阶行列式.md" },
-                      { label: "1.2 n阶行列式", path: "课程/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.2-n阶行列式.md" },
-                      { label: "1.3 克莱姆法则", path: "课程/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.3-克莱姆法则.md" },
-                      { label: "1.4 MATLAB 行列式", path: "课程/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.4-用MATLAB计算行列式.md" }
+                      { label: "1.0-通关攻略", path: "课程总览/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.0-通关攻略.md" },
+                      { label: "1.1-二阶与三阶行列式", path: "课程总览/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.1-二阶与三阶行列式.md" },
+                      { label: "1.2-n阶行列式", path: "课程总览/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.2-n阶行列式.md" },
+                      { label: "1.3-克莱姆法则", path: "课程总览/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.3-克莱姆法则.md" },
+                      { label: "1.4-MATLAB-行列式", path: "课程总览/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.4-MATLAB-行列式.md" }
                     ]
                   },
                   {
-                    label: "第02章 矩阵",
+                    label: "第2章-矩阵",
                     children: [
-                      { label: "★ 通关攻略", path: "课程/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.0-本章通关攻略.md" },
-                      { label: "2.1 矩阵的概念及运算", path: "课程/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.1-矩阵的概念及运算.md" },
-                      { label: "2.2 逆矩阵", path: "课程/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.2-逆矩阵.md" },
-                      { label: "2.3 初等变换与初等矩阵", path: "课程/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.3-矩阵的初等变换与初等矩阵.md" },
-                      { label: "2.4 矩阵的秩", path: "课程/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.4-矩阵的秩.md" },
-                      { label: "2.5 MATLAB 矩阵运算", path: "课程/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.5-用MATLAB进行矩阵运算.md" }
+                      { label: "2.0-通关攻略", path: "课程总览/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.0-通关攻略.md" },
+                      { label: "2.1-矩阵的概念及运算", path: "课程总览/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.1-矩阵的概念及运算.md" },
+                      { label: "2.2-逆矩阵", path: "课程总览/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.2-逆矩阵.md" },
+                      { label: "2.3-初等变换与矩阵", path: "课程总览/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.3-初等变换与矩阵.md" },
+                      { label: "2.4-矩阵的秩", path: "课程总览/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.4-矩阵的秩.md" },
+                      { label: "2.5-MATLAB-矩阵运算", path: "课程总览/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.5-MATLAB-矩阵运算.md" }
                     ]
                   },
                   {
-                    label: "第03章 n维向量与向量空间",
+                    label: "第3章-n维向量与向量空间",
                     children: [
-                      { label: "★ 通关攻略", path: "课程/工程数学/教材解析/第一部分-线性代数/第3章-n维向量与向量空间/3.0-本章通关攻略.md" },
-                      { label: "3.1 n维向量", path: "课程/工程数学/教材解析/第一部分-线性代数/第3章-n维向量与向量空间/3.1-n维向量.md" },
-                      { label: "3.2 向量组的线性相关性", path: "课程/工程数学/教材解析/第一部分-线性代数/第3章-n维向量与向量空间/3.2-向量组的线性相关性.md" },
-                      { label: "3.3 向量组的秩", path: "课程/工程数学/教材解析/第一部分-线性代数/第3章-n维向量与向量空间/3.3-向量组的秩.md" },
-                      { label: "3.4 向量空间", path: "课程/工程数学/教材解析/第一部分-线性代数/第3章-n维向量与向量空间/3.4-向量空间.md" },
-                      { label: "3.5 MATLAB 向量运算", path: "课程/工程数学/教材解析/第一部分-线性代数/第3章-n维向量与向量空间/3.5-用MATLAB进行向量运算.md" }
+                      { label: "3.0-通关攻略", path: "课程总览/工程数学/教材解析/第一部分-线性代数/第3章-n维向量与向量空间/3.0-通关攻略.md" },
+                      { label: "3.1-n维向量", path: "课程总览/工程数学/教材解析/第一部分-线性代数/第3章-n维向量与向量空间/3.1-n维向量.md" },
+                      { label: "3.2-向量相关性", path: "课程总览/工程数学/教材解析/第一部分-线性代数/第3章-n维向量与向量空间/3.2-向量相关性.md" },
+                      { label: "3.3-向量组的秩", path: "课程总览/工程数学/教材解析/第一部分-线性代数/第3章-n维向量与向量空间/3.3-向量组的秩.md" },
+                      { label: "3.4-向量空间", path: "课程总览/工程数学/教材解析/第一部分-线性代数/第3章-n维向量与向量空间/3.4-向量空间.md" },
+                      { label: "3.5-MATLAB-向量运算", path: "课程总览/工程数学/教材解析/第一部分-线性代数/第3章-n维向量与向量空间/3.5-MATLAB-向量运算.md" }
                     ]
                   }
                 ]
               }
             ]
           },
-          { label: "原始资料", path: "课程/工程数学/原始资料/index.md" },
-          { label: "音频", path: "课程/工程数学/音频/index.md" }
+          { label: "原始资料", path: "课程总览/工程数学/原始资料/index.md" },
+          { label: "音频", path: "课程总览/工程数学/音频/index.md" }
         ]
       },
       {
         label: "电力大数据与人工智能",
-        path: "课程/电力大数据与人工智能/index.md",
+        path: "课程总览/电力大数据与人工智能/index.md",
         children: [
-          { label: "Walkthrough", path: "课程/电力大数据与人工智能/Walkthrough.md" },
-          { label: "备考", path: "课程/电力大数据与人工智能/备考.md" },
-          { label: "作业", path: "课程/电力大数据与人工智能/作业/index.md",
+          { label: "Walkthrough", path: "课程总览/电力大数据与人工智能/Walkthrough.md" },
+          { label: "备考", path: "课程总览/电力大数据与人工智能/备考.md" },
+          { label: "作业", path: "课程总览/电力大数据与人工智能/作业/index.md",
             children: [
-              { label: "2026-09-29作业", path: "课程/电力大数据与人工智能/作业/2026-09-29-大数据特点与AI算法.md" }
+              { label: "2026-09-29作业", path: "课程总览/电力大数据与人工智能/作业/2026-09-29作业.md" }
             ]
           },
-          { label: "教材解析", path: "课程/电力大数据与人工智能/教材解析/index.md" },
-          { label: "课堂笔记", path: "课程/电力大数据与人工智能/课堂笔记/index.md",
+          { label: "教材解析", path: "课程总览/电力大数据与人工智能/教材解析/index.md" },
+          { label: "课堂笔记", path: "课程总览/电力大数据与人工智能/课堂笔记/index.md",
             children: [
-              { label: "09-20 开课第一讲", path: "课程/电力大数据与人工智能/课堂笔记/2026-09-20-课程定位与考核要求.md" },
-              { label: "09-22 暂态稳定评估", path: "课程/电力大数据与人工智能/课堂笔记/2026-09-22-暂态稳定评估方法与紧急控制.md" },
-              { label: "09-29 大数据与AI算法", path: "课程/电力大数据与人工智能/课堂笔记/2026-09-29-电力大数据特点与人工智能算法.md" },
-              { label: "10-13 常用算法开篇", path: "课程/电力大数据与人工智能/课堂笔记/2026-10-13-人工智能常用算法与数据预处理开篇.md" },
+              { label: "09-20-开课第一讲", path: "课程总览/电力大数据与人工智能/课堂笔记/09-20-开课第一讲.md" },
+              { label: "09-22-暂态稳定评估", path: "课程总览/电力大数据与人工智能/课堂笔记/09-22-暂态稳定评估.md" },
+              { label: "09-29-大数据与AI算法", path: "课程总览/电力大数据与人工智能/课堂笔记/09-29-大数据与AI算法.md" },
+              { label: "10-13-常用算法开篇", path: "课程总览/电力大数据与人工智能/课堂笔记/10-13-常用算法开篇.md" },
+              { label: "10-20-聚类与神经网络", path: "课程总览/电力大数据与人工智能/课堂笔记/10-20-聚类与神经网络.md" },
+              { label: "10-27-密度初筛与调频", path: "课程总览/电力大数据与人工智能/课堂笔记/10-27-密度初筛与调频.md" },
             ]
           },
-          { label: "原始资料", path: "课程/电力大数据与人工智能/原始资料/index.md" },
-          { label: "音频", path: "课程/电力大数据与人工智能/音频/index.md" }
+          { label: "原始资料", path: "课程总览/电力大数据与人工智能/原始资料/index.md" },
+          { label: "音频", path: "课程总览/电力大数据与人工智能/音频/index.md" }
         ]
       },
       {
         // 本课按 COURSE_SKIPPED_KINDS 声明豁免「教材解析」，故此处也不列该子节点
         // （与 .githooks/hook_lib.py 保持一致，别只改一边）。
         label: "形势与政策",
-        path: "课程/形势与政策/index.md",
+        path: "课程总览/形势与政策/index.md",
         children: [
-          { label: "Walkthrough", path: "课程/形势与政策/Walkthrough.md" },
-          { label: "备考", path: "课程/形势与政策/备考.md" },
-          { label: "作业", path: "课程/形势与政策/作业/index.md" },
-          { label: "课堂笔记", path: "课程/形势与政策/课堂笔记/index.md",
+          { label: "Walkthrough", path: "课程总览/形势与政策/Walkthrough.md" },
+          { label: "备考", path: "课程总览/形势与政策/备考.md" },
+          { label: "作业", path: "课程总览/形势与政策/作业/index.md" },
+          { label: "课堂笔记", path: "课程总览/形势与政策/课堂笔记/index.md",
             children: [
-              { label: "09-21 经济热点专题", path: "课程/形势与政策/课堂笔记/2026-09-21-经济热点专题与考试安排.md" },
-              { label: "09-28 人工智能专题", path: "课程/形势与政策/课堂笔记/2026-09-28-人工智能专题.md" },
-              { label: "10-12 美丽中国建设", path: "课程/形势与政策/课堂笔记/2026-10-12-美丽中国建设专题与考试规则.md" },
+              { label: "09-21-经济热点专题", path: "课程总览/形势与政策/课堂笔记/09-21-经济热点专题.md" },
+              { label: "09-28-人工智能专题", path: "课程总览/形势与政策/课堂笔记/09-28-人工智能专题.md" },
+              { label: "10-12-美丽中国建设", path: "课程总览/形势与政策/课堂笔记/10-12-美丽中国建设.md" },
+              { label: "10-20-铸牢共同体意识", path: "课程总览/形势与政策/课堂笔记/10-20-铸牢共同体意识.md" },
             ]
           },
-          { label: "原始资料", path: "课程/形势与政策/原始资料/index.md" },
-          { label: "音频", path: "课程/形势与政策/音频/index.md" }
+          { label: "原始资料", path: "课程总览/形势与政策/原始资料/index.md" },
+          { label: "音频", path: "课程总览/形势与政策/音频/index.md" }
         ]
       },
       {
         label: "电路原理",
-        path: "课程/电路原理/index.md",
+        path: "课程总览/电路原理/index.md",
         children: [
-          { label: "Walkthrough", path: "课程/电路原理/Walkthrough.md" },
-          { label: "作业", path: "课程/电路原理/作业/index.md",
+          { label: "Walkthrough", path: "课程总览/电路原理/Walkthrough.md" },
+          { label: "作业", path: "课程总览/电路原理/作业/index.md",
             children: [
-              { label: "习题册第一章（43 题）", path: "课程/电路原理/作业/2026-09-28-习题册第一章.md" },
-              { label: "习题册第二章（34 题）", path: "课程/电路原理/作业/2026-09-28-习题册第二章.md" },
-              { label: "习题册第三章（28 题）", path: "课程/电路原理/作业/2026-09-28-习题册第三章.md" },
-              { label: "习题册第四章（21 题）", path: "课程/电路原理/作业/2026-09-28-习题册第四章.md" },
-              { label: "习题册第五章（62 题）", path: "课程/电路原理/作业/2026-09-28-习题册第五章.md" },
-              { label: "习题册第六章（33 题）", path: "课程/电路原理/作业/2026-09-28-习题册第六章.md" },
-              { label: "习题册第七章（31 题）", path: "课程/电路原理/作业/2026-09-28-习题册第七章.md" },
-              { label: "习题册第九章（26 题）", path: "课程/电路原理/作业/2026-09-28-习题册第九章.md" }
+              { label: "习题册第一章", path: "课程总览/电路原理/作业/习题册第一章.md" },
+              { label: "习题册第二章", path: "课程总览/电路原理/作业/习题册第二章.md" },
+              { label: "习题册第三章", path: "课程总览/电路原理/作业/习题册第三章.md" },
+              { label: "习题册第四章", path: "课程总览/电路原理/作业/习题册第四章.md" },
+              { label: "习题册第五章", path: "课程总览/电路原理/作业/习题册第五章.md" },
+              { label: "习题册第六章", path: "课程总览/电路原理/作业/习题册第六章.md" },
+              { label: "习题册第七章", path: "课程总览/电路原理/作业/习题册第七章.md" },
+              { label: "习题册第九章", path: "课程总览/电路原理/作业/习题册第九章.md" }
             ]
           },
-          { label: "教材解析", path: "课程/电路原理/教材解析/index.md",
+          { label: "教材解析", path: "课程总览/电路原理/教材解析/index.md",
             children: [
-              { label: "符号入门", path: "课程/电路原理/教材解析/0.0-符号入门.md" }
+              { label: "符号入门", path: "课程总览/电路原理/教材解析/符号入门.md" }
             ]
           },
-          { label: "课堂笔记", path: "课程/电路原理/课堂笔记/index.md",
+          { label: "课堂笔记", path: "课程总览/电路原理/课堂笔记/index.md",
             children: [
-              { label: "09-21 开课与基本概念", path: "课程/电路原理/课堂笔记/2026-09-21-开课说明与电路的基本概念.md" },
-              { label: "09-23 电压电位与电路名词", path: "课程/电路原理/课堂笔记/2026-09-23-电压电位与电路名词.md" },
-              { label: "10-10 受控源与例题", path: "课程/电路原理/课堂笔记/2026-10-10-受控源与第一章综合例题.md" },
-              { label: "10-12 习题册与等效变换", path: "课程/电路原理/课堂笔记/2026-10-12-习题册收尾与电路的等效变换.md" },
-              { label: "10-14 电源等效变换", path: "课程/电路原理/课堂笔记/2026-10-14-电源等效变换与无源二端网络等效.md" },
-              { label: "10-21 网孔电流法", path: "课程/电路原理/课堂笔记/2026-10-21-网孔电流法与回路电流法.md" },
-              { label: "10-26 节点电压法", path: "课程/电路原理/课堂笔记/2026-10-26-节点电压法.md" },
-              { label: "10-26 补课：叠加戴维南", path: "课程/电路原理/课堂笔记/2026-10-26-下午补课-节点电压法收尾与叠加定理戴维南定理.md" },
-              { label: "10-28 戴维南与诺顿", path: "课程/电路原理/课堂笔记/2026-10-28-戴维南定理与诺顿定理及最大功率传输.md" },
-              { label: "09-30 电容电感与独立电源", path: "课程/电路原理/课堂笔记/2026-09-30-电容电感与独立电源.md" },
-              { label: "09-28 KCL 与 KVL 及电阻元件", path: "课程/电路原理/课堂笔记/2026-09-28-KCL与KVL及电阻元件.md" },
+              { label: "09-21-开课与基本概念", path: "课程总览/电路原理/课堂笔记/09-21-开课与基本概念.md" },
+              { label: "09-23-电压电位与电路名词", path: "课程总览/电路原理/课堂笔记/09-23-电压电位与电路名词.md" },
+              { label: "10-10-受控源与例题", path: "课程总览/电路原理/课堂笔记/10-10-受控源与例题.md" },
+              { label: "10-12-习题册与等效变换", path: "课程总览/电路原理/课堂笔记/10-12-习题册与等效变换.md" },
+              { label: "10-14-电源等效变换", path: "课程总览/电路原理/课堂笔记/10-14-电源等效变换.md" },
+              { label: "10-21-网孔电流法", path: "课程总览/电路原理/课堂笔记/10-21-网孔电流法.md" },
+              { label: "10-26-节点电压法", path: "课程总览/电路原理/课堂笔记/10-26-节点电压法.md" },
+              { label: "10-26-补课叠加戴维南", path: "课程总览/电路原理/课堂笔记/10-26-补课叠加戴维南.md" },
+              { label: "10-28-戴维南与诺顿", path: "课程总览/电路原理/课堂笔记/10-28-戴维南与诺顿.md" },
+              { label: "09-30-电容电感与独立电源", path: "课程总览/电路原理/课堂笔记/09-30-电容电感与独立电源.md" },
+              { label: "09-28-KCL与KVL", path: "课程总览/电路原理/课堂笔记/09-28-KCL与KVL.md" },
             ]
           },
-          { label: "原始资料", path: "课程/电路原理/原始资料/index.md" },
-          { label: "音频", path: "课程/电路原理/音频/index.md" }
+          { label: "原始资料", path: "课程总览/电路原理/原始资料/index.md" },
+          { label: "音频", path: "课程总览/电路原理/音频/index.md" }
         ]
       },
       {
         label: "电子技术",
-        path: "课程/电子技术/index.md",
+        path: "课程总览/电子技术/index.md",
         children: [
-          { label: "Walkthrough", path: "课程/电子技术/Walkthrough.md" },
-          { label: "技法库", path: "课程/电子技术/技法库.md" },
-          { label: "作业", path: "课程/电子技术/作业/index.md",
+          { label: "Walkthrough", path: "课程总览/电子技术/Walkthrough.md" },
+          { label: "技法库", path: "课程总览/电子技术/技法库.md" },
+          { label: "作业", path: "课程总览/电子技术/作业/index.md",
             children: [
-              { label: "2026-9-23作业", path: "课程/电子技术/作业/2026-09-23-第一章简答题.md" },
-              { label: "2026-9-28作业", path: "课程/电子技术/作业/2026-09-28-第一章填空与简答.md" },
-              { label: "2026-9-30作业", path: "课程/电子技术/作业/2026-09-30-数制转换与8421BCD码.md" },
-              { label: "2026-10-09作业", path: "课程/电子技术/作业/2026-10-09-逻辑等式证明.md" },
-              { label: "2026-10-10作业", path: "课程/电子技术/作业/2026-10-10-逻辑化简与状态表.md" },
-              { label: "2026-10-12作业", path: "课程/电子技术/作业/2026-10-12-门电路输出波形.md" },
-              { label: "2026-10-14作业", path: "课程/电子技术/作业/2026-10-14-化简与两地控制灯.md" },
-              { label: "2026-10-19作业", path: "课程/电子技术/作业/2026-10-19-比较器与数据选择器.md" },
-              { label: "2026-10-21作业", path: "课程/电子技术/作业/2026-10-21-触发器波形.md" }
+              { label: "2026-9-23作业", path: "课程总览/电子技术/作业/2026-9-23作业.md" },
+              { label: "2026-9-28作业", path: "课程总览/电子技术/作业/2026-9-28作业.md" },
+              { label: "2026-9-30作业", path: "课程总览/电子技术/作业/2026-9-30作业.md" },
+              { label: "2026-10-09作业", path: "课程总览/电子技术/作业/2026-10-09作业.md" },
+              { label: "2026-10-10作业", path: "课程总览/电子技术/作业/2026-10-10作业.md" },
+              { label: "2026-10-12作业", path: "课程总览/电子技术/作业/2026-10-12作业.md" },
+              { label: "2026-10-14作业", path: "课程总览/电子技术/作业/2026-10-14作业.md" },
+              { label: "2026-10-19作业", path: "课程总览/电子技术/作业/2026-10-19作业.md" },
+              { label: "2026-10-21作业", path: "课程总览/电子技术/作业/2026-10-21作业.md" }
             ]
           },
-          { label: "教材解析", path: "课程/电子技术/教材解析/index.md",
+          { label: "教材解析", path: "课程总览/电子技术/教材解析/index.md",
             children: [
-              { label: "符号入门", path: "课程/电子技术/教材解析/0.0-符号入门.md" }
+              { label: "符号入门", path: "课程总览/电子技术/教材解析/符号入门.md" }
             ]
           },
-          { label: "课堂笔记", path: "课程/电子技术/课堂笔记/index.md",
+          { label: "课堂笔记", path: "课程总览/电子技术/课堂笔记/index.md",
             children: [
-              { label: "09-21 开课与半导体基础", path: "课程/电子技术/课堂笔记/2026-09-21-开课说明与半导体基础到PN结.md" },
-              { label: "09-23 二极管与含二极管电路", path: "课程/电子技术/课堂笔记/2026-09-23-二极管与含二极管电路.md" },
-              { label: "10-10 逻辑代数与公式法化简", path: "课程/电子技术/课堂笔记/2026-10-10-逻辑代数与公式法化简.md" },
-              { label: "09-28 三极管与场效应管", path: "课程/电子技术/课堂笔记/2026-09-28-三极管与场效应管.md" },
-              { label: "10-12 卡诺图化简法与无关项", path: "课程/电子技术/课堂笔记/2026-10-12-卡诺图化简法与无关项.md" },
-              { label: "10-19 三态门与组合逻辑电路", path: "课程/电子技术/课堂笔记/2026-10-19-三态门与组合逻辑电路.md" },
+              { label: "09-21-开课与半导体基础", path: "课程总览/电子技术/课堂笔记/09-21-开课与半导体基础.md" },
+              { label: "09-23-二极管与含二极管电路", path: "课程总览/电子技术/课堂笔记/09-23-二极管与含二极管电路.md" },
+              { label: "10-10-逻辑代数与公式法化简", path: "课程总览/电子技术/课堂笔记/10-10-逻辑代数与公式法化简.md" },
+              { label: "09-28-三极管与场效应管", path: "课程总览/电子技术/课堂笔记/09-28-三极管与场效应管.md" },
+              { label: "10-12-卡诺图化简法与无关项", path: "课程总览/电子技术/课堂笔记/10-12-卡诺图化简法与无关项.md" },
+              { label: "10-19-三态门与组合逻辑电路", path: "课程总览/电子技术/课堂笔记/10-19-三态门与组合逻辑电路.md" },
+              { label: "10-21-实验一常用逻辑门电路", path: "课程总览/电子技术/课堂笔记/10-21-实验一常用逻辑门电路.md" },
+              { label: "10-21-编码器与译码器", path: "课程总览/电子技术/课堂笔记/10-21-编码器与译码器.md" },
             ]
           },
-          { label: "原始资料", path: "课程/电子技术/原始资料/index.md" },
-          { label: "音频", path: "课程/电子技术/音频/index.md" }
+          { label: "原始资料", path: "课程总览/电子技术/原始资料/index.md" },
+          { label: "音频", path: "课程总览/电子技术/音频/index.md" }
         ]
       },
       {
         label: "电机学",
-        path: "课程/电机学/index.md",
+        path: "课程总览/电机学/index.md",
         children: [
-          { label: "Walkthrough", path: "课程/电机学/Walkthrough.md" },
-          { label: "作业", path: "课程/电机学/作业/index.md",
+          { label: "Walkthrough", path: "课程总览/电机学/Walkthrough.md" },
+          { label: "作业", path: "课程总览/电机学/作业/index.md",
             children: [
-              { label: "09-22 第1章客观题", path: "课程/电机学/作业/2026-09-22-第1章概述客观题.md" },
-              { label: "10-15 变压器变比", path: "课程/电机学/作业/2026-10-15-变压器额定电流与变比.md" }
+              { label: "09-22-第1章客观题", path: "课程总览/电机学/作业/09-22-第1章客观题.md" },
+              { label: "10-15-变压器变比", path: "课程总览/电机学/作业/10-15-变压器变比.md" }
             ]
           },
-          { label: "教材解析", path: "课程/电机学/教材解析/index.md",
+          { label: "教材解析", path: "课程总览/电机学/教材解析/index.md",
             children: [
-              { label: "符号入门", path: "课程/电机学/教材解析/0.0-符号入门.md" },
-              { label: "第01章 概述",
+              { label: "符号入门", path: "课程总览/电机学/教材解析/符号入门.md" },
+              { label: "第01章-概述",
                 children: [
-                  { label: "1.1 电机的分类", path: "课程/电机学/教材解析/第01章-概述/1.1-电机的分类.md" },
-                  { label: "1.2 电机的磁路和磁路定律", path: "课程/电机学/教材解析/第01章-概述/1.2-电机的磁路和磁路定律.md" },
-                  { label: "1.3 电机的电磁基本理论", path: "课程/电机学/教材解析/第01章-概述/1.3-电机的电磁基本理论.md" },
-                  { label: "1.4 电机的制造材料", path: "课程/电机学/教材解析/第01章-概述/1.4-电机的制造材料.md" },
-                  { label: "第01章 小结与思考题习题", path: "课程/电机学/教材解析/第01章-概述/第01章-小结与思考题习题.md" }
+                  { label: "1.1-电机的分类", path: "课程总览/电机学/教材解析/第01章-概述/1.1-电机的分类.md" },
+                  { label: "1.2-电机的磁路和磁路定律", path: "课程总览/电机学/教材解析/第01章-概述/1.2-电机的磁路和磁路定律.md" },
+                  { label: "1.3-电机的电磁基本理论", path: "课程总览/电机学/教材解析/第01章-概述/1.3-电机的电磁基本理论.md" },
+                  { label: "1.4-电机的制造材料", path: "课程总览/电机学/教材解析/第01章-概述/1.4-电机的制造材料.md" },
+                  { label: "第01章-小结与思考题习题", path: "课程总览/电机学/教材解析/第01章-概述/第01章-小结与思考题习题.md" }
                 ]
               },
-              { label: "第02章 变压器",
+              { label: "第02章-变压器的基本作用原理与理论分析",
                 children: [
-                  { label: "2.0 通关攻略", path: "课程/电机学/教材解析/第02章-变压器的基本作用原理与理论分析/2.0-本章通关攻略.md" }
+                  { label: "2.0-通关攻略", path: "课程总览/电机学/教材解析/第02章-变压器的基本作用原理与理论分析/2.0-通关攻略.md" }
                 ]
               }
             ]
           },
-          { label: "课堂笔记", path: "课程/电机学/课堂笔记/index.md",
+          { label: "课堂笔记", path: "课程总览/电机学/课堂笔记/index.md",
             children: [
-              { label: "09-24 电机概述与磁路", path: "课程/电机学/课堂笔记/2026-09-24-绪论电机概述与磁路基础.md" },
-              { label: "10-08 磁路例题与变压器概述", path: "课程/电机学/课堂笔记/2026-10-08-磁路例题与变压器概述.md" },
-              { label: "10-15 空载运行与负载运行", path: "课程/电机学/课堂笔记/2026-10-15-空载运行与负载运行.md" },
-              { label: "10-22 参数测定与电压变化率", path: "课程/电机学/课堂笔记/2026-10-22-参数测定与电压变化率.md" }
+              { label: "09-24-电机概述与磁路", path: "课程总览/电机学/课堂笔记/09-24-电机概述与磁路.md" },
+              { label: "10-08-磁路例题与变压器概述", path: "课程总览/电机学/课堂笔记/10-08-磁路例题与变压器概述.md" },
+              { label: "10-15-空载运行与负载运行", path: "课程总览/电机学/课堂笔记/10-15-空载运行与负载运行.md" },
+              { label: "10-22-参数测定与电压变化率", path: "课程总览/电机学/课堂笔记/10-22-参数测定与电压变化率.md" }
             ]
           },
-          { label: "原始资料", path: "课程/电机学/原始资料/index.md" },
-          { label: "音频", path: "课程/电机学/音频/index.md" }
+          { label: "原始资料", path: "课程总览/电机学/原始资料/index.md" },
+          { label: "音频", path: "课程总览/电机学/音频/index.md" }
         ]
       },
       {
         label: "劳动教育",
-        path: "课程/劳动教育/index.md",
+        path: "课程总览/劳动教育/index.md",
         children: [
-          { label: "作业", path: "课程/劳动教育/作业/index.md" },
-          { label: "课堂笔记", path: "课程/劳动教育/课堂笔记/index.md",
+          { label: "作业", path: "课程总览/劳动教育/作业/index.md" },
+          { label: "课堂笔记", path: "课程总览/劳动教育/课堂笔记/index.md",
             children: [
-              { label: "10-26 劳动教育导论与考核", path: "课程/劳动教育/课堂笔记/2026-10-26-劳动教育导论与课程考核.md" }
+              { label: "10-26-劳动教育导论与考核", path: "课程总览/劳动教育/课堂笔记/10-26-劳动教育导论与考核.md" }
             ]
           },
-          { label: "原始资料", path: "课程/劳动教育/原始资料/index.md" },
-          { label: "音频", path: "课程/劳动教育/音频/index.md" }
+          { label: "原始资料", path: "课程总览/劳动教育/原始资料/index.md" },
+          { label: "音频", path: "课程总览/劳动教育/音频/index.md" }
         ]
       }
     ]
@@ -611,27 +733,27 @@ const NAV_STRUCTURE = [
 
 // Linear sequence for textbook chapters and lecture notes
 const TEXTBOOK_ORDER = [
-  "课程/工程数学/教材解析/0.0-符号入门.md",
-  "课程/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.0-本章通关攻略.md",
-  "课程/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.1-二阶与三阶行列式.md",
-  "课程/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.2-n阶行列式.md",
-  "课程/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.3-克莱姆法则.md",
-  "课程/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.4-用MATLAB计算行列式.md",
-  "课程/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.0-本章通关攻略.md",
-  "课程/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.1-矩阵的概念及运算.md",
-  "课程/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.2-逆矩阵.md",
-  "课程/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.3-矩阵的初等变换与初等矩阵.md",
-  "课程/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.4-矩阵的秩.md",
-  "课程/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.5-用MATLAB进行矩阵运算.md"
+  "课程总览/工程数学/教材解析/符号入门.md",
+  "课程总览/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.0-通关攻略.md",
+  "课程总览/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.1-二阶与三阶行列式.md",
+  "课程总览/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.2-n阶行列式.md",
+  "课程总览/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.3-克莱姆法则.md",
+  "课程总览/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.4-MATLAB-行列式.md",
+  "课程总览/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.0-通关攻略.md",
+  "课程总览/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.1-矩阵的概念及运算.md",
+  "课程总览/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.2-逆矩阵.md",
+  "课程总览/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.3-初等变换与矩阵.md",
+  "课程总览/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.4-矩阵的秩.md",
+  "课程总览/工程数学/教材解析/第一部分-线性代数/第2章-矩阵/2.5-MATLAB-矩阵运算.md"
 ];
 
 // 2026-10-24（issue #18 决策 #9）补 2026-10-08 那篇——NOTES_ORDER 只列 3 条时第 4 篇
 // 笔记永远拿不到下一节分页（审计 γ P1-2）。派生化（从文件系统枚举）列为后续项。
 const NOTES_ORDER = [
-  "课程/工程数学/课堂笔记/2026-09-17-determinants-order-2-3.md",
-  "课程/工程数学/课堂笔记/2026-09-17-determinants-transcript-notes.md",
-  "课程/工程数学/课堂笔记/2026-09-24-降阶法克拉默法则与齐次方程组.md",
-  "课程/工程数学/课堂笔记/2026-10-08-矩阵的定义与运算及逆的引入.md"
+  "课程总览/工程数学/课堂笔记/09-17-行列式与沙路法则.md",
+  "课程总览/工程数学/课堂笔记/09-17-课堂听课整理.md",
+  "课程总览/工程数学/课堂笔记/09-24-降阶法与克拉默法则.md",
+  "课程总览/工程数学/课堂笔记/10-08-矩阵与逆.md"
 ];
 
 // Helper: Wrap bare CJK in math mode
@@ -854,27 +976,24 @@ for (const relPath of TARGET_FILES) {
   // 吐回页面（2026-10-10 实弹：符号入门页 4 处公式在气泡里字面显示）。
   const escapeHtmlText = (t) =>
     t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // 气泡里的公式：**用空词库编译**。
+  // 这不是「记得别取词」的约定，是结构保证：词库为空 ⇒ 判定器手里没有词条
+  // ⇒ 结构上产不出锚点 ⇒ 「气泡里套气泡」没有对应的代码路径。
+  // 旧实现靠一条禁令加一层 `peelNotationFences` 剥壳，仍会漏。
   const renderBubbleText = (s) =>
     String(s)
       .split(/\$([^$\n]+)\$/g)
       .map((part, i) => {
         if (i % 2 === 1) {
-          try {
-            const html = katex.renderToString(wrapBareCJK(part), {
-              displayMode: false,
-              throwOnError: false,
-              trust: true,
-              strict: false,
-            });
-            // 同 Step 2：throwOnError:false 不抛异常，错误在产物里——这里也要计入
-            if (html.includes('katex-error')) {
-              formulaErrors++;
-              console.warn(`[build] ⚠ 气泡公式渲染失败 ${relPath}：${part.slice(0, 60)}`);
-            }
-            return html;
-          } catch (err) {
+          const out = compileMath({ blocks: [{ raw: part, mode: 'inline' }] },
+            { dictionary: mathDictionary, packs: [] });
+          const bad = out.problems.filter((x) => x.severity === 'error');
+          if (bad.length) {
+            formulaErrors++;
+            console.warn(`[build] ⚠ 气泡公式渲染失败 ${relPath}：${bad[0].message}｜${part.slice(0, 60)}`);
             return escapeHtmlText('$' + part + '$');
           }
+          return renderMathDoc(out.docs[0], mathRenderer).html;
         }
         return escapeHtmlText(part);
       })
@@ -985,6 +1104,23 @@ for (const relPath of TARGET_FILES) {
   mathPlainOf.length = 0;
   usedHeadingIds.clear();
 
+  // ── 本页数学环境：解析 + 唯一一次符号判定（2026-10-29 重构）───────────
+  // 旧实现在这一步之后还有 Step 2.6 的 autoWrapTerms 与 glossifyTex 两轮取词，
+  // 各自在字符串上做正则；现在它们都不存在——判定只在这里发生一次，
+  // 结果写进 IR 的节点 term 字段，渲染与标注都是同一棵树的投影。
+  const pageMathEnv = {
+    dictionary: mathDictionary,
+    packs: envPackNames,
+    exclude: {
+      tex: symbolExclusions.noTex,
+      prose: symbolExclusions.noProse,
+    },
+    forceTerm: {},
+    page: relPath,
+  };
+  /** 本页的公式命中集（词条 id → 词条），供气泡 JSON 使用。 */
+  const pageMathHits = new Map();
+
   // 2.1 Display Math $$...$$
   raw = raw.replace(/\$\$([\s\S]+?)\$\$/g, (_, tex) => {
     const id = mathBlocks.length;
@@ -992,26 +1128,8 @@ for (const relPath of TARGET_FILES) {
     // 教材排版惯例把句末标点写进显示公式（$$….$$），在网页上独立成块后
     // 看着像渲染出了一个多余的点（用户实测反馈）。渲染前剥掉**收尾的一个**
     // 标点——只剥一个：万一公式真以省略号收尾不至于被整串误删。
-    const safeTex = wrapBareCJK(glossifyTex(tex.trim().replace(/[.。，、；;][ \t]*$/, ''), pageTexDict, (id) => glossaryHits.set(id, pageGlossaryDict[id])));
-    let rendered = '';
-    try {
-      rendered = katex.renderToString(safeTex, {
-        displayMode: true,
-        throwOnError: false,
-        trust: true,
-        strict: false
-      });
-    } catch (e) {
-      rendered = `<span class="katex-error">${e.message}</span>`;
-    }
-    // throwOnError:false ⇒ KaTeX 不抛异常、把错误写进产物（红色 span），catch 永不触发。
-    // 所以判据是**产物里有没有 katex-error**，不是有没有抛异常（2026-10-12 实弹：
-    // 第五章一条 unicode 组合字符公式渲染成红字，汇总却报 0 errors）。
-    if (rendered.includes('katex-error')) {
-      formulaErrors++;
-      console.warn(`[build] ⚠ 公式渲染失败 ${relPath}：${safeTex.slice(0, 70)}`);
-    }
-    const plain = mathPlain(safeTex);
+    const src = tex.trim().replace(/[.。，、；;][ \t]*$/, '');
+    const { rendered, plain } = renderOneMath(src, 'display', relPath, pageMathEnv, pageMathHits);
     mathBlocks.push({ display: true, html: rendered, plain });
     mathPlainOf[id] = plain;
     return `@@MATH_BLOCK_${id}@@`;
@@ -1021,23 +1139,7 @@ for (const relPath of TARGET_FILES) {
   raw = raw.replace(/(?<!\$)\$(?!\$)((?:[^$\\\r\n]|\\.)+?)\$(?!\$)/g, (_, tex) => {
     const id = mathBlocks.length;
     totalFormulasRendered++;
-    const safeTex = wrapBareCJK(glossifyTex(tex.trim(), pageTexDict, (id) => glossaryHits.set(id, pageGlossaryDict[id])));
-    let rendered = '';
-    try {
-      rendered = katex.renderToString(safeTex, {
-        displayMode: false,
-        throwOnError: false,
-        trust: true,
-        strict: false
-      });
-    } catch (e) {
-      rendered = `<span class="katex-error">${e.message}</span>`;
-    }
-    if (rendered.includes('katex-error')) {
-      formulaErrors++;
-      console.warn(`[build] ⚠ 公式渲染失败 ${relPath}：${safeTex.slice(0, 70)}`);
-    }
-    const plain = mathPlain(safeTex);
+    const { rendered, plain } = renderOneMath(tex.trim(), 'inline', relPath, pageMathEnv, pageMathHits);
     mathBlocks.push({ display: false, html: rendered, plain });
     mathPlainOf[id] = plain;
     return `@@MATH_INLINE_${id}@@`;
@@ -1162,17 +1264,14 @@ for (const relPath of TARGET_FILES) {
         }),
       ),
     renderTex: (tex) => {
-      try {
-        // 令牌内部的 TeX 不再二次取词（令牌自己就是可点符号，嵌套 htmlData 会互相打架）
-        return katex.renderToString(wrapBareCJK(tex), {
-          displayMode: false,
-          throwOnError: false,
-          trust: true,
-          strict: false,
-        });
-      } catch (e) {
-        return `<span class="katex-error">${e.message}</span>`;
+      // 令牌内部的 TeX 同样用**空词库**编译：令牌自己就是可点符号，
+      // 里面再套一层锚点就是嵌套 <a>（非法 DOM）。结构保证，不是约定。
+      const out = compileMath({ blocks: [{ raw: tex, mode: 'inline' }] },
+        { dictionary: mathDictionary, packs: [] });
+      if (out.problems.some((x) => x.severity === 'error')) {
+        return `<span class="math-fallback">${tex.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))}</span>`;
       }
+      return renderMathDoc(out.docs[0], mathRenderer).html;
     },
     // 链接一律走词条自带的 href（多课程词典）；这个回退参数只作兜底
     notationHref: '',
@@ -1280,6 +1379,24 @@ for (const relPath of TARGET_FILES) {
     // 不需要 lookupGloss：图内符号在 Step 2.4 解析期就已按 `@词条` 解析完，
     // IR.symbols 里带着 key/href，restore 只按标签做替换。
     htmlContent = restoreFigures(htmlContent, pageFigures);
+    // ⚠️ 图注里的行内公式要再还原一次。
+    // 图注文字来自 `:::figure id | 图注`，作者会在里面写 `$u_i$`；但它在 Step 2
+    // 就变成了 `@@MATH_INLINE_n@@`（那是 **Step 6** 才换回 KaTeX 的），而
+    // restoreFigures 在 Step 6.5 才跑——它把图注原文带进 HTML 时，Step 6 的
+    // 整轮 replace 已经过去了。实测后果：页面上直接显示
+    // 「上一行为输入 @@MATH_INLINE_84@@（幅值 20 V…」这种占位符。
+    //
+    // 图注在**三处各存一份**，必须一起换，否则页面显示对了、AI 读到的仍是占位符：
+    //   ① <figcaption>（人看的）
+    //   ② 图元 <svg> 的 aria-label + <script class="fig-data">（AI 读的结构表来源）
+    //   ③ 页脚 <script id="figure-index-json">（MCP 的图索引）
+    // ①②在下面的 figure 块替换里一并处理；③ 由模板调 buildFigureIndex 现算，
+    // 所以那边直接对**已经填好的 caption** 取（见模板处的 figureIndexMath）。
+    const fillMath = (s) => s.replace(
+      /@@MATH_INLINE_(\d+)@@/g,
+      (_, id) => (mathBlocks[parseInt(id)] || {}).html || '');
+    htmlContent = htmlContent.replace(
+      /<figure class="fig"[\s\S]*?<\/figure>/g, fillMath);
   }
 
   // Extract TOC headings —— **必须在公式还原之后**。
@@ -1293,14 +1410,17 @@ for (const relPath of TARGET_FILES) {
   const headingRegex = /<h([23]) id="([^"]+)">([\s\S]*?)<\/h[23]>/g;
   let hMatch;
   while ((hMatch = headingRegex.exec(htmlContent)) !== null) {
-    // TOC 标题取纯文本：**先把 KaTeX 整块换成占位再剥标签**。
+    // TOC 标题取纯文本：**先把公式容器整块换成它的纯文本投影，再剥标签**。
     //
-    // 直接 `<[^>]+>` 剥标签会把一个 KaTeX 公式的三份表示（MathML + annotation +
-    // 视觉 HTML）拼成一串重复文字——实测 `(A\mid E)` 在目录里印成
-    // `(A∣E)(A\mid E)(A∣E)`（2026-10-28 三签抓出）。这里把每个 `<span class="katex">…</span>`
-    // 整体替换成它的 annotation（LaTeX 原文）或占位，再剥其余标签。
+    // 直接 `<[^>]+>` 剥标签会把一个公式的排版结构（无数嵌套 span 的分子分母）
+    // 拼成一串重复文字——实测 `(A\mid E)` 在目录里印成 `(A∣E)(A\mid E)(A∣E)`
+    // （2026-10-28 三签抓出）。
+    // 2026-10-29 换引擎后判据变了：不再读 annotation（MathLive 不产），
+    // 改读构建期烘的 `data-math-plain`（IR 的纯文本投影）。
     const rawTitle = hMatch[3]
-      .replace(/<span class="katex">[\s\S]*?<\/span><\/span><\/span>/g,
+      .replace(/<span class="ML__latex"[^>]*data-math-plain="([^"]*)"[\s\S]*?<\/span>/g,
+        (m0, plain) => plain)
+      .replace(/<span class="katex"[\s\S]*?<\/span><\/span><\/span>/g,
         (m0) => {
           const ann = m0.match(/<annotation encoding="application\/x-tex">([\s\S]*?)<\/annotation>/);
           return ann ? ann[1].replace(/&amp;/g, '&') : '';
@@ -1322,7 +1442,7 @@ for (const relPath of TARGET_FILES) {
   const rootRel = depth === 0 ? './' : '../'.repeat(depth);
 
   // 配图（作业 figures/）**保持页面内写的那份纯相对路径**（`figures/xxx.png`）。
-  // 2026-10-11 修：此前统一改写成「站点根相对」（`../../../课程/…/figures/…`），
+  // 2026-10-11 修：此前统一改写成「站点根相对」（`../../../课程总览/…/figures/…`），
   // 而浏览器会把含非 ASCII 的文档 URL 规范成百分号编码形式——从编码 URL 出发上溯、
   // 再拼中文目录段，解析结果不稳定，实测习题册第一章 35 张图里 33 张加载失败。
   // 图片是「作业/figures/」下的子目录，纯相对路径按文档 URL 解析，中文与编码两种
@@ -1343,29 +1463,74 @@ for (const relPath of TARGET_FILES) {
     }
   });
 
-  // Compute Breadcrumbs
-  // dataPath：仓库相对 html 路径（href 去掉 rootRel 前缀）——面包屑/分页卡都在
-  // .article-content 之外（SPA 换页不替换），带 data-path 后点击委托与侧栏同款
-  // 走「data-root + data-path」拼接，换页后不再被本页深度烘焙的相对 href 绊倒
-  // （2026-10-22 面包屑偶发丢 SPA 的病根，spec 票 A）。
-  const breadcrumbs = [
-    { label: "首页", href: `${rootRel}index.html`, dataPath: 'index.html' }
-  ];
-  if (relPath === '课程/index.md') {
-    // Top-level course index
-  } else if (relPath.startsWith('课程/工程数学/')) {
-    breadcrumbs.push({ label: "课程总览", href: `${rootRel}课程/index.html`, dataPath: '课程/index.html' });
-    breadcrumbs.push({ label: "工程数学", href: `${rootRel}课程/工程数学/index.html`, dataPath: '课程/工程数学/index.html' });
-    if (relPath.includes('/教材解析/')) {
-      breadcrumbs.push({ label: "教材解析", href: `${rootRel}课程/工程数学/教材解析/index.html`, dataPath: '课程/工程数学/教材解析/index.html' });
-      // 章节与当前页 crumb（href:'#'）不渲染成链接，无需 data-path
-      if (relPath.includes('/第01章-行列式/')) breadcrumbs.push({ label: "第01章 行列式", href: '#' });
-      if (relPath.includes('/第02章-矩阵/')) breadcrumbs.push({ label: "第02章 矩阵", href: '#' });
-    } else if (relPath.includes('/课堂笔记/')) {
-      breadcrumbs.push({ label: "课堂笔记", href: `${rootRel}课程/工程数学/课堂笔记/index.html`, dataPath: '课程/工程数学/课堂笔记/index.html' });
+  // Compute Breadcrumbs —— **完全由网址路径推出**（2026-10-29 站长定案）。
+  //
+  // ## 为什么不再逐课硬编码
+  //
+  // 旧实现是一串 `if (relPath.startsWith('课程总览/工程数学/'))` + 每类目录一条
+  // `else if`。后果实测：作业页漏掉「作业」这一层（只处理了教材解析与课堂笔记），
+  // 面包屑显示「工程数学 / 作业3」而实际网址是 `课程总览/工程数学/作业/…`——
+  // 三套结构（网址、侧边栏、面包屑）里只有面包屑是错的。
+  //
+  // 现在：把 relPath 的目录链逐段查 NAV_STRUCTURE 里的同路径节点，拿到 label。
+  //   ① 单一真相＝网址（目录结构本身就是分类）；
+  //   ② 侧边栏与面包屑都从 NAV_STRUCTURE 取 label，而 NAV_STRUCTURE 的 path 与
+  //      真实目录逐段一致（150 个节点实测 0 处前缀不符）⇒ 三者天然统一；
+  //   ③ 新增一类目录时，只要目录存在、侧栏有入口，面包屑自动正确，不用改代码。
+  //
+  // dataPath：仓库相对 html 路径——面包屑在 .article-content 之外（SPA 换页不替换），
+  // 带 data-path 后点击委托与侧栏同款走「data-root + data-path」拼接。
+  const navLabelByMdPath = new Map();
+  (function collectLabels(nodes) {
+    for (const n of nodes) {
+      if (n.path) navLabelByMdPath.set(n.path, n.label);
+      if (n.children) collectLabels(n.children);
+    }
+  })(NAV_STRUCTURE);
+
+  const breadcrumbs = [];
+  {
+    const htmlOf = (md) => md.replace(/\.md$/, '.html');
+    // 「首页」只在真正看首页时出现：站长定案「点大标题就能回首页」，
+    // 所以面包屑首项不必一直挂一个「首页」——但保留它会多一层噪声。
+    // 折中：首页自己不加（否则显示「首页 / 首页」），其余页加。
+    if (relPath !== 'README.md') {
+      breadcrumbs.push({ label: '首页', href: `${rootRel}index.html`, dataPath: 'index.html' });
+    }
+    // 从 `课程总览/` 开始逐段：`课程` → `课程总览/<课>` → `课程总览/<课>/<分类>` …
+    // i 从 0 起：第 0 段就是 `课程`，对应「课程总览」那一层。
+    const segs = relPath.replace(/\.md$/, '').split('/');
+    // 逐段出 crumb —— **网址有几层目录，面包屑就几层**。
+    //
+    // 站长定案「三条逐字一致」：段名直接用目录名，不再查侧栏 label 表
+    // （那张表在无 index 的组节点上会漏层——`第3章-n维向量与向量空间` 就没有 index.md，
+    // 于是面包屑少了整章一层，而侧栏与网址都有）。
+    // 目录名本身就是可读的短标签（文件名已按标签改过），所以直接用它。
+    // 有 index.md 的层给可点链接，没有的只是文字（无页面可去）。
+    for (let i = 0; i < segs.length - 1; i += 1) {   // 最后一段是页面自己，单独处理
+      const dirName = segs[i];
+      const dirMd = segs.slice(0, i + 1).join('/') + '/index.md';
+      const hasIndex = navLabelByMdPath.has(dirMd);
+      breadcrumbs.push({
+        label: dirName,
+        href: hasIndex ? `${rootRel}${htmlOf(dirMd)}` : '#',
+        ...(hasIndex ? { dataPath: htmlOf(dirMd) } : {}),
+      });
     }
   }
-  breadcrumbs.push({ label: pageMeta.title, href: '#' });
+  // 当前页标签 = **文件名**（去掉 .md），不是页面 H1。
+  // 站长定案「三条逐字一致」：网址最后一段就是文件名，所以面包屑末项只能用它。
+  // H1 与标签在 144 条上已经一致（会话内实测），但个别页 H1 带括注（`习题册第一章（43 题）`），
+  // 名称与网址不同 → 以网址为准，面包屑显示 `习题册第一章`。
+  {
+    // 索引页（`…/index.md`）本身就是它那层目录，不该再挂一个「index」末端。
+    // 网址是 `…/作业/index.html`，而读者看到的层级就是「作业」——加 index 是多一层噪声。
+    const segs2 = relPath.replace(/\.md$/, '').split('/');
+    const isIndexPage = segs2[segs2.length - 1] === 'index';
+    if (!isIndexPage) {
+      breadcrumbs.push({ label: segs2[segs2.length - 1], href: '#' });
+    }
+  }
 
   // Compute Paging (Prev / Next)
   let prevPage = null;
@@ -1449,7 +1614,7 @@ for (const relPath of TARGET_FILES) {
   // Render Frontmatter Meta Chips
   // 状态**不读 frontmatter**（2026-10-11 定案）：从 README 的课程状态表继承。
   // 资料页没有 course 字段时（如 README 自身）就不出状态 chip。
-  const courseName = frontmatter.course || (relPath.startsWith('课程/') ? relPath.split('/')[1] : '');
+  const courseName = frontmatter.course || (relPath.startsWith('课程总览/') ? relPath.split('/')[1] : '');
   const inheritedStatus = courseName ? COURSE_STATUS.get(courseName) : undefined;
   let metaChipsHtml = '';
   if (frontmatter.course) metaChipsHtml += `<span class="meta-chip primary">📚 ${frontmatter.course}</span>`;
@@ -1542,7 +1707,9 @@ for (const relPath of TARGET_FILES) {
     } catch (e) { /* 隐私模式下 localStorage 可能抛错，忽略 */ }
   })();
   </script>
-  <link rel="stylesheet" href="${rootRel}assets/katex/katex.min.css">
+  <!-- 数学排版样式（2026-10-29 换引擎）：MathLive 静态样式。
+       它复用同一批 woff2 字体（assets/mathlive/fonts/），字体文件不用另备。 -->
+  <link rel="stylesheet" href="${rootRel}assets/mathlive/mathlive-static.css">
   <link rel="stylesheet" href="${rootRel}${assetUrl('assets/theme/shirone-reader.css')}">
   <link rel="stylesheet" href="${rootRel}${assetUrl('assets/plugins/site-search.css')}">
   <link rel="stylesheet" href="${rootRel}${assetUrl('assets/plugins/chat-panel.css')}">
@@ -1599,7 +1766,7 @@ for (const relPath of TARGET_FILES) {
             <span>S26-1 课程知识库</span>
           </a>
           <nav class="top-bar-breadcrumbs" aria-label="当前路径">
-            ${breadcrumbs.map((b, i) => i === breadcrumbs.length - 1 ? `<span class="current-crumb">${b.label}</span>` : `<a href="${b.href}"${b.dataPath ? ` data-path="${b.dataPath}"` : ''}>${b.label}</a><span class="m3-breadcrumb-sep">/</span>`).join('')}
+            ${breadcrumbs.map((b, i) => (i === breadcrumbs.length - 1 || b.href === '#') ? `<span class="${i === breadcrumbs.length - 1 ? 'current-crumb' : 'm3-breadcrumb-plain'}">${b.label}</span>${i === breadcrumbs.length - 1 ? '' : '<span class="m3-breadcrumb-sep">/</span>'}` : `<a href="${b.href}"${b.dataPath ? ` data-path="${b.dataPath}"` : ''}>${b.label}</a><span class="m3-breadcrumb-sep">/</span>`).join('')}
           </nav>
         </div>
 
@@ -1732,7 +1899,7 @@ for (const relPath of TARGET_FILES) {
           <article class="article-container">
             <!-- Breadcrumb in page body -->
             <nav class="m3-breadcrumb">
-              ${breadcrumbs.map((b, i) => i === breadcrumbs.length - 1 ? `<span>${b.label}</span>` : `<a href="${b.href}"${b.dataPath ? ` data-path="${b.dataPath}"` : ''}>${b.label}</a><span class="m3-breadcrumb-sep">/</span>`).join('')}
+              ${breadcrumbs.map((b, i) => (i === breadcrumbs.length - 1 || b.href === '#') ? `<span>${b.label}</span>${i === breadcrumbs.length - 1 ? '' : '<span class="m3-breadcrumb-sep">/</span>'}` : `<a href="${b.href}"${b.dataPath ? ` data-path="${b.dataPath}"` : ''}>${b.label}</a><span class="m3-breadcrumb-sep">/</span>`).join('')}
             </nav>
 
             ${metaChipsHtml ? `<div class="meta-chip-bar">${metaChipsHtml}</div>` : ''}
@@ -1770,7 +1937,7 @@ for (const relPath of TARGET_FILES) {
   <!-- 图元索引烘焙（2026-10-28）：本页所有图的 IR 汇总。
        三个消费者读同一份——页面交互、site_figure 工具、构建期提到的静态结构表。
        与 sym-glossary-json / nav-structure-json 同一个范式：构建期烘、客户端不发请求。 -->
-  <script type="application/json" id="figure-index-json">${JSON.stringify(buildFigureIndex(pageFigures)).replace(/<\//g, '<\\/')}</script>
+  <script type="application/json" id="figure-index-json">${JSON.stringify(buildFigureIndex(pageFigures)).replace(/<\//g, '<\\/').replace(/@@MATH_INLINE_(\d+)@@/g, (_, i) => (mathBlocks[parseInt(i)] || {}).html || '')}</script>
   <!-- 侧栏形状烘焙（阶段一）：nav-structure.mjs（buildNavModel）产出的归一化树 + 判定结果。
        site_index / site_navigate / drawer-sync 三个消费者都读这一份，不再爬侧栏 DOM。 -->
   <script type="application/json" id="nav-structure-json">${JSON.stringify(navJsonPayload).replace(/<\//g, '<\\/')}</script>
@@ -1797,6 +1964,21 @@ for (const relPath of TARGET_FILES) {
 </html>`;
 
   const outFilePath = path.join(DIST_DIR, targetHtmlPath);
+  // 构建期兜底：任何 `@@MATH_INLINE_<数字>@@` 残留在产物里都是 bug。
+  // 它意味着某段文字走了「数学占位符已生成、但没被 Step 6 还原」的路径——
+  // 2026-10-29 实测发生在图注上（`:::figure id | 图注里写 $u_i$`）：
+  // 图注在 Step 2 变占位符、restoreFigures 在 Step 6.5 才把它写进 HTML，
+  // 那时 Step 6 的整轮替换已过去，页面上就直挺挺显示 `@@MATH_INLINE_84@@`。
+  // 这类残留**肉眼一眼能看出、但构建与全部测试都不报错**，所以在这里硬拦。
+  //
+  // 只认带数字的形式：文档页（维护细则）会**故意**写出这个模式的字面例子，
+  // 那种没有数字的 `@@MATH_INLINE_n@@` 是正文，不是残留。
+  const leaked = finalHtml.match(/@@MATH_INLINE_\d+@@/);
+  if (leaked) {
+    throw new Error(
+      `${targetHtmlPath} 的产物里残留数学占位符 ${leaked[0]}` +
+      '（说明有段文字晚了 Step 6 才进 HTML——多半是图注或模板里新加的字段）');
+  }
   fs.mkdirSync(path.dirname(outFilePath), { recursive: true });
   fs.writeFileSync(outFilePath, finalHtml, 'utf-8');
 

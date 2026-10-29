@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(subprocess.check_output(['git', 'rev-parse', '--show-toplevel']).decode().strip())
-DEFAULT_TARGETS = ('README.md', '维护条例.md', '维护细则.md', '课程', '模板', '站点', '.agents')
+DEFAULT_TARGETS = ('README.md', '维护条例.md', '维护细则.md', '课程总览', '模板', '站点', '.agents')
 FENCE_RE = re.compile(r'^(\s*)(`{3,}|~{3,})\s*(\S*)\s*$')
 FENCE_ANY_RE = re.compile(r'^\s*(`{3,}|~{3,})')
 HEADING_RE = re.compile(r'^(#{1,6})\s+(.*?)\s*$')

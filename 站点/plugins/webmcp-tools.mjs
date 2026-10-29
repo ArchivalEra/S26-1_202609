@@ -46,7 +46,8 @@ export const PAGE_SELECTORS = {
   courseChip: '.meta-chip',
   details: 'details',
   // 符号可点元素：公式里的（.katex 内）与正文里的（a.sym-gloss）**两处都要认**
-  glossaryTerm: '.katex [data-term], a.sym-gloss[data-term]',
+  // 公式里的符号（`.katex` 是 2026-10-29 换引擎前的旧容器类名，保留兼容）
+  glossaryTerm: '.ML__latex [data-term], .katex [data-term], a.sym-gloss[data-term]',
   // 气泡的真实类名是 .sym-gloss-pop（2026-10-19 修：旧值 '.glossary-bubble, [class*=bubble]'
   // 与真实 DOM 完全不匹配，导致 site_show_symbol 的 bubble 字段恒为空——测试用假 DOM
   // 里的 class="glossary-bubble" 掩盖了这个 bug）
@@ -172,18 +173,16 @@ export function renderMarkdown(root, opts) {
    *      只读 mathml 那一份。
    */
   function katexText(el) {
-    let ann = null;
-    try { ann = el.querySelector ? el.querySelector('annotation') : null; } catch (e) { /* 假 DOM */ }
-    if (ann && ann.textContent) {
-      return '$' + stripHtmlData(String(ann.textContent)).trim() + '$';
-    }
-    // 没有 annotation：优先 mathml 的文本（比 katex-html 干净），再退到可见副本
-    let mathml = null;
-    try { mathml = el.querySelector ? el.querySelector('.katex-mathml') : null; } catch (e) { /* 假 DOM */ }
-    if (mathml && mathml.textContent) return mathml.textContent;
-    let html = null;
-    try { html = el.querySelector ? el.querySelector('.katex-html') : null; } catch (e) { /* 假 DOM */ }
-    return (html ? html.textContent : el.textContent) || '';
+    // 构建期已把 IR 的**纯文本投影**烘进 `data-math-plain`（见 站点/math/render.mjs）。
+    // 这是首选：一串人读得懂的文本，不含任何 LaTeX 与装饰宏。
+    // 2026-10-29 换引擎前这里靠读 `<annotation>` 再剥 `\htmlData`——那是
+    // 「从产物反推语义」，换引擎就失效，而且剥壳函数本身又是一处 bug 面。
+    const plain = el.getAttribute ? el.getAttribute('data-math-plain') : null;
+    if (plain) return plain;
+    const aria = el.getAttribute ? el.getAttribute('aria-label') : null;
+    if (aria) return aria;
+    // 兜底：公式的可见文本（MathLive 产物里带的是排版后的字符）
+    return (el.textContent || '').replace(/\s+/g, ' ').trim();
   }
 
   /**
@@ -231,7 +230,7 @@ export function renderMarkdown(root, opts) {
     if (isTextNode(node)) return node.textContent || '';
     const tag = String(node.tagName || '').toUpperCase();
     if (SKIP[tag]) return '';
-    if (hasClass(node, 'katex')) return katexText(node);
+    if (hasClass(node, 'katex') || hasClass(node, 'ML__latex') || (node.getAttribute && node.getAttribute('data-math-plain'))) return katexText(node);
     // KaTeX 的**内部**节点：外层 .katex 已经整体处理过，这里再遇到就是重复
     //（实测正文里出现孤立的 `$...$` 行与 BBBHHH——都是 katex-html 副本被二次读取）
     if (hasClass(node, 'katex-html') || hasClass(node, 'katex-mathml')) return '';
@@ -275,7 +274,7 @@ export function renderMarkdown(root, opts) {
     const tag = String(node.tagName || '').toUpperCase();
     if (SKIP[tag]) return;
 
-    if (hasClass(node, 'katex')) { push(katexText(node)); return; }
+    if (hasClass(node, 'katex') || hasClass(node, 'ML__latex') || (node.getAttribute && node.getAttribute('data-math-plain'))) { push(katexText(node)); return; }
     if (hasClass(node, 'katex-html') || hasClass(node, 'katex-mathml')) return;
     if (tag === 'A') { push(walkInline(node)); return; }
 
@@ -510,7 +509,15 @@ export function createPageView(doc, loc, winOverride) {
     if (byAnchor) {
       target = byId(byAnchor);
     } else if (byTitle) {
-      const hit = list.filter((h) => h.title.indexOf(needle) >= 0)[0];
+      // 与 site_read 同一条匹配规则：精确优先、歧义则**不猜**。
+      // （旧写法 `filter(...)[0]` 在同一页有近似标题时永远落第一个，见 matchHeadings 注释。）
+      const m = matchHeadings(list, needle);
+      if (m.hits.length > 1) {
+        return { ok: false, reason: 'ambiguous', query: needle, tier: m.tier,
+                 candidates: m.hits.slice(0, 10).map((h) => ({ title: h.title, anchor: h.anchor })),
+                 hint: '这个 query 同时命中多个小节。从 candidates 里挑一个，用它的 anchor 重发。' };
+      }
+      const hit = m.hits[0];
       if (hit) target = byId(hit.anchor);
     }
     if (!target) {
@@ -623,6 +630,59 @@ export function createPageView(doc, loc, winOverride) {
    * 不用把全部 30 个标题读完再猜。
    * 相似度 = query 的字在标题里出现的比例（中文按字，拉丁按词），≥0.34 才入选。
    */
+  /**
+   * 标题匹配：**精确优先，其次才子串**，并返回**全部命中**（不是第一个）。
+   *
+   * ## 为什么必须精确优先
+   *
+   * 2026-10-29 实测灾难：作业 3 的小节标题是
+   *   「三、习题 2.4(2)：求秩」
+   *   「四、习题 2.4(3)：求秩」
+   * 旧实现用 `filter(标题含 query)[0]` 取第一个命中，于是查询「2.4(3)」
+   * 或「第四题」时永远落到「三、…2.4(2)…」，**第 4 题死命读不出来**。
+   * 根因不是候选排序不够好，是「只留一个」这个决策本身错了——
+   * 同一页里标题高度相似是常态（习题册、作业页尤其如此）。
+   *
+   * ## 四档匹配（从强到弱）
+   *
+   * 1. `exact`  归一化后完全相等（`习题2.4(3)` == `四、习题2.4(3)：求秩` 的尾部？不——那是 suffix）
+   * 2. `suffix` 标题归一化后以 query 结尾（「四、习题 2.4(3)：求秩」以「2.4(3)」结尾为真）
+   * 3. `substr` 标题含 query
+   * 4. 都没命中 ⇒ 返回空，让调用方走 `nearestTitles` 给候选
+   *
+   * ## 为什么加 `suffix` 这一档
+   *
+   * 标题普遍带「一、二、三、」这类序号前缀与「：副标题」后缀，
+   * 而模型的 query 往往只给核心词（`2.4(3)`、`求秩`）。
+   * 只做「含」会让「2.4(2)」与「2.4(3)」同分；加了 suffix 档，
+   * 「2.4(3)」对「…2.4(3)：求秩」的匹配强度高于「…2.4(2)：求秩」，排序就分得开。
+   * 但仍然返回**全部**同档命中——让调用方（和模型）看得到有几个候选。
+   *
+   * @returns {{tier: string, hits: Array<{title:string,anchor:string,level:number}>}}
+   */
+  function matchHeadings(list, needle) {
+    const norm = (x) => String(x || '').replace(/[\s\p{P}\p{S}]/gu, '');
+    const nn = norm(needle);
+    if (!nn) return { tier: 'none', hits: [] };
+    const tiers = { exact: [], suffix: [], substr: [] };
+    for (const h of list) {
+      const ns = norm(h.title);
+      if (!ns) continue;
+      if (ns === nn) tiers.exact.push(h);
+      else if (ns.endsWith(nn)) tiers.suffix.push(h);
+      else if (ns.indexOf(nn) >= 0) tiers.substr.push(h);
+    }
+    // 同档全部返回，**不按长度裁剪**。
+    // 2026-10-29 站长叫停：长度启发式是在替模型做判断（「页标题和小节谁更像」），
+    // 而模型自己会先读 outline 或全文，看得到全貌。这里只做两件确定的事：
+    //   ① 精确/后缀命中优先于子串（tier 顺序）；
+    //   ② 同档多个命中就**全给**，由调用方报 ambiguous 让模型挑——绝不静默取第一个。
+    for (const tier of ['exact', 'suffix', 'substr']) {
+      if (tiers[tier].length) return { tier, hits: tiers[tier] };
+    }
+    return { tier: 'none', hits: [] };
+  }
+
   function nearestTitles(needle, titles, max) {
     const n = String(needle || '').trim();
     if (!n) return [];
@@ -720,7 +780,18 @@ export function createPageView(doc, loc, winOverride) {
     const limitLines = ln.value;
     const offset = of.value;      // 行号偏移（注意：旧版这里是字符偏移，语义已变）
     const maxChars = mc.value;
-    const article = first(S.article) || (doc && doc.body) || doc;
+    // ⚠️ 2026-10-29：**不回退到 body**。原先 `first(S.article) || doc.body` 在
+    // 正文容器缺失时会读整个 body——页脚免责声明、侧栏导航、搜索面板全被当成
+    // 「页面正文」喂给模型，白占上下文（站长实测：一次读常读到页脚）。
+    // 找不到正文容器就明确报错，让模型知道「这页不是标准页面」，而不是给一坨杂物。
+    const article = first(S.article);
+    if (!article) {
+      return {
+        ok: false,
+        reason: 'article_not_found',
+        hint: `当前页没有 ${S.article} 容器（不是站点标准页），读不到正文。可用 site_get_page_info 看这是什么页。`,
+      };
+    }
 
     // ⭐ 2026-10-23 分页（Coze MCP-Builder Phase 1 的 offset+limit 口径）。
     // 2026-10-26 改口径：**offset/limit 现在是行号，不是字符数**。
@@ -787,7 +858,29 @@ export function createPageView(doc, loc, winOverride) {
       if (!needle) return { ok: false, reason: 'empty_query', hint: '给 query（标题片段）' };
       if (what === 'section') {
         const hs = headings();
-        const hit = hs.filter((h) => h.title.indexOf(needle) >= 0 || h.anchor === needle)[0];
+        // 锚点精确命中优先于标题匹配（anchor 是唯一 id，不会有歧义）
+        let hit = needle && byId(needle) ? hs.find((h) => h.anchor === needle) : null;
+        let matched = null;
+        if (!hit) {
+          // 2026-10-29：**精确优先 + 全部命中**。
+          // 旧写法 `filter(...)[0]` 在同一页有「习题 2.4(2)：求秩」与「习题 2.4(3)：求秩」
+          // 这种近似标题时，永远读第一个，第 4 题死命读不出来。
+          matched = matchHeadings(hs, needle);
+          if (matched.hits.length > 1) {
+            // 多个同档命中：不猜，把候选交给模型挑。
+            // 这是「不猜补」在工具层的落地——猜一个读错比让模型重问一次糟得多。
+            return {
+              ok: false,
+              reason: 'ambiguous',
+              query: needle,
+              tier: matched.tier,
+              candidates: matched.hits.slice(0, 10).map((h) => ({ title: h.title, anchor: h.anchor })),
+              hint: '这个 query 同时命中多个小节。从 candidates 里挑一个，用**它的 anchor**重发'
+                + '（query 填 anchor 值可精确命中，不会再歧义）。',
+            };
+          }
+          hit = matched.hits[0];
+        }
         if (!hit) {
           // 2026-10-23（实测）：候选为空时 hint 必须换说法——
           // 「从 candidates 里挑」而 candidates 是空数组，模型会照着重试空值。
@@ -891,7 +984,12 @@ export function createPageView(doc, loc, winOverride) {
     // 逐节取文本（比整页扫更可定位）。用 renderMarkdown 而不是 textContent——
     // 后者会把 KaTeX 的 mathml/annotation/html 三份副本都算进去（实测片段里 BBB BBB BB…）。
     const buckets = hs.map((h) => ({ h, text: '' }));
-    const article = first(S.article) || doc;
+    // 同 ①：不回退到整个 document——那会扫到页脚与侧栏，且逐节读时
+    // 会把「不在正文里的 h2/h3」也算成小节。
+    const article = first(S.article);
+    if (!article) {
+      return { ok: false, reason: 'article_not_found', hint: '当前页没有正文容器（不是站点标准页），读不到小节。' };
+    }
     const flat = [];
     (function collect(n) {
       for (const c of childrenOf(n)) {
@@ -1456,20 +1554,57 @@ export function createPageView(doc, loc, winOverride) {
     const allCourses = (coursesNode && coursesNode.children ? coursesNode.children : [])
       .map((n) => n.name);
 
-    // 渲染成人能读也机器能读的缩进文本
+    // 渲染：**照侧边栏的样子**（层级 + 标签），而不是把完整仓库路径铺在每行。
+    //
+    // 2026-10-29 站长反馈：「他去看给人看的 index 页太痛苦了」「index 改成严格匹配侧边栏」。
+    // 旧输出每行都缀一个 `课程/工程数学/作业/2026-10-16-作业3.html` 这种长路径，
+    // 38 行里光是重复前缀就占掉大半——模型扫起来抓不到重点。
+    // 现在：
+    //   · 文本形态就是侧边栏的层级（缩进 + 标签），**路径不另起一列**；
+    //   · 页面级条目在末尾用 `→ 文件名` 给一个短线索（不是完整路径）；
+    //   · 需要精确路径时用 `paths: true` 展开，或直接 `site_navigate`。
+    //
+    // 过滤（`match`）也是为「费劲」这一条加的：只给含该词的子树，
+    // 免得模型为了找「作业3」把整门课的树读一遍。
+    const wantPaths = !!opt.paths;
+    const needle = String(opt.match || '').trim().toLowerCase();
+    const shortOf = (p) => String(p || '').split('/').pop().replace(/\.html$/, '');
+
+    // 过滤：保留命中节点及其祖先链（祖先保留是为了保住层级含义）
+    const filterTree = (arr) => {
+      if (!needle) return arr;
+      const walk2 = (n) => {
+        const kids = (n.children || []).map(walk2).filter(Boolean);
+        const selfHit = String(n.name || '').toLowerCase().indexOf(needle) >= 0
+          || String(n.path || '').toLowerCase().indexOf(needle) >= 0;
+        if (selfHit || kids.length) return { ...n, children: kids };
+        return null;
+      };
+      return arr.map(walk2).filter(Boolean);
+    };
+    const shownTree = filterTree(picked);
+
     const lines = [];
     const flatten = (arr, indent) => {
       for (const n of arr) {
-        if (lines.length >= max) { lines.push(indent + '…（已达上限）'); return; }
-        if (n.children && n.children.length) {
-          lines.push(indent + n.name + (n.path ? '  `' + n.path + '`' : ''));
+        if (lines.length >= max) { lines.push(indent + '…（已达上限，可用 match 缩小范围）'); return; }
+        const isGroup = !!(n.children && n.children.length);
+        if (isGroup) {
+          // 组节点：侧边栏里就是「分类」这一层，给标签 + 可选路径
+          lines.push(indent + n.name + (wantPaths && n.path ? '  `' + n.path + '`' : ''));
           flatten(n.children, indent + '  ');
         } else {
-          lines.push(indent + '- ' + n.name + (n.path ? '  `' + n.path + '`' : ''));
+          // 叶子（页面）：标签 + 短文件名（不是完整路径）
+          const tail = wantPaths ? (n.path ? '  `' + n.path + '`' : '')
+            : (n.path ? '  → ' + shortOf(n.path) : '');
+          lines.push(indent + '- ' + n.name + tail);
+          if (!lines[lines.length - 1].includes('→') && n.path && !wantPaths) {
+            lines[lines.length - 1] += '  → ' + shortOf(n.path);
+          }
         }
       }
     };
-    flatten(picked, '');
+    flatten(shownTree, '');
 
     return {
       ok: true,
@@ -1478,10 +1613,13 @@ export function createPageView(doc, loc, winOverride) {
       courses: allCourses,
       totalNodes: countNodes(nodes),
       shown: lines.length,
+      filtered: needle ? countNodes(shownTree) : undefined,
       text: lines.join('\n'),
-      hint: scope === 'course'
-        ? '这是当前课程的全部页面。要看别的课：site_index(scope="all")，或 site_navigate(to="page", path="课程/<课名>/index.html")'
-        : '全站导航树。跳页用 site_navigate(to="page", path=…)',
+      hint: needle
+        ? '已按 match 过滤（含该词的子树，保留祖先以看清层级）。要看全量就去掉 match。'
+        : (scope === 'course'
+          ? '这是当前课程的全部页面，层级与侧边栏一致。只想找某类内容就用 match（例如 match="作业"）；要精确路径用 paths:true。'
+          : '全站导航树。跳页用 site_navigate(to="page", path=…)，path 可从 paths:true 拿到。'),
     };
   }
 
@@ -1646,6 +1784,8 @@ export function createPageView(doc, loc, winOverride) {
 
   return {
     headings, pageInfo, openSection, togglePanels, findSymbol, listSymbols,
+    // 测试钩子：标题匹配规则（精确优先 + 全部命中）需要单独测，不经过 DOM
+    __matchHeadings: matchHeadings,
     searchResults, captureView,
     readContent, findInPage, navigate, setView, viewState, panelState,
     listImages, imageToDataUrl, siteIndex, searchIndex,
@@ -1716,11 +1856,15 @@ export function buildToolDefs(doc, win) {
       name: 'site_index',
       label: '查看站点目录',
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      description: '站点地图：从页内烘焙的侧栏形状返回层级结构（课程 → 分类 → 页面，带路径）。默认给当前课程的全部页面；scope="all" 给全站。先看地图，再决定读哪页。',
+      description: '站点地图：**层级与侧边栏完全一致**（课程 → 分类 → 页面）。默认给当前课程；scope="all" 给全站。'
+        + '想找某类内容就带 match（例如 match="作业"）——只返回含该词的子树，省得读整棵树。'
+        + '需要可跳转的完整路径时才加 paths:true。',
       inputSchema: {
         type: 'object',
         properties: {
           scope: { type: 'string', enum: ['course', 'all'] },
+          match: { type: 'string', description: '只保留名字或路径含该词的子树（保留祖先，层级仍清楚）' },
+          paths: { type: 'boolean', description: '给完整仓库路径（默认只给短文件名，够认出是哪个页面）' },
           max: { type: 'number' },
         },
       },
@@ -1804,12 +1948,27 @@ export function buildToolDefs(doc, win) {
             } catch (e) { /* 无子查询 */ }
           }
           const more = bubble && bubble.querySelector ? bubble.querySelector('a') : null;
+          // ⚠️ 2026-10-29：**一次别给太多**。原来 `bubble` 字段是整个气泡的
+          // Markdown（上限 1200 字），再叠上 `senses` 全部义项——模型记不住，
+          // 而且多数问题只需要「这个符号是什么」，不需要整段原理。
+          // 改成分层：一句话释义 + 全部义项的「首句」+ 详情链接。
+          // 需要全文时模型自己去读 detailHref 指向的那页（site_read 能读）。
+          const firstSentence = (t, cap) => {
+            const flat = String(t || '').replace(/\s+/g, ' ').trim();
+            const m = flat.match(/^[^。；;]{1,200}[。；;]?/);
+            const one = (m ? m[0] : flat).trim();
+            return one.length > cap ? one.slice(0, cap) + '…' : one;
+          };
+          const fullText = bubble ? renderMarkdown(bubble) : '';
           return {
             ok: true,
             term: el.getAttribute ? el.getAttribute('data-term') : needle,
-            bubble: bubble ? renderMarkdown(bubble).slice(0, 1200) : '',
-            senses: senses.length ? senses : undefined,
+            brief: firstSentence(fullText, 120),
+            senses: senses.length > 1
+              ? senses.map((x) => ({ brief: firstSentence(x.text, 80), here: x.here }))
+              : undefined,
             detailHref: more && more.getAttribute ? more.getAttribute('href') : undefined,
+            hint: '要看全文就 site_read 那个 detailHref 指向的页面（用 what=section 或 what=page）',
           };
         };
         return new Promise((resolve) => {

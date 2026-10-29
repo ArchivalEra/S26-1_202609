@@ -1043,12 +1043,17 @@ body.sidebar-resizing .m3-drawer {
   max-width: 100%;
 }
 
-.katex-display {
+/* 显示公式容器（2026-10-29 换引擎：旧类名 katex-display 换成 math-display，
+   后者由 build.mjs 的 .math-display 包出来；保留旧类是过渡期的兼容）。 */
+.katex-display,
+.math-display {
   margin: 0 !important;
 }
 
-/* KaTeX CJK text fallback */
-.katex .text {
+/* 公式里的中文回退字体。
+   KaTeX 时代是 `.katex .text`；MathLive 把「当文字排」的内容放在 `.ML__text` 里。 */
+.katex .text,
+.ML__text {
   font-family: var(--font-sans) !important;
 }
 
@@ -1345,12 +1350,16 @@ a.sym-gloss:hover {
  * 于是分式、积分、上下标堆叠的公式里，点在符号正中间会被上层结构盒接走（2026-10-12 用户实测
  * 「公式框里符号点击范围严重漂移、几乎点不了」；量化：14 个堆叠公式 104 个符号里 25 个点不动）。
  * 修法＝把带 data-term 的符号自己提一层：position:relative 脱离静态层，z-index 压过同层结构盒。 */
+/* 公式里的符号锚点（.ML__latex 是 2026-10-29 换引擎后的公式容器；
+   .katex 保留兼容——旧产物与聊天面板里可能还有）。 */
+.ML__latex [data-term],
 .katex [data-term] {
   color: var(--md-sys-color-tertiary);
   cursor: pointer;
   position: relative;
   z-index: 1;
 }
+.ML__latex [data-term]:hover,
 .katex [data-term]:hover {
   color: var(--md-sys-color-primary);
 }

@@ -206,8 +206,11 @@ const VOID_TAGS = new Set([
   'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta',
   'param', 'source', 'track', 'wbr'
 ]);
-// KaTeX 的 <annotation> 存着 LaTeX 源码，索引进去会让「\begin{vmatrix}」这类噪声
-// 出现在搜索结果里（Pagefind 时代也是这么排除的）。
+// 公式容器的**排版产物**不进索引（`.katex` / `.ML__latex` 里的 strut、分子分母、
+// 零宽字符全是噪声）。但**纯文本投影要进**——它挂在 `data-math-plain` 上
+// （构建期由 IR 投影烘出，见 站点/math/render.mjs）。
+// 2026-10-29 换引擎前的做法是整块跳过，结果「公式里的符号搜不到」；
+// 现在公式以人读得懂的文本进索引。
 const SKIP_TAGS = new Set(['script', 'style', 'template', 'svg', 'noscript']);
 // 块级边界记为换行：跨段的两段文字不应被当成一个连续子串命中。
 const BLOCK_TAGS = new Set([
@@ -251,8 +254,15 @@ function parseTag(raw) {
   const className = classMatch ? (classMatch[1] || classMatch[2] || classMatch[3] || '') : '';
   const idMatch = /\bid\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(attrText);
   const id = idMatch ? (idMatch[1] || idMatch[2] || idMatch[3] || '') : '';
+  // 只取数学纯文本投影这一个属性：公式容器里唯一**该进索引**的东西。
+  // 不做通用属性表——这个标签扫描器是手写的，每加一个属性都要配一条解析，
+  // 通用的属性解析是另一个量级的活，这里只需要这一个。
+  const mathPlainMatch = /\bdata-math-plain\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(attrText);
+  const attrs = {};
+  if (mathPlainMatch) attrs['data-math-plain'] = mathPlainMatch[1] || mathPlainMatch[2] || '';
   return {
     closing,
+    attrs,
     name,
     className,
     id,
@@ -340,7 +350,13 @@ export function extractSearchDoc(html, options) {
       continue;
     }
 
-    const isSkip = SKIP_TAGS.has(parsed.name) || parsed.className.split(/\s+/).indexOf('katex') >= 0;
+    // 公式容器：整块跳过（排版产物是噪声），但它的 data-math-plain 单独收录
+    const isMathBox = parsed.className.split(/\s+/).indexOf('katex') >= 0
+      || parsed.className.split(/\s+/).indexOf('ML__latex') >= 0;
+    const mathPlain = isMathBox ? (parsed.attrs && parsed.attrs['data-math-plain']) : null;
+    // 注意：正文是按 `chunks` 累加的，不是单个 text 变量
+    if (mathPlain) chunks.push(` ${mathPlain} `);
+    const isSkip = SKIP_TAGS.has(parsed.name) || isMathBox;
     openTags.push({ name: parsed.name, skip: isSkip });
     if (isSkip) skipping += 1;
     if (parsed.selfClosing) continue;
