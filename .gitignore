@@ -393,6 +393,8 @@
 !/站点/plugins/webmcp-tools.mjs
 !/站点/plugins/webmcp-tools.test.mjs
 !/站点/plugins/build-asset-version.test.mjs
+!/站点/plugins/glossary-bubble.test.mjs
+!/站点/plugins/mathlive-css.test.mjs
 !/站点/assets/vendor/webmcp/README.md
 !/站点/assets/vendor/webmcp/polyfill.iife.js
 !/站点/assets/vendor/webmcp/relay-embed.js
