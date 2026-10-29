@@ -40,6 +40,22 @@ test('SPA_ROUTER_JS 源码形状：三个 reset 钩子调用与兜底都在', ()
   assert.ok(src.includes('location.href = url'), '失败兜底整页跳转');
 });
 
+test('SPA 路由必须支持 soft 模式（助手工具调用不许整页重载）', () => {
+  // 2026-10-29 站长原话：「什么叫优先走 spa，不走 spa 直接就会掐断学习助手连接啊」。
+  // 整页重载销毁 document ⇒ 助手面板与已注册的 site_* 工具一起没了。
+  // 工具循环必须传 soft=true，让路由任何失败都上报而不是换页。
+  const src = fs.readFileSync(path.join(HERE, 'spa-router.mjs'), 'utf8');
+  assert.match(src, /function navigate\(rawUrl, hash, push, opts4\)/, 'navigate 要收第 4 参');
+  assert.ok(src.includes('if (soft) throw err'), '路由失败时 soft 必须 reject');
+  assert.ok(/if \(soft\) throw new Error\("not_a_site_page"\)/.test(src),
+    '结构不符时 soft 也必须上报');
+  // 反向断言：soft 分支绝不能落回 location.href。
+  const guard = src.indexOf('if (soft) throw err');
+  const bar = src.indexOf('location.href = url', guard);
+  assert.ok(guard > 0, '缺少 soft 守卫');
+  assert.ok(bar > guard, 'soft 守卫必须在整页跳之前');
+});
+
 test('SPA 换页必须同步两份面包屑与 meta chip 条（2026-10-28 修的 bug）', () => {
   // 站长原话：「页面大标题上方那栏，永远是刚进站那页的信息」。
   // 根因：两份面包屑烘死在每页 HTML 里、又都在 .article-content 之外，

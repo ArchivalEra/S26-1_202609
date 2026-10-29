@@ -67,6 +67,11 @@ export const PAGE_SELECTORS = {
   /** 侧栏形状烘焙（阶段一）：nav-structure.mjs 产出的 JSON 的脚本 id。
    *  site_index / site_navigate 都读它，不再爬侧栏 DOM。 */
   navJson: 'nav-structure-json',
+  /** 站点**实际生成了的页面**清单（构建期从 页面清单.mjs 烘进每页）。
+   *  site_navigate 的 to=page 用它判「这页到底存不存在」——侧栏形状只覆盖导航里的页，
+   * 拿它当白名单会让 README / 符号包这类页面进不去，也会让拼错的路径（少了课程层）
+   * 蒙混过关。 */
+  pagesJson: 'site-pages-json',
   pagingPrev: 'a.paging-prev',
   pagingNext: 'a.paging-next',
   brand: 'a.sidebar-brand',
@@ -605,6 +610,74 @@ export function createPageView(doc, loc, winOverride) {
   }
 
   /**
+   * 站点**实际生成了的页面**清单：`#site-pages-json`，构建期从 `页面清单.mjs`
+   * 的 TARGET_FILES 派生（`README.md` → `index.html`，其余 `.md` → `.html`）。
+   *
+   * 为什么不能拿侧栏形状当白名单：侧栏只覆盖「有导航入口」的页，README、维护条例、
+   * 维护细则、`站点/符号包/通用` 都不在里面——拿它当唯一判据会把这几页判成不存在。
+   * 反过来，只判「像不像索引页」又太松：模型拼出 `教材解析/index.html`
+   * （少了 `课程总览/工程数学/` 两层）照样放行，SPA 去 fetch 就撞 404。
+   * 所以判据用这份**真实产物清单**。
+   *
+   * 缺失/损坏返回 null——调用方据此降级为「只信侧栏白名单」，不静默全放行。
+   */
+  function sitePages() {
+    const tag = byId(S.pagesJson);
+    if (!tag) return null;
+    try {
+      const data = JSON.parse(tag.textContent || '');
+      return Array.isArray(data) ? data : null;
+    } catch (e) { return null; }
+  }
+
+  /**
+   * 把一个路径归一化成「仓库相对 html 路径」，用于和页面清单比对。
+   *
+   * 模型给的写法五花八门：`课程总览/x.html`、`/repo/S26-1_202609/课程总览/x.html`、
+   * `./课程总览/x.html`、目录形式 `课程总览/x/`、`课程总览/x`。这里全收敛成
+   * 清单里的那种形态。
+   *
+   * 部署前缀（`/repo/S26-1_202609/`）不能写死——它随部署环境变，而且本站还有
+   * 无前缀镜像入口。所以给绝对路径时不猜前缀，而是**按已知页面做后缀对齐**：
+   * 取「是这条路径后缀、且在清单里」的那个页面。这样 `/repo/任意/课程总览/x.html`
+   * 与 `/课程总览/x.html` 都能落到 `课程总览/x.html`。
+   *
+   * 归不成就返回归一化后的原名（随后必然不命中，报不存在）。
+   */
+  function canonicalPagePath(raw, known) {
+    let p = String(raw || '').trim();
+    if (!p) return '';
+    let wasAbsolute = /^https?:\/\//i.test(p) || p.charAt(0) === '/';
+    try { p = decodeURI(p); } catch (e) { /* 保持原样 */ }
+    // 绝对 URL → 只取 pathname。⚠️ `new URL().pathname` 返回**百分号编码**路径，
+    // 中文段会被编码回去，所以提取后必须**再解一次码**，否则与清单里的未编码
+    // 中文路径永远匹配不上（实测：只有未编码的 `index.html` 命中，把
+    // `…/工程数学/…/index.html` 错配成了根 `index.html`）。
+    if (/^https?:\/\//i.test(p)) {
+      try { p = new URL(p).pathname; } catch (e) { /* 保持原样 */ }
+      try { p = decodeURI(p); } catch (e) { /* 保持原样 */ }
+      wasAbsolute = true;
+    }
+    p = p.replace(/^\.\//, '').replace(/^\/+/, '');
+    // 目录形式 → index.html
+    if (/\/$/.test(p)) p += 'index.html';
+    else if (!/\.html?$/i.test(p) && !/\.[a-z0-9]+$/i.test(p)) p += '/index.html';
+
+    // 绝对路径带的部署前缀：按已知页面后缀对齐，不猜前缀长度。
+    if (wasAbsolute && known && known.length && known.indexOf(p) < 0) {
+      // 命中条件：这条绝对路径**以 `/页面` 结尾**。必须带 `/` 边界，否则
+      // `x/index.html` 会被当成任何 `…index.html` 的后缀。
+      // 多个命中时取**最长**（最具体）——`index.html` 是所有索引页的合法后缀，
+      // 只按「长度」比会把具体的 `课程总览/…/index.html` 让给根 `index.html`。
+      const hit = known
+        .filter((k) => p === k || p.slice(-(k.length + 1)) === '/' + k)
+        .sort((a, b) => b.length - a.length);
+      if (hit.length) return hit[0];
+    }
+    return p;
+  }
+
+  /**
    * JSON 里**全部可导航的 html 目标**：叶子节点的 href + 有索引页的组节点的 indexHref。
    * site_navigate 的白名单用（不再爬 `a[data-path]`）。
    */
@@ -1100,9 +1173,13 @@ export function createPageView(doc, loc, winOverride) {
       const courseName = (function () {
         const bodyEl = (doc && doc.body) || null;
         const p = bodyEl && bodyEl.getAttribute ? (bodyEl.getAttribute('data-site-path') || '') : '';
-        return p.split('/')[1] || '';
+        // 目录 2026-10-29 改名为「课程总览/」：第二段才是课程名。
+        // 写死 `课程/` 取到的是课程名，但下面的路径前缀比对会恒为空 ⇒ 作用域失效、
+        // 每次「作业」都判成歧义。
+        const segs = p.split('/');
+        return segs.length > 2 && segs[0] === '课程总览' ? segs[1] : '';
       })();
-      // 当前课程作用域：链接的 data-path 以「课程/<当前课>/」开头。
+      // 当前课程作用域：链接的 data-path 以「课程总览/<当前课>/」开头。
       // ⚠️ 2026-10-23 补：在**首页/课程总览页**上 body[data-site-path] 里没有课程名
       // （README.html），此时「当前课程」不成立——但 query 自己可能带着课程名
       // （「工程数学作业2」）。所以再补一条：**query 里出现的课程名**也当作作用域。
@@ -1111,7 +1188,7 @@ export function createPageView(doc, loc, winOverride) {
       const courseFromQuery = COURSE_NAMES.filter((c) => needle.indexOf(c) >= 0)[0] || '';
       const scopeCourse = courseName || courseFromQuery;
       const inCourse = links.map((a, i) => ({ a, i, path: a.getAttribute ? (a.getAttribute('data-path') || '') : '' }))
-        .filter((x) => scopeCourse && x.path.indexOf('课程/' + scopeCourse + '/') === 0);
+        .filter((x) => scopeCourse && x.path.indexOf('课程总览/' + scopeCourse + '/') === 0);
       const pools = inCourse.length ? [inCourse, links.map((a, i) => ({ a, i }))] : [links.map((a, i) => ({ a, i }))];
 
       const tier1 = (pool) => pool.filter((x) => labels[x.i].indexOf(needle) >= 0);
@@ -1162,48 +1239,71 @@ export function createPageView(doc, loc, winOverride) {
       const hash = String(opt.hash || '').trim();
       if (!path) return { ok: false, reason: 'empty_path' };
 
-      // 侧栏校验（阶段一，2026-10-21）：白名单改从**侧栏形状 JSON**取（不再爬 data-path）。
-      // 命中 ⇒ 放行；未命中 ⇒ 也放行，但把同课程的合法路径一并返回，
-      // 让模型一次看对，不用瞎试三轮。**索引页本就在白名单里**（组节点带 indexHref）。
+      // 存在性校验（2026-10-29 重写）：判据从「像不像索引页」换成**站点真的生成了这一页**。
+      // 数据源：构建期从 `页面清单.mjs` 烘焙的 `#site-pages-json`（见 file:// 注释）。
+      //
+      // 旧实现的漏洞（站长实测）：`…/index.html` 一律放行，理由是「数据缺失时的兜底」。
+      // 结果模型把 `课程总览/工程数学/教材解析/index.html` 记成 `教材解析/index.html`
+      // （少了课程层），照样通过，SPA 去 fetch 得到 404，用户看到直接跳 404 页。
+      // 浏览器跳转本身没有对错可言——**能不能跳，只应该由这一页在不在决定**。
+      //
+      // 现在两道判据，缺一不可：
+      //   ① 有 `#site-pages-json` ⇒ 必须是产物清单里的条目（README/维护条例/符号包都在内）；
+      //   ② 没有那份清单（老产物/夹具）⇒ 退回侧栏白名单，不再给索引页开后门。
+      // 未命中一律拒绝并回喂「没有这一页」+ 同课程的合法路径，让模型挑，不许它跳到 404 上。
       const navData = navStructure();
       const navPaths = navData ? navTargets(navData) : [];
-      const normalized = path.replace(/^\.\//, '').replace(/^\//, '');
-      if (!navPaths.includes(normalized)) {
-        // 索引页（…/index.html）即使没进白名单（数据缺失时）也不拦——跳转靠 404/标题变化暴露。
-        const isIndexPage = /\/index\.html$/.test(normalized);
-        if (!isIndexPage) {
-          const bodyEl = (doc && doc.body) || null;
-          const curPath = bodyEl && bodyEl.getAttribute ? (bodyEl.getAttribute('data-site-path') || '') : '';
-          const curCourse = curPath.split('/')[1] || '';
-          const sameCourse = navPaths.filter((x) => curCourse && x.startsWith('课程/' + curCourse + '/'));
-          return {
-            ok: false, reason: 'not_in_nav', path: normalized,
-            hint: '这个路径不在侧栏导航里，也不像索引页。从候选里挑一个，或先用 site_index 看地图。',
-            candidates: (sameCourse.length ? sameCourse : navPaths).slice(0, 20),
-          };
-        }
+      const pages = sitePages();
+      const pool = pages || navPaths;
+      const normalized = canonicalPagePath(path, pool);
+      const known = pool.indexOf(normalized) >= 0;
+      if (!known) {
+        const bodyEl = (doc && doc.body) || null;
+        const curPath = bodyEl && bodyEl.getAttribute ? (bodyEl.getAttribute('data-site-path') || '') : '';
+        // 课程层从本页路径取（`课程总览/<课>/…` 的第二段）。不能写死 `课程/`——
+        // 目录 2026-10-29 改名为 `课程总览/`，写死的前缀会让候选恒为空。
+        const segs = curPath.split('/');
+        const curCourse = segs.length > 2 && segs[0] === '课程总览' ? segs[1] : '';
+        const sameCourse = curCourse
+          ? pool.filter((x) => x.indexOf('课程总览/' + curCourse + '/') === 0)
+          : [];
+        const tail = normalized.split('/').pop() || '';
+        // 优先给「同名文件」——模型经常只是少了前缀层，给同名的真路径一次就能改对。
+        const sameName = (sameCourse.length ? sameCourse : pool).filter((x) => x.split('/').pop() === tail);
+        const candidates = (sameName.length ? sameName : (sameCourse.length ? sameCourse : pool)).slice(0, 20);
+        return {
+          ok: false, reason: 'no_such_page', path: normalized,
+          hint: '站点里没有这一页，跳不过去。下面是真实存在的路径，从里面挑一个；'
+            + '不确定整站结构就先用 site_index 看地图。',
+          candidates,
+        };
       }
 
-      // 优先走 SPA（不整页刷新，且保留侧栏）
-      try {
-        if (w.__spaRouter && typeof w.__spaRouter.navigate === 'function') {
-          const rootAttr = (doc.documentElement && doc.documentElement.getAttribute('data-root')) || './';
-          const url = new URL(rootAttr + path, location.href).pathname;
-          const verified = navPaths.includes(normalized);
-          // 2026-10-24（issue #18 决策 #4 配套）：等 SPA 路由真正换完页再回结果——
-          // 此前 fire-and-forget，工具立刻回 ok 而 URL/滚动还是旧页的，
-          // 页面桥量出的 navigated/scrolled 全是假值。返回 Promise：runTool 与
-          // execute 都 await（WebMCP 的 execute 允许异步），同步读 .ok 的旧调用
-          // 只剩测试，已同步改 await。
-          return Promise.resolve(w.__spaRouter.navigate(url, hash, true))
-            .then(() => ({ ok: true, to, path: normalized, hash, via: 'spa', verified }));
-        }
-      } catch (e) { /* 退化到整页跳转 */ }
-      try {
+      // 全程走 SPA（不整页刷新，且保留侧栏）。
+      //
+      // **没有 `location.href` 兜底**（2026-10-29 站长指出）：整页重载会销毁 document，
+      // 助手面板与已注册的 site_* 工具一起消失——用户看到的是「学数学跳过去，回来连接断了」。
+      // 路由不存在（页面不在站点里 / 老产物没有 SPA）就明确回报，让模型换路径，
+      // 而不是拿一次换页把会话掐断。
+      if (w.__spaRouter && typeof w.__spaRouter.navigate === 'function') {
         const rootAttr = (doc.documentElement && doc.documentElement.getAttribute('data-root')) || './';
-        location.href = new URL(rootAttr + path, location.href).href + (hash ? '#' + hash : '');
-        return { ok: true, to, path, hash, via: 'reload' };
-      } catch (e) { return { ok: false, reason: 'navigate_failed' }; }
+        const url = new URL(rootAttr + normalized, location.href).pathname;
+        const verified = navPaths.indexOf(normalized) >= 0;
+        // 2026-10-24（issue #18 决策 #4 配套）：等 SPA 路由真正换完页再回结果——
+        // 此前 fire-and-forget，工具立刻回 ok 而 URL/滚动还是旧页的，
+        // 页面桥量出的 navigated/scrolled 全是假值。返回 Promise：runTool 与
+        // execute 都 await（WebMCP 的 execute 允许异步），同步读 .ok 的旧调用
+        // 只剩测试，已同步改 await。
+        // 第 4 参 soft=true：路由内部任何失败都上报，绝不整页重载（见 spa-router 注释）。
+        return Promise.resolve(w.__spaRouter.navigate(url, hash, true, { soft: true }))
+          .then(() => ({ ok: true, to, path: normalized, hash, via: 'spa', verified }),
+                (err) => ({ ok: false, reason: 'navigate_failed', path: normalized,
+                            hint: '路由换页失败（页面可能已失效）。别重试同一路径，换个候选。',
+                            error: String((err && err.message) || err) }));
+      }
+      // 没有 SPA 路由（非标准页/老产物）：不换页，直接回报。
+      return { ok: false, reason: 'no_spa_router', path: normalized,
+               hint: '当前页面没有站内路由，跳转会整页重载并中断助手会话，已放弃跳转。' };
     }
 
     return { ok: false, reason: 'unknown_target', to };
@@ -1537,10 +1637,13 @@ export function createPageView(doc, loc, winOverride) {
     };
     const nodes = navData.nodes.map(toNode);
 
-    // 当前课程：从 body[data-site-path] 取第二段
+    // 当前课程：从 body[data-site-path] 取「课程总览/<课名>/…」的第二段。
+    // 不能只看下标 1——README.html、课程总览/index.html 这些页的第二段不是课程名，
+    // 会拿它去匹配课程节点、静默落空。显式要求首段是课程总览。
     const body = (doc && doc.body) || null;
     const curPath = body && body.getAttribute ? (body.getAttribute('data-site-path') || '') : '';
-    const curCourse = curPath.split('/')[1] || '';
+    const curSegs = curPath.split('/');
+    const curCourse = curSegs.length > 2 && curSegs[0] === '课程总览' ? curSegs[1] : '';
 
     // 找「课程总览」子树，再按课程名筛选
     const coursesNode = nodes.find((n) => n.name === '课程总览');
@@ -2172,11 +2275,31 @@ export function feedText(name, args, r) {
   const head = feedHead(name, argStr, !(r && r.ok));
 
   if (!r || !r.ok) {
-    const err = String((r && r.error) || '执行失败');
-    const hint = /not_found|没找到/.test(err)
-      ? '\n建议下一步：换一个更短的关键词重试，或先用 site_read，what=outline 看全部标题。'
-      : '\n建议下一步：换个参数重试；连续失败就直接告诉用户当前做不到。';
-    return (head + '\n- 原因：' + err + hint).slice(0, SINGLE_MSG_LIMIT);
+    // 失败原因有两个来源，必须都读（2026-10-29 修）：
+    //   · `r.error`   —— runTool 抛异常（工具不存在、代码炸了）
+    //   · `r.value.reason` —— 工具**正常返回**了 `{ok:false, reason, hint, candidates}`
+    // 此前只读前者，于是「这页不存在」「不在导航里」这类**最有用的失败**到了模型那里
+    // 统一变成「执行失败」四个字，hint 与候选全丢——模型只能瞎猜下一跳。
+    // 实测后果：它拼错路径 → 只看到「执行失败」→ 换个同样错的路径再试。
+    const v = r && r.value && typeof r.value === 'object' ? r.value : null;
+    const reason = String((r && r.error) || (v && v.reason) || '执行失败');
+    const lines = [head, '- 原因：' + reason];
+    const seen = {};
+    if (v && v.hint) lines.push('提示：' + String(v.hint).slice(0, 200));
+    if (v && Array.isArray(v.candidates) && v.candidates.length) {
+      lines.push('候选：' + v.candidates.slice(0, 12).map((c) => '「' + c + '」').join(' / '));
+      seen.cand = 1;
+    }
+    if (v && Array.isArray(v.available) && v.available.length && !seen.cand) {
+      lines.push('可选：' + v.available.slice(0, 12).map((c) => '「' + c + '」').join(' / '));
+    }
+    // 通用建议只在工具自己没给 hint 时补，否则会和具体指示打架。
+    if (!(v && v.hint)) {
+      lines.push(/not_found|no_such_page|not_in_nav/.test(reason)
+        ? '建议下一步：换一个更短的关键词重试，或先用 site_read，what=outline 看全部标题。'
+        : '建议下一步：换个参数重试；连续失败就直接告诉用户当前做不到。');
+    }
+    return lines.join('\n').slice(0, SINGLE_MSG_LIMIT);
   }
 
   const v = r.value;

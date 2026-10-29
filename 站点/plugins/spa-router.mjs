@@ -54,7 +54,14 @@ function isPageLink(a) {
 
 // 换页：fetch → 解析 → 替换三块 → reset 钩子
 var inflight = null;
-function navigate(rawUrl, hash, push) {
+function navigate(rawUrl, hash, push, opts4) {
+  // 第 4 参「soft」（2026-10-29）：**不许整页重载**。
+  //
+  // 站内点击走默认（hard）：fetch 失败就 location.href 兜底，那是正常浏览该有的
+  // 保底可用性。但助手工具循环调用时**整页重载会销毁 document，把助手自己的面板与
+  // 已注册工具一起杀掉**——用户看到「学数学」跳过去，回来连接没了。
+  // 所以工具传 soft=true：任何失败都 reject，由调用方回报「跳不过去」，绝不换页。
+  var soft = opts4 && opts4.soft === true;
   // URL 规范化：防拼接污染（hash 误粘进 path 之类）；hash 一律走 URL.hash，不手拼字符串
   var u = new URL(rawUrl, location.href);
   u.hash = hash ? encodeURIComponent(hash) : "";
@@ -80,7 +87,11 @@ function navigate(rawUrl, hash, push) {
     // ① 正文：article-content（容器 article-container 一并换，保 frontmatter 区域结构）
     var nextMain = doc.querySelector(".article-content");
     var curMain = document.querySelector(".article-content");
-    if (!nextMain || !curMain) { location.href = url; return; } // 结构不符 → 整页跳转兜底
+    if (!nextMain || !curMain) {
+      // 结构不符 → 整页跳转兜底（soft 模式改为上报失败，见函数头）
+      if (soft) throw new Error("not_a_site_page");
+      location.href = url; return;
+    }
     curMain.replaceWith(nextMain);
 
     // ② TOC：m3-toc（aside）
@@ -146,7 +157,10 @@ function navigate(rawUrl, hash, push) {
   }).catch(function (err) {
     inflight = null;
     if (err && err.name === "AbortError") return;
-    // 网络/解析失败 → 整页跳转兜底（保底可用性优先于不重载）
+    // 网络/解析失败 → 整页跳转兜底（保底可用性优先于不重载）。
+    // soft 模式（助手工具调用）：**不许跳**——整页重载会销毁 document，
+    // 连助手面板与已注册工具一起没了，用户回头就发现连接断了。改成 reject 上报。
+    if (soft) throw err;
     location.href = url;
   });
 }

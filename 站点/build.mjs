@@ -454,6 +454,13 @@ for (const relPath of TARGET_FILES) {
   });
 }
 
+// 站点**真实产物路径**清单（2026-10-29）：`页面清单.mjs` 的 TARGET_FILES 逐个换成 html。
+// 这是 site_navigate 的 to=page 判「这一页存不存在」的**唯一真相**——不是导航形状：
+// README / 维护条例 / 维护细则 / 站点符号包都没有侧栏入口，但它们是真页面。
+// 每个页面都烘一份（`#site-pages-json`），客户端不发请求即可校验。
+const SITE_PAGE_PATHS = TARGET_FILES.map((p) =>
+  p === 'README.md' ? 'index.html' : p.replace(/\.md$/, '.html'));
+
 // 3. Define navigation structure
 const NAV_STRUCTURE = [
   { label: "README", path: "README.md" },
@@ -1941,6 +1948,11 @@ for (const relPath of TARGET_FILES) {
   <!-- 侧栏形状烘焙（阶段一）：nav-structure.mjs（buildNavModel）产出的归一化树 + 判定结果。
        site_index / site_navigate / drawer-sync 三个消费者都读这一份，不再爬侧栏 DOM。 -->
   <script type="application/json" id="nav-structure-json">${JSON.stringify(navJsonPayload).replace(/<\//g, '<\\/')}</script>
+  <!-- 站点页面清单烘焙（2026-10-29）：TARGET_FILES 派生的**真实产物路径**。
+       site_navigate 的 to=page 靠它判「这一页到底存不存在」——此前判据是「像不像
+       index.html」，于是模型拼错层级的路径（少了课程层）也能通过，SPA fetch 撞 404。
+       注意它是**产物清单**不是导航清单：README / 维护条例 / 符号包都在内。 -->
+  <script type="application/json" id="site-pages-json">${JSON.stringify(SITE_PAGE_PATHS).replace(/<\//g, '<\\/')}</script>
   <script src="${rootRel}${assetUrl('assets/plugins/math-glossary.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/site-search.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/webmcp-loader.js')}" defer></script>

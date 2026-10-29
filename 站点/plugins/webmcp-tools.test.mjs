@@ -112,7 +112,7 @@ function matchIn(root, sel) {
 }
 
 /** 造一个像 document 的对象。 */
-function fakeDoc({ title = '测试页', url = 'http://x/y.html', withSearch = true, withPaging = true, long = false } = {}) {
+function fakeDoc({ title = '测试页', url = 'http://x/y.html', withSearch = true, withPaging = true, long = false, pages = null } = {}) {
   const h1 = el('h1', '变压器额定电流', { id: 'h1' });
   const chip = el('span', '📚 电机学', { className: 'meta-chip primary' });
   const chip2 = el('span', '🏷️ 教材解析', { className: 'meta-chip' });
@@ -149,11 +149,11 @@ function fakeDoc({ title = '测试页', url = 'http://x/y.html', withSearch = tr
   const input = el('input', '', { id: 'search-input' });
   const results = el('div', '仅显示相关度最高的 2 页（共 7 页命中）', { id: 'search-results' });
   const hitTitle = el('span', '电机学 2026-10-08', { className: 'search-hit-title' });
-  const hit = el('a', '', { className: 'search-hit', attrs: { href: '课程/电机学/x.html' } });
+  const hit = el('a', '', { className: 'search-hit', attrs: { href: '课程总览/电机学/x.html' } });
   hit.children = [hitTitle];
 
   // 侧栏
-  const navLink = el('a', '第二章 变压器', { className: 'drawer-nav-link', attrs: { 'data-path': '课程/电机学/第二章.html', href: '第二章.html' } });
+  const navLink = el('a', '第二章 变压器', { className: 'drawer-nav-link', attrs: { 'data-path': '课程总览/电机学/第二章.html', href: '第二章.html' } });
   // 侧栏树（site_index 的数据源）：课程总览 → 电机学 → 分类 → 页面
   const mkLeaf = (label, path) => {
     const li = el('li', '', { className: 'drawer-nav-item' });
@@ -175,10 +175,10 @@ function fakeDoc({ title = '测试页', url = 'http://x/y.html', withSearch = tr
     return li;
   };
   const notesGroup = mkGroup('课堂笔记', [
-    mkLeaf('10-08 磁路', '课程/电机学/课堂笔记/2026-10-08-磁路.html'),
+    mkLeaf('10-08 磁路', '课程总览/电机学/课堂笔记/2026-10-08-磁路.html'),
   ]);
   const assignGroup = mkGroup('作业', [
-    mkLeaf('作业1', '课程/电机学/作业/2026-09-28-作业1.html'),
+    mkLeaf('作业1', '课程总览/电机学/作业/2026-09-28-作业1.html'),
   ]);
   const motorGroup = mkGroup('电机学', [notesGroup, assignGroup]);
   const otherCourse = mkGroup('电路原理', [mkLeaf('习题册第一章', '课程/电路原理/作业/x.html')]);
@@ -219,8 +219,8 @@ function fakeDoc({ title = '测试页', url = 'http://x/y.html', withSearch = tr
       return null;
     };
     const nodes = (drawerRootUl.children || []).map((li) => walk(li, 0)).filter(Boolean);
-    // 夹具里还有一条**树外**的 navLink（`课程/电机学/第二章.html`）——真实页面里
-    // 它就是「课程/电机学」组下的一个叶子。派生时补进对应课程组，保证
+    // 夹具里还有一条**树外**的 navLink（`课程总览/电机学/第二章.html`）——真实页面里
+    // 它就是「课程总览/电机学」组下的一个叶子。派生时补进对应课程组，保证
     // site_navigate 的白名单与旧 DOM 夹具一致（否则那几个 navigate 测试会误报 not_in_nav）。
     const extraPath = navLink.getAttribute('data-path');
     if (extraPath) {
@@ -235,10 +235,18 @@ function fakeDoc({ title = '测试页', url = 'http://x/y.html', withSearch = tr
       }
     }
     // 夹具里的组节点都不带 path ⇒ indexHref 全 null（真实构建里 index.md 组才有）
-    return { v: 1, current: '课程/电机学/第二章.html', activeIds: [], expandedIds: [], nodes };
+    return { v: 1, current: '课程总览/电机学/第二章.html', activeIds: [], expandedIds: [], nodes };
   })();
   const navJsonTag = el('script', JSON.stringify(navJson), { id: 'nav-structure-json' });
   navJsonTag.setAttribute('type', 'application/json');
+
+  // 站点产物清单（`#site-pages-json`）。默认**不给**——多数测试验证的是「没有这份
+  // 清单时退回侧栏白名单」的降级行为；需要验清单判据的测试用 options.pages 传入。
+  let pagesJsonTag = null;
+  if (Array.isArray(pages)) {
+    pagesJsonTag = el('script', JSON.stringify(pages), { id: 'site-pages-json' });
+    pagesJsonTag.setAttribute('type', 'application/json');
+  }
 
   // 上一节/下一节
   const prev = el('a', '上一节：第一章', { className: 'paging-card paging-prev', attrs: { href: 'prev.html' } });
@@ -267,11 +275,12 @@ function fakeDoc({ title = '测试页', url = 'http://x/y.html', withSearch = tr
   for (const c of article.children) c.parentElement = article;
   // 让 p2 与 h3 的祖先关系成立（h3 在 h2a 后）
   const all = [article, prev, next, navLink, brand, tocActive, glossJson, drawerArea, navJsonTag];
+  if (pagesJsonTag) all.push(pagesJsonTag);
   if (withSearch) all.push(panel, input, results, hit);
   if (withPaging) all.push(prev, next);
   // 建父子链（details 里放一个标题，测「开面板」）
 
-  const body = el('body', '', { attrs: { 'data-site-path': '课程/电机学/教材解析/x.html' } });
+  const body = el('body', '', { attrs: { 'data-site-path': '课程总览/电机学/教材解析/x.html' } });
   const documentElement = el('html', '', { attrs: { 'data-theme': 'light', 'data-root': '../../../' } });
   documentElement.style._v['--hue'] = '248';
 
@@ -313,7 +322,7 @@ test('pageInfo：含当前高亮目录项、面板统计、显示设置、阅读
   assert.deepEqual(info.panels, { total: 1, open: 0 });
   assert.equal(info.view.theme, 'light');
   assert.equal(info.view.hue, 248);
-  assert.equal(info.path, '课程/电机学/教材解析/x.html');
+  assert.equal(info.path, '课程总览/电机学/教材解析/x.html');
   assert.ok(info.position && typeof info.position.scrollPct === 'number');
 });
 
@@ -651,7 +660,7 @@ test('site_navigate：link 点侧栏页并回报 data-path', () => {
   const doc = fakeDoc();
   const r = createPageView(doc).navigate({ to: 'link', query: '第二章' });
   assert.equal(r.ok, true);
-  assert.equal(r.path, '课程/电机学/第二章.html');
+  assert.equal(r.path, '课程总览/电机学/第二章.html');
 });
 
 test('site_navigate：link 找不到给候选清单', () => {
@@ -668,29 +677,96 @@ test('site_navigate：page 走 SPA 路由（若页面暴露 __spaRouter）', asy
   // 2026-10-19 起 page 分支会做侧栏校验：路径必须在该页的 data-path 里。
   // 夹具里那条侧栏链接就是合法目标。
   // 2026-10-24 起 page 分支返回 Promise（等路由换完页，effect 才量得到真值）。
-  const r = await createPageView(doc).navigate({ to: 'page', path: '课程/电机学/第二章.html', hash: 'sec-1' });
+  const r = await createPageView(doc).navigate({ to: 'page', path: '课程总览/电机学/第二章.html', hash: 'sec-1' });
   assert.equal(r.ok, true);
   assert.equal(r.via, 'spa');
   assert.equal(seen.length, 1);
 });
 
-test('site_navigate：索引页即使不在侧栏也放行（build.mjs 定案：group 无链接）', async () => {
+test('site_navigate：索引页不在产物清单里也拒绝（2026-10-29 删掉索引页后门）', async () => {
+  // 旧行为：「…/index.html」一律放行（理由是数据缺失时兜底）。后果是模型把
+  // `课程总览/工程数学/教材解析/index.html` 记成 `教材解析/index.html`，
+  // 少了课程层照样通过，SPA fetch 撞 404——站长实测「助手带我去学数学，然后 404」。
+  // 夹具里没有任何 #site-pages-json，于是退回侧栏白名单；`index.html` 不在侧栏，须拒。
   const doc = fakeDoc();
   const seen = [];
   doc.defaultView.__spaRouter = { navigate: (...a) => seen.push(a) };
-  const r = await createPageView(doc).navigate({ to: 'page', path: '课程/电机学/index.html' });
-  assert.equal(r.ok, true, '索引页应放行');
-  assert.equal(r.verified, false, '但要标出未经侧栏校验');
+  const r = await createPageView(doc).navigate({ to: 'page', path: '课程总览/电机学/index.html' });
+  assert.equal(r.ok, false, '不在白名单的索引页不许跳');
+  assert.equal(r.reason, 'no_such_page');
+  assert.equal(seen.length, 0, '不许真的去 navigate');
 });
 
-test('site_navigate：page 路径不在侧栏时报 not_in_nav 并给同课程候选', () => {
+test('site_navigate：产物清单里有的页面放行（含不在侧栏的 README / 符号包）', async () => {
+  // 判据是「站点真的生成了这一页」，数据源是构建期烘的 #site-pages-json。
+  // 侧栏没有 README / 维护条例 / 符号包的入口，但它们是真页面，必须能跳。
+  const pages = [
+    'index.html',
+    '维护条例.html',
+    '站点/符号包/通用.html',
+    '课程总览/电机学/第二章.html',
+    '课程总览/电机学/教材解析/index.html',
+  ];
+  for (const p of pages) {
+    const doc = fakeDoc({ pages });
+    const seen = [];
+    doc.defaultView.__spaRouter = { navigate: (...a) => seen.push(a) };
+    const r = await createPageView(doc).navigate({ to: 'page', path: p });
+    assert.equal(r.ok, true, `${p} 应放行`);
+    assert.equal(seen.length, 1, `${p} 应真的去 navigate`);
+  }
+});
+
+test('site_navigate：产物清单里没有的路径一律拒绝，绝不整页跳（防 404 与会话掐断）', async () => {
+  // 站长实测的原始 bug：模型把 `课程总览/工程数学/教材解析/index.html` 记成
+  // `教材解析/index.html`，旧的「索引页后门」放行，SPA fetch 404。
+  const doc = fakeDoc({ pages: ['index.html', '课程总览/工程数学/教材解析/index.html'] });
+  const seen = [];
+  doc.defaultView.__spaRouter = { navigate: (...a) => seen.push(a) };
+  doc.body._attrs['data-site-path'] = '课程总览/工程数学/教材解析/index.html';
+  const r = await createPageView(doc).navigate({ to: 'page', path: '教材解析/index.html' });
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'no_such_page');
+  assert.equal(seen.length, 0, '不许真的去 navigate');
+  // 候选里必须有同名文件的真路径——模型少写的是前缀，一次就能改对。
+  assert.ok(r.candidates.includes('课程总览/工程数学/教材解析/index.html'), '要给同名文件的真路径');
+});
+
+test('site_navigate：没有 SPA 路由时拒绝而不是整页跳（整页跳会掐断助手连接）', async () => {
+  const doc = fakeDoc({ pages: ['课程总览/电机学/第二章.html'] });
+  // 不给 defaultView.__spaRouter
+  const r = createPageView(doc).navigate({ to: 'page', path: '课程总览/电机学/第二章.html' });
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'no_spa_router');
+});
+
+test('site_navigate：各种路径拼法都归一化到同一页（前导斜杠 / ./ / 目录形式 / 部署前缀）', async () => {
+  const pages = ['index.html', '课程总览/工程数学/教材解析/index.html'];
+  const forms = [
+    '课程总览/工程数学/教材解析/index.html',
+    '/课程总览/工程数学/教材解析/index.html',
+    './课程总览/工程数学/教材解析/index.html',
+    '课程总览/工程数学/教材解析/',
+    '/repo/S26-1_202609/课程总览/工程数学/教材解析/index.html',
+    'https://isui.ren/repo/S26-1_202609/课程总览/工程数学/教材解析/index.html',
+  ];
+  for (const f of forms) {
+    const doc = fakeDoc({ pages });
+    doc.defaultView.__spaRouter = { navigate: () => Promise.resolve() };
+    const r = await createPageView(doc).navigate({ to: 'page', path: f });
+    assert.equal(r.ok, true, `${f} 应放行`);
+    assert.equal(r.path, '课程总览/工程数学/教材解析/index.html', `${f} 应归一化到同一页`);
+  }
+});
+
+test('site_navigate：page 路径不在站点里时报 no_such_page 并给同课程候选', () => {
   const doc = fakeDoc();
   doc.defaultView.__spaRouter = { navigate: () => {} };
-  doc.body._attrs['data-site-path'] = '课程/电机学/教材解析/x.html';
-  const r = createPageView(doc).navigate({ to: 'page', path: '课程/电机学/不存在.html' });
+  doc.body._attrs['data-site-path'] = '课程总览/电机学/教材解析/x.html';
+  const r = createPageView(doc).navigate({ to: 'page', path: '课程总览/电机学/不存在.html' });
   assert.equal(r.ok, false);
-  assert.equal(r.reason, 'not_in_nav');
-  assert.ok(r.candidates.includes('课程/电机学/第二章.html'), '要给同课程的合法路径');
+  assert.equal(r.reason, 'no_such_page');
+  assert.ok(r.candidates.includes('课程总览/电机学/第二章.html'), '要给同课程的合法路径');
 });
 
 // ---------------------------------------------------------------- setView
@@ -985,7 +1061,7 @@ test('site_capture_view：selector 不存在时报 selector_not_found', async ()
 
 test('site_index：默认给当前课程（从 body[data-site-path] 判）', async () => {
   const doc = fakeDoc();
-  doc.body._attrs['data-site-path'] = '课程/电机学/课堂笔记/x.html';
+  doc.body._attrs['data-site-path'] = '课程总览/电机学/课堂笔记/x.html';
   const r = await buildToolDefs(doc)[2].execute({});
   assert.equal(r.ok, true);
   assert.equal(r.scope, 'course');
@@ -995,17 +1071,17 @@ test('site_index：默认给当前课程（从 body[data-site-path] 判）', asy
   // 2026-10-29：默认**不铺完整路径**（只给短文件名），层级与侧边栏一致。
   // 理由是站长反馈「模型去看给人看的 index 页太痛苦」——38 行里重复前缀占大半。
   assert.match(r.text, /2026-10-08-磁路/);
-  assert.doesNotMatch(r.text, /课程\/电机学\/课堂笔记\/2026-10-08-磁路\.html/,
+  assert.doesNotMatch(r.text, /课程总览\/电机学\/课堂笔记\/2026-10-08-磁路\.html/,
     '默认不该出现完整仓库路径');
   assert.doesNotMatch(r.text, /习题册第一章/, '不该混进别的课');
   // paths:true 才给完整路径
   const withPaths = await buildToolDefs(doc)[2].execute({ paths: true });
-  assert.match(withPaths.text, /课程\/电机学\/课堂笔记\/2026-10-08-磁路\.html/);
+  assert.match(withPaths.text, /课程总览\/电机学\/课堂笔记\/2026-10-08-磁路\.html/);
 });
 
 test('site_index：scope=all 给全站树（含其他课程）', async () => {
   const doc = fakeDoc();
-  doc.body._attrs['data-site-path'] = '课程/电机学/x.html';
+  doc.body._attrs['data-site-path'] = '课程总览/电机学/x.html';
   const r = await buildToolDefs(doc)[2].execute({ scope: 'all' });
   assert.equal(r.scope, 'all');
   assert.match(r.text, /电机学/);
@@ -1035,7 +1111,7 @@ test('site_index：没有侧栏形状数据时报 no_sidebar（不返回空树�
 test('renderMarkdown：links 默认关，链接只留文字', () => {
   const root = el('div', '');
   const p = el('p', '');
-  const a = el('a', '第二章', { attrs: { href: '课程/电机学/第二章.html' } });
+  const a = el('a', '第二章', { attrs: { href: '课程总览/电机学/第二章.html' } });
   p.children = [a]; a.parentElement = p;
   root.children = [p];
   assert.equal(renderMarkdown(root), '第二章');
@@ -1044,10 +1120,10 @@ test('renderMarkdown：links 默认关，链接只留文字', () => {
 test('renderMarkdown：links=true 时站内链接出 [文字](路径)', () => {
   const root = el('div', '');
   const p = el('p', '');
-  const a = el('a', '第二章', { attrs: { href: '课程/电机学/第二章.html' } });
+  const a = el('a', '第二章', { attrs: { href: '课程总览/电机学/第二章.html' } });
   p.children = [a]; a.parentElement = p;
   root.children = [p];
-  assert.equal(renderMarkdown(root, { links: true }), '[第二章](课程/电机学/第二章.html)');
+  assert.equal(renderMarkdown(root, { links: true }), '[第二章](课程总览/电机学/第二章.html)');
 });
 
 test('renderMarkdown：百分号编码的站内链接解码成可读中文（2026-10-19 实测）', () => {
@@ -1078,11 +1154,11 @@ test('site_read：links 参数透传到 renderMarkdown', async () => {
   const doc = fakeDoc();
   const article = doc.children[0];
   const p = el('p', '');
-  const a = el('a', '第二章', { attrs: { href: '课程/电机学/第二章.html' } });
+  const a = el('a', '第二章', { attrs: { href: '课程总览/电机学/第二章.html' } });
   p.children = [a]; a.parentElement = p;
   article.children.push(p); p.parentElement = article;
   const r = await buildToolDefs(doc)[1].execute({ what: 'page', links: true });
-  assert.match(r.text, /\[第二章\]\(课程\/电机学\/第二章\.html\)/);
+  assert.match(r.text, /\[第二章\]\(课程总览\/电机学\/第二章\.html\)/);
 });
 
 test('site_capture_view：宿主未注入能力时明确报错（不静默、不假成功）', async () => {
