@@ -62,6 +62,7 @@ test('MathLive 样式表：承载绝对定位的容器类都要有自身规则',
   const css = read();
   const need = {
     'ML__mtable': /display\s*:\s*inline-block/,
+    'ML__delim-mult': /display\s*:\s*inline-block/,
     'ML__vlist': /display\s*:\s*table-cell/,
     'ML__vlist-t': /display\s*:\s*inline-table/,
     'ML__vlist-r': /display\s*:\s*table-row/,
@@ -84,4 +85,16 @@ test('MathLive 样式表：dist 副本与源文件一致（构建必须带出补
   assert.ok(existsSync(CSS_DIST), 'dist 里没有 mathlive-static.css——先跑 node build.mjs');
   assert.equal(readFileSync(CSS_DIST, 'utf8'), read(),
     'dist 的 MathLive 样式与源文件不一致：构建没把补丁带出去，页面仍是坏的');
+});
+
+test('MathLive 样式表必须带内容哈希戳（否则改了它浏览器永远读旧缓存）', () => {
+  // 2026-10-29 实测踩到的坑：这张 CSS 曾是**唯一**裸引用的样式表（其余四张都走
+  // assetUrl 带 `?v=<内容哈希>`）。于是补丁写进 dist、页面也重新构建了，
+  // 浏览器照样拿缓存副本 —— 表现是「CSS 规则明明对，就是不生效」，
+  // 排查时会误判成规则写错。判据：构建产物里的 link 必须带 `?v=`。
+  const html = readFileSync(path.join(HERE, '../dist/index.html'), 'utf8');
+  const m = /<link[^>]*href="([^"]*mathlive-static\.css[^"]*)"/.exec(html);
+  assert.ok(m, '页面里没有 mathlive-static.css 的 link');
+  assert.match(m[1], /\?v=[0-9a-f]+/,
+    'mathlive-static.css 的 link 必须带内容哈希戳（走 assetUrl），否则改它不生效');
 });

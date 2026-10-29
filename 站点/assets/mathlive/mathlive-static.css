@@ -17,3 +17,12 @@
    用户反馈「矩阵行列式不如换引擎之前美观」正是这个。KaTeX 时代没有这个问题，
    因为 KaTeX 的 .katex-display 自带正确布局。 */
 .ML__mtable{box-sizing:border-box;display:inline-block;min-width:1px}
+
+/* 同一类缺失的第二处（2026-10-29）：大号定界符 `.ML__delim-mult`。
+   determinant 的竖线是「若干小竖线叠起来」包在一个 span 里，那个 span 也必须
+   是 inline-block，否则内部的 table 高度不参与外层 ⇒ 竖线恒为一行高（22px），
+   而旁边的矩阵有三四行高 ⇒ **竖线只包住矩阵顶部一小截**，看上去根本不像行列式。
+
+   实测（1.2-n阶行列式页，真实 Chromium）：补前 6 处竖线高度全是 22px，
+   而相邻矩阵分别是 78 / 39 / 117px；补后两者吻合。同一次对照实验。 */
+.ML__delim-mult{display:inline-block}
