@@ -15,7 +15,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import {
-  htmlPathOf, isActive, isExpanded, collectActive, indexHrefOf, buildNavModel,
+  htmlPathOf, filePathOf, isActive, isExpanded, collectActive, indexHrefOf, buildNavModel,
 } from './nav-structure.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -65,11 +65,20 @@ const findByLabel = (nodes, label) => {
 
 // ══════════ ① 纯函数 ══════════
 
-test('htmlPathOf：README 落成 index.html，其余换后缀，非法输入 null', () => {
-  assert.equal(htmlPathOf('README.md'), 'index.html');
-  assert.equal(htmlPathOf('课程总览/作业/index.md'), '课程总览/作业/index.html');
+test('htmlPathOf：网址规则——首页为空串、目录索引为目录形式、普通页换后缀', () => {
+  // 2026-10-29 站长定案「大一统」：这是全站唯一的网址规则。
+  assert.equal(htmlPathOf('README.md'), '', '首页就是站点根 /');
+  assert.equal(htmlPathOf('课程总览/作业/index.md'), '课程总览/作业/', '目录索引页 → 目录形式');
+  assert.equal(htmlPathOf('课程总览/作业/作业3.md'), '课程总览/作业/作业3.html', '普通页 → 换后缀');
   assert.equal(htmlPathOf(''), null);
   assert.equal(htmlPathOf(null), null);
+});
+
+test('filePathOf：物理产物路径（写盘用），索引页仍是 index.html', () => {
+  // 网址与文件从此不同：网址 `课程总览/作业/`，文件 `课程总览/作业/index.html`。
+  assert.equal(filePathOf('README.md'), 'index.html');
+  assert.equal(filePathOf('课程总览/作业/index.md'), '课程总览/作业/index.html');
+  assert.equal(filePathOf('课程总览/作业/作业3.md'), '课程总览/作业/作业3.html');
 });
 
 test('buildNavModel：归一化字段齐全，id 稳定', () => {
@@ -80,7 +89,7 @@ test('buildNavModel：归一化字段齐全，id 稳定', () => {
   assert.equal(leaf.depth, 2);
   assert.equal(leaf.children, null);
   assert.equal(json.v, 1);
-  assert.equal(json.current, '课程总览/作业/index.html');
+  assert.equal(json.current, '课程总览/作业/', 'html/网址空间的 current 用目录形式');
 });
 
 test('无 path 的组也要有 id（用父键+label 合成，且不与真实 html 路径相撞）', () => {
@@ -97,8 +106,9 @@ test('isActive：只认自带键的节点；无 path 组永不 active', () => {
   const group = findByLabel(nodes, '作业');
   const noPath = findByLabel(nodes, '第02章 矩阵');
 
-  assert.equal(isActive(group, '课程总览/作业/index.html', true), true);
-  assert.equal(isActive(group, '课程总览/作业/index.html', false), false, 'md 空间用 path 比');
+  assert.equal(isActive(group, '课程总览/作业/', true), true, 'html 空间是网址形态');
+  assert.equal(isActive(group, '课程总览/作业/index.md', false), true, 'md 空间用 path 比');
+  assert.equal(isActive(group, '课程总览/作业/', false), false, 'md 空间不认网址形态');
   assert.equal(isActive(noPath, noPath.id, true), false, '无 path 组不该 active');
 });
 
@@ -116,7 +126,7 @@ test('isExpanded：自身 active 或任一后代 active', () => {
 test('indexHrefOf：仅「组 + index.md + 不与子项重复」才出图标', () => {
   const { nodes } = buildNavModel(TREE, 'README.md');
 
-  assert.equal(indexHrefOf(findByLabel(nodes, '作业')), '课程总览/作业/index.html', '正常组出图标');
+  assert.equal(indexHrefOf(findByLabel(nodes, '作业')), '课程总览/作业/', '正常组出目录形式网址');
   assert.equal(indexHrefOf(findByLabel(nodes, '第01章 概述')), null, '重复 path 组不出（防父子双亮）');
   assert.equal(indexHrefOf(findByLabel(nodes, '第02章 矩阵')), null, '无 path 组不出');
   assert.equal(indexHrefOf(findByLabel(nodes, '作业1')), null, '叶子不出');
@@ -176,8 +186,9 @@ test('T5b-③ 组标题链接在应有处出现、在重复 path 组处不出现
   // 应有：作业索引页里，「工程数学」组（indexHref 非空）标题是带 data-path 的链接
   const withIcon = needDist('课程总览/工程数学/作业/index.html');
   assert.ok(!withIcon.includes('nav-index-link'), 'nav-index-link 应已全站清零');
+  // 2026-10-29 起网址形态是目录形式：`课程总览/工程数学/`（不是 index.html）。
   const gongcheng = withIcon.match(
-    /<li class="drawer-nav-group [^"]*" data-node-id="课程总览\/工程数学\/index\.html">\s*<div class="nav-group-header ">\s*<a href="[^"]*课程总览\/工程数学\/index\.html" data-path="课程总览\/工程数学\/index\.html" class="drawer-nav-link"><span>工程数学<\/span><\/a>/);
+    /<li class="drawer-nav-group [^"]*" data-node-id="课程总览\/工程数学\/">\s*<div class="nav-group-header ">\s*<a href="[^"]*课程总览\/工程数学\/" data-path="课程总览\/工程数学\/" class="drawer-nav-link"><span>工程数学<\/span><\/a>/);
   assert.ok(gongcheng, '工程数学组标题应是 drawer-nav-link 链接（header 无 nav-header-clickable）');
 
   // 不应有：电机学第01章（path == 子项 path）——纯标题 span + nav-header-clickable

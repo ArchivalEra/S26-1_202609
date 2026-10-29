@@ -24,15 +24,64 @@
 // 判定函数带一个 `htmlSpace` 开关：false 用 node.path，true 用 node.href。
 
 /**
- * md 路径 → 产物 html 相对路径（与 build.mjs 的 pageMetaMap 同一规则）。
- * README.md 是站点首页，落成 index.html；其余只是后缀替换。
+ * md 路径 → **物理产物路径**（构建写盘用）。
+ *
+ * README.md 落成 index.html；目录索引页落成 `<目录>/index.html`；其余换后缀。
+ * **这不是网址**——网址见 `htmlPathOf`。二者在索引页上不同：
+ * 文件叫 `课程总览/index.html`，而网址是 `课程总览/`（托管层对目录请求返回 index.html）。
+ *
+ * @param {string} mdPath
+ * @returns {string|null}
+ */
+export function filePathOf(mdPath) {
+  if (!mdPath || typeof mdPath !== 'string') return null;
+  if (mdPath === 'README.md') return 'index.html';
+  return mdPath.replace(/\.md$/, '.html');
+}
+
+/**
+ * md 路径 → 站内**网址**。**全站唯一的网址规则**（2026-10-29 站长定案「大一统」）。
+ *
+ * ```
+ * 站点首页     README.md          → ''           （就是 /，浏览器自然解析到站点根）
+ * 目录索引页   课程总览/index.md   → '课程总览/'
+ * 普通页面     作业3.md           → '作业3.html'
+ * ```
+ *
+ * ## 为什么索引页用目录形式而不是 index.html
+ *
+ * 「文件名 = 侧栏标签 = 页面 H1 = 网址最后一段」这条四者一致，在索引页上只有目录
+ * 形式能成立：写 `课程总览/index.html` 时最后一段是 `index`，与层名「课程总览」对不上。
+ * 写成 `课程总览/`，最后一段就是层名本身。
+ *
+ * ## 为什么这是安全的
+ *
+ * 目录形式是托管层原生能力，不依赖任何 rewrite：本地实测 `/`、`/课程总览/`、
+ * `/课程总览/工程数学/作业/` 全部 200（不带尾斜杠 301 到带斜杠）。
+ * 浏览器请求目录时服务器自己返回 `index.html`——「网址 ↔ 文件」的换算交给服务器，
+ * 我们只在**生成链接**这一侧统一用网址形态。
+ *
+ * 返回站内相对网址（不带前导 `/`，首页为空串）。拼绝对链接时由调用方加 `rootRel`。
+ *
  * @param {string} mdPath
  * @returns {string|null}
  */
 export function htmlPathOf(mdPath) {
   if (!mdPath || typeof mdPath !== 'string') return null;
-  if (mdPath === 'README.md') return 'index.html';
+  if (mdPath === 'README.md') return '';
+  if (/\/index\.md$/.test(mdPath)) return mdPath.replace(/\/index\.md$/, '/');
   return mdPath.replace(/\.md$/, '.html');
+}
+
+/**
+ * 把一个网址形态的路径拆成「面包屑/侧栏能用的段」：去掉末尾斜杠再分段。
+ * `课程总览/工程数学/作业/` → ['课程总览','工程数学','作业']；`''` → []。
+ * @param {string} url
+ * @returns {string[]}
+ */
+export function urlSegments(url) {
+  const u = String(url || '').replace(/\/+$/, '');
+  return u ? u.split('/') : [];
 }
 
 /** 节点在指定空间的键（md 用 path，html 用 href）。 */

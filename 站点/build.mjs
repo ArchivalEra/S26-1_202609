@@ -27,7 +27,7 @@ import { SPA_ROUTER_JS } from './plugins/spa-router.mjs';
 // SW 根除（2026-10-23）：一次性反注册脚本——见下方写盘段注释
 import { SW_KILL_JS } from './plugins/sw-kill.mjs';
 import { DRAWER_SYNC_JS } from './plugins/drawer-sync.mjs';
-import { buildNavModel, isActive, isExpanded, htmlPathOf, NAV_STRUCTURE_JS } from './plugins/nav-structure.mjs';
+import { buildNavModel, isActive, isExpanded, htmlPathOf, filePathOf, urlSegments, NAV_STRUCTURE_JS } from './plugins/nav-structure.mjs';
 import { WEBMCP_SHIM_JS } from './plugins/webmcp-shim.mjs';
 import { WEBMCP_TOOLS_JS } from './plugins/webmcp-tools.mjs';
 import { TARGET_FILES } from './页面清单.mjs';
@@ -450,7 +450,11 @@ for (const relPath of TARGET_FILES) {
     frontmatter,
     category: frontmatter.category || '',
     course: frontmatter.course || '',
-    htmlRelPath: relPath === 'README.md' ? 'index.html' : relPath.replace(/\.md$/, '.html')
+    // 物理产物路径（翻页卡等页面间跳转用它 → 但见下方 url 字段：2026-10-29 起
+    // 跳转一律用**网址**形态，htmlRelPath 保留给需要真实文件名的场合）
+    htmlRelPath: filePathOf(relPath),
+    // 站内**网址**（唯一规则来自 htmlPathOf）：目录索引页为 `目录/`，首页为 ''。
+    urlRelPath: htmlPathOf(relPath)
   });
 }
 
@@ -458,12 +462,20 @@ for (const relPath of TARGET_FILES) {
 // 这是 site_navigate 的 to=page 判「这一页存不存在」的**唯一真相**——不是导航形状：
 // README / 维护条例 / 维护细则 / 站点符号包都没有侧栏入口，但它们是真页面。
 // 每个页面都烘一份（`#site-pages-json`），客户端不发请求即可校验。
-const SITE_PAGE_PATHS = TARGET_FILES.map((p) =>
-  p === 'README.md' ? 'index.html' : p.replace(/\.md$/, '.html'));
+// 用**网址**形态（不是文件名）：模型的 to=page 参数写的是它从 site_index / 侧栏
+// 看到的那个东西，而侧栏现在给的就是目录形式。用文件名会让「侧栏看到 /课程总览/、
+// 工具只认 课程总览/index.html」两套并存——正是本轮要消灭的分叉。
+const SITE_PAGE_PATHS = TARGET_FILES.map((p) => htmlPathOf(p));
+
+// 站点名（唯一产地）。页面 title 后缀、侧栏品牌、移动端大标题都取它。
+const SITE_NAME = 'S26-1 课程知识库';
 
 // 3. Define navigation structure
+// ⚠️ 2026-10-29 站长定案：**侧栏不挂「首页」项**。回首页由侧栏顶部的品牌区块
+// （`.sidebar-brand`）与大标题「S26-1 课程知识库」分担，面包屑的「首页」直接指 `/`。
+// 侧栏若也有首页项，就会有两条指向同一页的链接、且形态不一（`/` 与 `index.html`）
+// ——「网址 / 侧栏 / 面包屑」四条一致就永远差这一格。去掉它，隐患消失。
 const NAV_STRUCTURE = [
-  { label: "README", path: "README.md" },
   {
     label: "课程总览",
     path: "课程总览/index.md",
@@ -1463,6 +1475,12 @@ for (const relPath of TARGET_FILES) {
   const depth = targetHtmlPath.split('/').length - 1;
   const rootRel = depth === 0 ? './' : '../'.repeat(depth);
 
+  // `body[data-site-path]` 用**网址**形态（与侧栏 JSON 的 href 同一空间，drawer-sync 要靠它
+  // 比对 active）。唯一的例外是首页：它的网址是 `''`（站点根），而 site-root 的部署根探测
+  // 需要一段非空后缀才能对齐 pathname，所以首页写物理名 `index.html`
+  // （首页已不挂侧栏，不需要 active，写文件名无副作用）。
+  const sitePathOf = (p) => htmlPathOf(p) || filePathOf(p);
+
   // 配图（作业 figures/）**保持页面内写的那份纯相对路径**（`figures/xxx.png`）。
   // 2026-10-11 修：此前统一改写成「站点根相对」（`../../../课程总览/…/figures/…`），
   // 而浏览器会把含非 ASCII 的文档 URL 规范成百分号编码形式——从编码 URL 出发上溯、
@@ -1523,12 +1541,8 @@ for (const relPath of TARGET_FILES) {
     // 目录形式能被托管层直接服务（实测 `/`、`/课程总览/`、`/课程总览/工程数学/作业/`
     // 全部 200；不带尾斜杠 301 到带斜杠）。所以写目录是安全的，且不依赖 index.html 的存在。
     //
-    // `data-path` 仍是**仓库相对 html 路径**：site-root 与 SPA 用它拼 URL，
-    // 而它的解析基准是「当前 URL 的目录」，不是形态约定。这里给目录形式，
-    // 链接点下去落到的就是该层索引页。
-    const dirHrefOf = (mdPath) => String(mdPath)
-      .replace(/\/?index\.md$/, '')
-      .replace(/\.md$/, '.html');
+    // `data-path` 与 `href` 同形（都是网址形态）：site-root 与 SPA 用它拼 URL，
+    // 二者若形态不同，线上就会分叉成两个网址。
     // 「首页」只在真正看首页时出现：站长定案「点大标题就能回首页」，
     // 所以面包屑首项不必一直挂一个「首页」——但保留它会多一层噪声。
     // 折中：首页自己不加（否则显示「首页 / 首页」），其余页加。
@@ -1552,7 +1566,9 @@ for (const relPath of TARGET_FILES) {
       const dirName = segs[i];
       const dirMd = segs.slice(0, i + 1).join('/') + '/index.md';
       const hasIndex = navLabelByMdPath.has(dirMd);
-      const dirPath = segs.slice(0, i + 1).join('/') + '/';
+      // 该层网址 = htmlPathOf(该层 index.md) —— `课程总览/index.md` → `课程总览/`。
+      // 不在这里手拼斜杠：网址规则只有 htmlPathOf 一处（本轮大一统的正题）。
+      const dirPath = htmlPathOf(dirMd);
       breadcrumbs.push({
         label: dirName,
         href: hasIndex ? `${rootRel}${dirPath}` : '#',
@@ -1569,7 +1585,11 @@ for (const relPath of TARGET_FILES) {
     // 网址是 `…/作业/index.html`，而读者看到的层级就是「作业」——加 index 是多一层噪声。
     const segs2 = relPath.replace(/\.md$/, '').split('/');
     const isIndexPage = segs2[segs2.length - 1] === 'index';
-    if (!isIndexPage) {
+    // 首页（网址就是 `/`）**不挂面包屑**——它自己就是根，再写一个「S26-1 课程知识库」
+    // 是同一句话重复一遍。侧栏没有首页项、品牌与大标题已承担回首页，
+    // 面包屑在首页上没有需要表达的层级。2026-10-29 站长定案的直接推论。
+    const isRootPage = relPath === 'README.md';
+    if (!isIndexPage && !isRootPage) {
       breadcrumbs.push({ label: segs2[segs2.length - 1], href: '#' });
     }
   }
@@ -1690,7 +1710,7 @@ for (const relPath of TARGET_FILES) {
     pagingHtml = '<div class="m3-paging-container">';
     if (prevPage) {
       const p = formatPagingCard(prevPage);
-      pagingHtml += `<a class="paging-card paging-prev" href="${rootRel}${prevPage.htmlRelPath}" data-path="${prevPage.htmlRelPath}">
+      pagingHtml += `<a class="paging-card paging-prev" href="${rootRel}${prevPage.urlRelPath}" data-path="${prevPage.urlRelPath}">
         <div class="paging-label-row">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
           <span class="paging-label">上一节</span>
@@ -1701,7 +1721,7 @@ for (const relPath of TARGET_FILES) {
     }
     if (nextPage) {
       const p = formatPagingCard(nextPage);
-      pagingHtml += `<a class="paging-card paging-next" href="${rootRel}${nextPage.htmlRelPath}" data-path="${nextPage.htmlRelPath}">
+      pagingHtml += `<a class="paging-card paging-next" href="${rootRel}${nextPage.urlRelPath}" data-path="${nextPage.urlRelPath}">
         <div class="paging-label-row paging-label-row-next">
           <div class="paging-label-group">
             <span class="paging-label">下一节</span>
@@ -1732,7 +1752,7 @@ for (const relPath of TARGET_FILES) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${pageMeta.title} | S26-1 课程知识库</title>
+  <title>${pageMeta.title === SITE_NAME ? SITE_NAME : `${pageMeta.title} | ${SITE_NAME}`}</title>
   <script>
   /* 首帧前应用已保存的主题色与明暗，避免先用默认色渲染再变色（闪光弹 + 二次全量重绘） */
   (function () {
@@ -1764,16 +1784,16 @@ for (const relPath of TARGET_FILES) {
   <link rel="alternate icon" type="image/png" href="${rootRel}assets/favicon/favicon.png">
   <link rel="apple-touch-icon" href="${rootRel}assets/favicon/apple-touch-icon.png">
 </head>
-<body data-site-path="${htmlPathOf(relPath)}">
+<body data-site-path="${sitePathOf(relPath)}">
   <div class="drawer-backdrop" id="drawer-backdrop"></div>
 
   <div class="site-shell">
     <!-- Left Column: Full-Height Sidebar (整列导航栏) -->
     <aside class="m3-drawer" id="m3-drawer">
       <div class="drawer-header-brand">
-        <a href="${rootRel}index.html" class="sidebar-brand">
+        <a href="${rootRel}" class="sidebar-brand">
           <img class="site-title-icon" src="${rootRel}assets/favicon/brand.gif" alt="" width="48" height="48" aria-hidden="true">
-          <span class="sidebar-brand-text">S26-1 课程知识库</span>
+          <span class="sidebar-brand-text">${SITE_NAME}</span>
         </a>
         <button class="m3-icon-btn drawer-collapse-btn" id="drawer-collapse-btn" aria-label="收起侧边栏" title="收起侧边栏">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1807,8 +1827,8 @@ for (const relPath of TARGET_FILES) {
           <button class="m3-icon-btn" id="drawer-toggle" aria-label="展开/收起侧边栏" title="展开/收起侧边栏">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
           </button>
-          <a href="${rootRel}index.html" class="top-bar-mobile-title">
-            <span>S26-1 课程知识库</span>
+          <a href="${rootRel}" class="top-bar-mobile-title">
+            <span>${SITE_NAME}</span>
           </a>
           <nav class="top-bar-breadcrumbs" aria-label="当前路径">
             ${breadcrumbs.map((b, i) => (i === breadcrumbs.length - 1 || b.href === '#') ? `<span class="${i === breadcrumbs.length - 1 ? 'current-crumb' : 'm3-breadcrumb-plain'}">${b.label}</span>${i === breadcrumbs.length - 1 ? '' : '<span class="m3-breadcrumb-sep">/</span>'}` : `<a href="${b.href}"${b.dataPath ? ` data-path="${b.dataPath}"` : ''}>${b.label}</a><span class="m3-breadcrumb-sep">/</span>`).join('')}

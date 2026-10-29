@@ -55,15 +55,28 @@ function detectSiteRoot() {
   try { pathname = decodeURIComponent(location.pathname); } catch (e) { pathname = location.pathname; }
   // 后缀对齐：sitePath 必须是 pathname 的尾部
   var idx = pathname.lastIndexOf(sp);
-  if (idx < 0 || idx + sp.length !== pathname.length) {
-    // sitePath 带 .html 而 pathname 是目录形式（trailing slash）之类——
-    // 退一步只按目录部分对齐
-    var dir = sp.replace(/[^/]*$/, '');
-    var di = pathname.lastIndexOf(dir);
-    if (di < 0) return null;
-    return ensureSlash(pathname.slice(0, di));
-  }
-  return ensureSlash(pathname.slice(0, idx));
+  if (idx >= 0 && idx + sp.length === pathname.length) return ensureSlash(pathname.slice(0, idx));
+
+  // ⚠️ 2026-10-29：网址改成「目录形式」后有两类失配，都要按**同一语义**兜住。
+  //
+  // ① 索引页：data-site-path = `课程总览/工程数学/`，pathname 也以它结尾 ⇒ 上面已命中。
+  //    但用户手打 `/课程总览/工程数学`（无尾斜杠）时浏览器先 301 补斜杠，仍会命中。
+  //
+  // ② 首页：它已不挂侧栏，data-site-path 写的是物理名 `index.html`，而 pathname 是 `/`
+  //    或 `/repo/S26-1_202609/`——`index.html` 根本不是它的尾部。此前靠「目录部分对齐」
+  //    兜（`index.html` 的目录部分是空串，lastIndexOf('') 恒为 pathname.length），
+  //    结果**在子路径部署下算出的根是错的**。
+  //
+  // 正确判据：`index.html` 结尾意味着「这一层目录本身就是页面」⇒ 根 = 把这段文件名
+  // 从 pathname 剥掉后的目录（也就是 pathname 本身，去掉末尾的 index.html）。
+  if (/^index\.html$/.test(sp)) return ensureSlash(pathname);
+
+  // ③ 其余情况：pathname 是目录形式（以 / 结尾）、sitePath 是文件名 ⇒ 只按目录部分对齐。
+  var dir = sp.replace(/[^/]*$/, '');
+  if (!dir) return null;
+  var di = pathname.lastIndexOf(dir);
+  if (di < 0) return null;
+  return ensureSlash(pathname.slice(0, di));
 }
 
 function ensureSlash(s) {
