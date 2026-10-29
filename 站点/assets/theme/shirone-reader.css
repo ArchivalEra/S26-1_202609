@@ -391,6 +391,23 @@ body {
 .palette-slider-label {
   font-size: 0.75rem;
   color: var(--md-sys-color-outline);
+  /* 字号那一行的标签里还嵌着「Aa 预览 + 当前 px」，三者要在一行内两端分开 */
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+/* 字号滑条的预览字样：跟着滑块实时变大小，让人在拖之前就知道会变成多大。 */
+.palette-font-sample {
+  color: var(--md-sys-color-on-surface);
+  font-family: Georgia, "Times New Roman", serif;
+  line-height: 1;
+}
+
+.palette-font-value {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .palette-slider {
