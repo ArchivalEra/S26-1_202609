@@ -357,7 +357,9 @@
 !/站点/plugins/prose-terms.mjs
 !/站点/plugins/prose-terms.test.mjs
 # MathLive（vendored，MIT）：SSR 版（构建期用）+ 静态样式。
-# 字体不复制一份——字体在 assets/fonts/（2026-10-29 从 assets/katex/fonts/ 迁到中立目录，逐文件在白名单里）。
+# 字体在 assets/fonts/（逐文件白名单）。2026-10-29 彻底取缔 KaTeX 遗产：
+# 20 个 KaTeX_*.woff2 全删，只留 Latin Modern Math 子集（46 KB，一个请求）。
+# 重新生成子集的命令见 站点/assets/mathlive/mathlive-static.css 头部注释。
 !/站点/assets/mathlive/mathlive-ssr.min.mjs
 !/站点/assets/mathlive/mathlive-static.css
 !/站点/assets/mathlive/LICENSE.txt
@@ -424,26 +426,6 @@
 !/站点/assets/favicon/apple-touch-icon.png
 !/站点/assets/favicon/brand.png
 !/站点/assets/favicon/brand.gif
-!/站点/assets/fonts/KaTeX_AMS-Regular.woff2
-!/站点/assets/fonts/KaTeX_Caligraphic-Bold.woff2
-!/站点/assets/fonts/KaTeX_Caligraphic-Regular.woff2
-!/站点/assets/fonts/KaTeX_Fraktur-Bold.woff2
-!/站点/assets/fonts/KaTeX_Fraktur-Regular.woff2
-!/站点/assets/fonts/KaTeX_Main-BoldItalic.woff2
-!/站点/assets/fonts/KaTeX_Main-Bold.woff2
-!/站点/assets/fonts/KaTeX_Main-Italic.woff2
-!/站点/assets/fonts/KaTeX_Main-Regular.woff2
-!/站点/assets/fonts/KaTeX_Math-BoldItalic.woff2
-!/站点/assets/fonts/KaTeX_Math-Italic.woff2
-!/站点/assets/fonts/KaTeX_SansSerif-Bold.woff2
-!/站点/assets/fonts/KaTeX_SansSerif-Italic.woff2
-!/站点/assets/fonts/KaTeX_SansSerif-Regular.woff2
-!/站点/assets/fonts/KaTeX_Script-Regular.woff2
-!/站点/assets/fonts/KaTeX_Size1-Regular.woff2
-!/站点/assets/fonts/KaTeX_Size2-Regular.woff2
-!/站点/assets/fonts/KaTeX_Size3-Regular.woff2
-!/站点/assets/fonts/KaTeX_Size4-Regular.woff2
-!/站点/assets/fonts/KaTeX_Typewriter-Regular.woff2
 
 # 新课程及各类资料模板
 !/模板/课程索引.md
@@ -620,3 +602,4 @@
 !/课程总览/工程数学/课堂笔记/10-22-矩阵的秩与向量.md
 !/课程总览/电力大数据与人工智能/课堂笔记/10-20-聚类与神经网络.md
 !/课程总览/电力大数据与人工智能/课堂笔记/10-27-密度初筛与调频.md
+!/站点/assets/fonts/latinmodern-math-subset.woff2

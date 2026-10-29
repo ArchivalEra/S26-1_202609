@@ -1791,6 +1791,13 @@ for (const relPath of TARGET_FILES) {
         root.style.setProperty("--hue", hue);
         root.style.setProperty("--primary-h", hue);
       }
+      // 字号也必须在**首帧**恢复，否则会先按 16px 排一次版、脚本跑完再跳一下
+      // （主题闪光弹的同款问题，2026-10-13 已为明暗修过，字号同理）。
+      var fs = localStorage.getItem("site-font-size");
+      if (fs !== null && /^\\d+$/.test(fs)) {
+        root.style.fontSize = fs + "px";
+        root.style.setProperty("--base-font-size", fs + "px");
+      }
     } catch (e) { /* 隐私模式下 localStorage 可能抛错，忽略 */ }
   })();
   </script>
@@ -1899,6 +1906,17 @@ for (const relPath of TARGET_FILES) {
             <div class="palette-slider-container">
               <span class="palette-slider-label">色相微调 (0° - 360°)</span>
               <input type="range" min="0" max="360" value="248" class="palette-slider" id="hue-slider">
+            </div>
+            <!-- 字号（2026-10-29 站长定案）：全站缩放。站内所有尺寸都用 rem，
+                 所以改 html 的 font-size 一处即全站生效——正文、侧栏、代码块、
+                 连同公式（MathLive 字号继承）一起缩放。范围与默认值参照 Octave-UI 的
+                 ThemeManager（12–20px，默认 16）。 -->
+            <div class="palette-slider-container">
+              <span class="palette-slider-label">
+                字号 <span class="palette-font-sample" id="font-sample">Aa</span>
+                <span class="palette-font-value" id="font-size-value">16px</span>
+              </span>
+              <input type="range" min="12" max="20" step="1" value="16" class="palette-slider" id="font-size-slider">
             </div>
             <div>
               <div class="palette-swatches-title">预设配色</div>

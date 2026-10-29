@@ -218,6 +218,9 @@
   const hueBadge = document.getElementById("palette-hue-badge");
   const resetBtn = document.getElementById("palette-reset-btn");
   const swatchButtons = document.querySelectorAll(".palette-swatch-item");
+  const fontSlider = document.getElementById("font-size-slider");
+  const fontSizeValue = document.getElementById("font-size-value");
+  const fontSample = document.getElementById("font-sample");
 
   function applyHue(hue, save = true) {
     const val = parseInt(hue, 10);
@@ -278,10 +281,40 @@
     });
   });
 
+  // 字号（2026-10-29）：全站缩放只改一处 —— html 的 font-size。
+  // 站内所有尺寸都是 rem，所以正文/侧栏/代码块/公式（MathLive 继承字号）一起变。
+  // 范围与默认值照 Octave-UI 的 ThemeManager（12–20px / 16px）。
+  const FONT_KEY = "site-font-size";
+  const FONT_DEFAULT = 16;
+  const FONT_MIN = 12;
+  const FONT_MAX = 20;
+
+  function applyFontSize(px, save = true) {
+    const n = Math.max(FONT_MIN, Math.min(FONT_MAX, parseInt(px, 10) || FONT_DEFAULT));
+    document.documentElement.style.fontSize = n + "px";
+    document.documentElement.style.setProperty("--base-font-size", n + "px");
+    if (fontSizeValue) fontSizeValue.textContent = n + "px";
+    if (fontSlider) fontSlider.value = n;
+    if (fontSample) fontSample.style.fontSize = n + "px";
+    if (save) {
+      try { localStorage.setItem(FONT_KEY, String(n)); } catch (e) { /* 隐私模式 */ }
+    }
+  }
+
+  const savedFont = localStorage.getItem(FONT_KEY);
+  applyFontSize(savedFont !== null ? savedFont : FONT_DEFAULT, false);
+
+  if (fontSlider) {
+    fontSlider.addEventListener("input", (e) => applyFontSize(e.target.value, true));
+  }
+
   if (resetBtn) {
     resetBtn.addEventListener("click", () => {
       localStorage.removeItem("theme-hue");
       applyHue(DEFAULT_HUE, false);
+      // 字号也一并复位——这个按钮的语义是「回到默认」，两样都算默认的一部分。
+      try { localStorage.removeItem(FONT_KEY); } catch (e) { /* 隐私模式 */ }
+      applyFontSize(FONT_DEFAULT, false);
     });
   }
 
