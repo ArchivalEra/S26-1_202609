@@ -1543,6 +1543,25 @@ test('feedText：失败信封的抬头也随机化且标注没成', () => {
   assert.match(f, /原因：/, '失败带原因');
 });
 
+test('feedText：失败抬头不许说「东西在这里」（成功词表不许混进失败）', () => {
+  // 实测出现过：「你要的东西在这里 · site_navigate（…） · 没成：」——同一行自相矛盾。
+  const OK_ONLY = ['你要的东西在这里', '结果拿到了', '查回来了', '已经查完', '给你捞回来了'];
+  // 多组参数各测一次，覆盖散列能落到的多个抬头
+  for (const [tool, args] of [
+    ['site_navigate', { to: 'page', path: 'a.html' }],
+    ['site_read', { what: 'page' }],
+    ['site_index', {}],
+    ['site_search', { query: 'x' }],
+    ['site_show_symbol', { term: 'U' }],
+  ]) {
+    const f = feedText(tool, args, { ok: false, value: { ok: false, reason: 'no_such_page' } });
+    for (const bad of OK_ONLY) {
+      assert.ok(!f.startsWith(bad), `${tool} 失败时抬头不可是「${bad}」：${f.split('\n')[0]}`);
+    }
+    assert.match(f, /没成/, '失败仍要明示');
+  }
+});
+
 // ── 内联完整性（2026-10-27，同一坑第二次）────────────────────
 //
 // `WEBMCP_TOOLS_JS` 是构建期用 toString() 把函数拼成字符串塞进页面的。
@@ -1564,7 +1583,8 @@ test('内联完整性：被内联函数之间的依赖不能断', () => {
   // 已知会被内联的项目函数全集（新增内联函数时请同时加进这个清单）
   const projectFns = [
     'textOf', 'hasClass', 'childrenOf', 'isTextNode', 'renderMarkdown',
-    'createPageView', 'buildToolDefs', 'registerTools', 'feedHead', 'feedText', 'runTool',
+    'createPageView', 'buildToolDefs', 'registerTools', 'feedHead', 'reasonText',
+    'feedText', 'runTool',
   ];
 
   // 从模板中把每个函数的**实际源码段**切出来：`var X = ` 到下一个 `var Y = ` 之间
@@ -1594,4 +1614,45 @@ test('内联完整性：被内联函数之间的依赖不能断', () => {
   // 正向：feedHead 与 feedText 都必须在（漏过两次的地方）
   assert.ok(defined.has('feedHead'), 'feedHead 必须在内联清单里');
   assert.ok(defined.has('feedText'), 'feedText 必须在内联清单里');
+  assert.ok(defined.has('reasonText'), 'reasonText 必须在内联清单里（feedText 的依赖）');
+});
+
+test('失败回喂：原因译成人话，不把机器码甩给模型', () => {
+  // 站长原话：「返回应该是『好的我给你查了……执行失败 这页不存在』是不是」。
+  // 模型会原样复述拿到的东西，`原因：no_such_page` 会被念成英文机器码。
+  const r = feedText('site_navigate', { to: 'page', path: '教材解析/index.html' }, {
+    ok: false,
+    value: {
+      ok: false, reason: 'no_such_page', path: '教材解析/index.html',
+      hint: '站点里没有这一页，跳不过去。',
+      candidates: ['课程总览/工程数学/教材解析/index.html'],
+    },
+  });
+  assert.match(r, /原因：站点里没有这一页，跳不了/, 'reason 要译成人话');
+  assert.doesNotMatch(r, /no_such_page/, '回喂里不许残留机器码');
+  assert.match(r, /候选：「课程总览\/工程数学\/教材解析\/index\.html」/, '候选要带上');
+  assert.match(r, /提示：/, '工具自己给的 hint 要带上');
+});
+
+test('失败回喂：未收录的新错误码退回原码（漏补能看见，不静默吞掉）', () => {
+  const r = feedText('site_read', {}, {
+    ok: false, value: { ok: false, reason: 'brand_new_code_xyz' },
+  });
+  assert.match(r, /原因：brand_new_code_xyz/, '未收录的码原样保留，便于发现漏补');
+});
+
+test('失败回喂：抛异常路径也译成人话', () => {
+  const r = feedText('site_read', {}, { ok: false, error: 'article_not_found' });
+  assert.match(r, /原因：当前页没有正文容器/, 'error 字段也要过映射');
+});
+
+test('失败回喂：枚举仍留在返回值里，机器侧判据不受影响', async () => {
+  // 映射只作用于**给人看的那行文本**。返回值里的 reason 必须照旧是枚举，
+  // 否则 node 侧/测试里那些 /no_such_page/ 判据会一起失灵。
+  const doc = fakeDoc({ pages: ['index.html'] });
+  doc.defaultView.__spaRouter = { navigate: () => Promise.resolve() };
+  const r = await runTool(doc, 'site_navigate', { to: 'page', path: '教材解析/index.html' });
+  assert.equal(r.ok, false);
+  assert.equal(r.value.reason, 'no_such_page', '结构化返回值仍是枚举');
+  assert.doesNotMatch(r.feed, /no_such_page/, '只有文本层被翻译');
 });

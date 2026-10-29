@@ -2251,18 +2251,89 @@ export function registerTools(doc, nav) {
  * 同样的说法，便于复现；只看长度会让不同调用撞同一个变体。
  */
 function feedHead(tool, argStr, failed) {
-  const HEADS = [
+  // 成功与失败**两套词表**（2026-10-29 修）。原先共用一个词表，于是失败时会出现
+  // 「你要的东西在这里 · site_navigate（…） · 没成：原因：站点里没有这一页」——
+  // 抬头说东西在这、同一行说没成，自相矛盾。失败只该用「去试过了、没成」这类说法。
+  const OK_HEADS = [
     '我帮你查了', '顺手查了一下', '这就去看了', '按你说的查了',
     '我刚跑了一趟', '查回来了', '结果拿到了', '这个我看过了',
     '帮你跑了一下', '我去翻了一遍', '已经查完', '你要的东西在这里',
     '照着做了', '给你捞回来了', '刚查的', '跑完了',
   ];
+  const FAIL_HEADS = [
+    '我去试了但没成', '这条走不通', '这个没办成', '试了一下，不行',
+    '没弄成', '这条路不通', '没跑成功', '不成',
+  ];
+  const HEADS = failed ? FAIL_HEADS : OK_HEADS;
   const key = String(tool) + '|' + String(argStr || '') + '|' + (failed ? '0' : '1');
   let seed = 0;
   for (let i = 0; i < key.length; i++) seed = (seed * 31 + key.charCodeAt(i)) >>> 0;
   const phrase = HEADS[seed % HEADS.length];
   const detail = tool + (argStr ? '（' + argStr + '）' : '') + (failed ? ' · 没成' : '');
   return phrase + ' · ' + detail + '：';
+}
+
+/**
+ * 失败枚举 → 一句人话（2026-10-29 站长定案）。
+ *
+ * `原因：no_such_page` 这种机器码模型很可能原样复述给用户，读起来像报错日志。
+ * 这里把 39 个 reason 码逐个译成一句能直接说出口的话。**枚举值不删**——
+ * 返回值里的 `reason` 字段照旧，机器侧判据（`/no_such_page/` 之类）仍可用。
+ *
+ * 表里没有的码（新加的忘了补）退回原码，不至于把信息吞掉——漏补能看见，
+ * 静默变成「执行失败」才是真危险（本轮修的就是那个）。
+ *
+ * ⚠️ 与 `feedHead` 同款坑：词表定义在函数内部。模块级 const 不会被
+ * `toString()` 带进浏览器产物，会抛「REASON_TEXT is not defined」。
+ */
+function reasonText(code) {
+  const REASON_TEXT = {
+    // 导航与页面
+    no_such_page: '站点里没有这一页，跳不了',
+    no_spa_router: '当前页面不支持站内跳转，跳不了',
+    navigate_failed: '换页失败了，页面没动',
+    unknown_target: '不认识的跳转方向，没执行',
+    empty_path: '没给要跳的路径',
+    empty_query: '没给要找的标题或关键词',
+    no_paging: '本页没有上一节或下一节',
+    no_brand: '找不到回首页的入口',
+    click_failed: '点不动那个元素',
+    scroll_unavailable: '这个环境滚不动页面',
+    history_unavailable: '这个环境没有后退历史',
+    // 检索与阅读
+    not_found: '没找到',
+    ambiguous: '匹配到好几个，分不清是哪一个',
+    article_not_found: '当前页没有正文容器，读不到内容',
+    anchor_missing: '那一节在这页里不存在',
+    selector_not_found: '页面上没有匹配的元素',
+    index_unavailable: '全站检索索引取不到',
+    index_out_of_range: '下标越界',
+    // 参数
+    bad_type: '参数类型不对',
+    out_of_range: '参数超出允许范围',
+    empty_term: '没给要查的符号',
+    empty_src: '没给图片来源',
+    nothing_to_do: '没给要做哪一项',
+    // 符号
+    symbol_not_on_page: '本页没有这个符号',
+    // 截图与图片
+    capture_unavailable: '这个环境不提供截图能力',
+    capture_failed: '截图没成功',
+    capture_error: '截图出错了',
+    capture_tainted: '截图被跨域限制挡住了',
+    canvas_unavailable: '这个环境没有 canvas，转不了图',
+    no_layout: '拿不到元素的位置',
+    empty_rect: '元素尺寸是 0，截不到内容',
+    serialize_failed: '图转不成数据',
+    convert_failed: '格式转换失败',
+    image_load_failed: '图片没加载出来',
+    image_timeout: '等图片超时了',
+    region_timeout: '截取区域超时了',
+    region_render_failed: '区域渲染失败',
+  };
+  const k = String(code || '').trim();
+  if (!k) return '执行失败';
+  return REASON_TEXT[k] || k;
 }
 
 export function feedText(name, args, r) {
@@ -2282,7 +2353,11 @@ export function feedText(name, args, r) {
     // 统一变成「执行失败」四个字，hint 与候选全丢——模型只能瞎猜下一跳。
     // 实测后果：它拼错路径 → 只看到「执行失败」→ 换个同样错的路径再试。
     const v = r && r.value && typeof r.value === 'object' ? r.value : null;
-    const reason = String((r && r.error) || (v && v.reason) || '执行失败');
+    const code = String((r && r.error) || (v && v.reason) || '');
+    // 枚举值给人话（2026-10-29 站长）：`原因：no_such_page` 是机器码，
+    // 模型很可能原样复述成「原因：no_such_page」。这里换成一句听得懂的话。
+    // 枚举本身不删——`reason` 字段仍在返回值里，机器侧判据照旧。
+    const reason = reasonText(code);
     const lines = [head, '- 原因：' + reason];
     const seen = {};
     if (v && v.hint) lines.push('提示：' + String(v.hint).slice(0, 200));
@@ -2294,10 +2369,18 @@ export function feedText(name, args, r) {
       lines.push('可选：' + v.available.slice(0, 12).map((c) => '「' + c + '」').join(' / '));
     }
     // 通用建议只在工具自己没给 hint 时补，否则会和具体指示打架。
+    // 分档按**下一步真该做什么**排，不是一个笼统的「换个参数重试」：
+    //   · ambiguous —— 候选已经列出来了，该挑一个，不是换参数瞎试；
+    //   · not_found  —— 目标不存在，该换关键词或先看大纲；
+    //   · 其余       —— 参数或环境问题，换个参数；再不行就说做不到。
     if (!(v && v.hint)) {
-      lines.push(/not_found|no_such_page|not_in_nav/.test(reason)
-        ? '建议下一步：换一个更短的关键词重试，或先用 site_read，what=outline 看全部标题。'
-        : '建议下一步：换个参数重试；连续失败就直接告诉用户当前做不到。');
+      if (code === 'ambiguous' && seen.cand) {
+        lines.push('建议下一步：从上一条候选里挑一个准确的名字重试，别再用现在这个词。');
+      } else if (/no_such_page|not_found|not_in_nav|unknown_target|empty_query|empty_path/.test(code)) {
+        lines.push('建议下一步：换一个更短的关键词重试，或先用 site_read，what=outline 看全部标题。');
+      } else {
+        lines.push('建议下一步：换个参数重试；连续失败就直接告诉用户当前做不到。');
+      }
     }
     return lines.join('\n').slice(0, SINGLE_MSG_LIMIT);
   }
@@ -2436,6 +2519,8 @@ var registerTools = ${registerTools.toString()};
 // ⇒ 工具调用全失败、桥侧只看到 30 秒超时。**凡是被 toString() 内联的函数的依赖，
 // 都得手动加进这里，没有自动追踪**。加完请在页面内跑一次 __mcpTools.runTool 冒烟。
 var feedHead = ${feedHead.toString()};
+// ⚠️ 2026-10-29（同一坑第四次）：reasonText 是 feedText 的依赖，必须一起内联。
+var reasonText = ${reasonText.toString()};
 var feedText = ${feedText.toString()};
 // 阶段二 T11：站点侧协议栈的 invoke 入口（runTool 依赖 createPageView，已在上面）
 var runTool = ${runTool.toString()};
