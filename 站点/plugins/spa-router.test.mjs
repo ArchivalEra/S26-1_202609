@@ -11,7 +11,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ORIGIN = 'http://127.0.0.1:8899';
 
 test('isRoutableHref：站内 html 链接可路由', () => {
-  assert.equal(isRoutableHref('/课程/电子技术/index.html', ORIGIN), true);
+  assert.equal(isRoutableHref('/课程总览/电子技术/index.html', ORIGIN), true);
   assert.equal(isRoutableHref('./other.html', ORIGIN), true);
   assert.equal(isRoutableHref('https://example.com/x.html', 'http://other'), false, '跨域不可路由');
 });
@@ -48,7 +48,7 @@ test('SPA 换页必须同步两份面包屑与 meta chip 条（2026-10-28 修的
   assert.ok(src.includes('".top-bar-breadcrumbs"'), '未同步顶栏面包屑');
   assert.ok(src.includes('".m3-breadcrumb"'), '未同步正文面包屑');
   assert.ok(src.includes('".meta-chip-bar"'), '未同步 meta chip 条');
-  // 新页没有 chip 条时要删掉旧页的，否则会挂着上一页的课程/状态
+  // 新页没有 chip 条时要删掉旧页的，否则会挂着上一页的课程总览/状态
   assert.match(src, /curChips\.remove\(\)/, '新页无 chip 条时未删除旧页的');
 });
 

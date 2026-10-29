@@ -75,14 +75,14 @@ def snapshot(ref=None, worktree=False):
 
 def classify(path):
     parts = PurePosixPath(path).parts
-    if len(parts) >= 4 and parts[0] == '课程' and parts[2] in KINDS and parts[-1] != 'index.md':
+    if len(parts) >= 4 and parts[0] == '课程总览' and parts[2] in KINDS and parts[-1] != 'index.md':
         return parts[1], parts[2]
     return None
 
 
 def courses(files):
     return sorted({PurePosixPath(p).parts[1] for p in files
-                   if p.startswith('课程/') and len(PurePosixPath(p).parts) == 3
+                   if p.startswith('课程总览/') and len(PurePosixPath(p).parts) == 3
                    and p.endswith('/index.md')})
 
 
@@ -112,7 +112,7 @@ def render(readme, files):
              '| :--- | ---: | :--- |']
     for course in names:
         n = sum(1 for p in files if classify(p) and classify(p)[0] == course)
-        lines.append(f'| {course} | {n} | [进入](./{quote("课程/" + course + "/index.md")}) |')
+        lines.append(f'| {course} | {n} | [进入](./{quote("课程总览/" + course + "/index.md")}) |')
     lines.extend(['', f'共 **{len(names)}** 门课程、**{total}** 份资料。',
                   f'<!-- 仓库内容摘要（不含 README）：{digest.hexdigest()} -->'])
     return before + START + '\n\n' + '\n'.join(lines) + '\n\n' + END + after
@@ -156,7 +156,7 @@ def render_maintenance(text, files):
         required = kinds_of(course)
         cells = ['—' if kind not in required else str(count_kind(files, course, kind))
                  for kind in KINDS]
-        missing = [kind for kind in required if f'课程/{course}/{kind}/index.md' not in files]
+        missing = [kind for kind in required if f'课程总览/{course}/{kind}/index.md' not in files]
         lines.append(f'| {course} | ' + ' | '.join(cells) + ' | ' + ('齐全' if not missing else '缺 ' + '、'.join(missing)) + ' |')
     lines.append('')
     lines.extend(['### 验证基线', '',
@@ -294,7 +294,7 @@ def validate(files):
             if course not in status_rows:
                 raise ValueError(f'README 课程状态表漏了「{course}」——每门课都要有一行状态。')
     for path, data in files.items():
-        if path.startswith('课程/') and path.endswith('.md'):
+        if path.startswith('课程总览/') and path.endswith('.md'):
             text = data.decode()
             if re.search(r'(?m)^status:', text):
                 raise ValueError(
@@ -306,37 +306,35 @@ def validate(files):
             continue
         course, kind = category
         name = PurePosixPath(path).name
-        if kind != '原始资料':
-            if kind == '教材解析':
-                # 教材分三部分，每部分各有自己的第 1、2、3 章，所以目录顶层用
-                # 「第N部分-<部分名>/第M章-<章名>/」区分，文件名只写真章节号：
-                #   第一部分-线性代数/第1章-行列式/1.1-二阶与三阶行列式.md
-                # 两种写法都接受（后者是兼容早期的整章单文件写法）：
-                #   <节号>-<名称>.md             如 1.1-二阶与三阶行列式.md
-                #   第NN章-<名称>.md             如 第01章-测试.md
-                # 前面可再带「第N部分-」（更早期写法）。
-                ok = (
-                    re.fullmatch(r'(?:第\d+部分-)?(?:第\d{2,}章-)?\d+\.\d+.*\.md', name)
-                    or re.fullmatch(r'(?:第\d+部分-)?第\d{2,}章-.+\.md', name)
-                )
-                if not ok:
-                    raise ValueError(
-                        f'教材解析须使用「<节号>-<名称>.md」（如 1.1-二阶与三阶行列式.md）：{path}')
-        else:
-            if not name.endswith('.md'):
-                # 配图等二进制资产（如 作业/figures/*.jpg）不是「日期资料」，豁免命名检查；
-                # 是否随批次登记到分类索引仍由 index-sync 检查统一把关。
-                continue
-            if not re.fullmatch(r'\d{4}-\d{2}-\d{2}-.+\.md', name):
-                raise ValueError(f'日期资料须使用 YYYY-MM-DD-名称.md：{path}')
-            datetime.date.fromisoformat(name[:10])
-        index = f'课程/{course}/{kind}/index.md'
+        # ⚠️ 2026-10-29 站长定案：**文件名 = 侧栏标签**，不再按类别套不同命名模板。
+        #
+        # 旧实现按类别各有一套正则（教材解析必须 `<节号>-<名称>.md`、日期资料必须
+        # `YYYY-MM-DD-名称.md`），后果是**同一个页面有三个名字**：
+        #   网址 `2026-10-16-作业3.html` / 侧栏「作业3（习题 2.3、2.4、3.1）」/ H1 又是另一个。
+        # 站点导航要靠人脑在三个名字之间换算，机器（含 AI）更容易走错。
+        #
+        # 现在只有一条：**文件名（去 .md）= 侧栏标签**。三条结构（网址 / 侧栏 / 面包屑）
+        # 因此天然逐字一致；命名是否美观由侧栏标签决定，而侧栏标签本来就要求短（§3.4.1 宽度预算）。
+        # 这条规则替代了原来按类别分支的两套正则——「美观看标签」而不是「看类别模板」。
+        if kind == '原始资料' and not name.endswith('.md'):
+            # 配图等二进制资产（如 作业/figures/*.jpg）豁免命名检查；
+            # 是否随批次登记到分类索引仍由 index-sync 检查统一把关。
+            continue
+        nav_label = _nav_label_of(files, path)
+        if nav_label is not None:
+            expect = nav_label + '.md'
+            if name != expect:
+                raise ValueError(
+                    f'文件名必须与侧栏标签逐字一致：本页侧栏写「{nav_label}」，'
+                    f'所以文件应叫「{expect}」，实际是「{name}」（{path}）。'
+                    '三条结构（网址/侧栏/面包屑）以网址为准，改哪边都要两边一起改。')
+        index = f'课程总览/{course}/{kind}/index.md'
         # 教材解析分三部分，链接登记在分部索引里（如 …/教材解析/第一部分-线性代数/index.md），
         # 所以除分类总索引外，也接受该分类下**任意一层的 index.md** 里被链接到。
         # 其它分类仍只认分类索引本身。
         candidates = [index]
         if kind == '教材解析':
-            prefix = f'课程/{course}/教材解析/'
+            prefix = f'课程总览/{course}/教材解析/'
             candidates += sorted(
                 p for p in files
                 if p.startswith(prefix) and p.endswith('/index.md')
@@ -357,15 +355,15 @@ def validate(files):
             if target not in files and not any(p.startswith(target.rstrip('/') + '/') for p in files):
                 raise ValueError(f'本地链接失效：{path} → {target}')
     check_fragments(files)
-    names = {PurePosixPath(p).parts[1] for p in files if p.startswith('课程/') and len(PurePosixPath(p).parts) >= 3}
+    names = {PurePosixPath(p).parts[1] for p in files if p.startswith('课程总览/') and len(PurePosixPath(p).parts) >= 3}
     for course in names:
-        course_index = f'课程/{course}/index.md'
-        if '课程/index.md' not in files or course_index not in links('课程/index.md', files['课程/index.md']):
+        course_index = f'课程总览/{course}/index.md'
+        if '课程总览/index.md' not in files or course_index not in links('课程总览/index.md', files['课程总览/index.md']):
             raise ValueError(f'课程未登记到课程总索引：{course}')
         if course_index not in files:
             raise ValueError(f'缺少课程入口：{course_index}')
         for kind in kinds_of(course):
-            index = f'课程/{course}/{kind}/index.md'
+            index = f'课程总览/{course}/{kind}/index.md'
             if index not in files or index not in links(course_index, files[course_index]):
                 raise ValueError(f'课程入口缺少分类链接：{index}')
     check_build_targets(files)
@@ -549,7 +547,7 @@ def check_index_sync(files, base):
     changed = changed_paths(files, base)
     missing = {}
     for path in sorted(changed):
-        if not path.startswith('课程/') or not path.endswith('.md'):
+        if not path.startswith('课程总览/') or not path.endswith('.md'):
             continue
         for ancestor in ancestor_indexes(path, files):
             if ancestor not in changed:
@@ -566,7 +564,7 @@ def check_index_sync(files, base):
 BUILD_SCRIPT = '站点/build.mjs'
 HANDOFF_PATH = '.zcode/handoff.md'
 # 「实施一步」的工作区：这两处有改动，就要求自更新 handoff 同步更新过
-WORK_AREAS = ('课程/', '站点/')
+WORK_AREAS = ('课程总览/', '站点/')
 
 
 def check_handoff_freshness(files, base):
@@ -631,7 +629,7 @@ def check_build_targets(files):
     # 应渲染范围：仓库说明 + 课程目录下所有 Markdown（模板、历史入口除外）
     expected = {'README.md', '维护条例.md', '维护细则.md'}
     expected |= {p for p in files
-                 if p.startswith('课程/') and p.endswith('.md')}
+                 if p.startswith('课程总览/') and p.endswith('.md')}
     missing = sorted(expected - listed)
     if missing:
         raise ValueError(f'{BUILD_SCRIPT} 的 TARGET_FILES 漏列以下文件，站点不会渲染它们：'
@@ -734,6 +732,33 @@ def _nav_paths(script_text):
                          + result.stderr.decode().strip())
     return json.loads(result.stdout.decode())
 
+
+
+_NAV_LABEL_CACHE = {}
+
+
+def _nav_label_of(files, path):
+    """查某个 md 路径在侧栏里的标签；不在侧栏里（或取不到 NAV_STRUCTURE）返回 None。
+
+    为什么要缓存：`_nav_paths` 每次要起一个 node 子进程求值 JS 字面量，
+    逐个文件调会把 300 多个文件的检查拖成几十秒。整个提交里 NAV_STRUCTURE 只读一次即可。
+    """
+    if 'nav' not in _NAV_LABEL_CACHE:
+        script = files.get(BUILD_SCRIPT)
+        if script is None:
+            _NAV_LABEL_CACHE['nav'] = None
+        else:
+            try:
+                rows = _nav_paths(script.decode())
+            except (ValueError, UnicodeDecodeError):
+                rows = None
+            _NAV_LABEL_CACHE['nav'] = (
+                {r[0]: r[1] for r in rows} if rows else None)
+    table = _NAV_LABEL_CACHE['nav']
+    if not table:
+        return None
+    label = table.get(path)
+    return label if label else None
 
 
 def _h1_title(text):
@@ -943,10 +968,10 @@ def check_exam_prep(files):
     """备考页检查（轻）。文件不存在则跳过（备考是可插拔栏目）。"""
     problems = []
     warnings = []
-    for path in sorted(p for p in files if p.endswith('/备考.md') and p.startswith('课程/')):
+    for path in sorted(p for p in files if p.endswith('/备考.md') and p.startswith('课程总览/')):
         course = PurePosixPath(path).parts[1]
         text = files[path].decode()
-        wt = f'课程/{course}/Walkthrough.md'
+        wt = f'课程总览/{course}/Walkthrough.md'
         if wt not in files:
             problems.append(f'{path}：本课没有 {WALKTHROUGH_NAME}——备考以它为底，先建 Walkthrough')
             continue
@@ -971,7 +996,7 @@ def check_exam_prep(files):
                             f'（{head}{tail}）——检查备考是否漏了新考点')
         # ② 弱保真：强特征数字必须能在本课资料里找到
         source_text = ''
-        prefix = f'课程/{course}/'
+        prefix = f'课程总览/{course}/'
         for p, data in files.items():
             if p.startswith(prefix) and p.endswith('.md') and p != path:
                 source_text += data.decode()

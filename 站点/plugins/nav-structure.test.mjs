@@ -29,27 +29,27 @@ const DIST = path.join(HERE, '..', 'dist');
 const TREE = [
   { label: '首页', path: 'README.md' },
   {
-    label: '课程', path: '课程/index.md',
+    label: '课程', path: '课程总览/index.md',
     children: [
       {
-        label: '作业', path: '课程/作业/index.md',
+        label: '作业', path: '课程总览/作业/index.md',
         children: [
-          { label: '作业1', path: '课程/作业/2026-09-17-作业1.md' },
-          { label: '作业2', path: '课程/作业/2026-10-08-作业2.md' },
+          { label: '作业1', path: '课程总览/作业/2026-09-17-作业1.md' },
+          { label: '作业2', path: '课程总览/作业/2026-10-08-作业2.md' },
         ],
       },
       {
         // 重复 path：组 path == 子项 path
-        label: '第01章 概述', path: '课程/第01章/1.1-分类.md',
+        label: '第01章 概述', path: '课程总览/第01章/1.1-分类.md',
         children: [
-          { label: '1.1 分类', path: '课程/第01章/1.1-分类.md' },
-          { label: '1.2 磁路', path: '课程/第01章/1.2-磁路.md' },
+          { label: '1.1 分类', path: '课程总览/第01章/1.1-分类.md' },
+          { label: '1.2 磁路', path: '课程总览/第01章/1.2-磁路.md' },
         ],
       },
       {
         // 无 path 的组
         label: '第02章 矩阵',
-        children: [{ label: '2.1 概念', path: '课程/第02章/2.1-概念.md' }],
+        children: [{ label: '2.1 概念', path: '课程总览/第02章/2.1-概念.md' }],
       },
     ],
   },
@@ -67,20 +67,20 @@ const findByLabel = (nodes, label) => {
 
 test('htmlPathOf：README 落成 index.html，其余换后缀，非法输入 null', () => {
   assert.equal(htmlPathOf('README.md'), 'index.html');
-  assert.equal(htmlPathOf('课程/作业/index.md'), '课程/作业/index.html');
+  assert.equal(htmlPathOf('课程总览/作业/index.md'), '课程总览/作业/index.html');
   assert.equal(htmlPathOf(''), null);
   assert.equal(htmlPathOf(null), null);
 });
 
 test('buildNavModel：归一化字段齐全，id 稳定', () => {
-  const { nodes, json } = buildNavModel(TREE, '课程/作业/index.md');
+  const { nodes, json } = buildNavModel(TREE, '课程总览/作业/index.md');
   const leaf = findByLabel(nodes, '作业1');
-  assert.equal(leaf.path, '课程/作业/2026-09-17-作业1.md');
-  assert.equal(leaf.href, '课程/作业/2026-09-17-作业1.html');
+  assert.equal(leaf.path, '课程总览/作业/2026-09-17-作业1.md');
+  assert.equal(leaf.href, '课程总览/作业/2026-09-17-作业1.html');
   assert.equal(leaf.depth, 2);
   assert.equal(leaf.children, null);
   assert.equal(json.v, 1);
-  assert.equal(json.current, '课程/作业/index.html');
+  assert.equal(json.current, '课程总览/作业/index.html');
 });
 
 test('无 path 的组也要有 id（用父键+label 合成，且不与真实 html 路径相撞）', () => {
@@ -93,37 +93,37 @@ test('无 path 的组也要有 id（用父键+label 合成，且不与真实 htm
 });
 
 test('isActive：只认自带键的节点；无 path 组永不 active', () => {
-  const { nodes } = buildNavModel(TREE, '课程/作业/index.md');
+  const { nodes } = buildNavModel(TREE, '课程总览/作业/index.md');
   const group = findByLabel(nodes, '作业');
   const noPath = findByLabel(nodes, '第02章 矩阵');
 
-  assert.equal(isActive(group, '课程/作业/index.html', true), true);
-  assert.equal(isActive(group, '课程/作业/index.html', false), false, 'md 空间用 path 比');
+  assert.equal(isActive(group, '课程总览/作业/index.html', true), true);
+  assert.equal(isActive(group, '课程总览/作业/index.html', false), false, 'md 空间用 path 比');
   assert.equal(isActive(noPath, noPath.id, true), false, '无 path 组不该 active');
 });
 
 test('isExpanded：自身 active 或任一后代 active', () => {
-  const { nodes } = buildNavModel(TREE, '课程/作业/2026-10-08-作业2.md');
+  const { nodes } = buildNavModel(TREE, '课程总览/作业/2026-10-08-作业2.md');
   const root = findByLabel(nodes, '课程');
   const group = findByLabel(nodes, '作业');
   const other = findByLabel(nodes, '第01章 概述');
 
-  assert.equal(isExpanded(root, '课程/作业/2026-10-08-作业2.html', true), true, '祖先展开');
-  assert.equal(isExpanded(group, '课程/作业/2026-10-08-作业2.html', true), true, '父展开');
-  assert.equal(isExpanded(other, '课程/作业/2026-10-08-作业2.html', true), false, '无关分支不展开');
+  assert.equal(isExpanded(root, '课程总览/作业/2026-10-08-作业2.html', true), true, '祖先展开');
+  assert.equal(isExpanded(group, '课程总览/作业/2026-10-08-作业2.html', true), true, '父展开');
+  assert.equal(isExpanded(other, '课程总览/作业/2026-10-08-作业2.html', true), false, '无关分支不展开');
 });
 
 test('indexHrefOf：仅「组 + index.md + 不与子项重复」才出图标', () => {
   const { nodes } = buildNavModel(TREE, 'README.md');
 
-  assert.equal(indexHrefOf(findByLabel(nodes, '作业')), '课程/作业/index.html', '正常组出图标');
+  assert.equal(indexHrefOf(findByLabel(nodes, '作业')), '课程总览/作业/index.html', '正常组出图标');
   assert.equal(indexHrefOf(findByLabel(nodes, '第01章 概述')), null, '重复 path 组不出（防父子双亮）');
   assert.equal(indexHrefOf(findByLabel(nodes, '第02章 矩阵')), null, '无 path 组不出');
   assert.equal(indexHrefOf(findByLabel(nodes, '作业1')), null, '叶子不出');
 });
 
 test('collectActive：activeIds/expandedIds 与 isActive/isExpanded 同源', () => {
-  const { nodes, json } = buildNavModel(TREE, '课程/作业/index.md');
+  const { nodes, json } = buildNavModel(TREE, '课程总览/作业/index.md');
   const group = findByLabel(nodes, '作业');
   assert.deepEqual(json.activeIds, [group.id]);
   assert.ok(json.expandedIds.includes(findByLabel(nodes, '课程').id), '祖先在 expanded');
@@ -148,8 +148,8 @@ const navJsonOf = (html) => {
 test('T5b-① 抽样页面都埋了可解析的 nav JSON，且 nodes 非空', () => {
   const pages = [
     'index.html',                                        // 顶层
-    '课程/工程数学/作业/index.html',                        // 中层索引
-    '课程/工程数学/作业/2026-10-08-作业2.html',              // 深层叶子
+    '课程总览/工程数学/作业/index.html',                        // 中层索引
+    '课程总览/工程数学/作业/作业2.html',              // 深层叶子
   ];
   for (const rel of pages) {
     const json = navJsonOf(needDist(rel));
@@ -160,7 +160,7 @@ test('T5b-① 抽样页面都埋了可解析的 nav JSON，且 nodes 非空', ()
 });
 
 test('T5b-② JSON 的 current 与该页 data-site-path 一致（防「埋了但埋错」）', () => {
-  const rel = '课程/工程数学/作业/2026-10-08-作业2.html';
+  const rel = '课程总览/工程数学/作业/作业2.html';
   const html = needDist(rel);
   const json = navJsonOf(html);
   const m = html.match(/<body[^>]*data-site-path="([^"]+)"/);
@@ -174,14 +174,14 @@ test('T5b-③ 组标题链接在应有处出现、在重复 path 组处不出现
   // 纯标题 + nav-header-clickable。nav-index-link 小图标已全站删除。
 
   // 应有：作业索引页里，「工程数学」组（indexHref 非空）标题是带 data-path 的链接
-  const withIcon = needDist('课程/工程数学/作业/index.html');
+  const withIcon = needDist('课程总览/工程数学/作业/index.html');
   assert.ok(!withIcon.includes('nav-index-link'), 'nav-index-link 应已全站清零');
   const gongcheng = withIcon.match(
-    /<li class="drawer-nav-group [^"]*" data-node-id="课程\/工程数学\/index\.html">\s*<div class="nav-group-header ">\s*<a href="[^"]*课程\/工程数学\/index\.html" data-path="课程\/工程数学\/index\.html" class="drawer-nav-link"><span>工程数学<\/span><\/a>/);
+    /<li class="drawer-nav-group [^"]*" data-node-id="课程总览\/工程数学\/index\.html">\s*<div class="nav-group-header ">\s*<a href="[^"]*课程总览\/工程数学\/index\.html" data-path="课程总览\/工程数学\/index\.html" class="drawer-nav-link"><span>工程数学<\/span><\/a>/);
   assert.ok(gongcheng, '工程数学组标题应是 drawer-nav-link 链接（header 无 nav-header-clickable）');
 
   // 不应有：电机学第01章（path == 子项 path）——纯标题 span + nav-header-clickable
-  const motor = navJsonOf(needDist('课程/电机学/教材解析/第01章-概述/1.1-电机的分类.html'));
+  const motor = navJsonOf(needDist('课程总览/电机学/教材解析/第01章-概述/1.1-电机的分类.html'));
   const walk = (ns, out = []) => {
     for (const n of ns) {
       if (n.children && (n.label || '').includes('第01章')) out.push(n);
@@ -195,9 +195,9 @@ test('T5b-③ 组标题链接在应有处出现、在重复 path 组处不出现
     assert.equal(g.indexHref, null, `${g.label}: 重复 path 组不得有 indexHref`);
   }
   // 产物侧：该页侧栏里「第01章 概述」组是纯标题（无 <a>）且 header 可整行点击折叠
-  const motorHtml = needDist('课程/电机学/教材解析/第01章-概述/1.1-电机的分类.html');
+  const motorHtml = needDist('课程总览/电机学/教材解析/第01章-概述/1.1-电机的分类.html');
   const ch1 = motorHtml.match(
-    /<li class="drawer-nav-group [^"]*" data-node-id="[^"]*">\s*<div class="nav-group-header nav-header-clickable">\s*<span class="drawer-section-title-text">第01章 概述<\/span>/);
+    /<li class="drawer-nav-group [^"]*" data-node-id="[^"]*">\s*<div class="nav-group-header nav-header-clickable">\s*<span class="drawer-section-title-text">第01章-概述<\/span>/);
   assert.ok(ch1, '电机学第01章组应是纯标题 + nav-header-clickable（标题不是链接）');
   // 断言对象是组 header 匹配片段本身（ch1[0] 到 </span> 为止无 <a>）——
   // 不是全文档：1.1 是叶子节点，它自己的链接当然带这个 data-path（票 B 之前就有）。
@@ -261,7 +261,7 @@ test('构建期：组节点也输出 active 类（与运行时 collectActive 对
 });
 
 test('DOM 层级：组标题链接确实在 .nav-group-header 下（上面那两条的前提）', () => {
-  const html = needDist('课程/形势与政策/课堂笔记/index.html');
+  const html = needDist('课程总览/形势与政策/课堂笔记/index.html');
   // 组节点结构：li.drawer-nav-group > div.nav-group-header > a.drawer-nav-link
   assert.ok(/<li class="drawer-nav-group[^"]*"[^>]*>\s*<div class="nav-group-header[^"]*">\s*<a[^>]*class="drawer-nav-link"/.test(html),
     '组标题链接必须是 .drawer-nav-group > .nav-group-header > a.drawer-nav-link 这一层——'

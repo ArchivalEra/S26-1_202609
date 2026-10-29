@@ -18,11 +18,11 @@ const detect = (sp, pathname) => new Function('document', 'location', 'decodeURI
   { pathname }, decodeURIComponent);
 
 test('探测：带前缀入口 → 前缀即根', () => {
-  assert.equal(detect('课程/电机学/index.html', encodeURI('/repo/S26-1_202609/课程/电机学/index.html')), '/repo/S26-1_202609/');
+  assert.equal(detect('课程总览/电机学/index.html', encodeURI('/repo/S26-1_202609/课程总览/电机学/index.html')), '/repo/S26-1_202609/');
 });
 
 test('探测：镜像入口（无前缀）→ 根为 /（触发规范化）', () => {
-  assert.equal(detect('课程/电机学/index.html', encodeURI('/课程/电机学/index.html')), '/');
+  assert.equal(detect('课程总览/电机学/index.html', encodeURI('/课程总览/电机学/index.html')), '/');
 });
 
 test('探测：首页自身', () => {
@@ -31,20 +31,20 @@ test('探测：首页自身', () => {
 });
 
 test('探测：最深层页（教材解析四级）', () => {
-  const sp = '课程/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.1-二阶与三阶行列式.html';
+  const sp = '课程总览/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.1-二阶与三阶行列式.html';
   const pn = '/repo/S26-1_202609/' + sp;
   assert.equal(detect(sp, encodeURI(pn)), '/repo/S26-1_202609/');
 });
 
 test('探测：中文路径百分号编码形态（浏览器保证）', () => {
   // location.pathname 一定是编码形态；decodeURIComponent 在函数内部做
-  assert.equal(detect('课程/电机学/index.html', '/repo/S26-1_202609/%E8%AF%BE%E7%A8%8B/%E7%94%B5%E6%9C%BA%E5%AD%A6/index.html'), '/repo/S26-1_202609/');
+  assert.equal(detect('课程总览/电机学/index.html', '/repo/S26-1_202609/%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E7%94%B5%E6%9C%BA%E5%AD%A6/index.html'), '/repo/S26-1_202609/');
 });
 
 test('探测：目录部分多次出现时取最后一次对齐（避免错配到更早位置）', () => {
-  // /repo/课程/课程/index.html 的 data-site-path 是 课程/index.html
-  // 最后一次对齐得到 /repo/课程/ ——正确（该文件确实在那个目录下）
-  assert.equal(detect('课程/index.html', encodeURI('/repo/S26-1_202609/课程/课程/index.html')), '/repo/S26-1_202609/课程/');
+  // /repo/课程总览/课程总览/index.html 的 data-site-path 是 课程总览/index.html
+  // 最后一次对齐得到 /repo/课程总览/ ——正确（该文件确实在那个目录下）
+  assert.equal(detect('课程总览/index.html', encodeURI('/repo/S26-1_202609/课程总览/课程总览/index.html')), '/repo/S26-1_202609/课程总览/');
 });
 
 test('源码契约：fixSiteRoot 以正式根（data-canonical-root）为准重写', () => {
@@ -67,7 +67,7 @@ test('源码契约：重写只动构建期知道语义的三类元素', () => {
 // 票 A 给面包屑/分页卡埋了 data-path 后，rewriteLinks 第 1 分支先把它们的 href
 // 改写成「root + 仓库相对」；第 2 分支的旧选择器（.m3-breadcrumb a、.paging-card）
 // 会再命中同一批元素，镜像入口（actual≠canonical）场景下「剥掉实际根再拼正式根」
-// 对已拼好的前缀二次操作，产出双前缀 /repo/S26-1_202609/repo/S26-1_202609/课程/index.html。
+// 对已拼好的前缀二次操作，产出双前缀 /repo/S26-1_202609/repo/S26-1_202609/课程总览/index.html。
 // 修法 = 第 2 分支选择器 :not([data-path]) 排除。这里用函数级模拟钉住分工。
 
 test('rewriteLinks：带 data-path 的元素只走第 1 分支，不被第 2 分支二次拼前缀', () => {
@@ -78,16 +78,16 @@ test('rewriteLinks：带 data-path 的元素只走第 1 分支，不被第 2 分
   //   且 :not([data-path]) 把有 data-path 的元素排除（这正是被测的分工规则——
   //   真浏览器里由选择器引擎保证，这里由 fakeDoc 实现同一语义，钉住契约）。
   const fn = new Function('document', 'siteRoot', 'location', rw + '\n return rewriteLinks;');
-  const location = { href: 'https://x.test/课程/index.html', origin: 'https://x.test' };
+  const location = { href: 'https://x.test/课程总览/index.html', origin: 'https://x.test' };
   const run = (els, root, actual) => fn(fakeDoc(els), () => actual, location)(root);
 
   // 镜像入口场景：actual='/' ≠ canonical='/repo/S26-1_202609/'
-  // · 面包屑 <a>（带 data-path，第 1 分支已拼好 href="/repo/S26-1_202609/课程/index.html"）
+  // · 面包屑 <a>（带 data-path，第 1 分支已拼好 href="/repo/S26-1_202609/课程总览/index.html"）
   // · 品牌 <a>（无 data-path，href 是相对值 '../../index.html'）
   const crumb = {
     sel: 'm3-breadcrumb a',
-    attrs: { 'data-path': '课程/index.html' },
-    href: '/repo/S26-1_202609/课程/index.html', // 第 1 分支刚改写过的值
+    attrs: { 'data-path': '课程总览/index.html' },
+    href: '/repo/S26-1_202609/课程总览/index.html', // 第 1 分支刚改写过的值
   };
   const brand = {
     sel: 'sidebar-brand',
@@ -97,7 +97,7 @@ test('rewriteLinks：带 data-path 的元素只走第 1 分支，不被第 2 分
   run([crumb, brand], '/repo/S26-1_202609/', '/');
 
   // 带 data-path 的元素：href 必须仍是「root + data-path」单前缀（第 2 分支没碰它）
-  assert.equal(crumb.href, '/repo/S26-1_202609/课程/index.html',
+  assert.equal(crumb.href, '/repo/S26-1_202609/课程总览/index.html',
     `面包屑 href 不得被二次拼接（实际值：${crumb.href}）`);
   assert.ok(!crumb.href.includes('/repo/S26-1_202609/repo'),
     '双前缀回归：/repo/S26-1_202609/repo/… 不得出现');
@@ -154,7 +154,7 @@ const crumbDataPaths = (html, navClass) => {
 };
 
 test('票 A：深层页两份面包屑的 <a> 全带 data-path，值为仓库相对路径', () => {
-  const rel = '课程/工程数学/教材解析/0.0-符号入门.html';
+  const rel = '课程总览/工程数学/教材解析/符号入门.html';
   const html = needDist(rel);
   for (const navClass of ['top-bar-breadcrumbs', 'm3-breadcrumb']) {
     const dps = crumbDataPaths(html, navClass);
@@ -167,15 +167,18 @@ test('票 A：深层页两份面包屑的 <a> 全带 data-path，值为仓库相
     }
   }
   // 具体锚点：SPA 丢页的那条「课程总览」链接
-  assert.ok(html.includes('data-path="课程/index.html"'), '课程总览 crumb 带裸路径 data-path');
+  assert.ok(html.includes('data-path="课程总览/index.html"'), '课程总览 crumb 带裸路径 data-path');
 });
 
 test('票 A：浅层页两份面包屑的 <a> 全带 data-path', () => {
-  const rel = '课程/工程数学/index.html';
+  const rel = '课程总览/工程数学/index.html';
   const html = needDist(rel);
   for (const navClass of ['top-bar-breadcrumbs', 'm3-breadcrumb']) {
     const dps = crumbDataPaths(html, navClass);
-    assert.equal(dps.length, 3, `${navClass}: 3 条链接都该带 data-path`);
+    // 2026-10-29 面包屑改为**逐段照网址出层**：本页是 `课程总览/工程数学/index.html`，
+    // 层级为「首页 / 课程总览 / 工程数学」——末项是当前页，渲染成 <span> 不是链接。
+    // 所以可点链接只有 2 条（首页、课程总览）。旧期望 3 是「逐课硬编码」时代的残留。
+    assert.equal(dps.length, 2, `${navClass}: 2 条链接都该带 data-path`);
     for (const dp of dps) {
       assert.ok(dp.length > 0 && !dp.startsWith('../') && !dp.startsWith('/'),
         `${navClass}: data-path 形态（${dp}）`);
@@ -185,7 +188,7 @@ test('票 A：浅层页两份面包屑的 <a> 全带 data-path', () => {
 
 test('票 A：分页卡带 data-path（在场时），值为仓库相对路径', () => {
   // 教材解析顺序页有 prev/next；0.0-符号入门是首篇只有 next
-  const html = needDist('课程/工程数学/教材解析/0.0-符号入门.html');
+  const html = needDist('课程总览/工程数学/教材解析/符号入门.html');
   const cards = [...html.matchAll(/<a class="paging-card[^>]*data-path="([^"]+)"/g)].map((x) => x[1]);
   assert.ok(cards.length >= 1, '该页应至少有一张分页卡');
   for (const dp of cards) {
@@ -193,7 +196,7 @@ test('票 A：分页卡带 data-path（在场时），值为仓库相对路径',
       `paging-card data-path 形态（${dp}）`);
   }
   // 课堂笔记顺序页 prev/next 双卡
-  const html2 = needDist('课程/工程数学/课堂笔记/2026-09-17-determinants-transcript-notes.html');
+  const html2 = needDist('课程总览/工程数学/课堂笔记/09-17-课堂听课整理.html');
   const cards2 = [...html2.matchAll(/<a class="paging-card[^>]*data-path="([^"]+)"/g)].map((x) => x[1]);
   assert.equal(cards2.length, 2, '笔记中间页应有 prev/next 两张卡都带 data-path');
 });
@@ -201,7 +204,7 @@ test('票 A：分页卡带 data-path（在场时），值为仓库相对路径',
 test('票 A：href:# 的章节 crumb 与当前页 crumb 不渲染成链接、不带 data-path', () => {
   // 第01章-行列式 目录下的页：章节 crumb（第01章 行列式）在构建里是 href:'#'，
   // 渲染成 current-crumb 前的 span——不该出现 data-path="#" 这类脏值
-  const html = needDist('课程/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.1-二阶与三阶行列式.html');
+  const html = needDist('课程总览/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.1-二阶与三阶行列式.html');
   assert.ok(!html.includes('data-path="#"'), 'href:# 的 crumb 不得带 data-path');
   const m = html.match(/<nav class="m3-breadcrumb"[^>]*>([\s\S]*?)<\/nav>/);
   assert.ok(m, '页面缺 .m3-breadcrumb');

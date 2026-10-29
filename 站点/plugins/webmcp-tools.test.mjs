@@ -10,6 +10,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   PAGE_SELECTORS, textOf, hasClass, renderMarkdown, createPageView, buildToolDefs, registerTools,
   serializeSelectors, WEBMCP_TOOLS_JS, runTool, feedText,
@@ -368,50 +369,32 @@ test('renderMarkdown：表格出 Markdown 表格；代码块出围栏', () => {
   assert.match(md, /console\.log\(1\)/);
 });
 
-test('renderMarkdown：KaTeX 用 annotation 里的 LaTeX 源（模型读公式最准）', () => {
+test('renderMarkdown：公式读构建期烘的纯文本投影（不再解析产物结构）', () => {
+  // 2026-10-29 换引擎：公式容器从 `.katex` 换成 `.ML__latex`，且**不再有 annotation**。
+  // 新机制下构建期把 IR 的纯文本投影烘进 `data-math-plain`，读它即可——
+  // 不必从产物里剥 LaTeX，也不必担心引擎换掉就失效。
   const root = el('div', '');
-  const katex = el('span', '', { className: 'katex' });
-  const annotation = el('annotation', 'R_m = \\frac{l}{\\mu A}');
-  const htmlPart = el('span', 'Rm=lμA', { className: 'katex-html' });
-  katex.children = [annotation, htmlPart];
-  root.children = [katex];
-  const md = renderMarkdown(root);
-  assert.equal(md, '$R_m = \\frac{l}{\\mu A}$');
+  const f = el('span', '', { className: 'ML__latex', attrs: { 'data-math-plain': 'Rm=l/μA' } });
+  root.children = [f];
+  assert.equal(renderMarkdown(root), 'Rm=l/μA');
 });
 
-test('renderMarkdown：剥掉站点注入的 \\htmlData{term=…}{…} 取词包裹（2026-10-19 实测缺陷）', () => {
+test('renderMarkdown：没有 data-math-plain 时退回 aria-label', () => {
   const root = el('div', '');
-  const katex = el('span', '', { className: 'katex' });
-  const annotation = el('annotation', '\\htmlData{term=sym-p}{p}_h = \\htmlData{term=sym-k}{k}_h f');
-  const htmlPart = el('span', 'ph=khf', { className: 'katex-html' });
-  katex.children = [annotation, htmlPart];
-  root.children = [katex];
-  const md = renderMarkdown(root);
-  assert.equal(md, '$p_h = k_h f$');
+  const f = el('span', '', { className: 'ML__latex', attrs: { 'aria-label': 'x 的平方' } });
+  root.children = [f];
+  assert.equal(renderMarkdown(root), 'x 的平方');
 });
 
-test('renderMarkdown：\\htmlData 内容里带嵌套花括号也要正确剥（\\frac 不被切坏）', () => {
-  const root = el('div', '');
-  const katex = el('span', '', { className: 'katex' });
-  const annotation = el('annotation', '\\htmlData{term=sym-x}{\\frac{a}{b}}');
-  katex.children = [annotation];
-  root.children = [katex];
-  assert.equal(renderMarkdown(root), '$\\frac{a}{b}$');
-});
-
-test('renderMarkdown：KaTeX 的 html 副本不重复读（实测出现 BBBHHH 与孤立 $ 行）', () => {
+test('renderMarkdown：公式只读一次（不重复计数）', () => {
   const root = el('div', '');
   const p = el('p', '');
-  const katex = el('span', '', { className: 'katex' });
-  const annotation = el('annotation', 'B');
-  const mathml = el('span', '', { className: 'katex-mathml' });
-  const htmlPart = el('span', 'B', { className: 'katex-html' });
-  katex.children = [annotation, mathml, htmlPart];
+  const f = el('span', '', { className: 'ML__latex', attrs: { 'data-math-plain': 'B' } });
   const span = el('span', 'B');
-  p.children = [katex, span];
+  p.children = [f, span];
   root.children = [p];
   const md = renderMarkdown(root);
-  assert.equal(md, '$B$B', '公式只读一次，正文里的 B 是另一处内容');
+  assert.equal(md, 'BB', '公式读一次 + 正文 B 一次，公式不重复读');
 });
 
 test('renderMarkdown：深嵌套列表/引用不栈溢出（2026-10-19 真实页 Maximum call stack）', () => {
@@ -540,6 +523,37 @@ test('site_read：what=section 只读那一节（含子标题）', () => {
   assert.match(r.text, /第一节正文/);
   assert.match(r.text, /小节 A 正文/, '应含下级小节');
   assert.doesNotMatch(r.text, /第二节正文/, '不应含同级下一节');
+});
+
+test('site_read：同页近似标题（只差一个数字）能各自命中，且歧义时不猜', () => {
+  // 2026-10-29 实测事故：作业 3 有「三、习题 2.4(2)：求秩」与「四、习题 2.4(3)：求秩」。
+  // 旧实现 `filter(标题含 query)[0]` 永远落第一个 ⇒「第 4 题」死命读不出来。
+  // 新规则：精确优先（含 suffix 档），同档多个命中就报 ambiguous 让模型挑，不猜。
+  const view = createPageView(fakeDoc());
+  const hs = [
+    { level: 2, title: '一、习题 2.3(1)：化等价标准形', anchor: 'a1' },
+    { level: 2, title: '二、习题 2.3(2)：用初等变换求逆', anchor: 'a2' },
+    { level: 2, title: '三、习题 2.4(2)：求秩', anchor: 'a3' },
+    { level: 2, title: '四、习题 2.4(3)：求秩', anchor: 'a4' },
+  ];
+  const m1 = view.__matchHeadings(hs, '2.4(3)');
+  assert.equal(m1.hits.length, 1, 'suffix 档应只命中第 4 题');
+  assert.equal(m1.hits[0].anchor, 'a4');
+  const m2 = view.__matchHeadings(hs, '2.4(2)');
+  assert.equal(m2.hits.length, 1);
+  assert.equal(m2.hits[0].anchor, 'a3');
+  // 「求秩」同时命中两节 ⇒ 不能只给一个
+  const m3 = view.__matchHeadings(hs, '求秩');
+  assert.equal(m3.hits.length, 2, '两节都含「求秩」，必须都报出来');
+  // 页标题（h1）也可能被子串命中，**照样全报**——由模型自己看两个候选挑一个。
+  // 不做长度启发式：那是替模型判断，而它会先读 outline 看全貌。
+  const withH1 = [...hs, { level: 1, title: '作业3（习题 2.3、2.4、3.1）', anchor: 'page' }];
+  const m5 = view.__matchHeadings(withH1, '2.4(3)');
+  assert.equal(m5.hits.length, 2, '两个候选都要报出来，不静默挑一个');
+  assert.ok(m5.hits.some((h) => h.anchor === 'a4'));
+  // 完全不匹配
+  const m4 = view.__matchHeadings(hs, '不存在的标题');
+  assert.equal(m4.hits.length, 0);
 });
 
 test('site_read：section 读到的正文不含父级标题（线性前进不越界）', () => {
@@ -713,6 +727,28 @@ test('searchResults：读 DOM 的命中与总数（认「共 N 页命中」文�
   assert.equal(r.total, 7);
   assert.equal(r.hits.length, 1);
   assert.equal(r.hits[0].title, '电机学 2026-10-08');
+});
+
+test('site_read：正文容器缺失时明确报错，不回退到 body（页脚会混进正文）', async () => {
+  // 2026-10-29 站长实测：「一次读经常读到下面的那些免责声明」。
+  // 根因：`first(S.article) || doc.body` —— 正文容器不存在时读整个 body，
+  // 页脚免责声明、侧栏、搜索面板全被当正文。
+  const src = fs.readFileSync(new URL('./webmcp-tools.mjs', import.meta.url), 'utf8');
+  // 只看**可执行代码**，不看注释（注释里正写着「原先 … || doc.body」这句教训）
+  const codeOnly = src.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.ok(!/first\(S\.article\)\s*\|\|/.test(codeOnly),
+    '仍在用 || 回退（正文容器缺失时不该读别处的垃圾）');
+  assert.match(src, /article_not_found/, '缺正文容器时应给明确 reason');
+});
+
+test('site_show_symbol：一次只给一句释义与详情链接，不给整段气泡', () => {
+  const src = fs.readFileSync(new URL('./webmcp-tools.mjs', import.meta.url), 'utf8');
+  // 站长的要求：小豆包记不住太多 detail
+  assert.match(src, /brief:/, '应返回 brief（一句释义）');
+  assert.match(src, /firstSentence/, '应有首句抽取');
+  assert.ok(!/bubble: bubble \? renderMarkdown\(bubble\)\.slice\(0, 1200\)/.test(src),
+    '不应再把整段气泡（1200 字）一次返回');
+  assert.match(src, /detailHref/, '应给详情链接让模型自取全文');
 });
 
 // ---------------------------------------------------------------- 工具清单
@@ -956,8 +992,15 @@ test('site_index：默认给当前课程（从 body[data-site-path] 判）', asy
   assert.equal(r.current.course, '电机学');
   assert.match(r.text, /电机学/);
   assert.match(r.text, /课堂笔记/);
-  assert.match(r.text, /课程\/电机学\/课堂笔记\/2026-10-08-磁路\.html/);
+  // 2026-10-29：默认**不铺完整路径**（只给短文件名），层级与侧边栏一致。
+  // 理由是站长反馈「模型去看给人看的 index 页太痛苦」——38 行里重复前缀占大半。
+  assert.match(r.text, /2026-10-08-磁路/);
+  assert.doesNotMatch(r.text, /课程\/电机学\/课堂笔记\/2026-10-08-磁路\.html/,
+    '默认不该出现完整仓库路径');
   assert.doesNotMatch(r.text, /习题册第一章/, '不该混进别的课');
+  // paths:true 才给完整路径
+  const withPaths = await buildToolDefs(doc)[2].execute({ paths: true });
+  assert.match(withPaths.text, /课程\/电机学\/课堂笔记\/2026-10-08-磁路\.html/);
 });
 
 test('site_index：scope=all 给全站树（含其他课程）', async () => {
@@ -1173,7 +1216,9 @@ test('site_show_symbol.execute：找到符号则派发点击并回读气泡', as
   const r = await defs[5].execute({ term: 'sym-U' });
   assert.equal(r.ok, true);
   assert.equal(r.term, 'sym-U');
-  assert.ok(r.bubble.includes('电压'), '应回读气泡文字');
+  // 2026-10-29：气泡全文改为分层返回——`brief` 一句释义，全文靠 detailHref 自取
+  assert.ok(r.brief.includes('电压'), '应回读一句释义');
+  assert.ok(r.brief.length <= 121, '一句释义要短，别一次给整段原理');
 });
 
 test('site_show_symbol.execute：正文里的符号也能查（2026-10-19 修）', async () => {
@@ -1351,7 +1396,7 @@ test('runTool：site_show_symbol term 命中返回释义（旧 MAP 传对象恒 
   const { viaRun, viaExec } = await bothWays('site_show_symbol', { term: 'sym-U' });
   assert.equal(viaRun.ok, true, '命中符号应 ok');
   assert.equal(viaRun.value.term, 'sym-U');
-  assert.ok(viaRun.value.bubble, '要读到气泡内容');
+  assert.ok(viaRun.value.brief, '要读到一句释义');
   // 2026-10-26：runTool 现在额外产 `feed`（信封，见 feedText）——它**只属于 runTool**，
 // 不该混进「两路同构」的判据。判据只比工具语义（ok + value）。
   assert.deepEqual({ ok: viaRun.ok, value: viaRun.value }, { ok: viaExec.ok, value: viaExec.value });

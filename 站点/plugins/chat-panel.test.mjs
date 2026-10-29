@@ -118,30 +118,52 @@ test('renderMathInto：无 KaTeX 时退化成纯文本（不注入）', () => {
   assert.equal(n.innerHTML, '', '没有 KaTeX 不该产生 HTML');
 });
 
-test('renderMathInto：有 KaTeX 时用它的产出填 innerHTML', () => {
+test('renderMathInto：用公式引擎的产出填 innerHTML（现为 MathLive）', () => {
+  // 2026-10-29 换引擎：接口从 `{renderToString}` 换成 `{convertLatexToMarkup}`。
+  // 安全不变量 I1 不变——innerHTML 仍只接引擎产物（纯排版结构，不含脚本）。
   const doc = makeDoc();
   const n = doc.createElement('span');
-  const fakeKatex = {
-    renderToString: (tex, opts) => {
-      assert.equal(opts.trust, false, 'trust 必须是 false');
-      assert.equal(opts.throwOnError, false);
-      assert.ok(opts.maxSize > 0);
-      assert.ok(opts.maxExpand > 0);
-      return '<span class="katex">' + tex + '</span>';
-    },
+  const fakeMaths = {
+    convertLatexToMarkup: (tex) => '<span class="ML__latex">' + tex + '</span>',
   };
-  renderMathInto(doc, n, 'x^2', false, fakeKatex);
-  assert.match(n.innerHTML, /class="katex"/);
+  renderMathInto(doc, n, 'x^2', false, fakeMaths);
+  assert.match(n.innerHTML, /class="ML__latex"/);
 });
 
-test('renderMathInto：KaTeX 抛错时错误走 textContent（不注入错误串）', () => {
+test('renderMathInto：未加载引擎时退回字面 TeX（不抛）', () => {
   const doc = makeDoc();
   const n = doc.createElement('span');
-  const boom = { renderToString: () => { throw new Error('<img src=x onerror=alert(1)>'); } };
+  renderMathInto(doc, n, 'x^2', false, null);
+  assert.equal(n.textContent, '$x^2$');
+});
+
+test('renderMathInto：引擎抛错时错误走 textContent（不注入错误串）', () => {
+  const doc = makeDoc();
+  const n = doc.createElement('span');
+  const boom = { convertLatexToMarkup: () => { throw new Error('<img src=x onerror=alert(1)>'); } };
   renderMathInto(doc, n, 'bad', false, boom);
-  assert.equal(n.innerHTML, '', '错误串绝不能进 innerHTML');
-  assert.match(n.textContent, /onerror/);
+  assert.ok(!n.innerHTML.includes('onerror'), '错误串绝不能进 innerHTML');
+  assert.ok(n.textContent.includes('$bad$'), '退回字面 TeX');
   assert.match(n.className, /chat-math-err/);
+});
+
+test('renderMathInto：引擎产物带 ML__error 时也按失败处理', () => {
+  // MathLive 遇到不支持的构造不会抛异常，而是吐带 ML__error 的产物。
+  // 判据必须是「检查产物」，不能只看有没有抛。
+  const doc = makeDoc();
+  const n = doc.createElement('span');
+  const bad = { convertLatexToMarkup: () => '<span class="ML__error">?</span>' };
+  renderMathInto(doc, n, 'whatever', false, bad);
+  assert.ok(!n.innerHTML.includes('ML__error'), '错误产物不该被塞进页面');
+  assert.match(n.className, /chat-math-err/);
+});
+
+test('renderMathInto：显示公式包一层可横向滚动的容器', () => {
+  const doc = makeDoc();
+  const n = doc.createElement('span');
+  const fakeMaths = { convertLatexToMarkup: (tex) => '<span class="ML__latex">' + tex + '</span>' };
+  renderMathInto(doc, n, 'a+b', true, fakeMaths);
+  assert.match(n.innerHTML, /chat-math-display/);
 });
 
 // ── 字符串完整性 ───────────────────────────────────────────
@@ -187,10 +209,10 @@ test('CHAT_JS：不含危险的内联事件或 eval', () => {
   assert.doesNotMatch(CHAT_JS, /document\.write/);
 });
 
-test('CHAT_JS：只有一处 innerHTML，且在 renderMathInto 里', () => {
+test('CHAT_JS：innerHTML 赋值极少，且只接公式引擎产物', () => {
   const hits = (CHAT_JS.match(/\.innerHTML\s*=/g) || []).length;
-  // renderMathInto 里一处；showEmpty 里的 box.innerHTML = "" 是清空（安全）
-  assert.ok(hits <= 2, 'innerHTML 赋值应极少（实际 ' + hits + ' 处）');
+  // renderMathInto 里两处（行内与显示各一）；showEmpty 的 box.innerHTML = "" 是清空
+  assert.ok(hits <= 3, 'innerHTML 赋值应极少（实际 ' + hits + ' 处）');
   // 关键：渲染公式那一处必须存在
   assert.match(CHAT_JS, /node\.innerHTML = html/);
 });

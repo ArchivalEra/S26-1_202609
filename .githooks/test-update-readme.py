@@ -32,12 +32,12 @@ class ReadmeHookTest(unittest.TestCase):
                                  '\n<!-- AUTO-CATALOG:START -->\n<!-- AUTO-CATALOG:END -->\n')
         self.details = self.write('维护细则.md', '# 维护细则\n\n见[仓库维护条例](./维护条例.md)。\n\n<!-- AUTO-MAINTENANCE:START -->\n<!-- AUTO-MAINTENANCE:END -->\n')
         self.write('维护条例.md', '# 维护条例\n\n原则性规定。\n')
-        self.write('课程/index.md', '# 课程总览\n\n[工程数学](工程数学/index.md)\n')
+        self.write('课程总览/index.md', '# 课程总览\n\n[工程数学](工程数学/index.md)\n')
         self.course('工程数学')
-        self.note = self.write('课程/工程数学/课堂笔记/2026-09-17-test.md', '# 行列式学习\n\n课堂方法。\n')
-        self.index = self.write('课程/工程数学/课堂笔记/index.md', '# 课堂笔记\n\n[笔记](2026-09-17-test.md)\n')
-        self.original = self.write('课程/工程数学/原始资料/中文 原文.doc', '<html>课堂转写</html>')
-        self.write('课程/工程数学/原始资料/index.md', '# 原始资料\n\n[原文](中文%20原文.doc)\n')
+        self.note = self.write('课程总览/工程数学/课堂笔记/行列式学习.md', '# 行列式学习\n\n课堂方法。\n')
+        self.index = self.write('课程总览/工程数学/课堂笔记/index.md', '# 课堂笔记\n\n[笔记](行列式学习.md)\n')
+        self.original = self.write('课程总览/工程数学/原始资料/中文 原文.doc', '<html>课堂转写</html>')
+        self.write('课程总览/工程数学/原始资料/index.md', '# 原始资料\n\n[原文](中文%20原文.doc)\n')
         self.stage()
         self.git('commit', '-m', '初始化课程')
 
@@ -64,10 +64,10 @@ class ReadmeHookTest(unittest.TestCase):
         self.readme.write_text(text)
 
     def course(self, name):
-        self.write(f'课程/{name}/index.md',
+        self.write(f'课程总览/{name}/index.md',
                    f'# {name}\n\n' + ''.join(f'[{kind}]({kind}/index.md)\n' for kind in KINDS))
         for kind in KINDS:
-            self.write(f'课程/{name}/{kind}/index.md', f'# {kind}\n')
+            self.write(f'课程总览/{name}/{kind}/index.md', f'# {kind}\n')
 
     def append(self, path, text):
         """在已有文件末尾追加一行（保持原内容，模拟「同步更新父页面」）。"""
@@ -112,7 +112,7 @@ class ReadmeHookTest(unittest.TestCase):
         self.git('push', '-u', 'origin', 'main')
         before = self.readme.read_bytes()
         self.note.write_text(self.note.read_text() + '\n新增方法。\n')
-        self.touch_chain('课程/工程数学/课堂笔记/2026-09-17-test.md', '内容有更新。')
+        self.touch_chain('课程总览/工程数学/课堂笔记/行列式学习.md', '内容有更新。')
         self.stage()
         self.git('commit', '-m', '修改正文并逐层同步父页面')
         self.assertNotEqual(before, self.readme.read_bytes())
@@ -131,7 +131,7 @@ class ReadmeHookTest(unittest.TestCase):
 
         # 改课堂笔记（课程/ 区域）且同步索引，但 handoff 陈旧 → 拒绝
         self.note.write_text(self.note.read_text() + '\n新增一段。\n')
-        self.touch_chain('课程/工程数学/课堂笔记/2026-09-17-test.md', '已同步。')
+        self.touch_chain('课程总览/工程数学/课堂笔记/行列式学习.md', '已同步。')
         self.stage()
         result = self.git('commit', '-m', '未更新 handoff', success=False)
         self.assertNotEqual(result.returncode, 0)
@@ -150,30 +150,30 @@ class ReadmeHookTest(unittest.TestCase):
 
     def test_last_updated_is_derived_not_handwritten(self):
         """last_updated 是推导字段（2026-10-17 定案）：钩子按各文件自己的提交日期写，手抄无效。"""
-        note = self.write('课程/工程数学/课堂笔记/2026-09-18-日期.md',
+        note = self.write('课程总览/工程数学/课堂笔记/2026-09-18-日期.md',
                           '---\nlast_updated: "2000-01-01"\n---\n\n# 日期测试\n')
-        self.index.write_text('[笔记](2026-09-17-test.md)\n[日期](2026-09-18-日期.md)\n')
-        self.append('课程/工程数学/index.md', '新增日期笔记。')
-        self.append('课程/index.md', '新增日期笔记。')
+        self.index.write_text('[笔记](行列式学习.md)\n[日期](2026-09-18-日期.md)\n')
+        self.append('课程总览/工程数学/index.md', '新增日期笔记。')
+        self.append('课程总览/index.md', '新增日期笔记。')
         self.stage()
         self.git('commit', '-m', '新资料：手抄日期被提交日覆盖')
         today = datetime.date.today().isoformat()
         self.assertIn(f'last_updated: "{today}"', note.read_text())
 
         # 回溯提交日期后，未再改动的文件日期对齐为**它自己的**提交日
-        back = self.write('课程/工程数学/课堂笔记/2026-09-19-回溯.md',
+        back = self.write('课程总览/工程数学/课堂笔记/2026-09-19-回溯.md',
                           '---\nlast_updated: "2000-01-01"\n---\n\n# 回溯测试\n')
-        self.index.write_text('[笔记](2026-09-17-test.md)\n[日期](2026-09-18-日期.md)\n'
+        self.index.write_text('[笔记](行列式学习.md)\n[日期](2026-09-18-日期.md)\n'
                               '[回溯](2026-09-19-回溯.md)\n')
-        self.append('课程/工程数学/index.md', '新增回溯笔记。')
-        self.append('课程/index.md', '新增回溯笔记。')
+        self.append('课程总览/工程数学/index.md', '新增回溯笔记。')
+        self.append('课程总览/index.md', '新增回溯笔记。')
         self.stage()
         self.git('commit', '--date=2026-09-01', '-m', '回溯日期提交')
         self.note.write_text(self.note.read_text() + '\n补充。\n')
-        self.index.write_text('[笔记](2026-09-17-test.md)\n[日期](2026-09-18-日期.md)\n'
+        self.index.write_text('[笔记](行列式学习.md)\n[日期](2026-09-18-日期.md)\n'
                               '[回溯](2026-09-19-回溯.md)\n\n更新。\n')
-        self.append('课程/工程数学/index.md', '更新。')
-        self.append('课程/index.md', '更新。')
+        self.append('课程总览/工程数学/index.md', '更新。')
+        self.append('课程总览/index.md', '更新。')
         self.stage()
         self.git('commit', '-m', '无关改动：回溯文件日期对齐回 2026-09-01')
         self.assertIn('last_updated: "2026-09-01"', back.read_text())
@@ -188,7 +188,7 @@ class ReadmeHookTest(unittest.TestCase):
     def test_deep_link_anchor_validation(self):
         """深链接的锚点在目标文件里必须真实存在，否则提交被拒。"""
         target = self.write(
-            '课程/工程数学/课堂笔记/2026-09-19-anchor-target.md',
+            '课程总览/工程数学/课堂笔记/2026-09-19-anchor-target.md',
             '# 锚点目标\n\n'
             ':::collapse accordion\n'
             '- 面板标题 :+ {#pass-test}\n'
@@ -204,21 +204,21 @@ class ReadmeHookTest(unittest.TestCase):
             'sym-tabled | 总表词条 | 这行在页面上带 id="sym-tabled"。\n'
             ':::\n')
         self.index.write_text(
-            '[笔记](2026-09-17-test.md)\n'
+            '[笔记](行列式学习.md)\n'
             '[锚点目标](2026-09-19-anchor-target.md)\n'
             '[面板深链接](2026-09-19-anchor-target.md#pass-test)\n'
             '[显式 id 深链接](2026-09-19-anchor-target.md#sym-demo)\n'
             '[总表行深链接](2026-09-19-anchor-target.md#sym-tabled)\n'
             '[标题深链接](2026-09-19-anchor-target.md#深链接小节)\n')
-        self.touch_chain('课程/工程数学/课堂笔记/2026-09-19-anchor-target.md', '登记锚点目标')
+        self.touch_chain('课程总览/工程数学/课堂笔记/2026-09-19-anchor-target.md', '登记锚点目标')
         self.stage()
         self.git('commit', '-m', '合法深链接放行')
 
         self.index.write_text(
-            '[笔记](2026-09-17-test.md)\n'
+            '[笔记](行列式学习.md)\n'
             '[锚点目标](2026-09-19-anchor-target.md)\n'
             '[坏锚点](2026-09-19-anchor-target.md#不存在的锚点)\n')
-        self.touch_chain('课程/工程数学/课堂笔记/2026-09-19-anchor-target.md', '登记坏锚点')
+        self.touch_chain('课程总览/工程数学/课堂笔记/2026-09-19-anchor-target.md', '登记坏锚点')
         self.stage()
         result = self.git('commit', '-m', '坏锚点被拒', success=False)
         self.assertNotEqual(result.returncode, 0)
@@ -227,10 +227,10 @@ class ReadmeHookTest(unittest.TestCase):
 
         # 修复锚点后放行
         self.index.write_text(
-            '[笔记](2026-09-17-test.md)\n'
+            '[笔记](行列式学习.md)\n'
             '[锚点目标](2026-09-19-anchor-target.md)\n'
             '[标题深链接](2026-09-19-anchor-target.md#深链接小节)\n')
-        self.touch_chain('课程/工程数学/课堂笔记/2026-09-19-anchor-target.md', '修复锚点')
+        self.touch_chain('课程总览/工程数学/课堂笔记/2026-09-19-anchor-target.md', '修复锚点')
         self.stage()
         self.git('commit', '-m', '修复锚点')
 
@@ -241,33 +241,33 @@ class ReadmeHookTest(unittest.TestCase):
         result = self.git('commit', '-m', '未同步索引', success=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('逐层更新父页面', result.stdout.decode())
-        self.touch_chain('课程/工程数学/课堂笔记/2026-09-17-test.md', '已同步。')
+        self.touch_chain('课程总览/工程数学/课堂笔记/行列式学习.md', '已同步。')
         self.stage()
         self.git('commit', '-m', '补上索引')
 
     def test_parent_chain_must_be_updated_level_by_level(self):
         """只更新最近一层父页面不够：更上层没动，提交仍被拒。"""
-        note = '课程/工程数学/课堂笔记/2026-09-17-test.md'
+        note = '课程总览/工程数学/课堂笔记/行列式学习.md'
         self.note.write_text(self.note.read_text() + '\n新增一节。\n')
         # 只动分类索引，不动课程索引与课程总索引
-        self.index.write_text('[笔记](2026-09-17-test.md)\n\n已同步。\n')
+        self.index.write_text('[笔记](行列式学习.md)\n\n已同步。\n')
         self.stage()
         result = self.git('commit', '-m', '只同步一层', success=False)
         self.assertNotEqual(result.returncode, 0)
         msg = result.stdout.decode()
-        self.assertIn('课程/工程数学/index.md', msg)
-        self.assertIn('课程/index.md', msg)
+        self.assertIn('课程总览/工程数学/index.md', msg)
+        self.assertIn('课程总览/index.md', msg)
 
         # 补齐课程索引一层，仍缺课程总索引 → 还是拒
-        self.append('课程/工程数学/index.md', '更新。')
+        self.append('课程总览/工程数学/index.md', '更新。')
         self.stage()
         result = self.git('commit', '-m', '只同步两层', success=False)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('课程/index.md', result.stdout.decode())
-        self.assertNotIn('课程/工程数学/index.md（因', result.stdout.decode())
+        self.assertIn('课程总览/index.md', result.stdout.decode())
+        self.assertNotIn('课程总览/工程数学/index.md（因', result.stdout.decode())
 
         # 三层齐 → 放行
-        self.append('课程/index.md', '更新。')
+        self.append('课程总览/index.md', '更新。')
         self.stage()
         self.git('commit', '-m', '三层都同步')
 
@@ -275,7 +275,7 @@ class ReadmeHookTest(unittest.TestCase):
         self.readme.write_text(self.readme.read_text() + '\n未准备提交。\n')
         before = self.readme.read_bytes()
         self.note.write_text('# 新标题\n')
-        self.git('add', '课程')
+        self.git('add', '课程总览')
         result = self.git('commit', '-m', '拒绝', success=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('未暂存修改', result.stdout.decode())
@@ -283,8 +283,8 @@ class ReadmeHookTest(unittest.TestCase):
 
     def test_uses_staged_content_only(self):
         self.note.write_text('# 暂存标题\n')
-        self.touch_chain('课程/工程数学/课堂笔记/2026-09-17-test.md', '已同步。')
-        self.git('add', '课程')
+        self.touch_chain('课程总览/工程数学/课堂笔记/行列式学习.md', '已同步。')
+        self.git('add', '课程总览')
         self.note.write_text('# 尚未暂存的标题\n')
         self.git('commit', '-m', '部分暂存')
         # 2026-10-17：标题不上 README 了；判据改为 digest 由暂存内容算出
@@ -304,9 +304,9 @@ class ReadmeHookTest(unittest.TestCase):
         self.note.unlink()
         self.original.unlink()
         self.index.write_text('# 课堂笔记\n')
-        self.write('课程/工程数学/原始资料/index.md', '# 原始资料\n')
-        self.append('课程/工程数学/index.md', '删除资料。')
-        self.append('课程/index.md', '删除资料。')
+        self.write('课程总览/工程数学/原始资料/index.md', '# 原始资料\n')
+        self.append('课程总览/工程数学/index.md', '删除资料。')
+        self.append('课程总览/index.md', '删除资料。')
         self.stage()
         self.git('commit', '-m', '删除资料并逐层同步')
         self.assertIn('**0** 份资料', self.readme.read_text())
@@ -328,7 +328,7 @@ class ReadmeHookTest(unittest.TestCase):
         self.assertEqual(self.git('status', '--porcelain').stdout, b'')
         # 正文编辑也要改变状态区块（内容摘要行）；同时须同步分类索引。
         self.note.write_text(self.note.read_text() + '\n补充说明。\n')
-        self.touch_chain('课程/工程数学/课堂笔记/2026-09-17-test.md', '补充说明已入库。')
+        self.touch_chain('课程总览/工程数学/课堂笔记/行列式学习.md', '补充说明已入库。')
         self.stage()
         self.git('commit', '-m', '正文编辑应刷新维护细则')
         self.assertNotEqual(before, self.details.read_bytes())
@@ -349,7 +349,7 @@ class ReadmeHookTest(unittest.TestCase):
         self.details.write_text(self.details.read_text() + '\n未准备提交。\n')
         before = self.details.read_bytes()
         self.note.write_text('# 新标题\n')
-        self.git('add', '课程')
+        self.git('add', '课程总览')
         result = self.git('commit', '-m', '拒绝', success=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('维护细则.md 有未暂存修改', result.stdout.decode())
@@ -368,13 +368,13 @@ class ReadmeHookTest(unittest.TestCase):
     def test_multicourse_deep_chapter_and_audio(self):
         self.course('大学物理')
         self._refresh_status(['大学物理'])
-        self.write('课程/index.md', '[数学](工程数学/index.md)\n[物理](大学物理/index.md)\n')
-        self.write('课程/大学物理/课堂笔记/2026-09-17-test.md', '# 同名不同课程\n')
-        self.write('课程/大学物理/课堂笔记/index.md', '[笔记](2026-09-17-test.md)\n')
-        self.write('课程/大学物理/教材解析/第二版/第01章-测试.md', '# 章节测试\n')
-        self.write('课程/大学物理/教材解析/index.md', '[章节](第二版/第01章-测试.md)\n')
-        self.write('课程/大学物理/音频/2026-09-17-上午.md', '# 音频记录测试\n')
-        self.write('课程/大学物理/音频/index.md', '[记录](2026-09-17-上午.md)\n')
+        self.write('课程总览/index.md', '[数学](工程数学/index.md)\n[物理](大学物理/index.md)\n')
+        self.write('课程总览/大学物理/课堂笔记/行列式学习.md', '# 同名不同课程\n')
+        self.write('课程总览/大学物理/课堂笔记/index.md', '[笔记](行列式学习.md)\n')
+        self.write('课程总览/大学物理/教材解析/第二版/第01章-测试.md', '# 章节测试\n')
+        self.write('课程总览/大学物理/教材解析/index.md', '[章节](第二版/第01章-测试.md)\n')
+        self.write('课程总览/大学物理/音频/2026-09-17-上午.md', '# 音频记录测试\n')
+        self.write('课程总览/大学物理/音频/index.md', '[记录](2026-09-17-上午.md)\n')
         self.stage()
         self.git('commit', '-m', '多课程资料')
         self.assertIn('**2** 门课程、**5** 份资料', self.readme.read_text())
@@ -390,12 +390,12 @@ class ReadmeHookTest(unittest.TestCase):
         name = '形势与政策'  # hook_lib.COURSE_SKIPPED_KINDS 里已声明豁免教材解析
         self._refresh_status([name])
         kinds = [k for k in KINDS if k != '教材解析']
-        self.write(f'课程/{name}/index.md', ''.join(f'[{k}]({k}/index.md)\n' for k in kinds))
+        self.write(f'课程总览/{name}/index.md', ''.join(f'[{k}]({k}/index.md)\n' for k in kinds))
         for kind in kinds:
-            self.write(f'课程/{name}/{kind}/index.md', f'# {kind}\n')
-        self.write(f'课程/{name}/课堂笔记/2026-09-21-经济热点.md', '# 经济热点专题\n\n课堂内容。\n')
-        self.write(f'课程/{name}/课堂笔记/index.md', '[笔记](2026-09-21-经济热点.md)\n')
-        self.write('课程/index.md', '[数学](工程数学/index.md)\n[形策](形势与政策/index.md)\n')
+            self.write(f'课程总览/{name}/{kind}/index.md', f'# {kind}\n')
+        self.write(f'课程总览/{name}/课堂笔记/2026-09-21-经济热点.md', '# 经济热点专题\n\n课堂内容。\n')
+        self.write(f'课程总览/{name}/课堂笔记/index.md', '[笔记](2026-09-21-经济热点.md)\n')
+        self.write('课程总览/index.md', '[数学](工程数学/index.md)\n[形策](形势与政策/index.md)\n')
         self.stage()
         self.git('commit', '-m', '接入豁免课程的课')
 
@@ -416,10 +416,10 @@ class ReadmeHookTest(unittest.TestCase):
         name = '大学物理'
         self._refresh_status([name])
         kinds = [k for k in KINDS if k != '音频']
-        self.write(f'课程/{name}/index.md', ''.join(f'[{k}]({k}/index.md)\n' for k in kinds))
+        self.write(f'课程总览/{name}/index.md', ''.join(f'[{k}]({k}/index.md)\n' for k in kinds))
         for kind in kinds:
-            self.write(f'课程/{name}/{kind}/index.md', f'# {kind}\n')
-        self.write('课程/index.md', '[数学](工程数学/index.md)\n[物理](大学物理/index.md)\n')
+            self.write(f'课程总览/{name}/{kind}/index.md', f'# {kind}\n')
+        self.write('课程总览/index.md', '[数学](工程数学/index.md)\n[物理](大学物理/index.md)\n')
         self.stage()
         result = self.git('commit', '-m', '未声明豁免却缺音频索引', success=False)
         self.assertNotEqual(result.returncode, 0)
@@ -431,14 +431,14 @@ class ReadmeHookTest(unittest.TestCase):
         **备考页没有固定形态**——钩子不规定骨架、不要求节名与 Walkthrough 同名。
         """
         # 笔记 + Walkthrough（含一条考点）+ 备考（**自己起节名**，结构故意不同）
-        self.write('课程/工程数学/课堂笔记/2026-10-01-预备课.md',
+        self.write('课程总览/工程数学/课堂笔记/2026-10-01-预备课.md',
                    '# 预备课\n\n考点一要点，贡献率 64.1%。\n')
-        self.index.write_text('[笔记](2026-09-17-test.md)\n[预备课](2026-10-01-预备课.md)\n')
-        self.append('课程/工程数学/index.md', '新增预备课。')
-        self.append('课程/index.md', '新增预备课。')
-        self.write('课程/工程数学/Walkthrough.md',
+        self.index.write_text('[笔记](行列式学习.md)\n[预备课](2026-10-01-预备课.md)\n')
+        self.append('课程总览/工程数学/index.md', '新增预备课。')
+        self.append('课程总览/index.md', '新增预备课。')
+        self.write('课程总览/工程数学/Walkthrough.md',
                    '# Walkthrough\n\n## 2026-10-01 ｜ 专题一：预备课\n\n- **考点一**：要点。\n')
-        prep = self.write('课程/工程数学/备考.md',
+        prep = self.write('课程总览/工程数学/备考.md',
                           '# 备考\n\n## 我自己的小标题\n\n'
                           '### 考点：考点一\n\n贡献率 64.1%。\n\n'
                           '[笔记原文 ↗](./课堂笔记/2026-10-01-预备课.md#预备课)\n')
@@ -454,11 +454,11 @@ class ReadmeHookTest(unittest.TestCase):
         prep.write_text(prep.read_text().replace('88.8%', '64.1%'))
 
         # ② Walkthrough 加了新考点、备考没跟 → 放行，但给出提示
-        self.write('课程/工程数学/Walkthrough.md',
+        self.write('课程总览/工程数学/Walkthrough.md',
                    '# Walkthrough\n\n## 2026-10-01 ｜ 专题一：预备课\n\n'
                    '- **考点一**：要点。\n- **考点二**：新加的考点。\n')
-        self.append('课程/工程数学/index.md', 'Walkthrough 加考点二。')
-        self.append('课程/index.md', 'Walkthrough 加考点二。')
+        self.append('课程总览/工程数学/index.md', 'Walkthrough 加考点二。')
+        self.append('课程总览/index.md', 'Walkthrough 加考点二。')
         self.stage()
         result = self.git('commit', '-m', 'Walkthrough 加考点、备考未跟')
         self.assertEqual(result.returncode, 0)
@@ -467,8 +467,8 @@ class ReadmeHookTest(unittest.TestCase):
         # ③ 备考补上考点二 → 提示消失
         prep.write_text(prep.read_text().replace(
             '### 考点：考点一\n', '### 考点：考点一\n\n考点二：补上了。\n'))
-        self.append('课程/工程数学/index.md', '备考补上考点二。')
-        self.append('课程/index.md', '备考补上考点二。')
+        self.append('课程总览/工程数学/index.md', '备考补上考点二。')
+        self.append('课程总览/index.md', '备考补上考点二。')
         self.stage()
         result = self.git('commit', '-m', '备考补上考点二')
         self.assertEqual(result.returncode, 0)
@@ -483,10 +483,10 @@ class ReadmeHookTest(unittest.TestCase):
         # 站点有 4 个按钮（不含面板内部的关闭键），README 只介绍了 3 个 → 拒绝
         btn = lambda i: f'<button class="m3-icon-btn" id="{i}">'
         full = ("const TARGET_FILES = [\n  'README.md',\n  '维护条例.md',\n  '维护细则.md',\n"
-                "  '课程/index.md',\n  '课程/工程数学/index.md',\n"
-                "  '课程/工程数学/作业/index.md',\n  '课程/工程数学/教材解析/index.md',\n"
-                "  '课程/工程数学/课堂笔记/index.md',\n  '课程/工程数学/课堂笔记/2026-09-17-test.md',\n"
-                "  '课程/工程数学/原始资料/index.md',\n  '课程/工程数学/音频/index.md'\n];\n"
+                "  '课程总览/index.md',\n  '课程总览/工程数学/index.md',\n"
+                "  '课程总览/工程数学/作业/index.md',\n  '课程总览/工程数学/教材解析/index.md',\n"
+                "  '课程总览/工程数学/课堂笔记/index.md',\n  '课程总览/工程数学/课堂笔记/行列式学习.md',\n"
+                "  '课程总览/工程数学/原始资料/index.md',\n  '课程总览/工程数学/音频/index.md'\n];\n"
                 + btn('drawer-toggle') + '\n' + btn('palette-toggle') + '\n'
                 + btn('theme-toggle') + '\n' + btn('search-toggle') + '\n')
         build = self.write('站点/build.mjs', full)
@@ -520,7 +520,7 @@ class ReadmeHookTest(unittest.TestCase):
     def test_bad_date_and_chapter_rejected(self):
         for name, kind in [('2026-02-30-测试.md', '课堂笔记'), ('第一章.md', '教材解析')]:
             with self.subTest(name=name):
-                path = self.write(f'课程/工程数学/{kind}/{name}', '# 测试\n')
+                path = self.write(f'课程总览/工程数学/{kind}/{name}', '# 测试\n')
                 self.stage()
                 result = self.git('commit', '-m', '拒绝非法命名', success=False)
                 self.assertNotEqual(result.returncode, 0)
@@ -543,23 +543,23 @@ class ReadmeHookTest(unittest.TestCase):
     def test_build_targets_must_cover_all_material(self):
         """站点构建清单漏列资料时要拒绝提交（漏填会让页面静默不上线）。"""
         full = ("const TARGET_FILES = [\n  'README.md',\n  '维护条例.md',\n  '维护细则.md',\n"
-                "  '课程/index.md',\n  '课程/工程数学/index.md',\n"
-                "  '课程/工程数学/作业/index.md',\n  '课程/工程数学/教材解析/index.md',\n"
-                "  '课程/工程数学/课堂笔记/index.md',\n  '课程/工程数学/课堂笔记/2026-09-17-test.md',\n"
-                "  '课程/工程数学/原始资料/index.md',\n  '课程/工程数学/音频/index.md'\n];\n")
+                "  '课程总览/index.md',\n  '课程总览/工程数学/index.md',\n"
+                "  '课程总览/工程数学/作业/index.md',\n  '课程总览/工程数学/教材解析/index.md',\n"
+                "  '课程总览/工程数学/课堂笔记/index.md',\n  '课程总览/工程数学/课堂笔记/行列式学习.md',\n"
+                "  '课程总览/工程数学/原始资料/index.md',\n  '课程总览/工程数学/音频/index.md'\n];\n")
         build = self.write('站点/build.mjs', full)
         self.stage()
         self.git('commit', '-m', '清单完整')          # 完整清单可提交
 
         # 漏列一份资料 → 拒绝
-        build.write_text(full.replace("  '课程/工程数学/课堂笔记/2026-09-17-test.md',\n", ''))
+        build.write_text(full.replace("  '课程总览/工程数学/课堂笔记/行列式学习.md',\n", ''))
         self.stage()
         result = self.git('commit', '-m', '清单漏列', success=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('TARGET_FILES 漏列', result.stdout.decode())
 
         # 列出仓库中不存在的文件 → 拒绝
-        build.write_text(full.replace("];\n", "  '课程/工程数学/课堂笔记/查无此文件.md'\n];\n"))
+        build.write_text(full.replace("];\n", "  '课程总览/工程数学/课堂笔记/查无此文件.md'\n];\n"))
         self.stage()
         result = self.git('commit', '-m', '列了不存在的文件', success=False)
         self.assertNotEqual(result.returncode, 0)
@@ -595,13 +595,13 @@ class ReadmeHookTest(unittest.TestCase):
                    'export const TARGET_FILES = [\n'
                    + ''.join(f"  '{p}',\n" for p in targets)
                    + '];\n')
-        children = [p for p in nav if p not in ('README.md', '课程/index.md')]
+        children = [p for p in nav if p not in ('README.md', '课程总览/index.md')]
         build = ('// 站点构建脚本（测试夹具）\n'
                  'const NAV_STRUCTURE = [\n'
                  '  { label: "学期", path: "README.md" },\n'
                  '  {\n'
                  '    label: "课程总览",\n'
-                 '    path: "课程/index.md",\n'
+                 '    path: "课程总览/index.md",\n'
                  '    children: [\n'
                  + ''.join(f'      // 内联注释：{p}\n'
                            f'      {{ label: {json.dumps(labels.get(p, p), ensure_ascii=False)}, '
@@ -627,7 +627,7 @@ class ReadmeHookTest(unittest.TestCase):
         手工演示同款：把一个 path 从 NAV_STRUCTURE 里去掉，钩子必须点名报错。
         """
         targets = self.target_list()
-        victim = '课程/工程数学/课堂笔记/2026-09-17-test.md'
+        victim = '课程总览/工程数学/课堂笔记/行列式学习.md'
         # 该页「渲染成页面」但侧栏没列它 → 拒绝，且报错点名该页
         self.nav_site(targets, [p for p in targets if p != victim])
         self.stage()
@@ -645,7 +645,7 @@ class ReadmeHookTest(unittest.TestCase):
         """白名单只豁免登记在案的页面——同一次提交里其它漏项仍会被拦。"""
         targets = self.target_list() + ['站点/符号包/通用.md']
         self.write('站点/符号包/通用.md', '# 通用符号\n')
-        victim = '课程/工程数学/作业/index.md'
+        victim = '课程总览/工程数学/作业/index.md'
         # 白名单页缺席（允许）+ 另一个未豁免的页也缺席（应报错，且只点名后者）
         nav = [p for p in targets
                if p not in ('站点/符号包/通用.md', victim)]
@@ -659,23 +659,26 @@ class ReadmeHookTest(unittest.TestCase):
     # ── 侧栏标题 = 页面 H1（2026-10-28 新增）────────────────────────────────────
     def test_nav_label_must_match_page_title(self):
         """侧栏 label 与页面 H1 必须逐字一致，且都不得超过该层的宽度预算。"""
-        hw = '课程/工程数学/作业/2026-09-17-作业1.md'
-        short = '9-17 作业1'
+        # 2026-10-29：文件名必须=侧栏标签=H1（三条逐字一致），所以 fixture 的
+        # 文件名本身就是那个短名，不再用 `2026-09-17-作业1.md` 这种旧命名。
+        short = '作业1'
+        hw = f'课程总览/工程数学/作业/{short}.md'
         self.write(hw, f'# {short}\n\n正文。\n')
-        self.write('课程/工程数学/作业/index.md', '# 作业\n\n[作业1](2026-09-17-作业1.md)\n')
+        self.write('课程总览/工程数学/作业/index.md', f'# 作业\n\n[作业1]({short}.md)\n')
         targets = self.target_list() + [hw]
 
         # ① 侧栏写别的名字（与 H1 不一致）→ 拒绝
         self.nav_site(targets, targets, labels={hw: '作业一'})
         self.stage()
-        self.append('课程/工程数学/index.md', '登记。')
-        self.append('课程/index.md', '登记。')
+        self.append('课程总览/工程数学/index.md', '登记。')
+        self.append('课程总览/index.md', '登记。')
         self.stage()
         result = self.git('commit', '-m', '侧栏名不对', success=False)
         self.assertNotEqual(result.returncode, 0)
         msg = result.stdout.decode()
-        self.assertIn('侧栏标签必须与页面 H1 标题逐字一致', msg)
-        self.assertIn(short, msg)
+        # 2026-10-29 起由「文件名 = 侧栏标签」这条更前的新规则拦下（三条逐字一致）。
+        self.assertIn('文件名必须与侧栏标签逐字一致', msg)
+        self.assertIn('作业一', msg)
 
         # ② label 与 H1 一致 → 放行
         self.nav_site(targets, targets, labels={hw: short})
@@ -683,29 +686,43 @@ class ReadmeHookTest(unittest.TestCase):
         self.git('commit', '-m', '侧栏标签与标题对齐')
 
         # ③ 页面标题改了、侧栏没跟 → 也拒绝（双向绑定）
-        self.write(hw, '# 9-17 改过的作业名\n\n正文。\n')
+        self.write(hw, '# 改过的作业名\n\n正文。\n')
         self.stage()
         result = self.git('commit', '-m', '改标题未同步侧栏', success=False)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('9-17 改过的作业名', result.stdout.decode())
+        self.assertIn('改过的作业名', result.stdout.decode())
 
-        # ④ 两边同步但**过长** → 仍拒绝（宽度预算，防侧栏被省略号截断）
-        long = '9-17 作业一：二阶与三阶行列式的计算与书写规范'
+
+    def test_nav_label_width_budget(self):
+        """侧栏标签超该层宽度预算 ⇒ 拒绝（防被省略号截断）。
+
+        独立成一条：它测的是「宽度」这一件事，不该混在改名流程里。
+        fixture 让文件名 = 侧栏标签（2026-10-29 的三条一致规则），
+        这样才会走到宽度检查，而不是先被命名规则拦下。
+        """
+        long = '这是一个非常长的页面名字用来测试侧栏宽度预算'
+        hw = f'课程总览/工程数学/作业/{long}.md'
         self.write(hw, f'# {long}\n\n正文。\n')
+        self.write('课程总览/工程数学/作业/index.md', f'# 作业\n\n[长名]({long}.md)\n')
+        targets = [p for p in self.target_list() if not p.endswith('.md') or '作业' not in p]
+        targets = targets + [hw, '课程总览/工程数学/作业/index.md']
         self.nav_site(targets, targets, labels={hw: long})
         self.stage()
-        result = self.git('commit', '-m', '名字一致但过长', success=False)
+        self.append('课程总览/工程数学/index.md', '登记。')
+        self.append('课程总览/index.md', '登记。')
+        self.stage()
+        result = self.git('commit', '-m', '过长', success=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('宽度预算', result.stdout.decode())
 
     def target_list(self):
         """与 setUp 仓库实况对齐的 TARGET_FILES（含 4 个非课程页）。"""
         return ['README.md', '维护条例.md', '维护细则.md',
-                '课程/index.md', '课程/工程数学/index.md',
-                '课程/工程数学/作业/index.md', '课程/工程数学/教材解析/index.md',
-                '课程/工程数学/课堂笔记/index.md',
-                '课程/工程数学/课堂笔记/2026-09-17-test.md',
-                '课程/工程数学/原始资料/index.md', '课程/工程数学/音频/index.md']
+                '课程总览/index.md', '课程总览/工程数学/index.md',
+                '课程总览/工程数学/作业/index.md', '课程总览/工程数学/教材解析/index.md',
+                '课程总览/工程数学/课堂笔记/index.md',
+                '课程总览/工程数学/课堂笔记/行列式学习.md',
+                '课程总览/工程数学/原始资料/index.md', '课程总览/工程数学/音频/index.md']
 
     def test_move_and_index_links(self):
         moved = self.note.with_name('2026-09-17-移动.md')
@@ -713,7 +730,7 @@ class ReadmeHookTest(unittest.TestCase):
         self.stage()
         self.assertNotEqual(self.git('commit', '-m', '旧索引应拒绝', success=False).returncode, 0)
         self.index.write_text('[笔记](2026-09-17-移动.md)\n')
-        self.touch_chain('课程/工程数学/课堂笔记/index.md', '改名登记')
+        self.touch_chain('课程总览/工程数学/课堂笔记/index.md', '改名登记')
         self.stage()
         self.git('commit', '-m', '修复移动链接')
         self.remote()
@@ -723,7 +740,7 @@ class ReadmeHookTest(unittest.TestCase):
         self.remote()
         self.git('branch', 'good')
         self.note.write_text('# 未同步目录\n')
-        self.git('add', '课程')
+        self.git('add', '课程总览')
         self.git('-c', 'core.hooksPath=/dev/null', 'commit', '-m', '故意绕过')
         self.git('branch', 'bad')
         self.git('switch', 'good')

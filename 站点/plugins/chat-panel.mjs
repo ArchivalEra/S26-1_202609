@@ -6,14 +6,14 @@
  *   ① 纯函数：来自 chat-render.mjs（parseIncremental / parseInline / renderBlockToOps）
  *   ② 挂载层：op[] → DOM（applyOps，只用 createElement + textContent）
  *   ③ 客户端运行层（CHAT_JS IIFE）：
- *       · 纯静态冷态（未点击时不发任何请求，不挂载繁重 DOM，不拉取 KaTeX/polyfill）
+ *       · 纯静态冷态（未点击时不发任何请求，不挂载繁重 DOM，不拉取公式引擎/polyfill）
  *       · 点击 #assistant-toggle 唤醒按需初始化（创建 #chat-dock 与 .chat-panel，拉取会话列表）
  *       · 三档响应式：桌面/平板热区悬停滑出书签条，手机端常驻 20×56px 侧边把手 + 抽屉
  *       · 桥端中性契约：/chat/sessions, /chat/sessions/:id/messages, /chat/sessions/new, /chat/sessions/:id/delete
  *
  * ## 安全不变量
  *
- *   I1  innerHTML 只用于公式节点，且只接收 katex.renderToString 产出。
+ *   I1  innerHTML 只用于公式节点，且只接收公式引擎的产出（现为 MathLive 的 markup）。
  *   I2  链接协议白名单（在 chat-render.mjs）。
  *   I3  图片只允许同源相对路径（在 chat-render.mjs）。
  *   I4  任何原始 HTML 标签一律按文本处理。
@@ -466,7 +466,9 @@ body.chat-open .chat-panel {
 .chat-body tbody tr:nth-child(even) {
   background-color: color-mix(in srgb, var(--md-sys-color-surface-container) 45%, transparent);
 }
-.chat-body .katex-display {
+/* 显示公式的横向滚动：旧选择器是 KaTeX 时代的 katex-display 类，
+   现在公式由 MathLive 排版，容器是本面板自己包的 chat-math-display。 */
+.chat-body .chat-math-display {
   overflow-x: auto;
   overflow-y: hidden;
   padding: .2rem 0;
@@ -685,9 +687,9 @@ body.chat-open .chat-panel {
  * @param {object} doc
  * @param {object} el  容器
  * @param {Array} ops
- * @param {object} katex  KaTeX 全局对象（可能为 null）
+ * @param {object} maths  公式引擎对象（可能为 null）
  */
-export function applyOps(doc, el, ops, katex) {
+export function applyOps(doc, el, ops, maths) {
   const mk = (tag) => doc.createElement(tag);
 
   /** 行内 ops → 一串节点。 */
@@ -705,7 +707,7 @@ export function applyOps(doc, el, ops, katex) {
         case 'math': {
           const n = mk('span');
           n.className = 'chat-math';
-          renderMathInto(doc, n, o.tex, false, katex);
+          renderMathInto(doc, n, o.tex, false, maths);
           out.push(n);
           break;
         }
@@ -769,7 +771,7 @@ export function applyOps(doc, el, ops, katex) {
       case 'mathblock': {
         node = mk('div');
         node.className = 'chat-math-block';
-        renderMathInto(doc, node, op.tex, true, katex);
+        renderMathInto(doc, node, op.tex, true, maths);
         break;
       }
       case 'table': {
@@ -810,26 +812,34 @@ export function applyOps(doc, el, ops, katex) {
 
 /**
  * 渲染一个公式节点。
- * ⚠️ **安全不变量 I1**：innerHTML 只在这里出现，且只接收 KaTeX 的产出。
+ * ⚠️ **安全不变量 I1**：innerHTML 只在这里出现，且只接收**公式引擎的产出**。
+ *
+ * 2026-10-29 换引擎：从 KaTeX 的 `renderToString` 换到 MathLive 的
+ * `convertLatexToMarkup`——两者都是「TeX 进、静态 HTML 出」，且都只吐排版结构，
+ * 不执行脚本，所以 I1 的语义不变（只接收引擎产物）。
+ * 换成同一个引擎的好处：聊天里看到的公式与页面正文的公式用**同一套排版**，
+ * 不会出现「正文好看、回答里丑」的割裂。
+ *
+ * @param {object} maths 公式引擎对象（`{convertLatexToMarkup(tex)}`，可能为 null）
  */
-export function renderMathInto(doc, node, tex, display, katex) {
-  if (!katex || typeof katex.renderToString !== 'function') {
+export function renderMathInto(doc, node, tex, display, maths) {
+  if (!maths || typeof maths.convertLatexToMarkup !== 'function') {
     node.textContent = (display ? '$$' : '$') + tex + (display ? '$$' : '$');
     return;
   }
   try {
-    const html = katex.renderToString(tex, {
-      displayMode: !!display,
-      throwOnError: false,
-      trust: false,
-      maxSize: 10,
-      maxExpand: 1000,
-      strict: 'ignore',
-    });
-    node.innerHTML = html;
+    // 显示公式用外层容器控制横向滚动（与正文 `.math-display` 同一套做法）
+    const src = display ? `\\displaystyle ${tex}` : tex;
+    const html = maths.convertLatexToMarkup(src);
+    if (/ML__error/.test(html)) throw new Error('公式无法排版');
+    if (display) {
+      node.innerHTML = '<div class="chat-math-display">' + html + '</div>';
+    } else {
+      node.innerHTML = html;
+    }
   } catch (e) {
     node.className = (node.className ? node.className + ' ' : '') + 'chat-math-err';
-    node.textContent = String((e && e.message) || e);
+    node.textContent = (display ? '$$' : '$') + tex + (display ? '$$' : '$');
   }
 }
 
@@ -893,7 +903,7 @@ var attachBtn = null;
 var attachBar = null;
 var fileInput = null;
 
-var katexLoading = null;
+
 var stream = null;
 var stuck = true;
 var msgEls = [];
@@ -933,19 +943,26 @@ function withToken(u, t) {
   return t ? (u + (u.indexOf("?") >= 0 ? "&" : "?") + "token=" + encodeURIComponent(t)) : u;
 }
 
-function ensureKatex() {
-  if (window.katex) return Promise.resolve(window.katex);
-  if (katexLoading) return katexLoading;
-  katexLoading = new Promise(function (resolve) {
+// 公式引擎懒加载（2026-10-29 换引擎）：MathLive 的 **SSR 版**模块。
+// 为什么用 SSR 版而不是浏览器版：398KB vs 843KB，而聊天只需要「TeX → 静态 HTML」
+// 这一个能力（convertLatexToMarkup），不需要可编辑的 math-field 元素。
+// 实测在浏览器里经 module script 加载即可用。
+var mathsLoading = null;
+function ensureMaths() {
+  if (window.__maths) return Promise.resolve(window.__maths);
+  if (mathsLoading) return mathsLoading;
+  mathsLoading = new Promise(function (resolve) {
     var root = document.documentElement.getAttribute("data-root") || "./";
     var s = document.createElement("script");
-    s.src = root + "assets/katex/katex.min.js";
-    s.async = true;
-    s.onload = function () { resolve(window.katex || null); };
-    s.onerror = function () { resolve(null); };
+    s.type = "module";
+    s.textContent = 'import * as M from "' + root + 'assets/mathlive/mathlive-ssr.min.mjs";'
+      + 'window.__maths = M; window.dispatchEvent(new Event("maths-ready"));';
     document.head.appendChild(s);
+    var done = function () { resolve(window.__maths || null); };
+    window.addEventListener("maths-ready", done, { once: true });
+    setTimeout(done, 8000);   // 兜底：模块加载失败也不能让提问永久挂住
   });
-  return katexLoading;
+  return mathsLoading;
 }
 
 function sniffImage(bytes) {
@@ -1158,7 +1175,7 @@ function attachStatusSlot(msg) {
 function renderMessage(msg, final) {
   var parsed = parseIncremental(msg.raw.slice(msg.restStart || 0));
   for (var i = 0; i < parsed.blocks.length; i++) {
-    applyOps(document, msg.body, renderBlockToOps(parsed.blocks[i]), window.katex);
+    applyOps(document, msg.body, renderBlockToOps(parsed.blocks[i]), window.__maths);
   }
   msg.restStart = (msg.restStart || 0) + parsed.restStart;
 
@@ -2237,7 +2254,7 @@ function ensureInitialized() {
   }
 
   try { if (window.__webmcpEnable) window.__webmcpEnable(); } catch (e) {}
-  ensureKatex();
+  ensureMaths();
   loadSessions();
 }
 

@@ -110,7 +110,7 @@ export const COURSE_TOOLS = [
     course: {
       label: '整页调阅标记',
       scene: '把某一整页的资料调出来看（作业页、笔记页、解析页）',
-      params: { path: '资料路径', course: '课程', category: '类别', file: '文件名', anchor: '小节' },
+      params: { path: '资料路径', course: '课程总览', category: '类别', file: '文件名', anchor: '小节' },
     },
   },
   {
@@ -130,7 +130,7 @@ export const COURSE_TOOLS = [
     course: {
       label: '符号释义标记',
       scene: '查某个符号在本课程里的含义（多义项会列出并标出本课语境）',
-      params: { id: '词条号', q: '模糊词', course: '课程' },
+      params: { id: '词条号', q: '模糊词', course: '课程总览' },
     },
   },
   {
