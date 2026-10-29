@@ -631,18 +631,19 @@ export function createPageView(doc, loc, winOverride) {
   }
 
   /**
-   * 把一个路径归一化成「仓库相对 html 路径」，用于和页面清单比对。
+   * 把一个路径归一化成「站内网址路径」，用于和页面清单比对。
    *
    * 模型给的写法五花八门：`课程总览/x.html`、`/repo/S26-1_202609/课程总览/x.html`、
    * `./课程总览/x.html`、目录形式 `课程总览/x/`、`课程总览/x`。这里全收敛成
-   * 清单里的那种形态。
+   * **清单里的那种形态**——2026-10-29 起清单用网址形态：目录索引页是 `课程总览/x/`，
+   * 首页是 `''`，普通页是 `作业3.html`。
+   *
+   * 所以「补 index.html」这一步已经作废（那会把 `课程总览/` 变成
+   * `课程总览/index.html`，与清单对不上）。现在：**带尾斜杠就当目录索引页原样保留**，
+   * 不带后缀也不带斜杠的（`课程总览/x`）两种都试——先当目录，再当页面。
    *
    * 部署前缀（`/repo/S26-1_202609/`）不能写死——它随部署环境变，而且本站还有
-   * 无前缀镜像入口。所以给绝对路径时不猜前缀，而是**按已知页面做后缀对齐**：
-   * 取「是这条路径后缀、且在清单里」的那个页面。这样 `/repo/任意/课程总览/x.html`
-   * 与 `/课程总览/x.html` 都能落到 `课程总览/x.html`。
-   *
-   * 归不成就返回归一化后的原名（随后必然不命中，报不存在）。
+   * 无前缀镜像入口。所以给绝对路径时不猜前缀，而是**按已知页面做后缀对齐**。
    */
   function canonicalPagePath(raw, known) {
     let p = String(raw || '').trim();
@@ -659,20 +660,35 @@ export function createPageView(doc, loc, winOverride) {
       wasAbsolute = true;
     }
     p = p.replace(/^\.\//, '').replace(/^\/+/, '');
-    // 目录形式 → index.html
-    if (/\/$/.test(p)) p += 'index.html';
-    else if (!/\.html?$/i.test(p) && !/\.[a-z0-9]+$/i.test(p)) p += '/index.html';
+
+    // 旧写法兼容（2026-10-29）：`…/index.html` 与 `…/` 是同一页（目录索引页）。
+    // 网址规则已统一成目录形式，但模型可能按旧习惯给文件名。收敛到目录形式，
+    // 避免「同一页两个网址」——那正是本轮要消灭的分叉。
+    // 根 `index.html` 也归到首页的 `''`。
+    if (/^index\.html$/i.test(p)) p = '';
+    else p = p.replace(/\/index\.html$/i, '/');
 
     // 绝对路径带的部署前缀：按已知页面后缀对齐，不猜前缀长度。
+    // 命中条件：这条绝对路径**以 `/页面` 结尾**（带 `/` 边界，否则
+    // `x/index.html` 会被当成任何 `…index.html` 的后缀）。
     if (wasAbsolute && known && known.length && known.indexOf(p) < 0) {
-      // 命中条件：这条绝对路径**以 `/页面` 结尾**。必须带 `/` 边界，否则
-      // `x/index.html` 会被当成任何 `…index.html` 的后缀。
       // 多个命中时取**最长**（最具体）——`index.html` 是所有索引页的合法后缀，
-      // 只按「长度」比会把具体的 `课程总览/…/index.html` 让给根 `index.html`。
+      // 只按长度比会把具体的 `课程总览/…/` 让给更短的。
       const hit = known
-        .filter((k) => p === k || p.slice(-(k.length + 1)) === '/' + k)
+        .filter((k) => k && (p === k || p.slice(-(k.length + 1)) === '/' + k))
         .sort((a, b) => b.length - a.length);
       if (hit.length) return hit[0];
+    }
+    if (known && known.indexOf(p) >= 0) return p;
+
+    // 没后缀也没尾斜杠：可能是目录索引页（`课程总览/x` → `课程总览/x/`），
+    // 也可能是省略了 .html 的页面（`课程总览/x` → `课程总览/x.html`）。
+    // 两种都试，谁在清单里就归谁；都不在就原样返回（随后报不存在）。
+    if (!/\.html?$/i.test(p) && !/[.][a-z0-9]+$/i.test(p)) {
+      const asDir = p + '/';
+      const asPage = p + '.html';
+      if (known && known.indexOf(asDir) >= 0) return asDir;
+      if (known && known.indexOf(asPage) >= 0) return asPage;
     }
     return p;
   }

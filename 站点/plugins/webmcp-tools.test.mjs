@@ -697,15 +697,17 @@ test('site_navigate：索引页不在产物清单里也拒绝（2026-10-29 删�
   assert.equal(seen.length, 0, '不许真的去 navigate');
 });
 
-test('site_navigate：产物清单里有的页面放行（含不在侧栏的 README / 符号包）', async () => {
+test('site_navigate：产物清单里有的页面放行（含不在侧栏的维护条例 / 符号包）', async () => {
   // 判据是「站点真的生成了这一页」，数据源是构建期烘的 #site-pages-json。
   // 侧栏没有 README / 维护条例 / 符号包的入口，但它们是真页面，必须能跳。
+  // 清单用网址形态：目录索引页 `…/`（2026-10-29 大一统）。
+  // 首页在清单里是 ''——但 to=page 的空串等于「没给路径」，回首页走 to=home，
+  // 所以这条不为首页建例（首页另有专门测试）。
   const pages = [
-    'index.html',
     '维护条例.html',
     '站点/符号包/通用.html',
     '课程总览/电机学/第二章.html',
-    '课程总览/电机学/教材解析/index.html',
+    '课程总览/电机学/教材解析/',
   ];
   for (const p of pages) {
     const doc = fakeDoc({ pages });
@@ -741,21 +743,35 @@ test('site_navigate：没有 SPA 路由时拒绝而不是整页跳（整页跳�
 });
 
 test('site_navigate：各种路径拼法都归一化到同一页（前导斜杠 / ./ / 目录形式 / 部署前缀）', async () => {
-  const pages = ['index.html', '课程总览/工程数学/教材解析/index.html'];
+  // 清单用**网址形态**（2026-10-29 大一统）：目录索引页是 `…/教材解析/`，首页是 ''。
+  // 模型可能仍按旧习惯给 `…/index.html`——也要收敛到同一个网址，不能两套并存。
+  const pages = ['', '课程总览/工程数学/教材解析/'];
   const forms = [
-    '课程总览/工程数学/教材解析/index.html',
-    '/课程总览/工程数学/教材解析/index.html',
-    './课程总览/工程数学/教材解析/index.html',
     '课程总览/工程数学/教材解析/',
-    '/repo/S26-1_202609/课程总览/工程数学/教材解析/index.html',
-    'https://isui.ren/repo/S26-1_202609/课程总览/工程数学/教材解析/index.html',
+    '课程总览/工程数学/教材解析',
+    '/课程总览/工程数学/教材解析/',
+    './课程总览/工程数学/教材解析/',
+    '/repo/S26-1_202609/课程总览/工程数学/教材解析/',
+    'https://isui.ren/repo/S26-1_202609/课程总览/工程数学/教材解析/',
   ];
   for (const f of forms) {
     const doc = fakeDoc({ pages });
     doc.defaultView.__spaRouter = { navigate: () => Promise.resolve() };
     const r = await createPageView(doc).navigate({ to: 'page', path: f });
     assert.equal(r.ok, true, `${f} 应放行`);
-    assert.equal(r.path, '课程总览/工程数学/教材解析/index.html', `${f} 应归一化到同一页`);
+    assert.equal(r.path, '课程总览/工程数学/教材解析/', `${f} 应归一化到目录形式`);
+  }
+});
+
+test('site_navigate：模型给旧的 index.html 文件名也收敛到目录形式网址', async () => {
+  const pages = ['', '课程总览/工程数学/教材解析/'];
+  // 旧习惯写法：不该被拒，也不该产生第二个网址。
+  for (const f of ['课程总览/工程数学/教材解析/index.html', '/repo/S26-1_202609/课程总览/工程数学/教材解析/index.html']) {
+    const doc = fakeDoc({ pages });
+    doc.defaultView.__spaRouter = { navigate: () => Promise.resolve() };
+    const r = await createPageView(doc).navigate({ to: 'page', path: f });
+    assert.equal(r.ok, true, `${f} 应放行（旧写法兼容）`);
+    assert.equal(r.path, '课程总览/工程数学/教材解析/', `${f} 应归一到目录形式`);
   }
 });
 
