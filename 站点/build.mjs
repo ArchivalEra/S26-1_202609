@@ -1127,6 +1127,19 @@ for (const relPath of TARGET_FILES) {
   };
   /** 本页的公式命中集（词条 id → 词条），供气泡 JSON 使用。 */
   const pageMathHits = new Map();
+  // ⚠️ 2026-10-29 修：公式命中必须**合并进** `glossaryHits`（气泡 JSON 的真相源）。
+  //
+  // 此前公式取词写进 `pageMathHits`、正文令牌写进 `glossaryHits`，而气泡 JSON 只读
+  // 后者 ⇒ **凡是在 `$…$` 里命中的符号，页面有锚点、气泡却查不到词条**，点了没反应。
+  // 用户实测「det 冒不了泡」正是这个：`\det` 只出现在公式里，从不走正文取词。
+  //
+  // 写成「每次 renderOneMath 之后同步一份」而不是「渲染完统一合并」：`renderOneMath`
+  // 内部已按 `hits.has(key)` 去重，合并本身幂等；统一合并还得记着所有调用点。
+  const syncMathHits = () => {
+    for (const [key, hit] of pageMathHits) {
+      if (!glossaryHits.has(key)) glossaryHits.set(key, hit);
+    }
+  };
 
   // 2.1 Display Math $$...$$
   raw = raw.replace(/\$\$([\s\S]+?)\$\$/g, (_, tex) => {
@@ -1291,6 +1304,8 @@ for (const relPath of TARGET_FILES) {
   // 如 $Z$ = 阻抗 or 槽数）。这里把义项一并烘进 JSON，并带上 `ctx` = **本页所属课程**——
   // 气泡列出全部义项、把本页语境那一条排在最前并标记（「实时能查到」）。
   const pageCtx = here || '';
+  // 公式命中并入（见 `syncMathHits` 注释：不合并就会「有锚点、没气泡」）。
+  syncMathHits();
   const glossaryJsonPayload = {
     terms: Object.fromEntries(
       [...glossaryHits.entries()]
