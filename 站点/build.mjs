@@ -1730,8 +1730,11 @@ for (const relPath of TARGET_FILES) {
   })();
   </script>
   <!-- 数学排版样式（2026-10-29 换引擎）：MathLive 静态样式。
-       它复用同一批 woff2 字体（assets/mathlive/fonts/），字体文件不用另备。 -->
-  <link rel="stylesheet" href="${rootRel}assets/mathlive/mathlive-static.css">
+       它复用同一批 woff2 字体（assets/mathlive/fonts/），字体文件不用另备。
+       ⚠️ 必须走 assetUrl（同其余四张样式表）：此前它是唯一裸引用的 CSS，没有内容哈希戳，
+       于是**改了它浏览器永远读旧缓存**——补丁明明写进 dist、页面就是不生效，
+       排查时会误判成「CSS 规则不对」。（2026-10-29 实测踩到。） -->
+  <link rel="stylesheet" href="${rootRel}${assetUrl('assets/mathlive/mathlive-static.css')}">
   <link rel="stylesheet" href="${rootRel}${assetUrl('assets/theme/shirone-reader.css')}">
   <link rel="stylesheet" href="${rootRel}${assetUrl('assets/plugins/site-search.css')}">
   <link rel="stylesheet" href="${rootRel}${assetUrl('assets/plugins/chat-panel.css')}">
