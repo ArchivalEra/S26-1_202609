@@ -12,7 +12,7 @@ import time
 import unittest
 
 SOURCE = Path(__file__).resolve().parent
-KINDS = ('作业', '教材解析', '课堂笔记', '原始资料', '音频')
+KINDS = ('作业', '教材解析', '课堂笔记', '原始资料')  # 2026-10-30 删去「音频」类
 
 
 class ReadmeHookTest(unittest.TestCase):
@@ -373,8 +373,8 @@ class ReadmeHookTest(unittest.TestCase):
         self.write('课程总览/大学物理/课堂笔记/index.md', '[笔记](行列式学习.md)\n')
         self.write('课程总览/大学物理/教材解析/第二版/第01章-测试.md', '# 章节测试\n')
         self.write('课程总览/大学物理/教材解析/index.md', '[章节](第二版/第01章-测试.md)\n')
-        self.write('课程总览/大学物理/音频/2026-09-17-上午.md', '# 音频记录测试\n')
-        self.write('课程总览/大学物理/音频/index.md', '[记录](2026-09-17-上午.md)\n')
+        self.write('课程总览/大学物理/原始资料/2026-09-17-上午.md', '# 原始资料测试\n')
+        self.write('课程总览/大学物理/原始资料/index.md', '[记录](2026-09-17-上午.md)\n')
         self.stage()
         self.git('commit', '-m', '多课程资料')
         self.assertIn('**2** 门课程、**5** 份资料', self.readme.read_text())
@@ -415,13 +415,14 @@ class ReadmeHookTest(unittest.TestCase):
         """未声明豁免的课程缺一类索引仍必须被拒——防止豁免机制被当成后门。"""
         name = '大学物理'
         self._refresh_status([name])
-        kinds = [k for k in KINDS if k != '音频']
+        # 2026-10-30：`音频` 类已删除，改用它之外的真实类当「缺失样例」
+        kinds = [k for k in KINDS if k != '原始资料']
         self.write(f'课程总览/{name}/index.md', ''.join(f'[{k}]({k}/index.md)\n' for k in kinds))
         for kind in kinds:
             self.write(f'课程总览/{name}/{kind}/index.md', f'# {kind}\n')
         self.write('课程总览/index.md', '[数学](工程数学/index.md)\n[物理](大学物理/index.md)\n')
         self.stage()
-        result = self.git('commit', '-m', '未声明豁免却缺音频索引', success=False)
+        result = self.git('commit', '-m', '未声明豁免却缺原始资料索引', success=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('课程入口缺少分类链接', result.stdout.decode())
 
@@ -486,7 +487,7 @@ class ReadmeHookTest(unittest.TestCase):
                 "  '课程总览/index.md',\n  '课程总览/工程数学/index.md',\n"
                 "  '课程总览/工程数学/作业/index.md',\n  '课程总览/工程数学/教材解析/index.md',\n"
                 "  '课程总览/工程数学/课堂笔记/index.md',\n  '课程总览/工程数学/课堂笔记/行列式学习.md',\n"
-                "  '课程总览/工程数学/原始资料/index.md',\n  '课程总览/工程数学/音频/index.md'\n];\n"
+                "  '课程总览/工程数学/原始资料/index.md'\n];\n"
                 + btn('drawer-toggle') + '\n' + btn('palette-toggle') + '\n'
                 + btn('theme-toggle') + '\n' + btn('search-toggle') + '\n')
         build = self.write('站点/build.mjs', full)
@@ -546,7 +547,7 @@ class ReadmeHookTest(unittest.TestCase):
                 "  '课程总览/index.md',\n  '课程总览/工程数学/index.md',\n"
                 "  '课程总览/工程数学/作业/index.md',\n  '课程总览/工程数学/教材解析/index.md',\n"
                 "  '课程总览/工程数学/课堂笔记/index.md',\n  '课程总览/工程数学/课堂笔记/行列式学习.md',\n"
-                "  '课程总览/工程数学/原始资料/index.md',\n  '课程总览/工程数学/音频/index.md'\n];\n")
+                "  '课程总览/工程数学/原始资料/index.md'\n];\n")
         build = self.write('站点/build.mjs', full)
         self.stage()
         self.git('commit', '-m', '清单完整')          # 完整清单可提交
@@ -722,7 +723,7 @@ class ReadmeHookTest(unittest.TestCase):
                 '课程总览/工程数学/作业/index.md', '课程总览/工程数学/教材解析/index.md',
                 '课程总览/工程数学/课堂笔记/index.md',
                 '课程总览/工程数学/课堂笔记/行列式学习.md',
-                '课程总览/工程数学/原始资料/index.md', '课程总览/工程数学/音频/index.md']
+                '课程总览/工程数学/原始资料/index.md']
 
     def test_move_and_index_links(self):
         moved = self.note.with_name('2026-09-17-移动.md')

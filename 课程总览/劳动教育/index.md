@@ -18,4 +18,4 @@ sources:
 
 ## 分类
 
-[作业](./作业/index.md) · [课堂笔记](./课堂笔记/index.md) · [原始资料](./原始资料/index.md) · [音频](./音频/index.md)
+[作业](./作业/index.md) · [课堂笔记](./课堂笔记/index.md) · [原始资料](./原始资料/index.md)

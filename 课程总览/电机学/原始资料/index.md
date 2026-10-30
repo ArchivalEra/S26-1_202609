@@ -3,7 +3,7 @@ id: okf.course.electric_machinery.originals.index
 name: 原始资料
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-29"
+last_updated: "2026-10-30"
 stewards:
   - team: 电机学课程学习记录
 course: 电机学
@@ -213,4 +213,3 @@ SHA-256：
 | 第三章及以后各章 | 未提供（**第二章照片 2026-10-15 已提供**，见第三节） |
 | 上述学习通作业的**平台参考答案** | 未提供；仓库那一篇的答案是独立盲测重算的结果，可与平台答案对照 |
 | 课堂照片 | 未提供 |
-| 音频下载链接 | 未提供（转写已入库，见第四节） |

@@ -566,8 +566,7 @@ const NAV_STRUCTURE = [
               }
             ]
           },
-          { label: "原始资料", path: "课程总览/工程数学/原始资料/index.md" },
-          { label: "音频", path: "课程总览/工程数学/音频/index.md" }
+          { label: "原始资料", path: "课程总览/工程数学/原始资料/index.md" }
         ]
       },
       {
@@ -592,8 +591,7 @@ const NAV_STRUCTURE = [
               { label: "10-27-密度初筛与调频", path: "课程总览/电力大数据与人工智能/课堂笔记/10-27-密度初筛与调频.md" },
             ]
           },
-          { label: "原始资料", path: "课程总览/电力大数据与人工智能/原始资料/index.md" },
-          { label: "音频", path: "课程总览/电力大数据与人工智能/音频/index.md" }
+          { label: "原始资料", path: "课程总览/电力大数据与人工智能/原始资料/index.md" }
         ]
       },
       {
@@ -613,8 +611,7 @@ const NAV_STRUCTURE = [
               { label: "10-20-铸牢共同体意识", path: "课程总览/形势与政策/课堂笔记/10-20-铸牢共同体意识.md" },
             ]
           },
-          { label: "原始资料", path: "课程总览/形势与政策/原始资料/index.md" },
-          { label: "音频", path: "课程总览/形势与政策/音频/index.md" }
+          { label: "原始资料", path: "课程总览/形势与政策/原始资料/index.md" }
         ]
       },
       {
@@ -654,8 +651,7 @@ const NAV_STRUCTURE = [
               { label: "09-28-KCL与KVL", path: "课程总览/电路原理/课堂笔记/09-28-KCL与KVL.md" },
             ]
           },
-          { label: "原始资料", path: "课程总览/电路原理/原始资料/index.md" },
-          { label: "音频", path: "课程总览/电路原理/音频/index.md" }
+          { label: "原始资料", path: "课程总览/电路原理/原始资料/index.md" }
         ]
       },
       {
@@ -694,8 +690,7 @@ const NAV_STRUCTURE = [
               { label: "10-21-编码器与译码器", path: "课程总览/电子技术/课堂笔记/10-21-编码器与译码器.md" },
             ]
           },
-          { label: "原始资料", path: "课程总览/电子技术/原始资料/index.md" },
-          { label: "音频", path: "课程总览/电子技术/音频/index.md" }
+          { label: "原始资料", path: "课程总览/电子技术/原始资料/index.md" }
         ]
       },
       {
@@ -738,8 +733,7 @@ const NAV_STRUCTURE = [
               { label: "10-22-参数测定与电压变化率", path: "课程总览/电机学/课堂笔记/10-22-参数测定与电压变化率.md" }
             ]
           },
-          { label: "原始资料", path: "课程总览/电机学/原始资料/index.md" },
-          { label: "音频", path: "课程总览/电机学/音频/index.md" }
+          { label: "原始资料", path: "课程总览/电机学/原始资料/index.md" }
         ]
       },
       {
@@ -752,8 +746,7 @@ const NAV_STRUCTURE = [
               { label: "10-26-劳动教育导论与考核", path: "课程总览/劳动教育/课堂笔记/10-26-劳动教育导论与考核.md" }
             ]
           },
-          { label: "原始资料", path: "课程总览/劳动教育/原始资料/index.md" },
-          { label: "音频", path: "课程总览/劳动教育/音频/index.md" }
+          { label: "原始资料", path: "课程总览/劳动教育/原始资料/index.md" }
         ]
       }
     ]
