@@ -488,6 +488,7 @@
 !/zreflect/collect.py
 !/zreflect/facts.py
 !/zreflect/measure_edu.py
+!/zreflect/mail-read.py
 !/课程总览/工程数学/Walkthrough.md
 !/课程总览/电路原理/Walkthrough.md
 !/课程总览/电子技术/Walkthrough.md
