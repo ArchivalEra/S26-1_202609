@@ -79,3 +79,40 @@ test('气泡词典：公式里的符号也进得了气泡（det 这一个具体�
     assert.ok(baked.has(d), `${d} 有锚点却没有词条——点了不会冒泡`);
   }
 });
+
+test('气泡「详细 ↗」的目标锚点必须真实存在（2026-10-30 实弹）', () => {
+  // 病根：工程数学的符号入门页写的是 `:::glossary-dict`，而其余四门课与通用包
+  // 都写 `:::glossary-dict table`。少一个 `table` 参数 ⇒ **只定义词条、不渲染词条总表**
+  // ⇒ 18 页气泡里的「详细 ↗ 符号入门」全部指向不存在的 `#sym-inv` 等 id，点了落到页首。
+  //
+  // 一个参数之差、构建零错误、所有闸门全绿，只有真点气泡才看得见。
+  // 判据：气泡 JSON 里每个词条的 href 锚点，都必须在**目标页**里有对应 id。
+  const bad = [];
+  for (const file of walkHtml(DIST)) {
+    const html = readFileSync(file, 'utf8');
+    const tag = /<script[^>]*id="sym-glossary-json"[^>]*>([\s\S]*?)<\/script>/.exec(html);
+    if (!tag) continue;
+    let terms;
+    try { terms = JSON.parse(tag[1]).terms || {}; } catch { continue; }
+    for (const [key, v] of Object.entries(terms)) {
+      const href = String(v.href || '');
+      const hashAt = href.indexOf('#');
+      if (hashAt < 0) continue;
+      const anchor = decodeURIComponent(href.slice(hashAt + 1));
+      // 解出目标页的 dist 相对路径（href 是相对当前页的）
+      const relTarget = decodeURIComponent(href.slice(0, hashAt));
+      const curDir = path.dirname(path.relative(DIST, file));
+      const targetPath = path.normalize(path.join(DIST, curDir, relTarget));
+      if (!existsSync(targetPath)) {
+        bad.push(`${path.relative(DIST, file)} · ${key} → 目标页不存在：${relTarget}`);
+        continue;
+      }
+      const target = readFileSync(targetPath, 'utf8');
+      if (!target.includes(`id="${anchor}"`)) {
+        bad.push(`${path.relative(DIST, file)} · ${key} → #${anchor} 在 ${path.basename(targetPath)} 里不存在`);
+      }
+    }
+  }
+  assert.deepEqual(bad, [],
+    `这些气泡的「详细 ↗」点了落不到地方：\n${[...new Set(bad)].slice(0, 20).join('\n')}`);
+});
