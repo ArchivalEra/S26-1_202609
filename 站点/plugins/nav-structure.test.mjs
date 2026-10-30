@@ -11,7 +11,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import {
@@ -277,4 +277,33 @@ test('DOM 层级：组标题链接确实在 .nav-group-header 下（上面那两
   assert.ok(/<li class="drawer-nav-group[^"]*"[^>]*>\s*<div class="nav-group-header[^"]*">\s*<a[^>]*class="drawer-nav-link"/.test(html),
     '组标题链接必须是 .drawer-nav-group > .nav-group-header > a.drawer-nav-link 这一层——'
     + '若结构变了，直系选择器就会失配（静默失去高亮，不报错）');
+});
+
+// ── 大一统最后一步：全站链接不许再出现 index.html（2026-10-29）──────
+//
+// 判据：**构建产物**里的每个 href / data-path 都不能带 `index.html`。
+// 索引页的网址一律是目录形式（`课程总览/`），首页是 `/`。
+//
+// 为什么这条必须做成闸门而不是「改一次就完了」：正文链接的 `.md → 网址` 换算是
+// build.mjs Step 4 里的一处正则，只要有人在那儿写回 `.html`，**全站 60 多页会同时
+// 退化**，而构建、其余测试、所有闸门都是绿的——只有肉眼看页面或对产物做字符串扫描
+// 才看得见。这正是 2026-10-29 之前的状态。
+test('产物里零 index.html 链接（索引页一律目录形式）', () => {
+  const bad = [];
+  const walk = (dir) => {
+    for (const name of readdirSync(dir)) {
+      const p = path.join(dir, name);
+      const st = statSync(p);
+      if (st.isDirectory()) { walk(p); continue; }
+      if (!name.endsWith('.html')) continue;
+      const s = readFileSync(p, 'utf8');
+      // 只查链接属性；`<script type="application/json">` 里的数据不是链接，
+      // 但 index.html 出现在那儿同样是脏值，所以一并扫——反正目标是零。
+      for (const m of s.matchAll(/(?:href|data-path)="([^"]*index\.html[^"]*)"/g)) {
+        bad.push(`${path.relative(DIST, p)} → ${m[1]}`);
+      }
+    }
+  };
+  walk(DIST);
+  assert.deepEqual(bad, [], `这些链接仍指向 index.html（应改成目录形式）：\n${bad.slice(0, 20).join('\n')}`);
 });

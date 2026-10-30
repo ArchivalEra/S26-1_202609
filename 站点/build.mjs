@@ -1369,7 +1369,18 @@ for (const relPath of TARGET_FILES) {
     return `<span class="res-degrade-badge">📋 ${text} (模板不随站点发布)</span>`;
   });
 
-  // Step 4: Rewrite internal Markdown links (.md -> .html)
+  // Step 4: Rewrite internal Markdown links (.md → 站内网址)
+  //
+  // 2026-10-29「大一统最后一步」：**索引页一律写成目录形式，全站不再出现 index.html 链接**。
+  // 此前这里把 `.md` 一律换成 `.html`，于是正文里的 `../原始资料/index.md` 变成
+  // `../原始资料/index.html`——而侧栏与面包屑早已改用 `../原始资料/`（目录形式）。
+  // 同一页因此有了两个网址，且 markdown 那一份最后一段是 `index`，与层名对不上。
+  //
+  // 规则与 `htmlPathOf` 一致，但这里拿到的是**相对路径**（`../a/b.md`），
+  // 不是仓库相对路径，所以不能直接调它：
+  //   · 以 `index.md` 结尾 → 去掉 `index.md`，保留目录部分（含尾斜杠）
+  //   · 其余 `.md` → `.html`
+  // 锚点挂在目录上：`index.md#foo` → `#foo`。
   raw = raw.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, href) => {
     if (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('#') || href.startsWith('mailto:')) {
       return match;
@@ -1377,6 +1388,13 @@ for (const relPath of TARGET_FILES) {
     try {
       const decoded = decodeURIComponent(href);
       if (decoded.includes('.md')) {
+        const m = /^(.*?)index\.md(#.*)?$/.exec(decoded);
+        if (m) {
+          // `./index.md` → `./`、`../index.md` → `../`、`../a/index.md` → `../a/`。
+          // base 为空（裸 `index.md`）时补 `./`——否则会变成空串，浏览器把它当「本页」。
+          const base = m[1] || './';
+          return `[${text}](${encodeURI(base + (m[2] || ''))})`;
+        }
         const rewritten = decoded.replace(/\.md(#.*)?$/, '.html$1');
         return `[${text}](${encodeURI(rewritten)})`;
       }
