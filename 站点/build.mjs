@@ -27,6 +27,8 @@ import { SPA_ROUTER_JS } from './plugins/spa-router.mjs';
 // SW 根除（2026-10-23）：一次性反注册脚本——见下方写盘段注释
 import { SW_KILL_JS } from './plugins/sw-kill.mjs';
 import { DRAWER_SYNC_JS } from './plugins/drawer-sync.mjs';
+import { PACK_RUNTIME_JS } from './plugins/pack-runtime.mjs';
+import { ASSETS as PACK_ASSETS } from './plugins/capability-pack.mjs';
 import { buildNavModel, isActive, isExpanded, htmlPathOf, filePathOf, urlSegments, NAV_STRUCTURE_JS } from './plugins/nav-structure.mjs';
 import { WEBMCP_SHIM_JS } from './plugins/webmcp-shim.mjs';
 import { WEBMCP_TOOLS_JS } from './plugins/webmcp-tools.mjs';
@@ -374,6 +376,13 @@ fs.writeFileSync(path.join(webmcpDir, 'spa-router.js'), SPA_ROUTER_JS);
 // 由 nav-structure.mjs 的真函数派生（浏览器跑的就是测试跑的）。drawer-sync 依赖它。
 fs.writeFileSync(path.join(webmcpDir, 'nav-structure.js'), NAV_STRUCTURE_JS);
 fs.writeFileSync(path.join(webmcpDir, 'drawer-sync.js'), DRAWER_SYNC_JS);
+// 能力包运行时（2026-10-30）：装配层。纯逻辑在 plugins/capability-pack.mjs（node 可直接测）。
+fs.writeFileSync(path.join(webmcpDir, 'pack-runtime.js'), PACK_RUNTIME_JS);
+// 能力包的**纯逻辑**模块：浏览器端要 import 它（装配层 pack-runtime.js 用它）。
+// 它与 pack-runtime.js 是「逻辑 / 装配」两层——逻辑那份 node 里可直接测，
+// 所以它必须原样落地、不能被内联改写。
+const capabilitySrc = fs.readFileSync(path.join(SITE_DIR, 'plugins', 'capability-pack.mjs'), 'utf8');
+fs.writeFileSync(path.join(webmcpDir, 'capability-pack.mjs'), capabilitySrc);
 
 // SW 已根除（2026-10-23 用户定案：长任务要「永远新鲜的页面」，SW 的 SWR/预缓存
 // 与它正面冲突——页面先出旧缓存、后台静默更新、下次才生效，模型跳十几次页会拿到
@@ -1928,6 +1937,17 @@ for (const relPath of TARGET_FILES) {
         </div>
 
         <div class="top-bar-right">
+          <!-- 能力包入口（2026-10-30）：右上角 package 图样。
+               点开是**两个独立的下载按钮**（编辑器 / 计算内核）——不绑在一起，
+               因为两者成功率差一个数量级（824 KB vs 38 MB），绑了会白丢「能编辑但算不了」的中间态。
+               缺任一件就退回只读静态渲染，不做「半启用」。 -->
+          <button class="m3-icon-btn" id="pack-toggle" aria-label="能力包" title="下载编辑器与计算内核" aria-expanded="false">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+              <line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
+          </button>
           <button class="m3-icon-btn" id="palette-toggle" aria-label="调色盘" title="主题与调色盘" aria-expanded="false">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/>
@@ -2016,6 +2036,45 @@ for (const relPath of TARGET_FILES) {
               </div>
             </div>
           </div>
+
+          <!-- 能力包弹窗：两个**独立**下载按钮 + 各自的体积与状态 -->
+          <div class="palette-popover pack-popover" id="pack-popover" hidden>
+            <div class="palette-header">
+              <span class="palette-title">能力包</span>
+            </div>
+            <p class="pack-intro" id="pack-intro">下载后公式可以点击编辑、可以当场求值。缺任一件就保持现在的只读。</p>
+
+            <div class="pack-item" data-pack="editor">
+              <div class="pack-item-head">
+                <span class="pack-item-name">公式编辑器</span>
+                <span class="pack-item-size">824 KB</span>
+              </div>
+              <p class="pack-item-hint">公式可以点击、编辑、复制 LaTeX</p>
+              <div class="pack-item-actions">
+                <button class="pack-btn" data-pack-download="editor">下载</button>
+                <span class="pack-state" id="pack-state-editor">未下载</span>
+              </div>
+              <div class="pack-progress" id="pack-progress-editor" hidden><div class="pack-progress-bar"></div></div>
+            </div>
+
+            <div class="pack-item" data-pack="engine">
+              <div class="pack-item-head">
+                <span class="pack-item-name">计算内核</span>
+                <span class="pack-item-size">9.9 MB</span>
+              </div>
+              <p class="pack-item-hint">用 Octave 真算公式。体积较大，点「运行」时才加载到内存。</p>
+              <div class="pack-item-actions">
+                <button class="pack-btn" data-pack-download="engine">下载</button>
+                <span class="pack-state" id="pack-state-engine">未下载</span>
+              </div>
+              <div class="pack-progress" id="pack-progress-engine" hidden><div class="pack-progress-bar"></div></div>
+            </div>
+
+            <div class="pack-mode-row">
+              当前：<strong id="pack-mode-label">只读</strong>
+            </div>
+          </div>
+
 
           <button class="m3-icon-btn" id="search-toggle" aria-label="全站搜索" title="全站搜索">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
@@ -2130,6 +2189,37 @@ for (const relPath of TARGET_FILES) {
   <script src="${rootRel}${assetUrl('assets/plugins/drawer-sync.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/chat-panel.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/spa-router.js')}" defer></script>
+  <!-- 能力包（2026-10-30）：装配层 + 纯逻辑模块。
+       **页面加载时不做任何事**——不查状态、不加载 824 KB 编辑器、不碰 38 MB 内核。
+       只有用户点右上角 package 图标时，装配层才查一次状态；下载/运行各按各的时机。 -->
+  <script src="${rootRel}${assetUrl('assets/plugins/pack-runtime.js')}" defer></script>
+  <script type="module">
+    // 装配：把纯逻辑模块接进装配层。
+    // ⚠️ 这里是全站唯一的「能力包接线点」，改接口只改这一处。
+    (async () => {
+      try {
+        const rootRel = document.documentElement.getAttribute('data-root') || './';
+        const mod = await import(rootRel + 'assets/plugins/capability-pack.mjs');
+        const pack = mod.createCapabilityPack({ store: mod.createOpfsStore(), root: rootRel });
+        // 计算适配器：上游 OctaveEmbed 就位后才可用；先占位，运行时再补。
+        window.__packCompute = async (latex, Embed) => {
+          if (!Embed || typeof Embed.create !== 'function') {
+            return { ok: false, error: '计算内核未就绪' };
+          }
+          const embed = await Embed.create({
+            lane: { js: 'octave.js', wasm: 'octave.wasm', data: 'octave.data' },
+          });
+          const code = String(latex || '');
+          const r = await embed.eval(code);
+          return { ok: !!(r && r.ok), output: (r && r.output) || '' };
+        };
+        if (window.__initPackRuntime) window.__initPackRuntime(pack);
+      } catch (e) {
+        // 能力包不可用就当它不存在 —— 页面保持只读，这本来就是默认态。
+        console.warn('[pack] 装配失败，保持只读', e);
+      }
+    })();
+  </script>
   <!-- SW 已根除（2026-10-23）：只保留一次性清理，反注册老用户的旧 SW + 清 caches。
        localStorage 标记去重，清完一次后本脚本自动变 no-op。 -->
   <script src="${rootRel}${assetUrl('assets/plugins/sw-kill.js')}" defer></script>
