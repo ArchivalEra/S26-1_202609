@@ -93,17 +93,49 @@ export function parse(src, opts = {}) {
   };
 
   /** 吃一个定界符记号（`\left`/`\right` 后面那个）。 */
+  /**
+   * 吃一个定界符记号（`\left`/`\right` 后面那个）。
+   *
+   * ⚠️ 2026-10-30 真 bug（KaTeX 报 katex-error，电机学两页）：
+   * 原实现只返回 `glyph`（`}`、`{`、`|` 这些**字面**），编回 TeX 时直接拼成
+   * `\right}`——而 TeX 里裸 `}` 是非法的，必须写成 `\}`。
+   * `\left. \begin{array}{l}…\end{array} \right\}` 这种「右大括号收尾」的写法
+   * 在数学书里极常见（方程组、分段定义），所以这一步错会让整类公式全废。
+   *
+   * 修法：定界符同时给两个形态——
+   *   · `glyph`  给人读的字符（`}`）
+   *   · `tex`    可以原样拼进 TeX 字符串的形式（`\}`；普通字符就是它自己）
+   * 编回时用 `tex`，显示/判定时用 `glyph`。
+   */
   const takeDelimiter = () => {
     skipSpace();
     const t = peek();
-    if (!t) return { glyph: '', span: null };
-    if (t.kind === 'char') { pos += 1; return { glyph: t.value, span: [t.start, t.end] }; }
+    if (!t) return { glyph: '', tex: '', span: null };
+    if (t.kind === 'char') {
+      pos += 1;
+      // `{ } $ & # ^ _ % ~ \` 在 TeX 里必须转义；做定界符时同理。
+      const needsEscape = '{}%$#&_'.includes(t.value);
+      return {
+        glyph: t.value,
+        tex: needsEscape ? `\\${t.value}` : t.value,
+        span: [t.start, t.end],
+      };
+    }
     if (t.kind === 'cs' || t.kind === 'sym') {
       pos += 1;
       const g = t.value === '.' ? '' : t.value;
-      return { glyph: t.kind === 'sym' ? t.value : g, span: [t.start, t.end] };
+      // 三种来源要分清（2026-10-30）：
+      //   · `cs`（`\langle`）：值就是命令名 → 拼回要带反斜杠；
+      //   · `sym` + `escaped`（`\}` `\{` `\|`）：**转义的字面字符** → 也要带反斜杠；
+      //   · 裸 `sym`（`|` `(`）：字面字符 → 原样。
+      // `\.`（空定界符）保持 `.` 本身。
+      let tex;
+      if (t.value === '.') tex = '.';
+      else if (t.kind === 'cs' || t.escaped) tex = `\\${t.value}`;
+      else tex = t.value;
+      return { glyph: t.kind === 'sym' ? t.value : g, tex, span: [t.start, t.end] };
     }
-    return { glyph: '', span: null };
+    return { glyph: '', tex: '', span: null };
   };
 
   /**
@@ -433,7 +465,7 @@ export function parse(src, opts = {}) {
       pos += 1;
       const d = takeDelimiter();
       return node('fence', 'fence',
-        { tex: `\\${name}${d.glyph}`, glyph: d.glyph, side: name }, start, d.span?.[1] ?? t.end);
+        { tex: `\\${name}${d.tex}`, glyph: d.glyph, side: name }, start, d.span?.[1] ?? t.end);
     }
 
     if (name === 'sqrt') {

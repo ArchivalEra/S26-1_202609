@@ -133,7 +133,14 @@ export function tokenize(src) {
       }
       // 控制符号：反斜杠 + 单个非字母字符（`\\`、`\,`、`\{`）
       i += 1;
-      push('sym', next, start, i);
+      // ⚠️ 2026-10-30：必须记下「这是一个被转义的字符」。`\{` `\}` `\|` 在 TeX 里
+      // 是**转义的字面字符**，与裸 `{` `}` `|` 是两种东西：
+      //   · 裸 `}` 是分组结束；
+      //   · `\}` 是一个字面右大括号（做定界符时必须写成 `\right\}`）。
+      // 原来两者都成 `sym value="}"`，信息在词法层就丢了——于是
+      // `\left. … \right\}`（方程组/分段定义的标准写法）编回时变成 `\right}`，
+      // KaTeX 直接 parse error。
+      push('sym', next, start, i, { escaped: true });
       continue;
     }
 
