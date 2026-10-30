@@ -362,6 +362,10 @@
 # 重新生成子集的命令见 站点/assets/mathlive/mathlive-static.css 头部注释。
 !/站点/assets/mathlive/mathlive-ssr.min.mjs
 !/站点/assets/mathlive/mathlive-static.css
+# 浏览器版（2026-10-30 能力包）：可编辑公式用。<math-field> 自定义元素 + 完整编辑能力，
+# 约 824 KB，**只在用户点「下载编辑器」后才拉**，首屏不用它。
+!/站点/assets/mathlive/mathlive-browser.min.js
+!/站点/assets/mathlive/LICENSE-browser.txt
 !/站点/assets/mathlive/LICENSE.txt
 !/站点/图库/电子技术.figures.txt
 # 折叠面板深链接的客户端增强（独立可拆卸模块，同上：漏白名单 CI 必挂）
@@ -376,6 +380,9 @@
 !/站点/plugins/site-search.mjs
 !/站点/plugins/spa-router.mjs
 !/站点/plugins/drawer-sync.mjs
+!/站点/plugins/capability-pack.mjs
+!/站点/plugins/capability-pack.test.mjs
+!/站点/plugins/pack-runtime.mjs
 !/站点/plugins/spa-router.test.mjs
 !/站点/plugins/table-responsive.test.mjs
 # SW 已根除（2026-10-23）：sw-template.js 退役，换成一次性清老用户的 sw-kill.mjs

@@ -921,6 +921,7 @@ BUTTON_HINTS = {
     'palette-toggle': ('调色盘', '强调色'),
     'search-toggle': ('搜索',),
     'theme-toggle': ('昼夜', '深浅', '深色'),
+    'pack-toggle': ('能力包', '公式编辑', '计算内核'),
 }
 
 
