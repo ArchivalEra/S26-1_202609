@@ -3,12 +3,12 @@ id: okf.course.situation_policy.homework.index
 name: 作业
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-29"
+last_updated: "2026-10-30"
 stewards:
   - team: 形势与政策课程学习记录
 course: 形势与政策
 category: 作业
-sources: []
+sources:
 ---
 
 # 作业

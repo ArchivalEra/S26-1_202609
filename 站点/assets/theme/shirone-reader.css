@@ -928,26 +928,9 @@ body.sidebar-resizing .m3-drawer {
   word-wrap: break-word;
 }
 
-/* Breadcrumbs */
-.m3-breadcrumb {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.85rem;
-  color: var(--md-sys-color-outline);
-  margin-bottom: 1.25rem;
-}
-
-.m3-breadcrumb a {
-  color: var(--md-sys-color-primary);
-  text-decoration: none;
-}
-
-.m3-breadcrumb a:hover {
-  text-decoration: underline;
-}
-
+/* Breadcrumbs —— 正文那条 `.m3-breadcrumb` 已删（2026-10-30 站长定案：顶栏
+   `.top-bar-breadcrumbs` 已表达同一条路径，正文再写一遍只是噪声）。
+   这里只留分隔符，顶栏共用同一个类。 */
 .m3-breadcrumb-sep {
   opacity: 0.5;
 }

@@ -1674,15 +1674,11 @@ for (const relPath of TARGET_FILES) {
     //
     // `data-path` 与 `href` 同形（都是网址形态）：site-root 与 SPA 用它拼 URL，
     // 二者若形态不同，线上就会分叉成两个网址。
-    // 「首页」只在真正看首页时出现：站长定案「点大标题就能回首页」，
-    // 所以面包屑首项不必一直挂一个「首页」——但保留它会多一层噪声。
-    // 折中：首页自己不加（否则显示「首页 / 首页」），其余页加。
-    if (relPath !== 'README.md') {
-      // 首页就是站点根 `/`（README 即根）。data-path 给空串没有意义
-      // （模板按 `b.dataPath ?` 判，空串等于不给，链接会落到 site-root 的
-      // 无 data-path 分支去反推，白绕一圈）——所以这里**显式**给 `./`。
-      breadcrumbs.push({ label: '首页', href: `${rootRel}` });
-    }
+    // ⚠️ **不挂「首页」crumb**（2026-10-30 站长定案，此前 10-29 只做了一半）：
+    // `/` 就是「S26-1 课程知识库」那一页本身，面包屑再写一格「首页」是把同一件事
+    // 说两遍、还多一条与网址末段不逐字相同的链接（`首页` vs ``）。
+    // 回首页由侧栏品牌区块与大标题承担。于是面包屑首项恒为 `课程总览`，
+    // 与网址逐段对齐：面包屑有几格 = 网址有几层目录。
     // 从 `课程总览/` 开始逐段：`课程` → `课程总览/<课>` → `课程总览/<课>/<分类>` …
     // i 从 0 起：第 0 段就是 `课程`，对应「课程总览」那一层。
     const segs = relPath.replace(/\.md$/, '').split('/');
@@ -2161,11 +2157,9 @@ for (const relPath of TARGET_FILES) {
         <!-- Content Area -->
         <main class="content-wrapper">
           <article class="article-container">
-            <!-- Breadcrumb in page body -->
-            <nav class="m3-breadcrumb">
-              ${breadcrumbs.map((b, i) => (i === breadcrumbs.length - 1 || b.href === '#') ? `<span>${b.label}</span>${i === breadcrumbs.length - 1 ? '' : '<span class="m3-breadcrumb-sep">/</span>'}` : `<a href="${b.href}"${b.dataPath ? ` data-path="${b.dataPath}"` : ''}>${b.label}</a><span class="m3-breadcrumb-sep">/</span>`).join('')}
-            </nav>
-
+            ${/* 正文面包屑已删（2026-10-30 站长定案）：顶栏 .top-bar-breadcrumbs 已经
+                 表达同一条路径，读者在同一屏看到两遍完全相同的层级没有任何信息增益，
+                 只有噪声。全站**只有顶栏**一条面包屑。 */ ''}
             ${metaChipsHtml ? `<div class="meta-chip-bar">${metaChipsHtml}</div>` : ''}
 
             <div class="article-content">

@@ -3,13 +3,13 @@ id: okf.course.labor_education.originals.index
 name: 劳动教育原始资料索引
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-29"
+last_updated: "2026-10-30"
 stewards:
   - team: 劳动教育课程学习记录
 course: 劳动教育
 category: 原始资料
 sources:
-  - 20261026_15001627-原文.txt
+  - 课堂转写 10-26
 ---
 
 # 原始资料
