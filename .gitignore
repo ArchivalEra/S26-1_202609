@@ -367,6 +367,32 @@
 !/站点/assets/mathlive/mathlive-browser.min.js
 !/站点/assets/mathlive/LICENSE-browser.txt
 !/站点/assets/mathlive/LICENSE.txt
+# KaTeX（2026-10-30 展示引擎换回来）：ESM 构建版给 build、min.css、20 个 woff2、LICENSE。
+# 与 mathlive 的资产并存：**展示用 katex**（拉伸括号无接缝），**编辑用 mathlive**（<math-field>）。
+!/站点/assets/katex/katex.mjs
+!/站点/assets/katex/katex.min.js
+!/站点/assets/katex/katex.min.css
+!/站点/assets/katex/LICENSE
+!/站点/assets/katex/fonts/KaTeX_AMS-Regular.woff2
+!/站点/assets/katex/fonts/KaTeX_Caligraphic-Bold.woff2
+!/站点/assets/katex/fonts/KaTeX_Caligraphic-Regular.woff2
+!/站点/assets/katex/fonts/KaTeX_Fraktur-Bold.woff2
+!/站点/assets/katex/fonts/KaTeX_Fraktur-Regular.woff2
+!/站点/assets/katex/fonts/KaTeX_Main-Bold.woff2
+!/站点/assets/katex/fonts/KaTeX_Main-BoldItalic.woff2
+!/站点/assets/katex/fonts/KaTeX_Main-Italic.woff2
+!/站点/assets/katex/fonts/KaTeX_Main-Regular.woff2
+!/站点/assets/katex/fonts/KaTeX_Math-BoldItalic.woff2
+!/站点/assets/katex/fonts/KaTeX_Math-Italic.woff2
+!/站点/assets/katex/fonts/KaTeX_SansSerif-Bold.woff2
+!/站点/assets/katex/fonts/KaTeX_SansSerif-Italic.woff2
+!/站点/assets/katex/fonts/KaTeX_SansSerif-Regular.woff2
+!/站点/assets/katex/fonts/KaTeX_Script-Regular.woff2
+!/站点/assets/katex/fonts/KaTeX_Size1-Regular.woff2
+!/站点/assets/katex/fonts/KaTeX_Size2-Regular.woff2
+!/站点/assets/katex/fonts/KaTeX_Size3-Regular.woff2
+!/站点/assets/katex/fonts/KaTeX_Size4-Regular.woff2
+!/站点/assets/katex/fonts/KaTeX_Typewriter-Regular.woff2
 !/站点/图库/电子技术.figures.txt
 # 折叠面板深链接的客户端增强（独立可拆卸模块，同上：漏白名单 CI 必挂）
 !/站点/plugins/disclosure-anchor.mjs
@@ -382,6 +408,7 @@
 !/站点/plugins/drawer-sync.mjs
 !/站点/plugins/capability-pack.mjs
 !/站点/plugins/capability-pack.test.mjs
+!/站点/plugins/anchors-markup.test.mjs
 !/站点/plugins/pack-runtime.mjs
 !/站点/plugins/spa-router.test.mjs
 !/站点/plugins/table-responsive.test.mjs

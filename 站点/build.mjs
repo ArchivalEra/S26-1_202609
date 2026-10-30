@@ -10,8 +10,14 @@ import { marked, yaml } from './vendor.mjs';
 import { parse as parseMath } from './math/parser.mjs';
 import { compile as compileMath, render as renderMathDoc, probeRenderer } from './math/index.mjs';
 import { compileDictionary } from './math/terms.mjs';
-import { createMathliveRenderer, decorateAnchors, DIALECTS } from './math/render.mjs';
-import * as mathliveSsr from './assets/mathlive/mathlive-ssr.min.mjs';
+import { createKatexRenderer, decorateAnchors, DIALECTS } from './math/render.mjs';
+// 展示引擎 = KaTeX（2026-10-30 站长定案）。理由：MathLive 的拉伸括号由 `⎛⎜⎝/⎞⎟⎠`
+// 小片拼成，接缝处有亚像素缝；KaTeX 用字形伸展机制没这个毛病。
+// 解析器与 IR 是我们自己的，这里只换最末端 adapter。
+// 用 **ESM 版**（`katex.mjs`）而不是 `katex.min.js`：后者是 UMD，
+// 在 Node 的 ESM 里 `this` 是 undefined，UMD 头会抛
+// `Cannot set properties of undefined (setting 'katex')`（实测踩到）。
+import katex from './assets/katex/katex.mjs';
 import { renderCollapse } from './plugins/collapse.mjs';
 import { parseFigureLib, renderFigures, restoreFigures, buildFigureIndex, FIGURES_CSS, FIGURES_JS } from './plugins/figures.mjs';
 import { DISCLOSURE_ANCHOR_JS } from './plugins/disclosure-anchor.mjs';
@@ -294,13 +300,13 @@ for (const p of dictProblems) {
 
 // 渲染器 + 启动期自检：契约不成立就别开工。
 // 这替代了旧实现「每条公式嗅产物里有没有 katex-error」——检查一次协议，不是嗅一万次。
-const mathRenderer = createMathliveRenderer(mathliveSsr);
+const mathRenderer = createKatexRenderer(katex);
 const probeProblems = probeRenderer(mathRenderer);
 if (probeProblems.some((p) => p.severity === 'error')) {
   throw new Error(`[数学] 渲染器自检失败：${probeProblems[0].message}`);
 }
-console.log(`[数学] 引擎 ${mathRenderer.id}；词典 ${Object.keys(mathDictionary.packs).length} 包；` +
-  `方言已知差异 ${DIALECTS.mathlive.unsupported.length} 项`);
+console.log(`[数学] 展示引擎 ${mathRenderer.id}；词典 ${Object.keys(mathDictionary.packs).length} 包；` +
+  `方言已知差异 ${DIALECTS[mathRenderer.id].unsupported.length} 项`);
 
 // 全站搜索：构建期生成倒排索引，浏览器端零依赖。实现与设计理由见
 // 站点/plugins/site-search.mjs（那里也记录了为什么弃用 Pagefind：它按单字索引中文，
@@ -862,13 +868,31 @@ const tableModeOf = (token) => {
   return avg > 6 ? 't-cards' : 't-matrix';
 };
 
+/** 属性值转义（模块级；表格 renderer 在页面循环之外，拿不到循环里的 attrEsc）。 */
+const escAttr = (v) => String(v == null ? '' : v)
+  .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
 renderer.table = function (token) {
   const mode = token.__tableMode || tableModeOf(token);
   // data-label：cards 需要表头文本进每个 td（attr() 只能读自身属性——外审确认）
-  const headerText = token.header.map((h) => h.text.replace(/\s+/g, ' ').trim());
+  // ⚠️ 2026-10-30 真 bug（站长截图：表格里冒出字面 `">`、整行被拆成竖排）：
+  // `data-label` 的值是**表头文本**，而表头里可能有公式——公式在构建期已渲染成
+  // 一长串含双引号的 HTML（`<span class="ML__latex" role="math" aria-label="…">`）。
+  // 原实现直接拼进属性：`data-label="${headerText[i]}"`，于是第一个 `"` 就把属性闭死，
+  // 剩下的 HTML 全成了 td 里的游离文本 —— 页面上看到的就是 `">` 残片与错位的表格行。
+  //
+  // 修法：`data-label` 应当是**纯文本**（它只用于 CSS `attr()` 显示表头），
+  // 所以要 ①剥掉标签 ②解实体 ③再转义成属性安全的形式。
+  const attrText = (t) => String(t || '')
+    .replace(/<[^>]*>/g, '')                    // 剥标签
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const headerText = token.header.map((h) => attrText(h.text));
   let body = '';
   for (const row of token.rows) {
-    body += '<tr>' + row.map((c, i) => `<td data-label="${headerText[i] ?? ''}">${this.parser.parseInline(c.tokens)}</td>`).join('') + '</tr>\n';
+    body += '<tr>' + row.map((c, i) => `<td data-label="${escAttr(headerText[i] ?? '')}">${this.parser.parseInline(c.tokens)}</td>`).join('') + '</tr>\n';
   }
   const thead = '<thead><tr>' + token.header.map((h, i) => {
     const al = token.align[i] ? ` align="${token.align[i]}"` : '';
@@ -1492,8 +1516,28 @@ for (const relPath of TARGET_FILES) {
     return `<div class="katex-scroll-container">${math.html}</div>`;
   });
 
-  htmlContent = htmlContent.replace(/@@MATH_INLINE_(\d+)@@/g, (_, id) => {
+  // ⚠️ 2026-10-30 真 bug（站长截图：表格里冒字面 `">`、整行被拆成竖排）：
+  // 表头里若含行内公式，构建期它先变占位符 `@@MATH_INLINE_N@@`、再被写进
+  // `data-label="…"` 属性。而这一步的替换**无条件塞完整 HTML**——
+  // 那串 HTML 自带 `class="ML__latex"` 之类的双引号，一进属性就把属性闭死，
+  // 余下的标签全成了单元格里的游离文本（页面上就是 `">` 残片 + 错位的行）。
+  //
+  // 判据：占位符若出现在**属性值里**（前面最近的引号是属性开引号），
+  // 就只能换成纯文本投影，绝不能换 HTML。
+  const inAttribute = (full, pos) => {
+    // 从 pos 往回找最近的 `<tag`，看它到 pos 之间是否有一个未闭合的 `"`
+    const since = full.lastIndexOf('<', pos);
+    if (since < 0) return false;
+    const seg = full.slice(since, pos);
+    const q = (seg.match(/"/g) || []).length;
+    return q % 2 === 1;          // 落在某个属性值内部
+  };
+  htmlContent = htmlContent.replace(/@@MATH_INLINE_(\d+)@@/g, (whole, id, offset) => {
     const math = mathBlocks[parseInt(id)];
+    if (inAttribute(htmlContent, offset)) {
+      // 纯文本投影（`data-math-plain` 就是它），再转义成属性安全形式
+      return escAttr(math.plain || '').replace(/"/g, '&quot;');
+    }
     return math.html;
   });
 
@@ -1870,12 +1914,12 @@ for (const relPath of TARGET_FILES) {
     } catch (e) { /* 隐私模式下 localStorage 可能抛错，忽略 */ }
   })();
   </script>
-  <!-- 数学排版样式（2026-10-29 换引擎）：MathLive 静态样式。
-       它复用同一批 woff2 字体（assets/mathlive/fonts/），字体文件不用另备。
-       ⚠️ 必须走 assetUrl（同其余四张样式表）：此前它是唯一裸引用的 CSS，没有内容哈希戳，
-       于是**改了它浏览器永远读旧缓存**——补丁明明写进 dist、页面就是不生效，
-       排查时会误判成「CSS 规则不对」。（2026-10-29 实测踩到。） -->
-  <link rel="stylesheet" href="${rootRel}${assetUrl('assets/mathlive/mathlive-static.css')}">
+  <!-- 数学排版样式（2026-10-30 展示引擎换回 KaTeX）。
+       为什么换回来：MathLive 的拉伸括号由「⎛⎜⎝ / ⎞⎟⎠」小片拼成，接缝处有亚像素缝；
+       KaTeX 用字形伸展机制，没有这个毛病（站长定案）。
+       KaTeX 的 CSS 自带 @font-face 指向 ./fonts/，那份字体也在 assets/katex/fonts/。
+       ⚠️ 必须走 assetUrl（带内容哈希戳）：否则改了它浏览器永远读旧缓存。 -->
+  <link rel="stylesheet" href="${rootRel}${assetUrl('assets/katex/katex.min.css')}">
   <link rel="stylesheet" href="${rootRel}${assetUrl('assets/theme/shirone-reader.css')}">
   <link rel="stylesheet" href="${rootRel}${assetUrl('assets/plugins/site-search.css')}">
   <link rel="stylesheet" href="${rootRel}${assetUrl('assets/plugins/chat-panel.css')}">

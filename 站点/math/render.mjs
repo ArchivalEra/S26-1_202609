@@ -23,7 +23,8 @@
  * `braceBareArgs` 补花括号——两个补丁都在防同一类事故。这里没有这个位置。
  */
 export function irToTex(node, opts = {}) {
-  const { decorate = true } = opts;
+  const { decorate = true, dialect = 'katex' } = opts;
+  const dialectName = dialect;
   if (!node) return '';
 
   const wrap = (inner) => {
@@ -57,7 +58,25 @@ export function irToTex(node, opts = {}) {
     case 'frac':
       return wrap(`\\${fracCommand(node.fractionStyle)}{${irToTex(node.num, opts)}}{${irToTex(node.den, opts)}}`);
     case 'group': {
-      const inner = (node.items || []).map((i) => irToTex(i, opts)).join(' ');
+      // ⚠️ 2026-10-30 真 bug（KaTeX 报 9 处 katex-error）：原先一律 `.join(' ')`，
+      // 于是 `T''_{d3}` 的两个撇号被编成 `T ' '_{{d3}}` ——
+      // MathLive 容忍，**KaTeX 直接 parse error**（`' '` 不是合法序列）。
+      //
+      // 撇号是**后缀运算符**，必须紧贴前一项：`T''` 要编成 `T''`，不是 `T ' '`。
+      // 这里逐项拼接：遇到 tex 为撇号（单/双/三）的项就不加分隔空格。
+      const items = node.items || [];
+      let inner = '';
+      for (let k = 0; k < items.length; k += 1) {
+        const piece = irToTex(items[k], opts);
+        if (k > 0) {
+          const prevTex = String(items[k - 1].tex || '').trim();
+          const curTex = String(items[k].tex || '').trim();
+          // 上一项是撇号链、或当前项是撇号 ⇒ 都不插空格
+          const isPrime = (t) => t === "'" || t === '′' || /^'+$/.test(t);
+          if (!isPrime(prevTex) && !isPrime(curTex)) inner += ' ';
+        }
+        inner += piece;
+      }
       if (node.fence) return wrap(`${node.fence.open}${inner}${node.fence.close}`);
       return wrap(`{${inner}}`);
     }
@@ -103,9 +122,17 @@ export function irToTex(node, opts = {}) {
       return ' \\\\ ';
     case 'phantom':
       return `\\phantom{${irToTex(node.body, opts)}}`;
-    case 'label':
-      // 公式编号外置为块级标签，不进排版流（网页上没有 equation 计数器）
+    case 'label': {
+      // ⚠️ 2026-10-30 改：原来一律返回 ''（「网页上没有 equation 计数器」），
+      // 于是 `\tag{1-31}` 被静默丢掉——而**丢掉比留着更糟**：
+      // 读者看不到这些编号，正文里「由式（1-31）」就再也对不上。
+      // KaTeX 原生支持 `\tag{}`（需 displayMode），所以按结点类型分派：
+      //   · katex   → 编回 `\tag{…}`（编号显示在公式右侧）
+      //   · 其他引擎 → 仍丢弃（MathLive 不支持）
+      const body = (node.text || []).map((n) => irToTex(n, opts)).join(' ');
+      if (dialectName === 'katex') return `\\tag{${body}}`;
       return '';
+    }
     case 'raw':
       return node.tex;
     default:
@@ -292,6 +319,113 @@ export function createMathliveRenderer(mathlive) {
   };
 }
 
+/**
+ * KaTeX 渲染 adapter（2026-10-30 站长定案：展示用 KaTeX，编辑用 MathLive）。
+ *
+ * ## 为什么换回来
+ *
+ * MathLive 的**拉伸括号是拼出来的**：`\left( \right)` 被拆成
+ * `⎛⎜⎝` / `⎞⎟⎠` 若干小片纵向拼接。相邻两片之间必然留亚像素缝——
+ * 这是它实现方式决定的，不是参数没调好、也不是 CSS 能修的。
+ * 表现就是看大括号/矩阵/分式时那圈「虚线感」。KaTeX 用字形的伸展机制，没有这个缝。
+ *
+ * ## 为什么这次换不欠债
+ *
+ * 上一轮把引擎换掉、又换回来，看起来像打脸——但结构变了：
+ * 解析器与 IR 是**我们自己的**（`lexer`/`parser`/`ir`/`terms` 不动），
+ * 渲染器只是最末端的 adapter（`{id, caps, render, probe}` 三件套）。
+ * 换引擎 = 换一个 adapter 实现 + 一张方言表，其余零改动。
+ * 这正是当初说「契约是 `<span data-term>`，换任何能满足它的引擎都不用改」的兑现。
+ *
+ * ## 标注怎么带过去
+ *
+ * IR 的 `term` 字段由 `irToTex({decorate:true})` 编成 `\htmlData{term=pack:entry}{…}`。
+ * KaTeX 认这个宏（需要 `trust` 放行 `\htmlData` + `strict:false`），
+ * 产出的正是 `<span data-term="…">`——与 MathLive 同一种 substrate，
+ * 所以下游的 `decorateAnchors` **一行都不用改**。
+ *
+ * @param {{renderToString: Function, version?: string}} katex
+ * @returns {Renderer}
+ */
+export function createKatexRenderer(katex) {
+  const OPTS = {
+    throwOnError: false,
+    errorColor: 'inherit',
+    output: 'html',
+    // `strict:false` 是 `\htmlData` 的前提（否则 KaTeX 把 HTML 扩展判为不合规）。
+    // 我们自己控制输入（IR 产物），不接用户任意 TeX，所以这里没有注入风险。
+    strict: false,
+    trust: (ctx) => ['\\htmlData', '\\htmlClass', '\\htmlId', '\\htmlStyle'].includes(ctx.command),
+  };
+
+  return {
+    id: 'katex',
+    caps: { markSubstrate: true, producesMathml: true, producesAnnotation: true },
+
+    render(expr) {
+      const problems = [];
+      const raw = irToTex(expr.root, { decorate: true, dialect: 'katex' });
+      // KaTeX 是「全支持」方言：`toDialect` 对 katex 原样返回，方言表里 unsupported 为空。
+      const { tex, rewrites } = toDialect(raw, 'katex');
+
+      // ⚠️ displayMode 必须跟着公式的 mode 走（2026-10-30 实测）：
+      // `\tag{1-31}` 这类编号宏**只在 displayMode 下可用**，inline 模式直接 parse error
+      // （电机学 1.2 / 1.3 两页就栽在这——9 处 katex-error 里有 2 处是它）。
+      const opts = expr.mode === 'display' ? { ...OPTS, displayMode: true } : OPTS;
+
+      let html = '';
+      try {
+        html = katex.renderToString(tex, opts);
+      } catch (e) {
+        problems.push({
+          code: 'render-failed',
+          severity: 'error',
+          where: { source: expr.source },
+          message: `KaTeX 渲染失败：${e.message}`,
+          hint: tex.slice(0, 120),
+        });
+        return { html: fallbackHtml(expr), tex, problems, rewrites };
+      }
+
+      // 结构判据：KaTeX 的 `throwOnError:false` 会在产物里塞 `.katex-error`，
+      // 那是「这条公式它排不了」的明确标记——不嗅探别的字符串。
+      if (/katex-error/.test(html)) {
+        problems.push({
+          code: 'render-error-markup',
+          severity: 'error',
+          where: { source: expr.source },
+          message: '产物里出现 katex-error（这条公式排不了）',
+          hint: tex.slice(0, 120),
+        });
+        return { html: fallbackHtml(expr), tex, problems, rewrites };
+      }
+
+      // 把 IR 的纯文本投影烘进 aria-label / data-math-plain（与 MathLive 版同一套约定）：
+      // 读屏念人话、AI 与搜索索引拿同一份文本，都不必从产物里剥 LaTeX。
+      const plain = expr.plainHint || '';
+      if (plain) {
+        html = html.replace(/^<span class="katex"/,
+          `<span class="katex" role="math" aria-label="${escapeAttr(plain)}" data-math-plain="${escapeAttr(plain)}"`);
+      }
+      return { html, tex, problems, rewrites };
+    },
+
+    probe() {
+      const problems = [];
+      const out = katex.renderToString('B=\\htmlData{term=sym-B}{B}', OPTS);
+      if (!out.includes('data-term')) {
+        problems.push({
+          code: 'adapter-contract',
+          severity: 'error',
+          where: {},
+          message: '渲染器不认 \\htmlData{term=…}——标注会静默消失，适配器契约不成立',
+        });
+      }
+      return problems;
+    },
+  };
+}
+
 /** 渲染失败时的降级：显示原文而不是空白。 */
 function fallbackHtml(expr) {
   return `<span class="math-fallback" data-tex="${escapeAttr(expr.source)}">${escapeHtml(expr.source)}</span>`;
@@ -317,17 +451,55 @@ const escapeAttr = (s) => escapeHtml(s).replace(/"/g, '&quot;');
 export function decorateAnchors(html, opts) {
   const missing = [];
   let decorated = 0;
-  // `data-term="pack:entry"`——属性值里不会有 `<` `>`，可以安全用正则。
-  // 不用完整 HTML parser：契约规定 substrate 只有这一种形态（adapter 保证）。
-  const out = html.replace(
-    /<span data-term="([^"]*)">([\s\S]*?)<\/span>/g,
-    (whole, key, inner) => {
-      const hit = opts.resolve(key);
-      if (!hit) { missing.push(key); return whole; }
-      decorated += 1;
-      const label = escapeAttr(hit.label || key);
-      return `<a class="sym-gloss" data-term="${escapeAttr(key)}" href="${escapeAttr(hit.href)}" aria-label="${label}">${inner}</a>`;
-    },
-  );
-  return { html: out, decorated, missing };
+
+  // ⚠️ 2026-10-30 真 bug（站长报「没几个公式是对的」，实测一条分式只剩 `η(β`）：
+  // 原实现用非贪婪正则 `/<span data-term="…">([\s\S]*?)<\/span>/`。
+  // 它的隐含假设是「被包的 span 里没有嵌套 span」——**这个假设是错的**：
+  // MathLive 的 `<span data-term>` 里恰恰嵌着 `<span class="ML__mathit">η</span>`，
+  // 于是非贪婪匹配到**内层那个** `</span>` 就收工，产出 `…η</a></span>` 这种畸形：
+  // 外层 span 的闭合被吃掉、`</a>` 出现在 span 内部。
+  // 浏览器的错误恢复策略会在这里把整个公式截断——DOM 里只剩前几个字符，
+  // 后面的分式、下标**根本没被解析**。所以问题不是「字体小」，是**结构坏了**。
+  //
+  // 修法：不用非贪婪正则，改成**标签配对扫描**——从 `<span data-term` 起数嵌套深度，
+  // 深度回到 0 的那个 `</span>` 才是它自己的收尾。
+  const out = [];
+  // ⚠️ 2026-10-30：KaTeX 产的形状是 `<span class="enclosing" data-term="…">`——
+  // `data-term` 不在属性首位。原正则写死 `<span data-term="` 只认 MathLive 的形状，
+  // 换 KaTeX 后一个锚点都包不上（实测 9 处 data-term 全成了裸 span，气泡点了不弹）。
+  // 放宽成「`<span` 后面任意属性、其中含 data-term」。
+  const openRe = /<span\b[^>]*?\bdata-term="([^"]*)"[^>]*>/g;
+  let last = 0;
+  let m;
+  while ((m = openRe.exec(html)) !== null) {
+    const start = m.index;
+    const key = m[1];
+    // 从开标签之后数深度（开标签本身已算一层）
+    let depth = 1;
+    let i = openRe.lastIndex;
+    while (i < html.length && depth > 0) {
+      const nextOpen = html.indexOf('<span', i);
+      const nextClose = html.indexOf('</span>', i);
+      if (nextClose < 0) break;                       // 结构不完整，放弃这一处
+      if (nextOpen >= 0 && nextOpen < nextClose) { depth++; i = nextOpen + 5; }
+      else { depth--; if (depth === 0) { i = nextClose + 7; break; } i = nextClose + 7; }
+    }
+    if (depth !== 0) continue;                        // 没配平 ⇒ 不碰它（宁可不动，不要弄坏）
+    const end = i;                                    // 指向闭合 `</span>` 之后
+    const inner = html.slice(openRe.lastIndex, i - 7);
+    const hit = opts.resolve(key);
+    if (!hit) {
+      missing.push(key);
+      openRe.lastIndex = end;
+      continue;
+    }
+    decorated += 1;
+    const label = escapeAttr(hit.label || key);
+    out.push(html.slice(last, start));
+    out.push(`<a class="sym-gloss" data-term="${escapeAttr(key)}" href="${escapeAttr(hit.href)}" aria-label="${label}">${inner}</a>`);
+    last = end;
+    openRe.lastIndex = end;
+  }
+  out.push(html.slice(last));
+  return { html: out.join(''), decorated, missing };
 }
