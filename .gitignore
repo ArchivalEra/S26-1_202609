@@ -358,7 +358,7 @@
 !/站点/plugins/prose-terms.test.mjs
 # MathLive（vendored，MIT）：SSR 版（构建期用）+ 静态样式。
 # 字体在 assets/fonts/（逐文件白名单）。2026-10-29 彻底取缔 KaTeX 遗产：
-# 20 个 KaTeX_*.woff2 全删，只留 Latin Modern Math 子集（46 KB，一个请求）。
+# 20 个 KaTeX_*.woff2 全删，只留 STIX Two Math 子集（48 KB，一个请求）。
 # 重新生成子集的命令见 站点/assets/mathlive/mathlive-static.css 头部注释。
 !/站点/assets/mathlive/mathlive-ssr.min.mjs
 !/站点/assets/mathlive/mathlive-static.css
@@ -602,4 +602,4 @@
 !/课程总览/工程数学/课堂笔记/10-22-矩阵的秩与向量.md
 !/课程总览/电力大数据与人工智能/课堂笔记/10-20-聚类与神经网络.md
 !/课程总览/电力大数据与人工智能/课堂笔记/10-27-密度初筛与调频.md
-!/站点/assets/fonts/latinmodern-math-subset.woff2
+!/站点/assets/fonts/stix2math-subset.woff2
