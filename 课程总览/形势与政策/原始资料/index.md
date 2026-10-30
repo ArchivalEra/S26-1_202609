@@ -3,7 +3,7 @@ id: okf.course.situation_policy.originals.index
 name: 原始资料
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-29"
+last_updated: "2026-10-30"
 stewards:
   - team: 形势与政策课程学习记录
 course: 形势与政策
@@ -37,7 +37,6 @@ sources:
   - `20260921_10351115-原文.doc`：`4e58b6f2f2e8d3101d27ddd2a7086b8338497ecb244a7562dcdb4b4735afa324`
 - 第二段 `32:07` 之后是课后与食堂的私人闲聊（含他人姓名、日常对话），**不进笔记**；第一段的课间点名段同理，笔记只记录「教师核查了出勤」这一事实。
 - 转写含同音错误、口误与师生个人信息。学生姓名与学号不在笔记中复录；缺失的课件与板书不猜补。
-- 音频下载链接尚未提供，见[音频索引](../音频/index.md)。
 
 ## 二、课件与照片
 
