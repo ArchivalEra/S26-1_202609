@@ -3,12 +3,12 @@ id: okf.course.situation_policy.notes.index
 name: 课堂笔记
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-29"
+last_updated: "2026-10-30"
 stewards:
   - team: 形势与政策课程学习记录
 course: 形势与政策
 category: 课堂笔记
-sources: []
+sources:
 ---
 
 # 课堂笔记
@@ -33,3 +33,7 @@ sources: []
 的二级标题——侧栏目录里也看得见，纯文本查看器里也是明摆着的一行。
 
 课堂笔记按 `YYYY-MM-DD-名称.md` 命名，一天多次课使用不同名称。转写与照片放在[原始资料](../原始资料/index.md)登记，笔记正文保持整理后的形态。
+
+- **来源收进气泡、完成边界压缩**（2026-10-30 全站定案）：页面顶部的 sources 芯片承载出处
+  （≤30 字，明细在 `原始资料/index.md`），正文不再有「来源与边界」一节；
+  完成边界 压到 ≤150 字，只写已解析／已验证／已知限制各一句，缺什么进 issue。

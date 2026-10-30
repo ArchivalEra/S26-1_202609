@@ -146,7 +146,7 @@ function rewriteLinks(root) {
   //    :not([data-path]) 把它们排除，本分支只管无 data-path 的站内导航
   //    （品牌/移动标题/将来漏埋 data-path 的旧式链接）。:not([attr]) 属性选择器
   //    形态现代浏览器均支持，无兼容顾虑。
-  var navs = document.querySelectorAll('.sidebar-brand, .top-bar-mobile-title, .m3-breadcrumb a:not([data-path]), .paging-card:not([data-path])');
+  var navs = document.querySelectorAll('.sidebar-brand, .top-bar-mobile-title, .top-bar-breadcrumbs a:not([data-path]), .paging-card:not([data-path])');
   var actual = siteRoot();
   for (var j = 0; j < navs.length; j++) {
     var a = navs[j];

@@ -7,7 +7,7 @@ last_updated: "2026-10-30"
 stewards:
   - team: 学期课程学习记录
 category: 课程索引
-sources: []
+sources:
 ---
 
 # 课程总览

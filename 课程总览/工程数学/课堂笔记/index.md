@@ -3,12 +3,12 @@ id: okf.course.engineering_math.notes.index
 name: 课堂笔记
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-29"
+last_updated: "2026-10-30"
 stewards:
   - team: 工程数学课程学习记录
 course: 工程数学
 category: 课堂笔记
-sources: []
+sources:
 ---
 
 # 课堂笔记
@@ -30,3 +30,7 @@ sources: []
 
 2026-10-22 那篇同理是**同一节课的两段转写合并**：13:30 起一段把第二章（矩阵的秩）收尾，
 14:55 起一段是课间之后开第三章。两段内容连续，中间约 1.5 小时为课间，未拆篇。
+
+- **来源收进气泡、完成边界压缩**（2026-10-30 全站定案）：页面顶部的 sources 芯片承载出处
+  （≤30 字，明细在 `原始资料/index.md`），正文不再有「来源与边界」一节；
+  完成边界 压到 ≤150 字，只写已解析／已验证／已知限制各一句，缺什么进 issue。

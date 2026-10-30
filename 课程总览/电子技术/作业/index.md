@@ -3,12 +3,12 @@ id: okf.course.electronics.homework.index
 name: 作业
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-29"
+last_updated: "2026-10-30"
 stewards:
   - team: 电子技术课程学习记录
 course: 电子技术
 category: 作业
-sources: []
+sources:
 ---
 
 # 作业
@@ -64,5 +64,10 @@ sources: []
 
 - 每题拆成「提示 → 完整解答 → 复盘」三层折叠块（原生 `<details>`，零 JS），**默认全部收起**。
 - 作业开头给**依赖表**：本题组依赖的通关攻略面板或前置知识，按需深链接。
+- **出处在气泡、不在正文**（2026-10-30 定案）：题面来源、截图与哈希、平台时间写进
+  frontmatter 的 sources（≤30 字，显示为页面顶部芯片）与 `原始资料/index.md`；
+  正文**不再有「来源与边界」一节**，`依赖` 是第一节点。
+- **完成边界 ≤150 字**：只写 `已解析`／`已验证`／`已知限制` 各一句，不写施工日志；
+  缺什么进 GitHub issue，不在页面上留「待提供」。
 - 「提示层不许写试探」：找关系/找参数类步骤必须给出机械可复制的做法；
   入库后按 `double-sign` skill 跑独立重算双签。

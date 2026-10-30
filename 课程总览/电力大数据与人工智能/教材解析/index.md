@@ -3,12 +3,12 @@ id: okf.course.power_bigdata_ai.textbook.index
 name: 教材解析
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-29"
+last_updated: "2026-10-30"
 stewards:
   - team: 电力大数据与人工智能课程学习记录
 course: 电力大数据与人工智能
 category: 教材解析
-sources: []
+sources:
 ---
 
 # 教材解析

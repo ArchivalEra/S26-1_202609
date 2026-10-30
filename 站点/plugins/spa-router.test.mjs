@@ -56,13 +56,16 @@ test('SPA 路由必须支持 soft 模式（助手工具调用不许整页重载�
   assert.ok(bar > guard, 'soft 守卫必须在整页跳之前');
 });
 
-test('SPA 换页必须同步两份面包屑与 meta chip 条（2026-10-28 修的 bug）', () => {
+test('SPA 换页必须同步顶栏面包屑与 meta chip 条（2026-10-28 修的 bug）', () => {
   // 站长原话：「页面大标题上方那栏，永远是刚进站那页的信息」。
-  // 根因：两份面包屑烘死在每页 HTML 里、又都在 .article-content 之外，
+  // 根因：面包屑烘死在每页 HTML 里、又在 .article-content 之外，
   // 而 SPA 只换 article-content / m3-toc / title——文案从上线起就没更新过。
+  //
+  // 2026-10-30：正文那条 .m3-breadcrumb 已删（只留顶栏），所以这里断言
+  // **只同步顶栏**，并额外钉住正文那条不许回来。
   const src = fs.readFileSync(path.join(HERE, 'spa-router.mjs'), 'utf8');
   assert.ok(src.includes('".top-bar-breadcrumbs"'), '未同步顶栏面包屑');
-  assert.ok(src.includes('".m3-breadcrumb"'), '未同步正文面包屑');
+  assert.ok(!src.includes('".m3-breadcrumb"'), '正文面包屑已删，不该再出现在换页清单里');
   assert.ok(src.includes('".meta-chip-bar"'), '未同步 meta chip 条');
   // 新页没有 chip 条时要删掉旧页的，否则会挂着上一页的课程总览/状态
   assert.match(src, /curChips\.remove\(\)/, '新页无 chip 条时未删除旧页的');
@@ -72,7 +75,7 @@ test('SPA 换页清单：注释里列的块数与代码实际替换的一致', (
   // 防止「注释说换三块、代码悄悄少换一块」这类不一致再回来
   const src = fs.readFileSync(path.join(HERE, 'spa-router.mjs'), 'utf8');
   for (const sel of ['.article-content', '.m3-toc', '.top-bar-breadcrumbs',
-                     '.m3-breadcrumb', '.meta-chip-bar']) {
+                     '.meta-chip-bar']) {
     assert.ok(src.includes(sel), `替换清单漏了 ${sel}`);
   }
 });
