@@ -901,10 +901,28 @@ renderer.heading = function ({ depth, text, tokens }) {
   //
   // mathPlainOf 是模块级的中转表：mathBlocks 建在每个文件的循环里，
   // 而本 renderer 是模块级的，作用域不通用它来桥接（见其定义处的注释）。
+  //
+  // ⚠️ 2026-10-30 改：公式**整体丢弃**，不再把纯文本投影拼进 id。
+  // 原实现把 `$u_k\%$` 投影成 `uk` 塞进 slug，生成
+  // `短路电压-阻抗电压与-uk-一个量的三种叫法`——而**人写链接时只会写看得见的字**
+  // （`#短路电压-阻抗电压与-一个量的三种叫法`），于是 5 条备考深链接全部落空。
+  // 判据：标题的 id 只由**肉眼可见的普通文字**决定，公式不参与。
+  // 全站无「只有公式」的标题（已扫过），所以丢弃不会产生空 id。
   const forId = inner
-    .replace(/@@MATH_INLINE_(\d+)@@/g, (_, i) => mathPlainOf[parseInt(i)] ?? '')
-    .replace(/@@MATH_BLOCK_(\d+)@@/g, (_, i) => mathPlainOf[parseInt(i)] ?? '');
-  let clean = forId.replace(/<[^>]+>/g, '');
+    .replace(/@@MATH_INLINE_(\d+)@@/g, '')
+    .replace(/@@MATH_BLOCK_(\d+)@@/g, '');
+  // ⚠️ 2026-10-30（体检抓到 5 条深链接落空）：剥标签之后**必须再解一次 HTML 实体**。
+  // 标题里写成英文双引号（如 `定义法从"最高阶"往下试`）会被 marked 转成 `&quot;`，
+  // 剥标签后那几个字符仍是实体文本 `&quot;`，再进 slug 清洗（`[^\w\u4e00-\u9fa5]+`→`-`）
+  // 就把它当成字母序列，生成 `…-quot-最高阶-quot-…` 这种 id——
+  // **人写链接时不会想到要写 quot**，于是 `#秩的两条用法-定义法从-最高阶-往下试` 全部落空。
+  const decodeEntities = (t) => t
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+  let clean = decodeEntities(forId.replace(/<[^>]+>/g, ''));
 
   // ⭐ 显式锚点：「标题 {#my-id}」末尾的 {#…} 直接当 id，并从标题文本里剥掉。
   //
@@ -1365,8 +1383,32 @@ for (const relPath of TARGET_FILES) {
   });
 
   // Degrade template links
+  // ⚠️ 必须同时匹配 `.md` 与 `.html`：本步（Step 3）跑在「.md → 网址」换算（Step 4）**之前**，
+  // 源文件里写的是 `../模板/课程索引.md`。此前只按 `模板/` 前缀匹配、却因为正则里带了
+  // 扩展名限制而漏网，于是 Step 4 把它换成 `.html` 后就成了一条指向不存在文件的链接
+  // （2026-10-30 体检残留 32 处）。
   raw = raw.replace(/\[([^\]]*)\]\(([^)]*模板\/[^)]*)\)/gi, (_, text) => {
     return `<span class="res-degrade-badge">📋 ${text} (模板不随站点发布)</span>`;
+  });
+
+  // ⚠️ 2026-10-30（体检抓到 61 处死链）：**两类文件在仓库里、但不随站点发布**，
+  // 而正文把它们写成了链接 ⇒ 线上全是 404。此前只在「登记表」里写着「原件不入库、
+  // 网页不提供」，链接本身却照旧是 `<a href>`，点下去就是 404 页。
+  //
+  // 为什么**不发布**而是降级：
+  //   · `*-原文.txt` 是课堂录音的逐字转写（体量上万字、含口语与口误），
+  //     它们是**整理者的工作底稿**，不是给读者读的成品；读者要的是同一目录下的
+  //     课堂笔记。发布它们等于把底稿当成品发出去。
+  //   · `AGENTS.md` 与 `.agents/skills/**` 是**给 AI 助手用的内部规程**（skill 路由表、
+  //     硬约束、维护流程），与站点读者无关，且其中含仓库内部操作细节。
+  // 两类都改成「纯文本 + 一句出处说明」，点不动但也不会 404。
+  raw = raw.replace(/\[([^\]]*)\]\(([^)]*\.txt)\)/gi, (_, text, filePath) => {
+    const baseName = path.basename(decodeURIComponent(filePath));
+    return `<span class="res-degrade-badge" title="${baseName}">📄 ${text}<span class="res-degrade-note">（转写底稿，随仓库保存，站点不发布）</span></span>`;
+  });
+  raw = raw.replace(/\[([^\]]*)\]\(([^)]*(?:AGENTS\.md|\.agents\/)[^)]*)\)/gi, (_, text) => {
+    const label = text.replace(/`/g, '');
+    return `<span class="res-degrade-badge">📘 ${label}<span class="res-degrade-note">（仓库内规程，站点不发布）</span></span>`;
   });
 
   // Step 4: Rewrite internal Markdown links (.md → 站内网址)

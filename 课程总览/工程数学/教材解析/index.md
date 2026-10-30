@@ -1,4 +1,4 @@
----
+。**2026-10-30**：词条总表改为 `:::glossary-dict table` 渲染（此前缺 `table` 参数，词条 id 没有落点，全站气泡的「详细 ↗」点了落不到词条） |---
 id: okf.course.engineering_math.textbook.index
 name: 教材解析
 type: CatalogIndex
