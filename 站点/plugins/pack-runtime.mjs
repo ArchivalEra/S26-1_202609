@@ -399,12 +399,27 @@ function init() {
     ev.stopPropagation();
     var open = pop.hidden;
     pop.hidden = !open;
+    // ⚠️ 必须同时切 「.open」 类（2026-10-31 修）。
+    //
+    // 面板复用了主题的 「.palette-popover」 样式，那张样式表里写死
+    // 「display: none」，只靠 「.palette-popover.open { display: flex }」 显示。
+    // 而 「hidden」 属性只能设 「display: none」，**没有任何规则会把它设回 flex**——
+    // 于是 「pop.hidden = false」 之后元素依然 「display:none」、宽高为 0：
+    // 面板「打开了」但屏幕上什么都没有。
+    //
+    // 实测判据：点开后 getComputedStyle(pop).display 必须是 flex；
+    // 若仍是 none 而 hidden=false，就是这里漏了类。
+    pop.classList.toggle("open", open);
     toggle.setAttribute("aria-expanded", open ? "true" : "false");
     if (open) { syncOnce(); }        // ← 只在打开时查，一次
   });
   pop.addEventListener("click", function (ev) { ev.stopPropagation(); });
   document.addEventListener("click", function () {
-    if (!pop.hidden) { pop.hidden = true; toggle.setAttribute("aria-expanded", "false"); }
+    if (!pop.hidden) {
+      pop.hidden = true;
+      pop.classList.remove("open");
+      toggle.setAttribute("aria-expanded", "false");
+    }
   });
 
   // 下载按钮
@@ -504,9 +519,11 @@ function syncOnce() {
     if (e.ready) {
       setDiag("store", "就绪（" + (e.present || 0) + "/" + (e.total || 1) + " 件在位）");
     } else if (e.missing && e.missing.length) {
+      // 措辞要短：这一格只有约 234px 宽，写「未就绪：缺 mathlive-browser.min.js
+      // （期望 843924 字节）」会折成三行（实测截图）。原因码 + 文件名足够定位。
       var m = e.missing[0];
-      setDiag("store", "未就绪：缺 " + (m.name || "文件") +
-        (m.bytes ? "（期望 " + m.bytes + " 字节）" : ""));
+      var why = m.reason === "content" ? "内容坏" : m.reason === "size" ? "大小不对" : "缺";
+      setDiag("store", why + " " + (m.name || "文件"));
     } else {
       setDiag("store", "未就绪（读到状态但没有清单）");
     }
