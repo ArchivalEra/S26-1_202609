@@ -62,6 +62,23 @@ function render() {
     gv.textContent = g.ready ? "已下载" : "未下载";
     gv.className = "pack-state" + (g.ready ? " is-ready" : "");
   }
+
+  // 每件资产的按钮：**已下载就变成「删除」**（2026-10-31 站长定案）。
+  // 已下载了还摆一个「下载」按钮是自相矛盾；而「已下载」状态下读者真正能做的
+  // 只有一件事——把它删掉。所以文案跟着状态走，不给两个互相打架的按钮。
+  // ⚠️ 只在没有进行中的操作时刷文案：正在「下载中…/删除中…」的按钮不许被覆盖。
+  var abtns = document.querySelectorAll("[data-pack-action]");
+  for (var k = 0; k < abtns.length; k++) {
+    var b = abtns[k];
+    if (b.disabled) continue;                 // 进行中，别动
+    var name = b.getAttribute("data-pack-action");
+    var isReady = name === "editor"
+      ? !!(state.editor && state.editor.ready)
+      : !!(state.engine && state.engine.ready);
+    b.textContent = isReady ? "删除" : "下载";
+    b.className = "pack-btn" + (isReady ? " pack-btn-danger" : "");
+    b.setAttribute("title", isReady ? "删除已下载的副本" : "");
+  }
   var ml = $(S.modeLabel);
   if (ml) {
     ml.textContent = state.mode === "computable" ? "可计算"
@@ -89,7 +106,8 @@ function render() {
  * 所以把每一环的结果都摆到面板上。判据是「**任何一环失败都能被看见**」，
  * 不是「成功后显示成功」。 */
 var diag = {
-  store: "未查",      // OPFS 可用性
+  storeEditor: "未查",   // 编辑器资产在不在
+  storeEngine: "未查",   // 内核资产在不在
   mathlive: "未载入",  // MathLive 脚本
   katex: "未载入",     // 预览引擎
   clicks: "未绑定",    // 公式点击委托
@@ -102,15 +120,20 @@ function setDiag(key, value) {
 function renderDiag() {
   var box = $("pack-diag");
   if (!box) return;
+  // 「存储」这格内容最长（两件资产的合计），单独占一行；其余三环各一行。
+  // 值里的 「·」 只是两件资产之间的分隔，不是行分隔——2026-10-31 截图里
+  // 「内核 缺 octave.wasm」和下面「编辑器脚本」粘成了一行，就是因为没有
+  // 明确的块级分隔。用 <div> 逐行输出即可（下面 rows 循环已经这么做了）。
   var rows = [
-    ["存储", diag.store],
+    ["编辑器资产", diag.storeEditor],
+    ["内核资产", diag.storeEngine],
     ["编辑器脚本", diag.mathlive],
     ["预览引擎", diag.katex],
     ["点击绑定", diag.clicks],
   ];
   var html = "";
   for (var i = 0; i < rows.length; i++) {
-    var bad = /失败|不可用|不支持|未载入|未绑定/.test(rows[i][1]);
+    var bad = /失败|不可用|不支持|未载入|未绑定|缺 |内容坏|大小不对/.test(rows[i][1]);
     html += "<div class='pack-diag-row" + (bad ? " is-bad" : "") + "'>" +
       "<span>" + rows[i][0] + "</span><span>" + rows[i][1] + "</span></div>";
   }
@@ -434,82 +457,87 @@ function init() {
     }
   });
 
-  // 下载按钮
-  var btns = pop.querySelectorAll("[data-pack-download]");
-  for (var i = 0; i < btns.length; i++) {
-    btns[i].addEventListener("click", function (ev) {
-      var which = ev.currentTarget.getAttribute("data-pack-download");
-      var prog = $("pack-progress-" + which);
+  // 每件资产一个按钮，**动作由状态决定**（2026-10-31 站长定案）：
+  //
+  //   未下载 → 「下载」      点 → download()
+  //   已下载 → 「删除」      点 → remove()（带一个确认，因为这是不可逆的）
+  //   下载中 → 「下载中…」   禁用
+  //
+  // 为什么不再固定一个下载按钮：已下载了还给一个「下载」按钮是自相矛盾——
+  // 站长原话「已下载居然还开放下载按钮」。而且它对「旧副本坏了」这个场景也
+  // 没法表达：读者点下去只是又跑一遍 size 校验，看不出发生了什么。
+  //
+  // ⚠️ 这里**不再单独有一个「清空重来」按钮**：那是个带侵略性的说法
+  // （「清空」「重来」暗示要推倒重来），而读者想要的只是「这件我不要了」。
+  // 每件的「删除」就是那个动作，语义正好。
+  var actBtns = pop.querySelectorAll("[data-pack-action]");
+  for (var i = 0; i < actBtns.length; i++) {
+    actBtns[i].addEventListener("click", function (ev) {
+      var which = ev.currentTarget.getAttribute("data-pack-action");
       var btn = ev.currentTarget;
-      btn.disabled = true; btn.textContent = "下载中…";
-      if (prog) prog.hidden = false;
-      pack.download(which, {
-        onProgress: function (p) {
-          if (prog) {
-            var bar = prog.querySelector(".pack-progress-bar");
-            if (bar && p && p.bytes) bar.style.width = "100%";
-          }
-        },
-      }).then(function () {
-        btn.textContent = "已下载";
-        if (prog) prog.hidden = true;
-        // ⚠️ 必须显式把新状态取回来渲染。
-        // 本层**故意不订阅** pack.subscribe —— 订阅会把「广播 → 渲染 → 万一渲染里再查」
-        // 这条链重新打开，正是 Octave-UI 那个放大环的形状。改成「谁改了状态，谁负责同步一次」：
-        // 下载完成后由这里调一次 syncOnce()，事件驱动、方向单一、不闭环。
-        return syncOnce().then(function () {
-          if (which === "editor") ensureEditor();
-        });
+      var ready = which === "editor"
+        ? !!(state.editor && state.editor.ready)
+        : !!(state.engine && state.engine.ready);
+
+      if (!ready) { downloadAsset(which, btn); return; }
+
+      // 已下载 ⇒ 删除。确认一次：删掉要重下 824 KB / 38 MB，不可逆。
+      var label = which === "editor" ? "公式编辑器" : "计算内核";
+      var size = which === "editor" ? "824 KB" : "38 MB";
+      if (!window.confirm("删除" + label + "？\n\n下次要用得重新下载（" + size + "）。")) return;
+      btn.disabled = true;
+      btn.textContent = "删除中…";
+      pack.remove(which).then(function () {
+        // 删完把内存里的加载标记复位，否则 ensureEditor 的 Promise 缓存
+        // 还指着上一次的尝试，重下也不会重新载入。
+        if (which === "editor") {
+          mathliveLoading = null;
+          document.__packClickBound = false;
+          setDiag("mathlive", "未载入");
+          setDiag("clicks", "未绑定");
+        }
+        diag.lastError = "";
+        return syncOnce();
       }).catch(function (e) {
-        btn.disabled = false;
-        btn.textContent = "重试";
-        var msg = (e && e.message) || String(e);
-        setDiag(which === "editor" ? "store" : "store", "下载失败：" + msg);
-        diag.lastError = "下载失败：" + msg;
+        diag.lastError = "删除失败：" + ((e && e.message) || e);
         renderDiag();
-        alert("下载失败：" + msg);
+      }).then(function () {
+        btn.disabled = false;
+        render();          // 文案由 render 统一刷（见下）
       });
     });
   }
 
-  // 「清空重来」：把 OPFS 里的旧副本删掉再重下。
-  //
-  // 为什么需要：这个能力包的失败症状**全都长得一样**——「下载完了但点公式没反应」。
-  // 而真实原因可能是旧文件大小不对（那会被 size 校验拦下并重下）、
-  // 可能是 MathLive 脚本被缓存成坏副本（size 对但内容坏了，size 校验救不了），
-  // 也可能是上一次下载中途失败留下了半个文件。这些情况下「再点一次下载」不会变好，
-  // 因为大小校验认为它已经在位。给一个显式的「删了重下」是唯一能自救的动作。
-  var resetBtn = pop.querySelector("[data-pack-reset]");
-  if (resetBtn) {
-    resetBtn.addEventListener("click", function () {
-      if (!pack) return;
-      resetBtn.disabled = true;
-      resetBtn.textContent = "清空中…";
-      setDiag("store", "正在清空旧副本…");
-      var names = ["editor", "engine"];
-      var chain = Promise.resolve();
-      names.forEach(function (n) {
-        chain = chain.then(function () { return pack.remove(n); }).catch(function () {});
+  /** 下载一件资产（按钮文案与进度条在本函数内维护）。 */
+  function downloadAsset(which, btn) {
+    var prog = $("pack-progress-" + which);
+    btn.disabled = true; btn.textContent = "下载中…";
+    if (prog) prog.hidden = false;
+    pack.download(which, {
+      onProgress: function (p) {
+        if (prog) {
+          var bar = prog.querySelector(".pack-progress-bar");
+          if (bar && p && p.bytes) bar.style.width = "100%";
+        }
+      },
+    }).then(function () {
+      if (prog) prog.hidden = true;
+      // ⚠️ 必须显式把新状态取回来渲染。
+      // 本层**故意不订阅** pack.subscribe —— 订阅会把「广播 → 渲染 → 万一渲染里再查」
+      // 这条链重新打开，正是 Octave-UI 那个放大环的形状。改成「谁改了状态，谁负责同步一次」：
+      // 下载完成后由这里调一次 syncOnce()，事件驱动、方向单一、不闭环。
+      return syncOnce().then(function () {
+        if (which === "editor") ensureEditor();
+        btn.disabled = false;
+        render();
       });
-      chain.then(function () {
-        // 清完把内存里的加载标记也复位，否则 ensureEditor 的 Promise 缓存
-        // 还指着上一次失败的尝试，重下也不会重新载入。
-        mathliveLoading = null;
-        katexLoading = null;
-        document.__packClickBound = false;
-        setDiag("mathlive", "未载入");
-        setDiag("katex", "未载入");
-        setDiag("clicks", "未绑定");
-        diag.lastError = "";
-        resetBtn.disabled = false;
-        resetBtn.textContent = "清空重来";
-        return syncOnce();
-      }).catch(function (e) {
-        resetBtn.disabled = false;
-        resetBtn.textContent = "清空重来";
-        diag.lastError = "清空失败：" + ((e && e.message) || e);
-        renderDiag();
-      });
+    }).catch(function (e) {
+      var msg = (e && e.message) || String(e);
+      setDiag(which === "editor" ? "storeEditor" : "storeEngine", "下载失败：" + msg);
+      diag.lastError = "下载失败：" + msg;
+      renderDiag();
+      btn.disabled = false;
+      btn.textContent = "重试";
     });
   }
 
@@ -519,7 +547,7 @@ function init() {
 /* 查一次状态并渲染；**不订阅**（订阅会在每次广播时重复渲染，若渲染里再查就是环）。 */
 function syncOnce() {
   if (!pack) {
-    setDiag("store", "失败：能力包实例没建起来（capability-pack.mjs 装配失败）");
+    setDiag("storeEditor", "失败：能力包实例没建起来（capability-pack.mjs 装配失败）");
     return Promise.resolve();
   }
   return pack.status().then(function (s) {
@@ -528,21 +556,23 @@ function syncOnce() {
     // 2026-10-31 实测：只报了 editor，于是「引擎已下载、编辑器没下」时诊断行写的是
     // 「缺 mathlive-browser.min.js」——读者会以为引擎没下成功，实际是编辑器没下。
     // 两件事必须分开说。
-    var desc = function (a, label) {
-      if (!a) return label + " 未查";
-      if (a.ready) return label + " " + (a.present || 0) + "/" + (a.total || 1);
+    var LABEL = { editor: "公式编辑器", engine: "计算内核" };
+    var desc = function (a) {
+      if (!a) return "未查";
+      if (a.ready) return "已就绪 " + (a.present || 0) + "/" + (a.total || 1);
       if (a.missing && a.missing.length) {
         var m = a.missing[0];
         var why = m.reason === "content" ? "内容坏" : m.reason === "size" ? "大小不对" : "缺";
-        return label + " " + why + " " + (m.name || "");
+        return why + " " + (m.name || "");
       }
-      return label + " 未就绪";
+      return "未就绪";
     };
-    setDiag("store", desc(s.editor, "编辑器") + " · " + desc(s.engine, "内核"));
+    setDiag("storeEditor", desc(s.editor));
+    setDiag("storeEngine", desc(s.engine));
     render();
     if (s.editor && s.editor.ready) ensureEditor();
   }).catch(function (e) {
-    setDiag("store", "失败：" + ((e && e.message) || e));
+    setDiag("storeEditor", "失败：" + ((e && e.message) || e));
     diag.lastError = "查询存储状态出错：" + ((e && e.message) || e);
     renderDiag();
   });
