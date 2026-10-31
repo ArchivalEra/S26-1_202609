@@ -136,7 +136,7 @@ export function parseFigureLib(text, sourceName = 'figures.txt') {
   text.split(/\r?\n/).forEach((raw, idx) => {
     const line = raw.replace(/\s+$/, '');
     if (!line.trim() || line.trim().startsWith('#')) return;
-    const m = line.match(/^([A-Za-z_][A-Za-z0-9_-]*)[\t ]*\|[\t ]*(.*)$/);
+    const m = /^([A-Za-z_][A-Za-z0-9_-]*)[\t ]*\|[\t ]*(.*)$/.exec(line);
     if (m) {
       const id = m[1];
       if (lib.has(id)) {
@@ -228,7 +228,7 @@ function parseLogicBody(id, body) {
   for (const rawClause of text.split(';')) {
     const clause = rawClause.trim();
     if (!clause) continue;
-    const m = clause.match(/^([a-z]+)[\t ]+(.+?)[\t ]*->[\t ]*(.+)$/);
+    const m = /^([a-z]+)[\t ]+(.+?)[\t ]*->[\t ]*(.+)$/.exec(clause);
     if (!m) {
       throw new Error(
         `图元「${id}」（logic）：看不懂子句「${clause}」` +
@@ -297,7 +297,7 @@ const WAVE_COLORS = {
 function parseWaveBody(id, body) {
   if (!body.length) throw new Error(`图元「${id}」（wave）：正文为空`);
   const parts = body[0].split(';').map((s) => s.trim()).filter(Boolean);
-  const head = parts[0].match(/^wave[\t ]+(\d+)$/);
+  const head = /^wave[\t ]+(\d+)$/.exec(parts[0]);
   if (!head) {
     throw new Error(`图元「${id}」（wave）：首行要写成「wave <格数>」，得到「${body[0]}」`);
   }
@@ -309,7 +309,7 @@ function parseWaveBody(id, body) {
   let axis = true;
   let cellw = null;
   for (const opt of parts.slice(1)) {
-    const g = opt.match(/^guides[\t ]+(.+)$/);
+    const g = /^guides[\t ]+(.+)$/.exec(opt);
     if (g) {
       guides = g[1].split(',').map((s) => s.trim()).filter(Boolean).map((s) => {
         const n = Number(s);
@@ -323,7 +323,7 @@ function parseWaveBody(id, body) {
     }
     if (opt === 'axis') { axis = true; continue; }
     if (opt === 'noaxis') { axis = false; continue; }
-    const cw = opt.match(/^cellw=(\d+(?:\.\d+)?)$/);
+    const cw = /^cellw=(\d+(?:\.\d+)?)$/.exec(opt);
     if (cw) {
       cellw = Number(cw[1]);
       if (!(cellw > 0)) throw new Error(`图元「${id}」（wave）：cellw 必须是正数`);
@@ -335,11 +335,11 @@ function parseWaveBody(id, body) {
   }
   const rows = [];
   for (const line of body.slice(1)) {
-    const m = line.match(/^([^:]+):[\t ]*([^:]*)$/);
+    const m = /^([^:]+):[\t ]*([^:]*)$/.exec(line);
     if (!m) throw new Error(`图元「${id}」（wave）：看不懂「${line}」（要写成「A: 0101」）`);
     let label = m[1].trim();
     let color = null;
-    const crayon = label.match(/\[([a-z]+)\]$/);
+    const crayon = /\[([a-z]+)\]$/.exec(label);
     if (crayon) {
       color = crayon[1];
       if (!WAVE_COLORS[color]) {
@@ -401,7 +401,7 @@ function parseWaveBody(id, body) {
  */
 function parseKmapBody(id, body) {
   if (!body.length) throw new Error(`图元「${id}」（kmap）：正文为空`);
-  const head = body[0].match(/^kmap[\t ]+(\d+)$/);
+  const head = /^kmap[\t ]+(\d+)$/.exec(body[0]);
   if (!head) {
     throw new Error(`图元「${id}」（kmap）：首行要写成「kmap <变量数>」，得到「${body[0]}」`);
   }
@@ -409,14 +409,28 @@ function parseKmapBody(id, body) {
   if (vars !== 2 && vars !== 3 && vars !== 4) {
     throw new Error(`图元「${id}」（kmap）：只支持 2、3、4 变量，得到「${vars}」`);
   }
-  // 循环码序列：2 变量 → 00 01 11 10（4 行/列）；3 变量 → 一维 4 一维 2
-  const gray = vars === 2 ? ['00', '01', '11', '10'] : ['00', '01', '11', '10'];
-  const rowCodes = vars === 2 ? gray : gray;
-  const colCodes = vars === 3 ? ['0', '1'] : gray;
+  // 循环码序列：**按变量数真正分叉**（2026-10-31 修）。
+  //
+  // 原本这里三行全是同一个值：`vars === 2 ? A : A`、`vars === 2 ? gray : gray`，
+  // 只有 colCodes 对 3 变量做了让步。后果是 **2 变量卡诺图按 4×4 画、3 变量也按 4×4**，
+  // 而正确尺寸是 2×2 与 2×4（注释自己就写着「3 变量 → 一维 4 一维 2」）。
+  //
+  // 为什么一直没暴露：图库里 4 条 kmap **全是 `kmap 4`**，2/3 变量从没被用过。
+  // 谁写 `kmap 2` 就会得到一张 4×4 的错图，而构建不报错、闸门全绿 ——
+  // 属于「看起来成功、语义全错」那一类。
+  //
+  // 尺寸规则（教材惯例）：
+  //   2 变量 → 行 1 位（0/1）× 列 1 位（0/1）= 2×2
+  //   3 变量 → 行 2 位（4 种）× 列 1 位（0/1）= 4×2
+  //   4 变量 → 行 2 位 × 列 2 位 = 4×4
+  const TWO_BIT_GRAY = ['00', '01', '11', '10'];
+  const ONE_BIT = ['0', '1'];
+  const rowCodes = vars === 2 ? ONE_BIT : TWO_BIT_GRAY;
+  const colCodes = vars === 2 ? ONE_BIT : (vars === 3 ? ONE_BIT : TWO_BIT_GRAY);
   const cells = [];
   const boxes = [];
   for (const line of body.slice(1)) {
-    const box = line.match(/^box[\t ]+r(\d+)-r?(\d+)[\t ]+c(\d+)-c?(\d+)$/);
+    const box = /^box[\t ]+r(\d+)-r?(\d+)[\t ]+c(\d+)-c?(\d+)$/.exec(line);
     if (box) {
       const r1 = Number(box[1]), r2 = Number(box[2]);
       const c1 = Number(box[3]), c2 = Number(box[4]);
@@ -675,7 +689,7 @@ const PLOT_CURVES = new Set(['sine', 'clip']);
 
 function parsePlotBody(id, body) {
   if (!body.length) throw new Error(`图元「${id}」（plot）：正文为空`);
-  const head = body[0].match(/^plot[\t ]+(\d+)[\t ]+rows[\t ]+(\d+)$/);
+  const head = /^plot[\t ]+(\d+)[\t ]+rows[\t ]+(\d+)$/.exec(body[0]);
   if (!head) {
     throw new Error(
       `图元「${id}」（plot）：首行要写成「plot <行数> rows <每行格数>」，得到「${body[0]}」`);
@@ -692,18 +706,18 @@ function parsePlotBody(id, body) {
   let grid = null;
   const refs = [];
   for (const line of body.slice(1)) {
-    const y = line.match(/^yrange[\t ]+(-?[\d.]+)[\t ]+(-?[\d.]+)$/);
+    const y = /^yrange[\t ]+(-?[\d.]+)[\t ]+(-?[\d.]+)$/.exec(line);
     if (y) {
       const lo = Number(y[1]); const hi = Number(y[2]);
       if (!(hi > lo)) throw new Error(`图元「${id}」（plot）：yrange 上界要大于下界`);
       yrange = [lo, hi];
       continue;
     }
-    const r = line.match(/^ref[\t ]+(-?[\d.]+)$/);
+    const r = /^ref[\t ]+(-?[\d.]+)$/.exec(line);
     if (r) { refs.push(Number(r[1])); continue; }
-    const g = line.match(/^grid[\t ]+(-?[\d.]+)$/);
+    const g = /^grid[\t ]+(-?[\d.]+)$/.exec(line);
     if (g) { grid = Number(g[1]); continue; }
-    const ax = line.match(/^row(\d+)[\t ]+axis[\t ]+(-?[\d.]+)[\t ]+(-?[\d.]+)[\t ]+label[\t ]+(.+)$/);
+    const ax = /^row(\d+)[\t ]+axis[\t ]+(-?[\d.]+)[\t ]+(-?[\d.]+)[\t ]+label[\t ]+(.+)$/.exec(line);
     if (ax) {
       const n = Number(ax[1]) - 1;
       if (!rows[n]) throw new Error(`图元「${id}」（plot）：没有第 ${ax[1]} 行`);
@@ -711,7 +725,7 @@ function parsePlotBody(id, body) {
       rows[n].label = ax[4].trim();
       continue;
     }
-    const cv = line.match(/^(?:row(\d+))[\t ]+(curve|ghost)[\t ]+([a-z]+)[\t ]+(-?[\d.]+)(?:[\t ]+(-?[\d.]+))?$/);
+    const cv = /^(?:row(\d+))[\t ]+(curve|ghost)[\t ]+([a-z]+)[\t ]+(-?[\d.]+)(?:[\t ]+(-?[\d.]+))?$/.exec(line);
     if (cv) {
       const n = Number(cv[1]) - 1;
       if (!rows[n]) throw new Error(`图元「${id}」（plot）：没有第 ${cv[1]} 行`);
@@ -900,7 +914,6 @@ function drawLogic(payload, opts = {}) {
   const COL_GAP = 96;
   const PAD_X_IN = 10;
   const OUT_LEAD = 26;        // 门输出到标签的引线长度
-  const OUT_LABEL_SLOT = 34;  // 输出标签的预留槽位（够放 Y / nB / B̄ 这类）
   const ROW_GAP = 26;
   const PAD = 28;
   const pos = [];
@@ -1960,7 +1973,6 @@ function drawPlot(payload, opts = {}) {
   const PAD_X = 58;
   const PAD_Y = 22;
   const WAVE_W = 660;                 // 波形区宽度（与 wave 的目标宽度一致）
-  const CELL_W = WAVE_W / slots;
   const width = PAD_X + WAVE_W + 26;
   const height = PAD_Y * 2 + rows.length * LANE_H + 16;
   const [yLo, yHi] = yrange;
@@ -2339,7 +2351,7 @@ export function restoreFigures(html, figures) {
       inner = body.replace(
         /<text([^>]*)>([\s\S]*?)<\/text>/g,
         (whole, attrs, content) => {
-          const m = attrs.match(/data-label="([^"]*)"/);
+          const m = /data-label="([^"]*)"/.exec(attrs);
           const label = m ? unattrEsc(m[1]) : (content.includes('<') ? null : content);
           if (label === null) return whole;
           const sym = byLabel.get(label);

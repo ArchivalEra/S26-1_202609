@@ -42,7 +42,7 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
   if (!window.__mcpBridgeSource) {
     try {
       const cur = document.currentScript;
-      if (cur && cur.src) {
+      if (cur?.src) {
         // 退路：从 src 重新拉一次源码（同源、同步缓存，代价可接受）
         window.__mcpBridgeReload = cur.src;
       }
@@ -94,10 +94,10 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
       clearTimeout(timer);
       if (n < 3) {
         const wait = 200 * Math.pow(3, n - 1);
-        console.warn('[bridge] 回传失败（第 ' + n + ' 次），' + wait + 'ms 后重试', e && e.message);
+        console.warn('[bridge] 回传失败（第 ' + n + ' 次），' + wait + 'ms 后重试', e?.message);
         return new Promise((res) => setTimeout(res, wait)).then(() => post(payload, n + 1));
       }
-      console.warn('[bridge] 回传失败（已重试 3 次，放弃）', e && e.message);
+      console.warn('[bridge] 回传失败（已重试 3 次，放弃）', e?.message);
       return null;
     });
   };
@@ -111,7 +111,7 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
     try {
       list = await mc.getTools();              // 规范形态返回 Promise
     } catch (e) {
-      console.warn('[bridge] 取工具清单失败，稍后重试', e && e.message);
+      console.warn('[bridge] 取工具清单失败，稍后重试', e?.message);
       // 1s 后重试一次（注册表可能还没就绪）
       setTimeout(() => { report().catch(() => {}); }, 1000);
       return;
@@ -221,7 +221,7 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
           // （含元数据、自己保证单条长度）。这里必须留下它、传给桥——
           // 否则站点协议栈又要按工具名重新猜一遍形状（那是接口泄漏）。
           // 注意：本文件是模板字符串，注释里写标识符用直角引号，别用反引号。
-          if (r && r.ok === false) {
+          if (r?.ok === false) {
             // 失败也要把 feed 带回去（失败信封里有「建议下一步」）
             feedOut = r.feed || null;
             // ⚠️ 2026-10-27 修（实测「工具执行失败：工具执行失败」）：r 里可能是
@@ -247,7 +247,7 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
         // runTool 正常时不走这段——它把工具异常收成 {ok:false, error} 返回，我们上面已转抛。
         // 旧版曾在这里再调一次 handle.execute 试图拿真因；现在主路径是 runTool（错误信息
         // 本来就完整），这条兜底只对退化路径有意义，保留但不重复叙述。
-        const msg0 = String((inner && inner.message) || inner);
+        const msg0 = String((inner?.message) || inner);
         throw new Error('工具执行失败：' + msg0);
       }
       const effect = measureEffect(before);
@@ -258,13 +258,13 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
         if (typeof vv === 'string') { try { vv = JSON.parse(vv); } catch (e) { /* 原文 */ } }
         if (vv && typeof vv === 'object' && typeof vv.total === 'number') {
           effect.hits = vv.total;
-          if (Array.isArray(vv.hits)) effect.hitTitles = vv.hits.slice(0, 5).map((x) => x && x.title).filter(Boolean);
+          if (Array.isArray(vv.hits)) effect.hitTitles = vv.hits.slice(0, 5).map((x) => x?.title).filter(Boolean);
         }
       } catch (e) { /* 不改回执 */ }
       (window.__callTraces = window.__callTraces || []).push({ t: Date.now() % 1000000, name: msg.name, ...effect });
       post({ id: msg.id, ok: true, value, effect, feed: feedOut });
     } catch (e) {
-      const err = String((e && e.message) || e);
+      const err = String((e?.message) || e);
       (window.__callTraces = window.__callTraces || []).push({ t: Date.now() % 1000000, name: msg.name, err });
       post({ id: msg.id, ok: false, error: err, feed: feedOut });
     }
@@ -285,7 +285,7 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
       }
       const cur = window.__mcpBridge && window.__mcpBridge.es;
       // 连接活着（readyState 1）就算好
-      if (cur && cur.readyState === 1) { b.fails = 0; return; }
+      if (cur?.readyState === 1) { b.fails = 0; return; }
       b.fails++;
       if (b.fails < 2) return;  // 等一轮（4s）再动手
       try { cur && cur.close(); } catch (e) { /* 已断 */ }
@@ -354,12 +354,12 @@ export const PAGE_BRIDGE_JS = String.raw`(() => {
   es.onmessage = (ev) => {
     let msg = null;
     try { msg = JSON.parse(ev.data); } catch (e) { return; }
-    if (msg && msg.type === 'hello' && msg.clientId) {
+    if (msg?.type === 'hello' && msg.clientId) {
       // 桥发来的连接标识：存下来，后续 /result 都带上
       CLIENT_ID = msg.clientId;
       return;
     }
-    if (msg && msg.type === 'call') run(msg);
+    if (msg?.type === 'call') run(msg);
   };
   // 工具列表变动时重新报到（页面运行期可能注册新工具）
   // 工具列表变动时重新报到。重建时会再进这里一次——先摘旧的，避免监听器累积。

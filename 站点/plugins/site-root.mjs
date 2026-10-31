@@ -48,13 +48,13 @@
  * 返回以 / 开头、以 / 结尾的绝对路径；无法探测时返回 null。
  */
 function detectSiteRoot() {
-  var sp = (document.body && document.body.getAttribute('data-site-path')) || '';
+  const sp = (document.body && document.body.getAttribute('data-site-path')) || '';
   if (!sp) return null;
   // pathname 解码后与 sitePath 对齐（构建期写的是未编码的仓库路径）
-  var pathname;
+  let pathname;
   try { pathname = decodeURIComponent(location.pathname); } catch (e) { pathname = location.pathname; }
   // 后缀对齐：sitePath 必须是 pathname 的尾部
-  var idx = pathname.lastIndexOf(sp);
+  const idx = pathname.lastIndexOf(sp);
   if (idx >= 0 && idx + sp.length === pathname.length) return ensureSlash(pathname.slice(0, idx));
 
   // ⚠️ 2026-10-29：网址改成「目录形式」后有两类失配，都要按**同一语义**兜住。
@@ -72,9 +72,9 @@ function detectSiteRoot() {
   if (/^index\.html$/.test(sp)) return ensureSlash(pathname);
 
   // ③ 其余情况：pathname 是目录形式（以 / 结尾）、sitePath 是文件名 ⇒ 只按目录部分对齐。
-  var dir = sp.replace(/[^/]*$/, '');
+  const dir = sp.replace(/[^/]*$/, '');
   if (!dir) return null;
-  var di = pathname.lastIndexOf(dir);
+  const di = pathname.lastIndexOf(dir);
   if (di < 0) return null;
   return ensureSlash(pathname.slice(0, di));
 }
@@ -86,8 +86,8 @@ function ensureSlash(s) {
 }
 
 /** 惰性缓存（部署根在一次加载内不变）。 */
-var cached = null;
-var detected = false;
+let cached = null;
+let detected = false;
 
 /** 部署根（探测不出时回退到 /，即"部署在域名根"的原行为）。 */
 function siteRoot() {
@@ -108,8 +108,8 @@ function siteRoot() {
  * 只改构建期知道语义的那些。
  */
 function fixSiteRoot() {
-  var canonical = document.documentElement.getAttribute('data-canonical-root') || '/';
-  var actual = siteRoot();
+  const canonical = document.documentElement.getAttribute('data-canonical-root') || '/';
+  const actual = siteRoot();
   // 实际根与正式根一致 → 一切正常，构建期相对链接本来就是对的
   if (actual === canonical) {
     if (canonical === '/') return;  // 部署在域名根，无镜像问题
@@ -130,9 +130,9 @@ function fixSiteRoot() {
  */
 function rewriteLinks(root) {
   // 1) 侧栏 data-path 链接：仓库相对路径直接拼
-  var links = document.querySelectorAll('a[data-path]');
-  for (var i = 0; i < links.length; i++) {
-    var dp = links[i].getAttribute('data-path');
+  const links = document.querySelectorAll('a[data-path]');
+  for (let i = 0; i < links.length; i++) {
+    let dp = links[i].getAttribute('data-path');
     if (dp) links[i].setAttribute('href', root + dp);
   }
   // 2) 无 data-path 的站内导航（品牌/移动标题/旧式链接）：
@@ -146,18 +146,18 @@ function rewriteLinks(root) {
   //    :not([data-path]) 把它们排除，本分支只管无 data-path 的站内导航
   //    （品牌/移动标题/将来漏埋 data-path 的旧式链接）。:not([attr]) 属性选择器
   //    形态现代浏览器均支持，无兼容顾虑。
-  var navs = document.querySelectorAll('.sidebar-brand, .top-bar-mobile-title, .top-bar-breadcrumbs a:not([data-path]), .paging-card:not([data-path])');
-  var actual = siteRoot();
-  for (var j = 0; j < navs.length; j++) {
-    var a = navs[j];
-    var href = a.getAttribute('href');
+  const navs = document.querySelectorAll('.sidebar-brand, .top-bar-mobile-title, .top-bar-breadcrumbs a:not([data-path]), .paging-card:not([data-path])');
+  const actual = siteRoot();
+  for (let j = 0; j < navs.length; j++) {
+    let a = navs[j];
+    let href = a.getAttribute('href');
     if (!href || /^(https?:|mailto:|#|javascript:)/i.test(href)) continue;
     try {
-      var abs = new URL(href, location.href);
+      let abs = new URL(href, location.href);
       if (abs.origin !== location.origin) continue;
-      var rel = abs.pathname;
+      let rel = abs.pathname;
       // 剥掉实际根前缀得到仓库相对路径（探测不出实际根时按整段处理）
-      if (actual && actual !== '/' && rel.indexOf(actual) === 0) rel = rel.slice(actual.length);
+      if (actual && actual !== '/' && rel.startsWith(actual)) rel = rel.slice(actual.length);
       rel = rel.replace(/^\/+/, '');
       a.setAttribute('href', root + rel);
     } catch (e) { /* 坏 href 跳过 */ }

@@ -67,7 +67,7 @@ export function parse(src, opts = {}) {
   const peek = (k = 0) => tokens[pos + k];
   const at = (kind, value) => {
     const t = peek();
-    return t && t.kind === kind && (value === undefined || t.value === value);
+    return t?.kind === kind && (value === undefined || t.value === value);
   };
 
   const node = (kind, role, extra, spanStart, spanEnd) => ({
@@ -149,7 +149,7 @@ export function parse(src, opts = {}) {
     // 旧实现靠 `braceBareArgs` 事后补花括号，补丁本身就是事故来源
     // （补错位置会把 `\frac1\lambda` 变成 `\frac1\htmlData{…}{\lambda}` → 宏参数报错）。
     // 在解析期直接按「一位数字」取，从根上不会出现裸参数残留。
-    if (t && t.kind === 'char' && t.numeric && t.value.length > 1) {
+    if (t?.kind === 'char' && t.numeric && t.value.length > 1) {
       pos += 1;
       const first = t.value[0];
       // 把剩下的位数塞回记号流：构造一个「残片」记号原位补齐
@@ -173,8 +173,8 @@ export function parse(src, opts = {}) {
       pos += 1;
       const items = parseList(/* untilClose */ true);
       const endTok = peek();
-      const end = endTok && endTok.kind === 'close' ? endTok.end : (items.at(-1)?.span?.[1] ?? start);
-      if (endTok && endTok.kind === 'close') pos += 1;
+      const end = endTok?.kind === 'close' ? endTok.end : (items.at(-1)?.span?.[1] ?? start);
+      if (endTok?.kind === 'close') pos += 1;
       return node('group', 'operand', { items, fence: null }, start, end);
     }
     return parseAtom();
@@ -261,8 +261,8 @@ export function parse(src, opts = {}) {
       pos += 1;
       const items = parseList(true);
       const endTok = peek();
-      const end = endTok && endTok.kind === 'close' ? endTok.end : (items.at(-1)?.span?.[1] ?? start);
-      if (endTok && endTok.kind === 'close') pos += 1;
+      const end = endTok?.kind === 'close' ? endTok.end : (items.at(-1)?.span?.[1] ?? start);
+      if (endTok?.kind === 'close') pos += 1;
       return node('group', 'operand', { items, fence: null }, start, end);
     }
 
@@ -344,7 +344,7 @@ export function parse(src, opts = {}) {
 
     // ── 字体样式：\mathbf{…} 吃一个组，改外观不改语义
     const cls = classifyCommand(t.value);
-    if (cls && cls.role === 'style') {
+    if (cls?.role === 'style') {
       pos += 1;
       const arg = takeArg(`\\${t.value}`);
       // **正体类命令下的内容一律当「字面」**：`\mathrm{H/m}` 里的 H、m 是单位，
@@ -366,7 +366,7 @@ export function parse(src, opts = {}) {
     }
 
     // ── 分数
-    if (cls && cls.role === 'frac') {
+    if (cls?.role === 'frac') {
       pos += 1;
       const num = takeArg(`\\${t.value}`);
       const den = takeArg(`\\${t.value}`);
@@ -375,7 +375,7 @@ export function parse(src, opts = {}) {
     }
 
     // ── 重音
-    if (cls && cls.role === 'accent') {
+    if (cls?.role === 'accent') {
       pos += 1;
       const body = takeArg(`\\${t.value}`);
       return node('accent', 'operand',
@@ -383,7 +383,7 @@ export function parse(src, opts = {}) {
     }
 
     // ── 函数名（正体排的原子，可带上下标）
-    if (cls && cls.role === 'function') {
+    if (cls?.role === 'function') {
       pos += 1;
       return node('sym', 'operand',
         { tex: `\\${t.value}`, glyph: t.value, upright: true, isFunctionName: true },
@@ -391,7 +391,7 @@ export function parse(src, opts = {}) {
     }
 
     // ── 自带字形的符号
-    if (cls && cls.role === 'symbol') {
+    if (cls?.role === 'symbol') {
       pos += 1;
       const glyph = cls.glyph;
       let role = 'operand';
@@ -415,7 +415,7 @@ export function parse(src, opts = {}) {
     }
 
     // ── 特殊命令
-    if (cls && cls.role === 'special') {
+    if (cls?.role === 'special') {
       return parseSpecial(t, start);
     }
 

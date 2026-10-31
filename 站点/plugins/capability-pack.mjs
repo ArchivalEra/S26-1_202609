@@ -95,8 +95,8 @@ export const ASSETS = {
 
 /** 三态：由两件资产的存在**派生**（不是存出来的）。 */
 export function deriveMode(s) {
-  const editor = !!(s && s.editor && s.editor.ready);
-  const engine = !!(s && s.engine && s.engine.ready);
+  const editor = !!(s?.editor && s.editor.ready);
+  const engine = !!(s?.engine && s.engine.ready);
   if (editor && engine) return 'computable';
   if (editor) return 'editable';
   return 'readonly';
@@ -295,7 +295,7 @@ export function createCapabilityPack(deps = {}) {
           // 2026-10-31 实测：inspectAsset 现算哈希能判出坏副本，download 这里却
           // 「没 sidecar 就当内容对」于是跳过 ⇒ 用户点了下载也没重下，一直卡在只读。
           // 现在统一走 verifyContent（同一份内容缓存、同一套判定）。
-          const sameSize = !!(existing && existing.bytes === f.bytes);
+          const sameSize = !!(existing?.bytes === f.bytes);
           const sameContent = sameSize ? await verifyContent(f, existing) : false;
           if (sameSize && sameContent) {
             if (o.onProgress) o.onProgress({ name, file: f.name, done: true, skipped: true });

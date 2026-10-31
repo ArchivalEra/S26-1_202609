@@ -73,7 +73,7 @@ const esc = (s) =>
 function dedent(lines) {
   const indents = lines
     .filter((l) => l.trim() !== "")
-    .map((l) => (l.match(/^[\t ]*/) || [""])[0].length);
+    .map((l) => (/^[\t ]*/.exec(l) || [""])[0].length);
   const cut = indents.length ? Math.min(...indents) : 0;
   return lines.map((l) => l.slice(cut));
 }
@@ -131,7 +131,7 @@ function stripTitleDecor(title) {
   let open = false;
   let id = null;
   for (;;) {
-    const m = cur.match(/[\t ]*[：:]([+-])[\t ]*$/);
+    const m = /[\t ]*[：:]([+-])[\t ]*$/.exec(cur);
     if (m) {
       cur = cur.slice(0, m.index).trim();
       // 全角冒号「：」也要认——手写中文时很容易打成全角（本攻略就踩过，

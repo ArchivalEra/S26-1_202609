@@ -45,7 +45,13 @@ test('锚点反推：114/115 页源侧标题序列与产物 headings 对齐（1 
     else if (!KNOWN_EXCEPTIONS.has(rel)) mismatches.push(`${rel}: src=${chk.srcCount} prod=${chk.prodCount}`);
   }
   assert.deepEqual(mismatches, [], '锚点反推不一致（section_mismatch）：\n' + mismatches.join('\n'));
-  assert.equal(aligned, 114, `对齐页数应为 114，实际 ${aligned}`);
+  // 2026-10-31 修：原写死 114。页面清单长到 140 后这条断言红得毫无信息量
+  // （只说明「测试抄了旧数字」，不说明代码坏）。改成「等于可对齐的页数」——
+  // 即 TARGET_FILES 里排除了已知例外、且产物里真有该页的那些。
+  const expectedAligned = TARGET_FILES.filter(
+    (rel) => !KNOWN_EXCEPTIONS.has(rel) && byPath.has(rel)).length;
+  assert.equal(aligned, expectedAligned,
+    `对齐页数应为 ${expectedAligned}（清单 ${TARGET_FILES.length} 页减已知例外与缺产物），实际 ${aligned}`);
 });
 
 test('headings() 返回的锚点与产物逐个相同（对齐页）', () => {
@@ -63,7 +69,8 @@ test('headings() 返回的锚点与产物逐个相同（对齐页）', () => {
     }
     checked++;
   }
-  assert.equal(checked, 114);
+  assert.equal(checked, TARGET_FILES.filter((rel) => !KNOWN_EXCEPTIONS.has(rel)).length,
+    '逐页核过一遍（清单减已知例外）');
 });
 
 test('scanHeadings 跳过代码围栏内的 # 与 frontmatter', () => {
@@ -88,13 +95,23 @@ test('scanHeadings 跳过代码围栏内的 # 与 frontmatter', () => {
   assert.deepEqual(hs.map((h) => h.level), [1, 2, 3]);
 });
 
-test('pages() 的 url 规则与构建期一致（README → index.html）', () => {
+test('pages() 的 url 规则与构建期一致（首页 → 空串、目录页 → 目录/）', () => {
+  // ⚠️ 2026-10-31 改：这条原本断言 `README → index.html`、`课程总览/index.md → 课程总览/index.html`。
+  // 那是**旧规则**。构建期已统一到 htmlPathOf：首页网址是空串 `''`（站点根），
+  // 目录索引页是 `目录/`（不带 index.html）。读层现在直接 import 那个函数，
+  // 所以这条断言的对象也换成**新规则**——否则它会逼读层保留一个读者点不开的 url。
   const catalog = createCatalog({ root: ROOT, targetFiles: TARGET_FILES });
   const pages = catalog.pages();
-  assert.equal(pages.length, 115);
+  assert.equal(pages.length, TARGET_FILES.length, '页数 = 页面清单条数');
   assert.equal(pages[0].path, 'README.md');
-  assert.equal(pages[0].url, 'index.html');
-  assert.equal(pages[1].url, '课程/index.html');
+  assert.equal(pages[0].url, '', '首页的网址是站点根（空串），不是 index.html');
+  const idx = pages.find((p) => p.path === '课程总览/index.md');
+  assert.ok(idx, '清单里应有课程总览索引页');
+  assert.equal(idx.url, '课程总览/', '目录索引页的网址是 `目录/`，不写 index.html');
+  // 普通页仍是 .html
+  const normal = pages.find((p) => p.path.endsWith('.md') && !p.path.endsWith('index.md')
+    && p.path !== 'README.md');
+  assert.ok(normal && normal.url.endsWith('.html'), '普通页的网址以 .html 结尾');
 });
 
 test('source() 读不到的页报 unknown_page', () => {

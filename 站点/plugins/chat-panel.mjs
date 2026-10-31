@@ -758,8 +758,8 @@ export function applyOps(doc, el, ops, maths) {
         node = mk(op.ordered ? 'ol' : 'ul');
         for (const item of op.items) {
           const li = mk('li');
-          const childOps = item && item.ops ? item.ops : (Array.isArray(item) ? item : []);
-          const depth = (item && item.depth) || 0;
+          const childOps = item?.ops ? item.ops : (Array.isArray(item) ? item : []);
+          const depth = (item?.depth) || 0;
           if (depth > 0) li.style.marginLeft = (depth * 1.1) + 'em';
           for (const c of inlineNodes(childOps)) li.appendChild(c);
           node.appendChild(li);
@@ -939,7 +939,7 @@ function tokenAsync(force) {
     fetch(BRIDGE + "/bootstrap", { cache: "no-store", signal: ctrl ? ctrl.signal : undefined })
       .then(function (r) { clearTimeout(timer); return r.ok ? r.json() : null; })
       .then(function (j) {
-        var v = (j && j.token) ? String(j.token) : "";
+        var v = (j?.token) ? String(j.token) : "";
         if (v) {
           window.__bridgeToken = v;
           try { localStorage.setItem("webmcp_bridge_token", v); } catch (e) {}
@@ -1067,13 +1067,13 @@ function uploadAttachment(item, tk) {
       filename: item.name,
     }),
   }).then(function (r) { return r.json(); }).then(function (j) {
-    if (!j || !j.ok) throw new Error((j && j.error) || "上传失败");
+    if (!j || !j.ok) throw new Error((j?.error) || "上传失败");
     item.fileInfo = j.fileInfo;
     item.status = "ready";
     return item;
   }).catch(function (e) {
     item.status = "failed";
-    item.error = String((e && e.message) || e);
+    item.error = String((e?.message) || e);
     throw e;
   });
 }
@@ -1137,7 +1137,7 @@ function acceptFiles(files) {
       .then(function () { renderAttachBar(); })
       .catch(function (e) {
         item.status = "failed";
-        item.error = String((e && e.message) || e);
+        item.error = String((e?.message) || e);
         renderAttachBar();
       });
   });
@@ -1269,8 +1269,8 @@ function attachTimings(msg, timings) {
 }
 
 function statusText(ev) {
-  var phase = ev && ev.phase;
-  var what = ev && ev.tool ? (TOOL_LABEL[ev.tool] || ev.tool) : "";
+  var phase = ev?.phase;
+  var what = ev?.tool ? (TOOL_LABEL[ev.tool] || ev.tool) : "";
   if (phase === "thinking") return "正在理解问题…";
   if (phase === "generating") return "正在检索资料并组织回答…";
   if (phase === "tool") return "正在" + (what || "查询") + "…";
@@ -1390,7 +1390,7 @@ function loadSessions() {
       if (!res.ok) return { ok: false };
       return res.json();
     }).then(function (data) {
-      if (data && data.ok && Array.isArray(data.sessions)) {
+      if (data?.ok && Array.isArray(data.sessions)) {
         sessionsList = data.sessions;
       } else {
         sessionsList = [];
@@ -1449,7 +1449,7 @@ function selectSession(id) {
       if (logEl && logEl.querySelector(".chat-skeleton")) {
         logEl.removeChild(logEl.querySelector(".chat-skeleton"));
       }
-      if (data && data.ok && Array.isArray(data.messages)) {
+      if (data?.ok && Array.isArray(data.messages)) {
         renderHistoryMessages(data.messages);
       } else {
         var notice = addMsg("bot");
@@ -1506,7 +1506,7 @@ function newSession() {
       if (!res.ok) return { ok: false };
       return res.json();
     }).then(function (data) {
-      if (data && data.ok && data.id) {
+      if (data?.ok && data.id) {
         currentSessionId = data.id;
         if (logEl) while (logEl.firstChild) logEl.removeChild(logEl.firstChild);
         msgEls = [];
@@ -1685,17 +1685,17 @@ function askChat(text) {
       var tpRes = tp.ask(payload, handleEventPlain);
       if (tpRes && typeof tpRes.then === 'function') {
         tpRes.then(function (r) {
-          if (r && r.ok === false && r.reason) handleEventPlain({ type: "error", reason: String(r.reason) });
+          if (r?.ok === false && r.reason) handleEventPlain({ type: "error", reason: String(r.reason) });
           finish();
         }).catch(function (e) {
-          handleEventPlain({ type: "error", reason: String((e && e.message) || e) });
+          handleEventPlain({ type: "error", reason: String((e?.message) || e) });
           finish();
         });
       } else {
         finish();
       }
     } catch (e) {
-      handleEventPlain({ type: "error", reason: String((e && e.message) || e) });
+      handleEventPlain({ type: "error", reason: String((e?.message) || e) });
       finish();
     }
     return;
@@ -1731,7 +1731,7 @@ function askChat(text) {
       });
     }
     function handleEvent(raw) {
-      var line = raw.split("\\n").filter(function (l) { return l.indexOf("data:") === 0; })[0];
+      var line = raw.split("\\n").filter(function (l) { return l.startsWith("data:"); })[0];
       if (!line) return;
       var ev;
       try { ev = JSON.parse(line.slice(5).trim()); } catch (e) { return; }
@@ -1740,7 +1740,7 @@ function askChat(text) {
     return pump();
   }).catch(function (e) {
     clearStatus(botMsg);
-    if (e && e.name === "AbortError") {
+    if (e?.name === "AbortError") {
       flushRender(botMsg);
       if (!botMsg.raw) {
         botMsg.body.textContent = "（已停止）";
@@ -1773,8 +1773,8 @@ function resetSendButton() {
 }
 
 function describeFailure(e) {
-  var msg = String((e && e.message) || e);
-  var m = msg.match(/^HTTP (\\d{3})$/);
+  var msg = String((e?.message) || e);
+  var m = /^HTTP (\\d{3})$/.exec(msg);
   if (m) {
     var code = Number(m[1]);
     if (code === 401 || code === 403) return "本地桥拒绝了这次请求，刷新页面再试（token 可能已更换）";
@@ -2018,7 +2018,7 @@ function buildDock() {
   var siteShell = (typeof document.querySelector === "function") ? document.querySelector(".site-shell") : null;
   if (siteShell) {
     var drawer = (typeof siteShell.querySelector === "function") ? siteShell.querySelector(".m3-drawer") : null;
-    if (drawer && drawer.parentNode === siteShell) {
+    if (drawer?.parentNode === siteShell) {
       if (typeof drawer.after === "function") {
         drawer.after(dockEl);
       } else {
@@ -2215,7 +2215,7 @@ function buildPanel() {
 }
 
 function sendNow() {
-  var t = String(inputEl && inputEl.value || "").trim();
+  var t = String(inputEl?.value || "").trim();
   if (busy) return;
   var hasReadyImage = false;
   for (var i = 0; i < pending_attach.length; i++) {

@@ -261,7 +261,7 @@ export function applySymbolExclusions(dict = {}, exclusions = {}, onWarn = null)
       continue;
     }
     const e = proseDict[id];
-    if (e && e.prose && e.prose.length) proseDict[id] = { ...e, prose: [] };
+    if (e?.prose && e.prose.length) proseDict[id] = { ...e, prose: [] };
   }
   for (const id of noTex) {
     if (!Object.prototype.hasOwnProperty.call(dict, id)) {

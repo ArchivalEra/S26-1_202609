@@ -38,11 +38,11 @@ export function collectHits(data, getBucket, rawQuery) {
   const bucketOf = (gram) => getBucket(hashGram(gram) % data.buckets);
   const postingsFor = (gram) => {
     const bucket = bucketOf(gram);
-    return bucket && bucket.grams ? bucket.grams[gram] : undefined;
+    return bucket?.grams ? bucket.grams[gram] : undefined;
   };
   const unigramDocsFor = (ch) => {
     const bucket = bucketOf(ch);
-    return bucket && bucket.uni ? bucket.uni[ch] : undefined;
+    return bucket?.uni ? bucket.uni[ch] : undefined;
   };
 
   const hits = [];

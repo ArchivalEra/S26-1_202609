@@ -39,8 +39,7 @@ import { SPA_ROUTER_JS } from './plugins/spa-router.mjs';
 import { SW_KILL_JS } from './plugins/sw-kill.mjs';
 import { DRAWER_SYNC_JS } from './plugins/drawer-sync.mjs';
 import { PACK_RUNTIME_JS } from './plugins/pack-runtime.mjs';
-import { ASSETS as PACK_ASSETS } from './plugins/capability-pack.mjs';
-import { buildNavModel, isActive, isExpanded, htmlPathOf, filePathOf, urlSegments, NAV_STRUCTURE_JS } from './plugins/nav-structure.mjs';
+import { buildNavModel, isActive, isExpanded, htmlPathOf, filePathOf, NAV_STRUCTURE_JS } from './plugins/nav-structure.mjs';
 import { WEBMCP_SHIM_JS } from './plugins/webmcp-shim.mjs';
 import { WEBMCP_TOOLS_JS } from './plugins/webmcp-tools.mjs';
 import { TARGET_FILES } from './页面清单.mjs';
@@ -220,11 +219,13 @@ function renderOneMath(src, mode, relPath, env, hits) {
   const compiled = compileMath({ blocks: [{ raw: src, mode }] }, env);
   const doc = compiled.docs[0];
 
-  // 诊断：错误计一次、警告记下。**不嗅探产物字符串**——错误是返回值里的数据。
-  let hasError = false;
+  // 诊断：错误计数、警告记下。**不嗅探产物字符串**——错误是返回值里的数据。
+  // ⚠️ 2026-10-31 删掉一个只赋值不读取的 `hasError`：它原本参与
+  // `hasError ? rendered : rendered` 这个两分支同值的返回，后来那行被换成了
+  // 可算性判定，这个变量就变成了死变量（GitRoll 与读者都会以为「错误有被处理」）。
+  // 真正的错误处理是 `formulaErrors++` 与下面的 console.warn。
   for (const prob of compiled.problems) {
     if (prob.severity === 'error') {
-      hasError = true;
       formulaErrors++;
       console.warn(`[build] ⚠ 公式渲染失败 ${relPath}：${prob.message}｜${src.slice(0, 60)}`);
     } else if (prob.code !== 'term-excluded') {
@@ -266,7 +267,6 @@ function renderOneMath(src, mode, relPath, env, hits) {
   });
   for (const prob of out.problems) {
     if (prob.severity === 'error') {
-      hasError = true;
       formulaErrors++;
       console.warn(`[build] ⚠ ${relPath}：${prob.message}`);
     }
@@ -473,13 +473,13 @@ const pageMetaMap = new Map();
 function loadCourseStatus() {
   const p = path.join(ROOT, 'README.md');
   const text = fs.readFileSync(p, 'utf-8');
-  const m = text.match(/<!-- COURSE-STATUS:START -->([\s\S]*?)<!-- COURSE-STATUS:END -->/);
+  const m = /<!-- COURSE-STATUS:START -->([\s\S]*?)<!-- COURSE-STATUS:END -->/.exec(text);
   if (!m) {
     throw new Error('README.md 缺 COURSE-STATUS 块——课程状态的唯一产地，别删（见 README「课程状态」节）。');
   }
   const map = new Map();
   for (const line of m[1].split('\n')) {
-    const row = line.match(/^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*$/);
+    const row = /^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*$/.exec(line);
     if (!row) continue;
     const [, name, status] = row;
     // 跳过表头与分隔行（`| :--- | :--- |`）
@@ -501,7 +501,7 @@ for (const relPath of TARGET_FILES) {
   let title = path.basename(relPath, '.md');
   let frontmatter = {};
 
-  const fmMatch = content.match(/^---\r?\n([\s\S]+?)\r?\n---/);
+  const fmMatch = /^---\r?\n([\s\S]+?)\r?\n---/.exec(content);
   if (fmMatch) {
     // frontmatter 解析失败 = 硬失败（2026-10-22 悬案 Q1 结算）：这里曾用 console.warn
     // 静默吞掉，字段全空、页面照常生成、全部闸门绿——2026-10-12 实弹：frontmatter 写进
@@ -516,7 +516,7 @@ for (const relPath of TARGET_FILES) {
     if (frontmatter.name) title = frontmatter.name;
   } else {
     // Check first H1
-    const h1Match = content.match(/^#\s+(.+)$/m);
+    const h1Match = /^#\s+(.+)$/m.exec(content);
     if (h1Match) title = h1Match[1];
   }
 
@@ -1018,7 +1018,7 @@ renderer.heading = function ({ depth, text, tokens }) {
   // 于是索引里 11 条 href="#m-…" 全部落空、页面上还印着字面花括号（2026-10-28 三签抓出）。
   //
   // 支持后两个好处：① 锚点稳定（改标题措辞不破链接）；② 标题与右侧目录不再带 {#…} 字面量。
-  const explicit = clean.match(/\{#([^}\s]+)\}\s*$/);
+  const explicit = /\{#([^}\s]+)\}\s*$/.exec(clean);
   const explicitId = explicit ? explicit[1] : null;
   if (explicitId) clean = clean.slice(0, explicit.index).trim();
 
@@ -1154,7 +1154,7 @@ for (const relPath of TARGET_FILES) {
 
   // Strip frontmatter
   let frontmatter = {};
-  const fmMatch = raw.match(/^---\r?\n([\s\S]+?)\r?\n---/);
+  const fmMatch = /^---\r?\n([\s\S]+?)\r?\n---/.exec(raw);
   if (fmMatch) {
     // 同 Step 3 的 frontmatter 硬失败（悬案 Q1）：此处曾 catch(_){} 全静默，
     // 字段全空导致「符号强制/符号排除」等行为悄悄失效。同一份解析在 Step 3 已
@@ -1451,7 +1451,7 @@ for (const relPath of TARGET_FILES) {
   const glossaryJsonPayload = {
     terms: Object.fromEntries(
       [...glossaryHits.entries()]
-        .filter(([, e]) => e && e.title !== undefined)
+        .filter(([, e]) => e?.title !== undefined)
         .map(([key, e]) => {
           const item = { title: renderBubbleText(e.title), text: renderBubbleText(e.text), href: e.href };
           if (e.senses && e.senses.length) {
@@ -1878,7 +1878,7 @@ for (const relPath of TARGET_FILES) {
     if (!page || !page.title) return { title: '', pages: '' };
     let rawTitle = page.title.trim();
     let pagesTag = '';
-    const match = rawTitle.match(/[（(](原书\s*p[^）)]+)[）)]/);
+    const match = /[（(](原书\s*p[^）)]+)[）)]/.exec(rawTitle);
     if (match) {
       pagesTag = match[1];
       rawTitle = rawTitle.replace(/[（(]原书\s*p[^）)]+[）)]/, '').trim();
@@ -2412,7 +2412,7 @@ for (const relPath of TARGET_FILES) {
             if (!t.ok) return { ok: false, error: t.reason };
             code = t.code;
           } catch (e) {
-            return { ok: false, error: '公式解析失败：' + ((e && e.message) || e) };
+            return { ok: false, error: '公式解析失败：' + ((e?.message) || e) };
           }
           if (!code) return { ok: false, error: '这条公式没有可计算的表达式' };
 
@@ -2420,7 +2420,7 @@ for (const relPath of TARGET_FILES) {
           try {
             eng = await ensureOctave();
           } catch (e) {
-            return { ok: false, error: '计算内核启动失败：' + ((e && e.message) || e) };
+            return { ok: false, error: '计算内核启动失败：' + ((e?.message) || e) };
           }
           eng.lines.length = 0;
           eng.errs.length = 0;
@@ -2443,7 +2443,7 @@ for (const relPath of TARGET_FILES) {
             }
             return { ok: true, output: out || '(无输出)', code };
           } catch (e) {
-            return { ok: false, error: '执行失败：' + ((e && e.message) || e), code };
+            return { ok: false, error: '执行失败：' + ((e?.message) || e), code };
           }
         };
 
@@ -2475,7 +2475,7 @@ for (const relPath of TARGET_FILES) {
   //
   // 只认带数字的形式：文档页（维护细则）会**故意**写出这个模式的字面例子，
   // 那种没有数字的 `@@MATH_INLINE_n@@` 是正文，不是残留。
-  const leaked = htmlWithVers.match(/@@MATH_INLINE_\d+@@/);
+  const leaked = /@@MATH_INLINE_\d+@@/.exec(htmlWithVers);
   if (leaked) {
     throw new Error(
       `${targetHtmlPath} 的产物里残留数学占位符 ${leaked[0]}` +

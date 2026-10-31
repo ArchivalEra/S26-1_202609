@@ -546,9 +546,11 @@ test('CHAT_JS：秒表正则能剥掉服务端带的秒数（第六坑修复的�
 
 test('CHAT_JS：状态码正则能匹配 HTTP 429/401（第五坑的行为回归）', () => {
   // 字符形态的把关已由上面的泛化扫描接管；这里只留行为验证：抠出正则真跑一次。
-  const m = CHAT_JS.match(/msg\.match\((\/\^HTTP[^)]*\)\$?\/)\)/);
-  assert.ok(m, '应能抠出状态码正则');
-  const re = new RegExp(m[1].slice(1, -1));
+  // 2026-10-31：可选链/exec 改造后源码可能写成 `msg.match(/…/)` 或 `/…/.exec(msg)`。
+  // 两种都认，判据不变：**那个正则必须能匹配 HTTP 429 / 401**（第五坑的行为回归）。
+  const src = CHAT_JS.match(/(\/\^HTTP[^/]*\$?\/)/);
+  assert.ok(src, '应能抠出状态码正则');
+  const re = new RegExp(src[1].slice(1, -1));
   assert.equal(re.test('HTTP 429'), true, '必须能匹配 HTTP 429');
   assert.equal(re.test('HTTP 401'), true, '必须能匹配 HTTP 401');
 });

@@ -40,7 +40,7 @@ function dual(self, other) {
   var unreg = (typeof self.unregisterTool === "function") ? self.unregisterTool.bind(self) : null;
 
   self.registerTool = function (tool) {
-    var name = tool && tool.name;
+    var name = tool?.name;
     return Promise.resolve(reg(tool)).then(function (r) {
       if (!name || seen[name]) return r;
       seen[name] = true;
@@ -51,7 +51,7 @@ function dual(self, other) {
 
   if (unreg) {
     self.unregisterTool = function (arg) {
-      var name = (arg && arg.name) ? arg.name : arg;
+      var name = (arg?.name) ? arg.name : arg;
       return Promise.resolve(unreg(arg)).then(function (r) {
         if (name && seen[name]) {
           delete seen[name];
@@ -82,7 +82,7 @@ export function makeDual(self, other) {
 
   const out = {
     async registerTool(tool) {
-      const name = tool && tool.name;
+      const name = tool?.name;
       const r = await reg(tool);
       if (name && !seen.has(name)) {
         seen.add(name);
@@ -93,7 +93,7 @@ export function makeDual(self, other) {
   };
   if (unreg) {
     out.unregisterTool = async (arg) => {
-      const name = (arg && arg.name) ? arg.name : arg;
+      const name = (arg?.name) ? arg.name : arg;
       const r = await unreg(arg);
       if (name && seen.has(name)) {
         seen.delete(name);

@@ -56,8 +56,8 @@ export function createStdioEndpoint(opts) {
       return;
     }
     if (method === 'tools/call') {
-      const name = params && params.name;
-      const args = (params && params.arguments) || {};
+      const name = params?.name;
+      const args = params?.arguments ?? {};
       if (!name) { fail(id, -32602, 'tools/call 缺少 name'); return; }
       const r = await direct.call(name, args);
       // 工具错走 result.isError（**不升级成协议错**）
@@ -86,8 +86,8 @@ export function createStdioEndpoint(opts) {
         let msg;
         try { msg = JSON.parse(line); } catch (e) { fail(null, -32700, 'JSON 解析失败'); continue; }
         Promise.resolve(handle(msg)).catch((e) => {
-          log(`[error] ${e && e.stack ? e.stack : e}`);
-          if (msg && msg.id != null) fail(msg.id, -32603, String(e && e.message || e));
+          log(`[error] ${e?.stack ?? e}`);
+          if (msg?.id != null) fail(msg.id, -32603, String(e?.message ?? e));
         });
       }
     });

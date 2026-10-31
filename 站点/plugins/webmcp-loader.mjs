@@ -216,7 +216,7 @@ function resolveToken() {
   })
     .then(function (r) { clearTimeout(timer); return r.ok ? r.json() : null; })
     .then(function (j) {
-      var t = j && j.token ? String(j.token) : "";
+      var t = j?.token ? String(j.token) : "";
       if (t) {
         window.__bridgeToken = t;
         try { localStorage.setItem("webmcp_bridge_token", t); } catch (e) {}

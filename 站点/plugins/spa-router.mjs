@@ -61,7 +61,7 @@ function navigate(rawUrl, hash, push, opts4) {
   // 保底可用性。但助手工具循环调用时**整页重载会销毁 document，把助手自己的面板与
   // 已注册工具一起杀掉**——用户看到「学数学」跳过去，回来连接没了。
   // 所以工具传 soft=true：任何失败都 reject，由调用方回报「跳不过去」，绝不换页。
-  var soft = opts4 && opts4.soft === true;
+  var soft = opts4?.soft === true;
   // URL 规范化：防拼接污染（hash 误粘进 path 之类）；hash 一律走 URL.hash，不手拼字符串
   var u = new URL(rawUrl, location.href);
   u.hash = hash ? encodeURIComponent(hash) : "";
@@ -74,7 +74,7 @@ function navigate(rawUrl, hash, push, opts4) {
   var doFetch = function (extra) { return fetch(url, Object.assign({}, opts, extra || {})); };
   return doFetch().catch(function (err) {
     // 网络/缓存竞态先绕过 SW 重试一次（cache:reload 直连网络），移动端整页跳代价最大
-    if (err && err.name === "AbortError") throw err;
+    if (err?.name === "AbortError") throw err;
     return doFetch({ cache: "reload" });
   }).then(function (res) {
     if (!res || !res.ok) throw new Error("HTTP " + (res ? res.status : "unknown"));
@@ -156,7 +156,7 @@ function navigate(rawUrl, hash, push, opts4) {
     try { if (window.__packCellsReset) window.__packCellsReset(); } catch (e) {}
   }).catch(function (err) {
     inflight = null;
-    if (err && err.name === "AbortError") return;
+    if (err?.name === "AbortError") return;
     // 网络/解析失败 → 整页跳转兜底（保底可用性优先于不重载）。
     // soft 模式（助手工具调用）：**不许跳**——整页重载会销毁 document，
     // 连助手面板与已注册工具一起没了，用户回头就发现连接断了。改成 reject 上报。

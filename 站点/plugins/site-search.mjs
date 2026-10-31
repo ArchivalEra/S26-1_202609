@@ -341,8 +341,8 @@ export function extractSearchDoc(html, options) {
 
     if (parsed.closing) {
       const top = openTags.pop();
-      if (top && top.skip) skipping = Math.max(0, skipping - 1);
-      if (pendingHeading && top && top.name === parsed.name) {
+      if (top?.skip) skipping = Math.max(0, skipping - 1);
+      if (pendingHeading && top?.name === parsed.name) {
         chunks.push(SENTINEL_CLOSE);
         pendingHeading = null;
       }
@@ -654,11 +654,11 @@ function collectHits(data, bucketsByNumber, query) {
   const bucketOf = (gram) => bucketsByNumber.get(hashGram(gram) % data.buckets);
   const postingsFor = (gram) => {
     const bucket = bucketOf(gram);
-    return bucket && bucket.grams ? bucket.grams[gram] : undefined;
+    return bucket?.grams ? bucket.grams[gram] : undefined;
   };
   const unigramDocsFor = (ch) => {
     const bucket = bucketOf(ch);
-    return bucket && bucket.uni ? bucket.uni[ch] : undefined;
+    return bucket?.uni ? bucket.uni[ch] : undefined;
   };
 
   const hits = [];

@@ -165,11 +165,11 @@ export function tokenize(src) {
     const start = i;
     // 数字与小数点合成一个记号：`3.14` 是一个数，不是 3 . 1 4 四个记号。
     // 但 `2.3.4` 这种畸形要拆开，所以只在「前面是数字」时吃小数点。
-    if (/[0-9]/.test(ch)) {
-      while (i < n && /[0-9]/.test(text[i])) i += 1;
-      if (text[i] === '.' && /[0-9]/.test(text[i + 1] || '')) {
+    if (/\d/.test(ch)) {
+      while (i < n && /\d/.test(text[i])) i += 1;
+      if (text[i] === '.' && /\d/.test(text[i + 1] || '')) {
         i += 1;
-        while (i < n && /[0-9]/.test(text[i])) i += 1;
+        while (i < n && /\d/.test(text[i])) i += 1;
       }
       push('char', text.slice(start, i), start, i, { numeric: true });
       continue;

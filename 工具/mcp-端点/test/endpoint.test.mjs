@@ -3,6 +3,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createReadCore } from '../lib/read-core.mjs';
@@ -16,6 +17,22 @@ import { TARGET_FILES } from '../../../站点/页面清单.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '../../..');
+
+/**
+ * 期望页数 = 页面清单（`站点/页面清单.mjs` 的 TARGET_FILES）的条数。
+ *
+ * ⚠️ 2026-10-31：原本这里是写死的 `115`。页面清单长到 140 之后这条断言就红了，
+ * 而它红得**毫无信息量**——它只说明「测试抄了旧数字」，不说明代码坏。
+ * 页数的唯一真相源是页面清单本身；测试要验的是「核心报的页数 == 清单条数」，
+ * 不是「== 某个历史快照」。所以改成动态读，加页时测试自动跟上。
+ */
+const EXPECTED_PAGES = (() => {
+  const src = fs.readFileSync(path.resolve(ROOT, '站点/页面清单.mjs'), 'utf8');
+  const m = /export const TARGET_FILES = \[(.*?)\];/s.exec(src);
+  if (!m) throw new Error('读不到 TARGET_FILES —— 页面清单结构变了');
+  return (m[1].match(/'/g) || []).length / 2;
+})();
+
 
 function core() {
   return createReadCore({
@@ -44,7 +61,8 @@ test('Direct endpoint：call 返回 content + structuredContent', async () => {
   const ep = createDirectEndpoint(core());
   const r = await ep.call('course_stat', {});
   assert.ok(!r.isError);
-  assert.ok(r.structuredContent.pages === 115);
+  assert.equal(r.structuredContent.pages, EXPECTED_PAGES,
+    '页数应等于页面清单条数（原写死 115，2026-10-31 改为动态）');
   assert.ok(r.content[0].type === 'text');
 });
 
