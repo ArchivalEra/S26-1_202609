@@ -76,6 +76,49 @@ function render() {
   // 正文里的公式：只在可编辑态才显示可点样式（用 body 上的属性做 CSS 开关，
   // 不改任何公式节点本身 —— 那条是 MCP 的读面）
   document.body.setAttribute("data-pack-mode", state.mode);
+  renderDiag();
+}
+
+/* ── 诊断行 ────────────────────────────────────────────────────────
+ *
+ * 为什么需要：这套能力包有四个部件（OPFS 存储 / 状态派生 / MathLive 载入 /
+ * 公式点击绑定），每一处失败都可能被吞掉，而**症状全都一样**——
+ * 「下载完了但点公式没反应」。2026-10-31 站长实测就撞上这个：
+ * 存储请求弹了、按钮也变「已下载」，但模式仍是只读、MathLive 影子都没有，
+ * 界面上没有任何一处能说他到底卡在哪一环。
+ *
+ * 所以把每一环的结果都摆到面板上。判据是「**任何一环失败都能被看见**」，
+ * 不是「成功后显示成功」。 */
+var diag = {
+  store: "未查",      // OPFS 可用性
+  mathlive: "未载入",  // MathLive 脚本
+  katex: "未载入",     // 预览引擎
+  clicks: "未绑定",    // 公式点击委托
+  lastError: "",
+};
+function setDiag(key, value) {
+  diag[key] = value;
+  renderDiag();
+}
+function renderDiag() {
+  var box = $("pack-diag");
+  if (!box) return;
+  var rows = [
+    ["存储", diag.store],
+    ["编辑器脚本", diag.mathlive],
+    ["预览引擎", diag.katex],
+    ["点击绑定", diag.clicks],
+  ];
+  var html = "";
+  for (var i = 0; i < rows.length; i++) {
+    var bad = /失败|不可用|不支持|未载入|未绑定/.test(rows[i][1]);
+    html += "<div class='pack-diag-row" + (bad ? " is-bad" : "") + "'>" +
+      "<span>" + rows[i][0] + "</span><span>" + rows[i][1] + "</span></div>";
+  }
+  if (diag.lastError) {
+    html += "<div class='pack-diag-err'>" + diag.lastError + "</div>";
+  }
+  box.innerHTML = html;
 }
 
 /* ── 能力装配：编辑器就绪 ⇒ 动态载入 MathLive 并开编辑态 ───────── */
@@ -87,15 +130,27 @@ function render() {
  */
 var katexLoading = null;
 function ensureKatex() {
-  if (window.katex) return Promise.resolve(window.katex);
+  if (window.katex) { setDiag("katex", "已就绪"); return Promise.resolve(window.katex); }
   if (katexLoading) return katexLoading;
   katexLoading = new Promise(function (res) {
     var s = document.createElement("script");
     s.src = root() + "assets/katex/katex.min.js";
-    s.onload = function () { res(window.katex || null); };
-    s.onerror = function () { res(null); };
+    s.onload = function () {
+      if (window.katex && typeof window.katex.renderToString === "function") {
+        setDiag("katex", "已就绪"); res(window.katex);
+      } else {
+        setDiag("katex", "失败：脚本加载了但没挂上 window.katex"); res(null);
+      }
+    };
+    s.onerror = function () {
+      setDiag("katex", "失败：取不到 assets/katex/katex.min.js");
+      res(null);
+    };
     document.head.appendChild(s);
-    setTimeout(function () { res(window.katex || null); }, 8000);
+    setTimeout(function () {
+      if (!window.katex) setDiag("katex", "失败：8 秒内没就绪");
+      res(window.katex || null);
+    }, 8000);
   });
   return katexLoading;
 }
@@ -105,17 +160,39 @@ function ensureEditor() {
   // KaTeX 与 MathLive 一起拉：编辑器要的是「MathLive 输入 + KaTeX 预览」,
   // 缺哪个都不成。两个互不影响（一个失败另一个照常），所以不串联失败。
   ensureKatex();
+  setDiag("mathlive", "载入中…");
   mathliveLoading = import(root() + "assets/mathlive/mathlive-browser.min.js")
-    .catch(function () {
+    .catch(function (importErr) {
       // 浏览器版是 UMD，import() 可能拿不到副作用注册；退化成 script 标签
+      setDiag("mathlive", "import() 失败，改走 script 标签");
       return new Promise(function (res, rej) {
         var sc = document.createElement("script");
         sc.src = root() + "assets/mathlive/mathlive-browser.min.js";
-        sc.onload = res; sc.onerror = function () { rej(new Error("mathlive 载入失败")); };
+        sc.onload = res;
+        sc.onerror = function () { rej(new Error("取不到 mathlive-browser.min.js（HTTP 失败）")); };
         document.head.appendChild(sc);
       });
     })
-    .then(function () { bindFormulaClicks(); });
+    .then(function () {
+      // ⚠️ 判据必须是「math-field 自定义元素注册上了」，不是「脚本没抛错」。
+      // UMD 包加载成功但没注册元素的路径真实存在（依赖缺失、被 CSP 拦、版本不合）。
+      var reg = window.customElements && window.customElements.get("math-field");
+      if (!reg) {
+        setDiag("mathlive", "失败：脚本加载了但没注册 math-field");
+        diag.lastError = "MathLive 载入成功却未注册 math-field 元素——编辑器无法打开";
+        renderDiag();
+        return false;
+      }
+      setDiag("mathlive", "已就绪");
+      bindFormulaClicks();
+      return true;
+    })
+    .catch(function (e) {
+      setDiag("mathlive", "失败：" + ((e && e.message) || e));
+      diag.lastError = "MathLive 载入失败，公式无法编辑。可点上方「重新下载」再试。";
+      renderDiag();
+      return false;
+    });
   return mathliveLoading;
 }
 
@@ -233,6 +310,7 @@ function closeEditor() {
 function bindFormulaClicks() {
   if (document.__packClickBound) return;
   document.__packClickBound = true;
+  setDiag("clicks", "已绑定");
   document.addEventListener("click", function (ev) {
     if (state.mode === "readonly") return;
     var el = ev.target && ev.target.closest ? ev.target.closest(".ML__latex, .katex") : null;
@@ -358,7 +436,53 @@ function init() {
       }).catch(function (e) {
         btn.disabled = false;
         btn.textContent = "重试";
-        alert("下载失败：" + ((e && e.message) || e));
+        var msg = (e && e.message) || String(e);
+        setDiag(which === "editor" ? "store" : "store", "下载失败：" + msg);
+        diag.lastError = "下载失败：" + msg;
+        renderDiag();
+        alert("下载失败：" + msg);
+      });
+    });
+  }
+
+  // 「清空重来」：把 OPFS 里的旧副本删掉再重下。
+  //
+  // 为什么需要：这个能力包的失败症状**全都长得一样**——「下载完了但点公式没反应」。
+  // 而真实原因可能是旧文件大小不对（那会被 size 校验拦下并重下）、
+  // 可能是 MathLive 脚本被缓存成坏副本（size 对但内容坏了，size 校验救不了），
+  // 也可能是上一次下载中途失败留下了半个文件。这些情况下「再点一次下载」不会变好，
+  // 因为大小校验认为它已经在位。给一个显式的「删了重下」是唯一能自救的动作。
+  var resetBtn = pop.querySelector("[data-pack-reset]");
+  if (resetBtn) {
+    resetBtn.addEventListener("click", function () {
+      if (!pack) return;
+      resetBtn.disabled = true;
+      resetBtn.textContent = "清空中…";
+      setDiag("store", "正在清空旧副本…");
+      var names = ["editor", "engine"];
+      var chain = Promise.resolve();
+      names.forEach(function (n) {
+        chain = chain.then(function () { return pack.remove(n); }).catch(function () {});
+      });
+      chain.then(function () {
+        // 清完把内存里的加载标记也复位，否则 ensureEditor/ensureEngine 的
+        // Promise 缓存还指着上一次失败的尝试，重下也不会重新载入。
+        mathliveLoading = null;
+        katexLoading = null;
+        engineLoaded = null;
+        document.__packClickBound = false;
+        setDiag("mathlive", "未载入");
+        setDiag("katex", "未载入");
+        setDiag("clicks", "未绑定");
+        diag.lastError = "";
+        resetBtn.disabled = false;
+        resetBtn.textContent = "清空重来";
+        return syncOnce();
+      }).catch(function (e) {
+        resetBtn.disabled = false;
+        resetBtn.textContent = "清空重来";
+        diag.lastError = "清空失败：" + ((e && e.message) || e);
+        renderDiag();
       });
     });
   }
@@ -368,12 +492,31 @@ function init() {
 
 /* 查一次状态并渲染；**不订阅**（订阅会在每次广播时重复渲染，若渲染里再查就是环）。 */
 function syncOnce() {
-  if (!pack) return;
+  if (!pack) {
+    setDiag("store", "失败：能力包实例没建起来（capability-pack.mjs 装配失败）");
+    return Promise.resolve();
+  }
   return pack.status().then(function (s) {
     state = s;
+    // 存储层的判据：能不能读到编辑器资产、大小对不对。失败原因直接摆出来，
+    // 不写成「未下载」——「没下」和「下了但读不到」是两件事。
+    var e = s.editor || {};
+    if (e.ready) {
+      setDiag("store", "就绪（" + (e.present || 0) + "/" + (e.total || 1) + " 件在位）");
+    } else if (e.missing && e.missing.length) {
+      var m = e.missing[0];
+      setDiag("store", "未就绪：缺 " + (m.name || "文件") +
+        (m.bytes ? "（期望 " + m.bytes + " 字节）" : ""));
+    } else {
+      setDiag("store", "未就绪（读到状态但没有清单）");
+    }
     render();
     if (s.editor && s.editor.ready) ensureEditor();
-  }).catch(function () { /* 状态查不到就保持只读 */ });
+  }).catch(function (e) {
+    setDiag("store", "失败：" + ((e && e.message) || e));
+    diag.lastError = "查询存储状态出错：" + ((e && e.message) || e);
+    renderDiag();
+  });
 }
 
 /* 由 inline 装配脚本注入 pack 实例与 compute 适配器（见 build.mjs 的模板）。 */

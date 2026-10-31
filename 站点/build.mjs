@@ -382,13 +382,23 @@ fs.writeFileSync(path.join(webmcpDir, 'spa-router.js'), SPA_ROUTER_JS);
 // 由 nav-structure.mjs 的真函数派生（浏览器跑的就是测试跑的）。drawer-sync 依赖它。
 fs.writeFileSync(path.join(webmcpDir, 'nav-structure.js'), NAV_STRUCTURE_JS);
 fs.writeFileSync(path.join(webmcpDir, 'drawer-sync.js'), DRAWER_SYNC_JS);
-// 能力包运行时（2026-10-30）：装配层。纯逻辑在 plugins/capability-pack.mjs（node 可直接测）。
-fs.writeFileSync(path.join(webmcpDir, 'pack-runtime.js'), PACK_RUNTIME_JS);
 // 能力包的**纯逻辑**模块：浏览器端要 import 它（装配层 pack-runtime.js 用它）。
 // 它与 pack-runtime.js 是「逻辑 / 装配」两层——逻辑那份 node 里可直接测，
 // 所以它必须原样落地、不能被内联改写。
+//
+// ⚠️ **必须带版本戳**（2026-10-31 修）：它是 ES 模块，靠 `import(root + 'assets/plugins/
+// capability-pack.mjs')` 动态加载——**模块 import 的 URL 不带查询串时浏览器永久缓存**，
+// 于是 pack-runtime.js 换版了、纯逻辑却还是几天前那份。症状极难看出：
+// 下载成功、OPFS 里文件大小也对，但 `deriveMode` 是旧版逻辑 ⇒ 状态永远停在「只读」，
+// 而装配层每一行都是新的。这与 webmcp-loader 的 __SHIM_VER__/__TOOLS_VER__ 同一类坑。
+// 做法照抄那边：先写盘、算内容哈希、再把哈希替换进装配层的 import 语句。
+// ⚠️ **顺序神圣**：必须先写 capability-pack.mjs（被哈希方），再算哈希，
+// 最后写 pack-runtime.js（哈希消费方）——反过来会把上一轮的哈希写进去。
 const capabilitySrc = fs.readFileSync(path.join(SITE_DIR, 'plugins', 'capability-pack.mjs'), 'utf8');
 fs.writeFileSync(path.join(webmcpDir, 'capability-pack.mjs'), capabilitySrc);
+const packVer = assetVersion('assets/plugins/capability-pack.mjs');
+const packRuntimeVer = PACK_RUNTIME_JS.split('__PACK_VER__').join(packVer);
+fs.writeFileSync(path.join(webmcpDir, 'pack-runtime.js'), packRuntimeVer);
 
 // SW 已根除（2026-10-23 用户定案：长任务要「永远新鲜的页面」，SW 的 SWR/预缓存
 // 与它正面冲突——页面先出旧缓存、后台静默更新、下次才生效，模型跳十几次页会拿到
@@ -2106,6 +2116,14 @@ for (const relPath of TARGET_FILES) {
             <div class="pack-mode-row">
               当前：<strong id="pack-mode-label">只读</strong>
             </div>
+            <!-- 诊断行（2026-10-31）：四环状态直接摆出来。
+                 站长实测「下载完了但点公式没反应」时，界面上没有任何一处能说
+                 卡在哪一环——存储？脚本？点击绑定？所以每环都报。 -->
+            <div class="pack-diag" id="pack-diag"></div>
+            <div class="pack-reset-row">
+              <button class="pack-btn pack-btn-ghost" data-pack-reset>清空重来</button>
+              <span class="pack-reset-hint">删掉已下载的副本再下（旧副本坏掉时用这个）</span>
+            </div>
           </div>
 
 
@@ -2230,7 +2248,7 @@ for (const relPath of TARGET_FILES) {
     (async () => {
       try {
         const rootRel = document.documentElement.getAttribute('data-root') || './';
-        const mod = await import(rootRel + 'assets/plugins/capability-pack.mjs');
+        const mod = await import(rootRel + 'assets/plugins/capability-pack.mjs?v=__PACK_VER__');
         const pack = mod.createCapabilityPack({ store: mod.createOpfsStore(), root: rootRel });
         // 计算适配器：上游 OctaveEmbed 就位后才可用；先占位，运行时再补。
         window.__packCompute = async (latex, Embed) => {
@@ -2258,6 +2276,11 @@ for (const relPath of TARGET_FILES) {
 </html>`;
 
   const outFilePath = path.join(DIST_DIR, targetHtmlPath);
+  // 能力包版本戳：页面模板里写着 `__PACK_VER__`（import capability-pack.mjs 的查询串），
+  // 到这里统一替换成它的内容哈希。**必须在这里替换**——上面算 packVer 时
+  // 页面还没渲染，而模板是逐页生成的字符串。漏了这一步，产物里会留着字面
+  // `?v=__PACK_VER__`，浏览器把它当版本号，模块永不更新。
+  const htmlWithVers = finalHtml.split('__PACK_VER__').join(packVer);
   // 构建期兜底：任何 `@@MATH_INLINE_<数字>@@` 残留在产物里都是 bug。
   // 它意味着某段文字走了「数学占位符已生成、但没被 Step 6 还原」的路径——
   // 2026-10-29 实测发生在图注上（`:::figure id | 图注里写 $u_i$`）：
@@ -2267,14 +2290,14 @@ for (const relPath of TARGET_FILES) {
   //
   // 只认带数字的形式：文档页（维护细则）会**故意**写出这个模式的字面例子，
   // 那种没有数字的 `@@MATH_INLINE_n@@` 是正文，不是残留。
-  const leaked = finalHtml.match(/@@MATH_INLINE_\d+@@/);
+  const leaked = htmlWithVers.match(/@@MATH_INLINE_\d+@@/);
   if (leaked) {
     throw new Error(
       `${targetHtmlPath} 的产物里残留数学占位符 ${leaked[0]}` +
       '（说明有段文字晚了 Step 6 才进 HTML——多半是图注或模板里新加的字段）');
   }
   fs.mkdirSync(path.dirname(outFilePath), { recursive: true });
-  fs.writeFileSync(outFilePath, finalHtml, 'utf-8');
+  fs.writeFileSync(outFilePath, htmlWithVers, 'utf-8');
 
   // 检索语料：只收正文（htmlContent），标题用页面标题；URL 存**相对站点根**的路径
   // （不带前导斜杠），这样部署在任意子路径下都能由客户端补上站点根前缀。
@@ -2285,7 +2308,7 @@ for (const relPath of TARGET_FILES) {
 
   // Also create README.html at root if it's README.md
   if (relPath === 'README.md') {
-    fs.writeFileSync(path.join(DIST_DIR, 'README.html'), finalHtml, 'utf-8');
+    fs.writeFileSync(path.join(DIST_DIR, 'README.html'), htmlWithVers, 'utf-8');
   }
 
   console.log(`[build] Generated: ${targetHtmlPath}`);
