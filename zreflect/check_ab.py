@@ -76,34 +76,52 @@ def _dig(obj, dotted):
     return cur
 
 
+def _pair_field_problems(pr):
+    """pair 条目必填字段（name / a / b / why）缺失 ⇒ 报。"""
+    return ["pair 缺字段 %s: %r（why 必填——没理由的对比没人敢删）" % (f, pr)
+            for f in ("name", "a", "b", "why") if not pr.get(f)]
+
+
+def _declared(obj, key):
+    """取声明面：key 为空 ⇒ 整文件，否则按点分路径下钻。"""
+    return _dig(obj, key) if key else obj
+
+
+def _confound_problems(pr, key, da, db):
+    """除 allow 轴外任何键的值不一致 ⇒ 混淆变量（A/B 作废）。"""
+    allow = set(pr.get("allow") or [])
+    return ["%s: 混淆变量——%s 键 %r: A=%r B=%r（非 allow 轴不一致 ⇒ A/B 作废）"
+            % (pr["name"], key or "(根)", k, da.get(k), db.get(k))
+            for k in sorted(set(da) | set(db))
+            if k not in allow and da.get(k) != db.get(k)]
+
+
+def _pair_problems(pr, root, loader):
+    """单组 A/B 对比：字段 / 可读性 / 声明面类型 / 混淆变量。返回 (problems, skips)。"""
+    problems, skips = _pair_field_problems(pr), []
+    key = pr.get("key") or ""
+    ra, ea = loader(_join(root, pr["a"]))
+    rb, eb = loader(_join(root, pr["b"]))
+    if ra is None or rb is None:
+        skips.append("%s: 工件读不到（%s / %s）⇒ 本次未核对" % (pr["name"], ea or "", eb or ""))
+        return problems, skips
+    da, db = _declared(ra, key), _declared(rb, key)
+    if not isinstance(da, dict) or not isinstance(db, dict):
+        problems.append("%s: key=%r 在两件中至少一件不是 dict" % (pr["name"], key or "(根)"))
+        return problems, skips
+    return problems + _confound_problems(pr, key, da, db), skips
+
+
 def check(spec, root, loader=_load):
     """纯逻辑（自证注入 loader）。返回 (problems, skips)。"""
-    problems, skips = [], []
     pairs = spec.get("pairs") or []
     if not pairs:
-        problems.append("pairs 为空（零值守卫：空断言面不是通过）")
-        return problems, skips
+        return ["pairs 为空（零值守卫：空断言面不是通过）"], []
+    problems, skips = [], []
     for pr in pairs:
-        for f in ("name", "a", "b", "why"):
-            if not pr.get(f):
-                problems.append("pair 缺字段 %s: %r（why 必填——没理由的对比没人敢删）" % (f, pr))
-        key = pr.get("key") or ""
-        ra, ea = loader(_join(root, pr["a"]))
-        rb, eb = loader(_join(root, pr["b"]))
-        if ra is None or rb is None:
-            skips.append("%s: 工件读不到（%s / %s）⇒ 本次未核对" % (pr["name"], ea or "", eb or ""))
-            continue
-        da, db = _dig(ra, key) if key else ra, _dig(rb, key) if key else rb
-        if not isinstance(da, dict) or not isinstance(db, dict):
-            problems.append("%s: key=%r 在两件中至少一件不是 dict" % (pr["name"], key or "(根)"))
-            continue
-        allow = set(pr.get("allow") or [])
-        for k in sorted(set(da) | set(db)):
-            if k in allow:
-                continue
-            if da.get(k) != db.get(k):
-                problems.append("%s: 混淆变量——%s 键 %r: A=%r B=%r（非 allow 轴不一致 ⇒ A/B 作废）"
-                                % (pr["name"], key or "(根)", k, da.get(k), db.get(k)))
+        probs, sks = _pair_problems(pr, root, loader)
+        problems += probs
+        skips += sks
     return problems, skips
 
 

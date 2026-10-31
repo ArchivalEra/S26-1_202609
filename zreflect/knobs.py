@@ -43,6 +43,14 @@ REGISTRY = {
     "REFLECT_DOCS": ("list", "STATE.md,AGENTS.md,README.md,README.zh.md,README.de.md",
                      "翻案 / 陈旧闸门扫描的活状态文档清单"),
     "REFLECT_HISTORY_SECS": ("value", "", "append-only 历史章节编号（如 5,9,10）"),
+    # ── 本仓（S26-1）独有的三个旋钮（2026-10-31 接入整改版 Einfacht 时补登记）──
+    # 这三个是下游自己加的闸门（check_handoff / check_identity / check_semantics）
+    # 消费的，上游登记表里没有。**登记是必须的**：不登记的话 check_envfile 会把它们
+    # 判成「幻影旋钮」（文档承诺了、代码不读）—— 这正是那道闸门要抓的东西。
+    # 语义照它们各自的实现写，不是我编的。
+    "REFLECT_HANDOFF": ("file", "", "本仓 handoff 文档（check_handoff 的计数手抄判据；空 = 该规则明说未启用）"),
+    "REFLECT_IDENTITY": ("file", "", "本仓身份断言规格（check_identity 用；空 = 明说未启用）"),
+    "REFLECT_SEMANTICS": ("file", "", "本仓语义断言规格（check_semantics 用；空 = 明说未启用）"),
     "REFLECT_RETIRED": ("value", "", "退役组件名清单；空 = 该规则明说未启用"),
     "REFLECT_NAKED_MIN": ("number", "100", "裸数字阈值（小于它的整数不查）"),
     "REFLECT_STALE_DAYS": ("number", "", "测龄报警天数；空 = 该规则明说未启用"),
@@ -53,10 +61,8 @@ REGISTRY = {
     "REFLECT_RETRACTIONS": ("file", "retractions.json", "翻案台账"),
     "REFLECT_QUESTIONS": ("dir", "questions", "悬案目录"),
     "REFLECT_ENV_FILE": ("value", "Einfacht.env", "钩子旋钮载体的文件名"),
+    "REFLECT_ENV_HINT": ("flag", "", "off ⇒ 关闭「裸跑时提示用 Einfacht.env」的人性化提示（提示不是判据）"),
     "REFLECT_INVARIANTS": ("file", "", "声明式不变量规格；空 = 明说未启用"),
-    "REFLECT_SEMANTICS": ("file", "", "语义唯一性表（概念→规范名）；空 = 走本机默认路径或明说未启用"),
-    "REFLECT_IDENTITY": ("file", "", "身份白名单（上游 id → 只许用这些）；空 = 走本机默认路径或明说未启用"),
-    "REFLECT_HANDOFF": ("file", "", "handoff 口径表（基线唯一 / 禁手抄计数 / 未竟挂锚）；空 = 走本机默认路径或明说未启用"),
     "REFLECT_INSTRUMENTS": ("file", "", "量法登记位；空 = 该规则明说未启用"),
     "REFLECT_INSTRUMENT_DAYS": ("number", "", "恒常检测阈值天；空 = 该规则明说未启用"),
     "REFLECT_DOCTOR": ("file", "doctor.json", "doctor 规格（开工预检，非闸门）"),
@@ -65,6 +71,9 @@ REGISTRY = {
     "REFLECT_WORLD_LINE": ("value", "", "world 线覆盖（CI / 特殊跑法）"),
     "REFLECT_AB": ("file", "ab.json", "A/B 同旗标闸门的规格名"),
     "REFLECT_PINS": ("file", "pins.json", "派生树 pin 一致性闸门的规格名"),
+    "REFLECT_LOCKS": ("file", "upstream-lock.json", "锁定源清单闸门的规格名"),
+    "REFLECT_MEASURE_MODULE": ("value", "", "采集模块名（换仓只改 env 一行；空 = 用占位 measure_example）"),
+    "REFLECT_PHASES": ("value", "", "追加自定义相位（逗号分隔，如 lab）；内置 commit/start-of-work 不可删不可重名"),
 }
 
 KINDS = ("file", "list", "dir", "number", "flag", "value")
@@ -243,6 +252,7 @@ def _cases():
              "README.zh.md": "x", "README.de.md": "x"}))),
         # ③ 空输入必须报
         ("★ 登记表为空 = 名册坏（零值守卫）", lambda: bool(REGISTRY)),
+        ("REFLECT_PHASES 已登记（issue #21 相位旋钮）", lambda: "REFLECT_PHASES" in REGISTRY),
     ]
 
 

@@ -35,7 +35,6 @@
 """
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import sys
@@ -73,56 +72,96 @@ def _run(cmd):
         return -1, str(e)
 
 
+def _required_field_problems(p):
+    """pin 条目必填字段（name / worktree）缺失 ⇒ 报（why/name 必填的家族规矩）。"""
+    return ["pin 缺字段 %s: %r（why/name 必填的家族规矩）" % (f, p)
+            for f in ("name", "worktree") if not p.get(f)]
+
+
+def _resolve_worktree(root, p):
+    """worktree 相对仓库根解析（绝对路径原样用）。"""
+    return p["worktree"] if os.path.isabs(p["worktree"]) else os.path.join(root, p["worktree"])
+
+
+def _head_problems(p, root, run):
+    """读 worktree HEAD。返回 (问题清单, head 或 None)；None ⇒ 本 pin 到此为止。"""
+    wt = _resolve_worktree(root, p)
+    if not os.path.isdir(wt):
+        return ["%s: worktree %s 不存在（指针在、树不在）" % (p["name"], p["worktree"])], None
+    rc, head = run("git -C %s rev-parse HEAD" % wt)
+    if rc != 0:
+        return ["%s: worktree HEAD 读不到（不是 git 树？）" % p["name"]], None
+    return [], head
+
+
+def _tree_pin_problems(p, head, run):
+    """kind=tree：派生副本 ↔ worktree HEAD（commit 一致 / 派生树干净）。
+
+    返回 (problems, skips)。
+    """
+    problems, skips = [], []
+    rc, out = run(p["stamp_read"])
+    if rc != 0 or not out:
+        skips.append("%s: stamp 读不到（未供给？）" % p["name"])
+        return problems, skips
+    parts = out.split()
+    if len(parts) < 3:
+        problems.append("%s: stamp 形态坏（要 name/branch/commit/dirty）: %r" % (p["name"], out[:40]))
+        return problems, skips
+    if parts[2] != head:
+        problems.append("%s: 派生副本 commit %s ≠ worktree HEAD %s（供给后指针 bump 了？）"
+                        % (p["name"], parts[2][:12], head[:12]))
+    if len(parts) > 3 and parts[3] not in ("0", ""):
+        problems.append("%s: 派生副本带本地改动（dirty=%s）" % (p["name"], parts[3]))
+    return problems, skips
+
+
+def _version_pin_problems(p, run):
+    """kind=version：命令输出首行必须含 expect_version。返回 (problems, skips)。"""
+    problems, skips = [], []
+    rc, out = run(p.get("version_read", ""))
+    first = out.splitlines()[0] if out else ""
+    if rc != 0 or not first:
+        skips.append("%s: 版本命令读不到" % p["name"])
+        return problems, skips
+    if p.get("expect_version") and p["expect_version"] not in first:
+        problems.append("%s: 版本漂移（期望 %s，实测 %s）"
+                        % (p["name"], p["expect_version"], first[:48]))
+    return problems, skips
+
+
+def _pin_problems(p, root, run):
+    """单个 pin 的三条断言（字段 / HEAD / kind 分派）。返回 (problems, skips)。"""
+    problems, skips = _required_field_problems(p), []
+    head_probs, head = _head_problems(p, root, run)
+    problems += head_probs
+    if head is None:
+        return problems, skips
+    kind = p.get("kind")
+    if kind == "tree":
+        tree_probs, tree_skips = _tree_pin_problems(p, head, run)
+    elif kind == "version":
+        tree_probs, tree_skips = _version_pin_problems(p, run)
+    else:
+        tree_probs = ["%s: 未知 kind %r（tree | version）" % (p["name"], kind)]
+        tree_skips = []
+    return problems + tree_probs, skips + tree_skips
+
+
 def check(spec, run=_run, root=None):
     """纯逻辑（自证注入 run）。返回 (problems, skips)。
 
     `root` = 相对 worktree 的锚（默认被检查仓库根；自证传夹具目录）。
     """
     root = repo() if root is None else root
-    problems, skips = [], []
     pins = spec.get("pins") or []
     if not pins:
-        problems.append("pins 为空（零值守卫：空断言面不是通过）")
-        return problems, skips
+        return ["pins 为空（零值守卫：空断言面不是通过）"], []
+    problems, skips = [], []
     for p in pins:
-        for f in ("name", "worktree"):
-            if not p.get(f):
-                problems.append("pin 缺字段 %s: %r（why/name 必填的家族规矩）" % (f, p))
-        wt = os.path.join(root, p["worktree"]) if not os.path.isabs(p["worktree"]) else p["worktree"]
-        head = ""
-        if os.path.isdir(wt):
-            rc, head = run("git -C %s rev-parse HEAD" % wt)
-            if rc != 0:
-                problems.append("%s: worktree HEAD 读不到（不是 git 树？）" % p["name"])
-                continue
-        else:
-            problems.append("%s: worktree %s 不存在（指针在、树不在）" % (p["name"], p["worktree"]))
-            continue
-        if p.get("kind") == "tree":
-            rc, out = run(p["stamp_read"])
-            if rc != 0 or not out:
-                skips.append("%s: stamp 读不到（未供给？）" % p["name"])
-                continue
-            parts = out.split()
-            if len(parts) < 3:
-                problems.append("%s: stamp 形态坏（要 name/branch/commit/dirty）: %r" % (p["name"], out[:40]))
-                continue
-            if parts[2] != head:
-                problems.append("%s: 派生副本 commit %s ≠ worktree HEAD %s（供给后指针 bump 了？）"
-                                % (p["name"], parts[2][:12], head[:12]))
-            if len(parts) > 3 and parts[3] not in ("0", ""):
-                problems.append("%s: 派生副本带本地改动（dirty=%s）" % (p["name"], parts[3]))
-        elif p.get("kind") == "version":
-            rc, out = run(p.get("version_read", ""))
-            first = out.splitlines()[0] if out else ""
-            if rc != 0 or not first:
-                skips.append("%s: 版本命令读不到" % p["name"])
-                continue
-            if p.get("expect_version") and p["expect_version"] not in first:
-                problems.append("%s: 版本漂移（期望 %s，实测 %s）"
-                                % (p["name"], p["expect_version"], first[:48]))
-        else:
-            problems.append("%s: 未知 kind %r（tree | version）" % (p["name"], p.get("kind")))
+        probs, sks = _pin_problems(p, root, run)
+        problems += probs
+        skips += sks
     return problems, skips
 
 
@@ -152,7 +191,7 @@ def _cases():
     atexit.register(shutil.rmtree, d, True)
     os.makedirs(os.path.join(d, "wt"))
 
-    def _git(*a):
+    def _git(*_a):
         subprocess.run(["git", "init", "-q", os.path.join(d, "wt")], check=True)
         open(os.path.join(d, "wt", "f"), "w").write("x")
         subprocess.run(["git", "-C", os.path.join(d, "wt"), "add", "f"], check=True)

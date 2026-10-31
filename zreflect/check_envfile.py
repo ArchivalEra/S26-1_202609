@@ -50,15 +50,17 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gate import fatal, finish, main_selftest_or, meta, off, repo, selftest  # noqa: E402
+from gate import fatal, finish, main_selftest_or, meta, off, repo  # noqa: E402
 import knobs                                              # noqa: E402
-from knobs import KINDS, REGISTRY                         # noqa: E402
+from knobs import REGISTRY                         # noqa: E402
 
 ENV_FILE = (os.environ.get("REFLECT_ENV_FILE", "Einfacht.env")
             .strip() or "Einfacht.env")
 
 _EXPORT_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
-_QUOTES_RE = re.compile(r'^["\']|["\']$')
+# 显式括号只为把优先级写明白（`^a|b$` 交替本身优先级最低）；行为与
+# `^["\']|["\']$` 逐字相同 —— 只剥首/尾引号，不收中间引号。
+_QUOTES_RE = re.compile(r'^(?:["\'])|(?:["\'])$')
 # 旋钮记号：REFLECT_ + 大写。**左边界必需** —— 不加时，翻案示例文本
 # （`ZCODE_` 前缀 + 一个记号）会被从中间切成假记号，三语 README 对账
 # 各报一次假阳性（实测踩到）。⚠️ 本注释与自证里都**不写出**那个假记号
@@ -109,6 +111,69 @@ def parse_exports(text):
     return out
 
 
+def _phantom_token_problems(scanned, registry):
+    """扫描面里出现、登记表里没有的 REFLECT_* 记号（幻影 / typo）。
+
+    typo 样例必须由调用方拼接构造 —— 本文件在扫描面内，字面量写死
+    会把 typo 收进扫描面，守卫就废了。
+    """
+    out = []
+    for tok in sorted(scanned):
+        if tok not in registry:
+            out.append("记号 `%s` 出现在 zreflect/*.py 里但不在旋钮登记表"
+                       "（zreflect/knobs.py）—— 要么是 typo（会被所有程序"
+                       "静默忽略），要么是幻影旋钮（文档承诺了、代码不读，"
+                       "配了静默无效）。登记才算数" % tok)
+    return out
+
+
+def _existence_targets(kind, value):
+    """旋钮值 → (要查存在性的路径清单, 是否目录)；None = 该 kind 不查。"""
+    if kind == "file":
+        return [value], False
+    if kind == "list":
+        return [t.strip() for t in value.split(",") if t.strip()], False
+    if kind == "dir":
+        return [value], True
+    return None                         # number / flag / value 不查存在性
+
+
+def _export_problems(name, value, registry, file_exists, dir_exists):
+    """单个 export 的判据：空值 / 未登记 / 指向缺失（顺序即报告顺序）。"""
+    if not value:
+        return ["`%s` 的值是空的 —— 空值会让钩子的"
+                " [ -f ] 守卫静默跳过（空不是通过）" % name]
+    kind = registry.get(name, (None,))[0]
+    if kind is None:
+        return ["旋钮名 `%s` 不在登记表（zreflect/knobs.py）—— 打错"
+                "一位会被所有程序静默忽略，值永远到不了钩子" % name]
+    targets = _existence_targets(kind, value)
+    if targets is None:
+        return []
+    paths, is_dir = targets
+    out = []
+    for t in paths:
+        hit = dir_exists(t) if is_dir else file_exists(t)
+        if not hit:
+            out.append("旋钮 `%s`（%s）指向的%s不存在：%s"
+                       " —— 钩子的 [ -f ] 守卫会静默跳过"
+                       "（路径相对仓库根）"
+                       % (name, registry.get(name, ("", "", "?"))[2],
+                          "目录" if is_dir else "文件", t))
+    return out
+
+
+def _syntax_problems(syntax_ok):
+    """sh -n 结论 → 问题：False = 文件语法坏；None = 仪器本身坏了。"""
+    if syntax_ok is False:
+        return ["%s 过不了 sh -n（语法坏）⇒ 钩子要到提交"
+                "时刻才响亮地死，且报错指向不明" % ENV_FILE]
+    if syntax_ok is None:
+        return ["sh -n 跑不了（sh 不在？）—— 语法检查这个"
+                "仪器本身坏了，先修检查器，不许静默跳过"]
+    return []
+
+
 def problems(exports, registry, file_exists, dir_exists, syntax_ok=None,
              scanned=()):
     """纯函数：返回问题清单（空 = 绿）。自证期间不许 print。
@@ -118,58 +183,18 @@ def problems(exports, registry, file_exists, dir_exists, syntax_ok=None,
     `file_exists` / `dir_exists` = 存在性探针（自证注入假文件系统）；
     `syntax_ok` = sh -n 的结论（True / False；None = 仪器本身跑不了）。
     """
-    out = []
     if not exports:
         return ["%s 里没有任何生效的 export（空文件或只剩注释）"
                 " —— 看起来配了、其实什么都没加载"
                 "（「部署了 ≠ 在跑」家族）" % ENV_FILE]
-    # 幻影 / typo 对账：扫描面里出现、登记表里没有的 REFLECT_* 记号。
-    # （typo 样例必须由调用方拼接构造 —— 本文件在扫描面内，字面量写死
-    # 会把 typo 收进扫描面，守卫就废了。）
-    for tok in sorted(scanned):
-        if tok not in registry:
-            out.append("记号 `%s` 出现在 zreflect/*.py 里但不在旋钮登记表"
-                       "（zreflect/knobs.py）—— 要么是 typo（会被所有程序"
-                       "静默忽略），要么是幻影旋钮（文档承诺了、代码不读，"
-                       "配了静默无效）。登记才算数" % tok)
+    # 幻影 / typo 对账（扫描面）+ 每个 export 的载体判据 + sh 语法。
+    out = _phantom_token_problems(scanned, registry)
     for name in sorted(exports):
         if not name.startswith("REFLECT_"):
             continue                    # 非旋钮 export 不是本闸门的活
-        value = exports[name]
-        if not value:
-            out.append("`%s` 的值是空的 —— 空值会让钩子的"
-                       " [ -f ] 守卫静默跳过（空不是通过）" % name)
-            continue
-        kind = registry.get(name, (None,))[0]
-        if kind is None:
-            out.append("旋钮名 `%s` 不在登记表（zreflect/knobs.py）—— 打错"
-                       "一位会被所有程序静默忽略，值永远到不了钩子"
-                       % name)
-            continue
-        if kind == "file":
-            targets, is_dir = [value], False
-        elif kind == "list":
-            targets = [t.strip() for t in value.split(",") if t.strip()]
-            is_dir = False
-        elif kind == "dir":
-            targets, is_dir = [value], True
-        else:
-            continue                    # number / flag / value 不查存在性
-        for t in targets:
-            hit = dir_exists(t) if is_dir else file_exists(t)
-            if not hit:
-                out.append("旋钮 `%s`（%s）指向的%s不存在：%s"
-                           " —— 钩子的 [ -f ] 守卫会静默跳过"
-                           "（路径相对仓库根）"
-                           % (name, registry.get(name, ("", "", "?"))[2],
-                              "目录" if is_dir else "文件", t))
-    if syntax_ok is False:
-        out.append("%s 过不了 sh -n（语法坏）⇒ 钩子要到提交"
-                   "时刻才响亮地死，且报错指向不明" % ENV_FILE)
-    if syntax_ok is None:
-        out.append("sh -n 跑不了（sh 不在？）—— 语法检查这个"
-                   "仪器本身坏了，先修检查器，不许静默跳过")
-    return out
+        out += _export_problems(name, exports[name], registry,
+                                file_exists, dir_exists)
+    return out + _syntax_problems(syntax_ok)
 
 
 def _find_env_file():
@@ -301,6 +326,14 @@ def _cases():
          lambda: knobs.readme_problems(files={
              "README.md": "> ZCODE_" + typo + " 这条是已翻案的示例。",
              "README.zh.md": "x", "README.de.md": "x"}) == []),
+        # 引号剥离（_QUOTES_RE 的显式优先级只为写明白，行为逐字不变）：
+        # 复跑：python3 zreflect/check_envfile.py --selftest
+        ("首尾引号被剥（\"hello\" ⇒ hello）",
+         lambda: parse_exports("D=\"hello\"")["D"] == "hello"
+         and parse_exports("D='hello'")["D"] == "hello"),
+        ("★ 中间引号不许被剥（a\"b ⇒ a\"b；只剥首尾）",
+         lambda: parse_exports("D=a\"b")["D"] == "a\"b"
+         and parse_exports("D='a\"b'")["D"] == "a\"b"),
     ]
 
 

@@ -59,12 +59,29 @@ def body_of(block):
 
 
 def prose_of(doc_text):
-    """文档里**块以外**的正文（裸数字要在这里面查）。"""
-    if BLOCK_BEGIN not in doc_text:
-        return doc_text
-    pre = doc_text.split(BLOCK_BEGIN, 1)[0]
-    post = doc_text.split(BLOCK_END, 1)[-1] if BLOCK_END in doc_text else ""
-    return pre + post
+    """文档里**块以外**的正文（裸数字要在这里面查）。
+
+    #14：剥**全部** `<!-- AUTO:… -->…<!-- /AUTO:… -->` 区域，不是只剥事实块
+    那一对 —— Phase 3 起文档有两个机器块（FACTS + GATES），只剥 FACTS 会让
+    闸门名录整块进入裸数字扫描（名录里的 `sha256` 被切成 256，与台账里值恰
+    为 256 的事实撞车 ⇒ 假红；两个下游独立撞到，上游只因示例台账没有 256
+    而幸免 —— 机制上必炸的偶发）。
+    """
+    out, i = [], 0
+    while True:
+        b = doc_text.find("<!-- AUTO:", i)
+        if b < 0:
+            out.append(doc_text[i:])
+            break
+        out.append(doc_text[i:b])
+        e = doc_text.find("-->", b + len("<!-- AUTO:"))
+        end = doc_text.find("<!-- /AUTO:", e) if e >= 0 else -1
+        if end < 0:                  # 有头无尾：当没有块（标记检查另有零值守卫）
+            out.append(doc_text[b:])
+            break
+        close = doc_text.find("-->", end)
+        i = close + 3 if close >= 0 else len(doc_text)
+    return "".join(out)
 
 
 # ── 自证 ──────────────────────────────────────────────────────────────────────
@@ -83,6 +100,17 @@ def _cases():
              "正文\n" + render_block(full) + "\ntail")),
         ("没有块标记时 prose_of 退回整篇（找不到块 ≠ 可以当空）",
          lambda: prose_of("没有标记的文档") == "没有标记的文档"),
+        # #14：双机器块文档，GATES 块也必须剥掉（否则名录里的 sha256 被当裸数字）
+        ("双块文档：两个 AUTO 块都不进 prose（#14）",
+         lambda: (lambda d: ("sha256" not in prose_of(d)
+                             and "事实表" not in prose_of(d)
+                             and "正文" in prose_of(d) and "尾" in prose_of(d)))(
+             "正文\n<!-- AUTO:FACTS -->\n事实表\n<!-- /AUTO:FACTS -->\n"
+             "<!-- AUTO:GATES -->\n| x | sha256 |\n<!-- /AUTO:GATES -->\n尾")),
+        ("块内有 begin 字面量（md_lines 的 awk 判据）不破坏剥离",
+         lambda: (lambda d: "awk" not in prose_of(d) and "尾" in prose_of(d))(
+             "头\n<!-- AUTO:FACTS -->\ncmd: awk '<!-- AUTO:FACTS -->'\n"
+             "<!-- /AUTO:FACTS -->\n尾")),
         # ② 该报的必须报（渲染层的「该报」= 必须发生变化，不许是常量）
         ("★ 台账少一条 ⇒ 块跟着变（块不是常量）",
          lambda: render_block(full) != render_block({"facts": {"a": 4752}})),
@@ -99,7 +127,7 @@ def _selftest():
     import os                                            # noqa: PLC0415
     import sys                                           # noqa: PLC0415
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from gate import module_meta, selftest                            # noqa: PLC0415
+    from gate import selftest                            # noqa: PLC0415
     return selftest("render（数字的唯一产地）", _cases())
 
 

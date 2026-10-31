@@ -64,11 +64,10 @@ import os
 import socket
 import subprocess
 import sys
-import urllib.error
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gate import fatal, load_spec, main_selftest_or, meta, off, repo, selftest  # noqa: E402
+from gate import fatal, load_spec, main_selftest_or, meta, off, repo  # noqa: E402
 
 DEFAULT_SPEC = "doctor.json"
 DEFAULT_TIMEOUT = 2.0
@@ -111,7 +110,8 @@ def _http_probe(check, timeout):
                 {k.lower(): v for k, v in resp.headers.items()},
                 check)
             return ok, why
-    except (urllib.error.URLError, OSError, ValueError) as e:
+    # URLError 是 OSError 的子类，不必单列。
+    except (OSError, ValueError) as e:
         return False, "GET 失败：%s" % e
 
 
@@ -150,12 +150,62 @@ def label(check):
 
 # —— 规格校验（纯函数：零值守卫 + 形状判据）——
 
-def spec_problems(checks):
-    """纯函数：规格形状问题清单（空 = 形状合法）。"""
+def _http_shape_problems(c):
+    """http 检查项的字段判据（缺 url / expect_status 非整数 / expect_headers 形状）。"""
     out = []
+    if not str(c.get("url") or "").strip():
+        return ["`%s` 缺 url（必填）" % label(c)]
+    es = c.get("expect_status")
+    if es is not None and (isinstance(es, bool) or not isinstance(es, int)):
+        return ["`%s` 的 expect_status 必须是整数" % label(c)]
+    eh = c.get("expect_headers")
+    if eh is not None and (not isinstance(eh, dict) or any(
+            not isinstance(k, str) or not isinstance(v, str)
+            for k, v in eh.items())):
+        return ["`%s` 的 expect_headers 必须是"
+                " {头名: 值} 字符串对象" % label(c)]
+    return out
+
+
+def _docker_shape_problems(c):
+    """docker 检查项的字段判据（缺 container / state 只支持 running）。"""
+    if not str(c.get("container") or "").strip():
+        return ["`%s` 缺 container（必填）" % label(c)]
+    if str(c.get("state") or "").strip() != "running":
+        return ["`%s` 的 state 只支持 running（给的是 %r）"
+                % (label(c), c.get("state"))]
+    return []
+
+
+def _port_free_shape_problems(c):
+    """port-free 检查项的字段判据（port 必须是 1-65535 整数）。"""
+    port = c.get("port")
+    if (not isinstance(port, int) or isinstance(port, bool)
+            or not 1 <= port <= 65535):
+        return ["`%s` 的 port 必须是 1-65535 的整数"
+                "（给的是 %r）" % (label(c), port)]
+    return []
+
+
+# kind → 该 kind 的字段判据函数（新 kind 加一行，主循环不动）
+_KIND_SHAPE = {
+    "http": _http_shape_problems,
+    "docker": _docker_shape_problems,
+    "port-free": _port_free_shape_problems,
+}
+
+
+def spec_problems(checks):
+    """纯函数：规格形状问题清单（空 = 形状合法）。
+
+    issue #22 整改：按「一层判据 = 一个函数」拆开 —— 每个 kind 的字段判据
+    独立成函数（`_KIND_SHAPE` 一张表），主函数只做通用部分（非对象 / 缺 kind /
+    未知 kind / 缺 why）+ 分派。消息措辞与顺序保持原样。
+    """
     if not isinstance(checks, list) or not checks:
         return ["doctor 清单为空或不是数组 —— 空清单不是通过"
                 "（零值守卫）：清单要有理由才存在"]
+    out = []
     for c in checks:
         if not isinstance(c, dict):
             out.append("检查项不是对象：%r" % (c,))
@@ -173,39 +223,7 @@ def spec_problems(checks):
         if not why:
             out.append("`%s` 缺 why（必填：没有理由的检查项"
                        "没人敢删，会变成僵尸）" % label(c))
-        if kind == "http":
-            if not str(c.get("url") or "").strip():
-                out.append("`%s` 缺 url（必填）" % label(c))
-                continue
-            es = c.get("expect_status")
-            if es is not None and (isinstance(es, bool)
-                                   or not isinstance(es, int)):
-                out.append("`%s` 的 expect_status 必须是整数"
-                           % label(c))
-                continue
-            eh = c.get("expect_headers")
-            if eh is not None and (not isinstance(eh, dict) or any(
-                    not isinstance(k, str) or not isinstance(v, str)
-                    for k, v in eh.items())):
-                out.append("`%s` 的 expect_headers 必须是"
-                           " {头名: 值} 字符串对象" % label(c))
-                continue
-        elif kind == "docker":
-            if not str(c.get("container") or "").strip():
-                out.append("`%s` 缺 container（必填）" % label(c))
-                continue
-            if str(c.get("state") or "").strip() != "running":
-                out.append("`%s` 的 state 只支持 running"
-                           "（给的是 %r）"
-                           % (label(c), c.get("state")))
-                continue
-        else:                                        # port-free
-            port = c.get("port")
-            if (not isinstance(port, int) or isinstance(port, bool)
-                    or not 1 <= port <= 65535):
-                out.append("`%s` 的 port 必须是 1-65535 的整数"
-                           "（给的是 %r）" % (label(c), port))
-                continue
+        out += _KIND_SHAPE[kind](c)
     return out
 
 
