@@ -3,7 +3,7 @@ id: okf.semester.catalog_index
 name: 课程总览
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-30"
+last_updated: "2026-10-31"
 stewards:
   - team: 学期课程学习记录
 category: 课程索引
@@ -17,7 +17,7 @@ sources:
 | 课程 | 入口 |
 | :--- | :--- |
 | 工程数学 | [课程索引](./工程数学/index.md) |
-| 电力大数据与人工智能 | [课程索引](./电力大数据与人工智能/index.md) |
+| 电力大数据与人工智能 | [课程索引](./电力大数据与人工智能/index.md) · [备考](./电力大数据与人工智能/备考.md) |
 | 形势与政策 | [课程索引](./形势与政策/index.md) |
 | 电路原理 | [课程索引](./电路原理/index.md) |
 | 电子技术 | [课程索引](./电子技术/index.md) |

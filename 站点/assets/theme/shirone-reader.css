@@ -1971,12 +1971,18 @@ body.search-open {
   color: var(--md-sys-color-outline);
 }
 
-/* 可编辑态：公式才有可点提示。**只加 outline，不改字号与布局** */
+/* 可编辑态：公式才有可点提示。**只加 outline，不改字号与布局**。
+   2026-10-31 补 .katex：产物里早就是 KaTeX 了（ML__latex 零处），只写 ML__latex
+   时这两个块全打空——公式能点但没有任何可点提示（cursor 和 hover 描边都不生效）。 */
+body[data-pack-mode="editable"] .article-content .katex,
+body[data-pack-mode="computable"] .article-content .katex,
 body[data-pack-mode="editable"] .article-content .ML__latex,
 body[data-pack-mode="computable"] .article-content .ML__latex {
   cursor: pointer;
   border-radius: 3px;
 }
+body[data-pack-mode="editable"] .article-content .katex:hover,
+body[data-pack-mode="computable"] .article-content .katex:hover,
 body[data-pack-mode="editable"] .article-content .ML__latex:hover,
 body[data-pack-mode="computable"] .article-content .ML__latex:hover {
   outline: 2px solid var(--md-sys-color-primary);

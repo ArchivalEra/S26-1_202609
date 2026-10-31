@@ -223,101 +223,14 @@ export function toDialect(tex, dialectName) {
 }
 
 /**
- * MathLive 渲染 adapter。
+ * 展示引擎只有一个：KaTeX（见下方 createKatexRenderer）。
  *
- * @param {{convertLatexToMarkup: Function, validateLatex: Function}} mathlive
- *   MathLive 的 SSR 模块（`mathlive-ssr.min.mjs`）
- * @returns {Renderer}
+ * 2026-10-31 删除 MathLive 渲染 adapter：站长定案「MathLive 的拉伸括号由
+ * ⎛⎜⎝/⎞⎟⎠ 小片拼成，接缝处有亚像素缝」，展示改回 KaTeX 之后这个 adapter
+ * 就没有消费者了（构建期走 createKatexRenderer、聊天面板走 katex.renderToString）。
+ * MathLive 只以**浏览器版**留在能力包里，用途是 math-field 的编辑交互——
+ * 那是另一种需求，不是排版。
  */
-export function createMathliveRenderer(mathlive) {
-  return {
-    id: 'mathlive',
-    caps: { markSubstrate: true, producesMathml: false, producesAnnotation: false },
-
-    /**
-     * @param {MathExpr} expr 已绑定的 IR
-     * @returns {{html: string, tex: string, problems: Problem[], rewrites: string[]}}
-     */
-    render(expr) {
-      const problems = [];
-      const raw = irToTex(expr.root, { decorate: true });
-      const { tex, rewrites } = toDialect(raw, 'mathlive');
-
-      // 先验：结构化的错误列表，不嗅探产物字符串
-      let verdict = [];
-      try {
-        verdict = mathlive.validateLatex(tex) || [];
-      } catch (e) {
-        problems.push({
-          code: 'render-validate-threw',
-          severity: 'warn',
-          where: { source: expr.source },
-          message: `MathLive 校验抛异常：${e.message}`,
-        });
-      }
-
-      let html = '';
-      try {
-        html = mathlive.convertLatexToMarkup(tex);
-      } catch (e) {
-        problems.push({
-          code: 'render-failed',
-          severity: 'error',
-          where: { source: expr.source },
-          message: `渲染失败：${e.message}`,
-          hint: tex.slice(0, 120),
-        });
-        return { html: fallbackHtml(expr), tex, problems, rewrites };
-      }
-
-      if (verdict.length) {
-        problems.push({
-          code: 'render-unsupported',
-          severity: 'error',
-          where: { source: expr.source, index: Math.max(0, verdict[0].before?.length ?? 0) },
-          message: `该引擎不支持 ${verdict[0].arg || verdict[0].code}`,
-          hint: tex.slice(0, 120),
-        });
-      }
-      // 结构判据：`ML__error` 是 MathLive 明确的错误标记
-      if (/ML__error/.test(html)) {
-        problems.push({
-          code: 'render-error-markup',
-          severity: 'error',
-          where: { source: expr.source },
-          message: '渲染产物里出现了错误标记（该引擎无法排版这条公式）',
-          hint: tex.slice(0, 120),
-        });
-        return { html: fallbackHtml(expr), tex, problems, rewrites };
-      }
-
-      // 把 IR 的纯文本投影烘进 aria-label：
-      //   ① 读屏软件念人话，不念 `\frac{a}{b}`；
-      //   ② AI 读页面（webmcp）与搜索索引拿同一份文本——不必再从产物里剥 LaTeX。
-      // 这是「同一份数据双投影」的落地：图形给人看，文本给机器读，两者都从 IR 出。
-      const plain = expr.plainHint || '';
-      if (plain) {
-        html = html.replace(/^<span class="ML__latex"/, `<span class="ML__latex" role="math" aria-label="${escapeAttr(plain)}" data-math-plain="${escapeAttr(plain)}"`);
-      }
-      return { html, tex, problems, rewrites };
-    },
-
-    probe() {
-      const problems = [];
-      const sample = 'B=\\htmlData{term=sym-B}{B}';
-      const out = mathlive.convertLatexToMarkup(sample);
-      if (!out.includes('data-term')) {
-        problems.push({
-          code: 'adapter-contract',
-          severity: 'error',
-          where: {},
-          message: '渲染器不认 \\htmlData{term=…}——标注会静默消失，适配器契约不成立',
-        });
-      }
-      return problems;
-    },
-  };
-}
 
 /**
  * KaTeX 渲染 adapter（2026-10-30 站长定案：展示用 KaTeX，编辑用 MathLive）。

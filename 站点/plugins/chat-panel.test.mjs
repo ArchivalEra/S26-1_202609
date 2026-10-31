@@ -118,16 +118,16 @@ test('renderMathInto：无 KaTeX 时退化成纯文本（不注入）', () => {
   assert.equal(n.innerHTML, '', '没有 KaTeX 不该产生 HTML');
 });
 
-test('renderMathInto：用公式引擎的产出填 innerHTML（现为 MathLive）', () => {
-  // 2026-10-29 换引擎：接口从 `{renderToString}` 换成 `{convertLatexToMarkup}`。
+test('renderMathInto：用公式引擎的产出填 innerHTML（现为 KaTeX）', () => {
+  // 2026-10-31 换回 KaTeX：接口回到 `{renderToString}`。
   // 安全不变量 I1 不变——innerHTML 仍只接引擎产物（纯排版结构，不含脚本）。
   const doc = makeDoc();
   const n = doc.createElement('span');
   const fakeMaths = {
-    convertLatexToMarkup: (tex) => '<span class="ML__latex">' + tex + '</span>',
+    renderToString: (tex) => '<span class="katex">' + tex + '</span>',
   };
   renderMathInto(doc, n, 'x^2', false, fakeMaths);
-  assert.match(n.innerHTML, /class="ML__latex"/);
+  assert.match(n.innerHTML, /class="katex"/);
 });
 
 test('renderMathInto：未加载引擎时退回字面 TeX（不抛）', () => {
@@ -140,30 +140,43 @@ test('renderMathInto：未加载引擎时退回字面 TeX（不抛）', () => {
 test('renderMathInto：引擎抛错时错误走 textContent（不注入错误串）', () => {
   const doc = makeDoc();
   const n = doc.createElement('span');
-  const boom = { convertLatexToMarkup: () => { throw new Error('<img src=x onerror=alert(1)>'); } };
+  const boom = { renderToString: () => { throw new Error('<img src=x onerror=alert(1)>'); } };
   renderMathInto(doc, n, 'bad', false, boom);
   assert.ok(!n.innerHTML.includes('onerror'), '错误串绝不能进 innerHTML');
   assert.ok(n.textContent.includes('$bad$'), '退回字面 TeX');
   assert.match(n.className, /chat-math-err/);
 });
 
-test('renderMathInto：引擎产物带 ML__error 时也按失败处理', () => {
-  // MathLive 遇到不支持的构造不会抛异常，而是吐带 ML__error 的产物。
-  // 判据必须是「检查产物」，不能只看有没有抛。
+test('renderMathInto：引擎产物带 katex-error 时也按失败处理', () => {
+  // KaTeX 配 `throwOnError:false` 遇到排不了的构造不会抛异常，而是吐带
+  // `katex-error` 类的产物。判据必须是「检查产物」，不能只看有没有抛。
   const doc = makeDoc();
   const n = doc.createElement('span');
-  const bad = { convertLatexToMarkup: () => '<span class="ML__error">?</span>' };
+  const bad = { renderToString: () => '<span class="katex-error">?</span>' };
   renderMathInto(doc, n, 'whatever', false, bad);
-  assert.ok(!n.innerHTML.includes('ML__error'), '错误产物不该被塞进页面');
+  assert.ok(!n.innerHTML.includes('katex-error'), '错误产物不该被塞进页面');
   assert.match(n.className, /chat-math-err/);
 });
 
 test('renderMathInto：显示公式包一层可横向滚动的容器', () => {
   const doc = makeDoc();
   const n = doc.createElement('span');
-  const fakeMaths = { convertLatexToMarkup: (tex) => '<span class="ML__latex">' + tex + '</span>' };
+  const fakeMaths = { renderToString: (tex) => '<span class="katex">' + tex + '</span>' };
   renderMathInto(doc, n, 'a+b', true, fakeMaths);
   assert.match(n.innerHTML, /chat-math-display/);
+});
+
+test('renderMathInto：displayMode 跟着 display 走（\tag 只在 display 下可用）', () => {
+  // 2026-10-30 构建期实测：`\tag{1-31}` 这类编号宏在 inline 模式下是 parse error。
+  // 聊天里的 `$$…$$` 必须传 displayMode:true，否则带编号的公式会退化成错误块。
+  const doc = makeDoc();
+  const seen = [];
+  const fakeMaths = {
+    renderToString: (tex, opts) => { seen.push(!!(opts && opts.displayMode)); return '<span class="katex">' + tex + '</span>'; },
+  };
+  renderMathInto(doc, doc.createElement('span'), 'a', true, fakeMaths);
+  renderMathInto(doc, doc.createElement('span'), 'b', false, fakeMaths);
+  assert.deepEqual(seen, [true, false], 'display 公式要 displayMode:true，行内不要');
 });
 
 // ── 字符串完整性 ───────────────────────────────────────────

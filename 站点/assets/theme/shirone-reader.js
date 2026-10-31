@@ -190,24 +190,33 @@
     });
   }
 
-  // Copy Code
-  document.querySelectorAll(".copy-btn").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const codeBlock = btn.closest(".code-fence-wrapper").querySelector("code");
-      if (!codeBlock) return;
-      try {
-        await navigator.clipboard.writeText(codeBlock.innerText);
-        const originalText = btn.textContent;
-        btn.textContent = "已复制";
-        btn.style.color = "var(--md-sys-color-primary)";
-        setTimeout(() => {
-          btn.textContent = originalText;
-          btn.style.color = "";
-        }, 1800);
-      } catch (err) {
-        console.error("复制失败", err);
-      }
-    });
+  // Copy Code —— **事件委托**（2026-10-31 修 issue #17）。
+  //
+  // 旧实现是启动时 `querySelectorAll(".copy-btn").forEach(绑定)`：只在首屏那一次
+  // 生效，而 copy-btn 在 `.article-content` **内**——SPA 换页换掉正文 DOM 之后，
+  // 新页的按钮没有监听器，点了没反应（首屏直达正常，站内跳转后失效）。
+  // 委托到 document 上就没有「换页要重绑」这回事，与 spa-router 的点击委托同一套手法。
+  //
+  // ⚠️ 用 closest 而不是 e.target.classList：按钮里可能有子节点，
+  // 点到的可能是子节点而不是按钮本身。
+  document.addEventListener("click", async (e) => {
+    const btn = e.target && e.target.closest ? e.target.closest(".copy-btn") : null;
+    if (!btn) return;
+    const wrap = btn.closest(".code-fence-wrapper");
+    const codeBlock = wrap && wrap.querySelector("code");
+    if (!codeBlock) return;
+    try {
+      await navigator.clipboard.writeText(codeBlock.innerText);
+      const originalText = btn.textContent;
+      btn.textContent = "已复制";
+      btn.style.color = "var(--md-sys-color-primary)";
+      setTimeout(() => {
+        btn.textContent = originalText;
+        btn.style.color = "";
+      }, 1800);
+    } catch (err) {
+      console.error("复制失败", err);
+    }
   });
 
   // Theme Palette (Color Picker & Presets)
