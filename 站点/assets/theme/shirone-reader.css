@@ -1981,6 +1981,159 @@ body.search-open {
   overscroll-behavior: contain;
 }
 
+/* ── 两个能力开关（2026-10-31）：iOS 风格滑块 ──────────────────────
+   为什么自己画而不用 <input type=checkbox>：原生 checkbox 在各浏览器长得
+   不一样，而这两个开关是「能力总闸」，读者要一眼看出开没开。
+   做法：真 input 藏在 label 里（保留键盘可达与语义），外观全交给 span。 */
+.pack-switches {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin: 0.9rem 0 0.2rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+}
+.pack-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  cursor: pointer;
+  font-size: 0.78rem;
+  color: var(--md-sys-color-on-surface);
+  user-select: none;
+}
+.pack-switch:has(input:disabled) {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+/* 真 input：视觉隐藏但保留键盘焦点（不能用 display:none，那会让它不可聚焦）。 */
+.pack-switch input {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0; border: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+.pack-switch-track {
+  position: relative;
+  flex: 0 0 auto;
+  width: 2.4rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  background: var(--md-sys-color-surface-container-highest, #d9d8e0);
+  transition: background-color .18s ease;
+}
+.pack-switch-track::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0.15rem;
+  width: 1.04rem;
+  height: 1.04rem;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 25%);
+  transform: translateY(-50%);
+  transition: left .18s cubic-bezier(.4,0,.2,1);
+}
+.pack-switch input:checked + .pack-switch-track {
+  background: var(--md-sys-color-primary);
+}
+.pack-switch input:checked + .pack-switch-track::after {
+  left: calc(100% - 1.19rem);
+}
+.pack-switch input:focus-visible + .pack-switch-track {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+}
+.pack-switch-hint {
+  display: block;
+  font-size: 0.68rem;
+  color: var(--md-sys-color-outline);
+  line-height: 1.4;
+  margin-top: 0.1rem;
+}
+
+/* ── 公式单元格（2026-10-31）：页内笔记本式 ───────────────────────
+   结构（由 plugins/formula-cells.mjs 建）：
+     <span class="fcell" data-fcell-tex="...">
+       <button class="fcell-play">▶</button>
+       <span class="katex">…</span>          ← 原节点，MCP 读面
+       <span class="fcell-result">= 2</span>
+     </span>
+   点公式本体 → 原地插 <math-field>，原 katex 只 display:none（不删）。 */
+.fcell {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  /* 给左上角播放按钮留出位置，避免它压住前一个字的正文 */
+  padding-left: 1.15rem;
+}
+/* 块级公式（display math）的容器，按钮在更左一点 */
+.math-display .fcell { display: block; }
+
+.fcell-play {
+  position: absolute;
+  left: 0;
+  top: 0.15em;
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--md-sys-color-primary);
+  font-size: 0.62rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity .15s ease, background-color .15s ease;
+}
+.fcell-play:hover,
+.fcell-play:focus-visible {
+  opacity: 1;
+  background: color-mix(in srgb, var(--md-sys-color-primary) 14%, transparent);
+}
+.fcell-play:disabled { cursor: progress; opacity: 0.8; }
+
+/* 结果区：独立的一块，与公式本体视觉分开（读者要知道哪个是题、哪个是答案） */
+.fcell-result {
+  display: inline-block;
+  margin-left: 0.45rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 5px;
+  font-size: 0.86em;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  background: color-mix(in srgb, var(--md-sys-color-primary) 9%, transparent);
+  color: var(--md-sys-color-on-surface);
+  vertical-align: baseline;
+}
+.math-display .fcell-result { display: block; margin: 0.2rem 0 0; }
+.fcell-result.is-pending { color: var(--md-sys-color-outline); font-style: italic; }
+.fcell-result.is-err {
+  background: var(--md-sys-color-error-container, #ffdad6);
+  color: var(--md-sys-color-on-error-container, #410002);
+  font-family: inherit;
+}
+.fcell-result.is-ok { color: var(--md-sys-color-primary); }
+.fcell-result[hidden] { display: none; }
+
+/* 编辑态：MathLive 接管公式本体那块 */
+.fcell-mathfield {
+  display: inline-block;
+  min-width: 6rem;
+  padding: 0.1rem 0.3rem;
+  border: 1px solid var(--md-sys-color-primary);
+  border-radius: 6px;
+  background: var(--md-sys-color-surface-container-low);
+  color: var(--md-sys-color-on-surface);
+  font-size: 1.05em;
+  --caret-color: var(--md-sys-color-primary);
+  --selection-background-color: color-mix(in srgb, var(--md-sys-color-primary) 30%, transparent);
+  --selection-color: var(--md-sys-color-on-surface);
+  color-scheme: light;
+}
+
 /* 诊断行（2026-10-31）：四环状态。失败行标红——「下载完了但点公式没反应」
    这类症状必须能一眼看出卡在哪一环，不能全靠猜。 */
 .pack-diag {

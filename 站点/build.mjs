@@ -396,8 +396,15 @@ fs.writeFileSync(path.join(webmcpDir, 'drawer-sync.js'), DRAWER_SYNC_JS);
 // 最后写 pack-runtime.js（哈希消费方）——反过来会把上一轮的哈希写进去。
 const capabilitySrc = fs.readFileSync(path.join(SITE_DIR, 'plugins', 'capability-pack.mjs'), 'utf8');
 fs.writeFileSync(path.join(webmcpDir, 'capability-pack.mjs'), capabilitySrc);
+// 公式单元格模块（2026-10-31）：装配层用 import() 取它，所以同样要带版本戳。
+// 这个文件里没有任何 node 专有 API —— 它只碰 DOM，浏览器直接能 import。
+const cellsSrc = fs.readFileSync(path.join(SITE_DIR, 'plugins', 'formula-cells.mjs'), 'utf8');
+fs.writeFileSync(path.join(webmcpDir, 'formula-cells.mjs'), cellsSrc);
+const cellsVer = assetVersion('assets/plugins/formula-cells.mjs');
 const packVer = assetVersion('assets/plugins/capability-pack.mjs');
-const packRuntimeVer = PACK_RUNTIME_JS.split('__PACK_VER__').join(packVer);
+const packRuntimeVer = PACK_RUNTIME_JS
+  .split('__PACK_VER__').join(packVer)
+  .split('__CELLS_VER__').join(cellsVer);
 fs.writeFileSync(path.join(webmcpDir, 'pack-runtime.js'), packRuntimeVer);
 
 // ── 数学模块的**浏览器可用子集**（2026-10-31）────────────────────────────
@@ -2130,6 +2137,28 @@ for (const relPath of TARGET_FILES) {
               <div class="pack-progress" id="pack-progress-engine" hidden><div class="pack-progress-bar"></div></div>
             </div>
 
+            <!-- 两个能力开关（2026-10-31）：iOS 风格滑块。
+                 状态存 localStorage —— 站长原话「我希望记忆功能发挥作用」。
+                 之前「两件都下载了还得点一下按钮才能编辑」就是因为没有持久状态。 -->
+            <div class="pack-switches">
+              <label class="pack-switch">
+                <span>
+                  允许编辑和计算
+                  <span class="pack-switch-hint">公式旁出播放按钮，点公式本体可原地编辑</span>
+                </span>
+                <input type="checkbox" id="pack-allow-edit">
+                <span class="pack-switch-track" aria-hidden="true"></span>
+              </label>
+              <label class="pack-switch">
+                <span>
+                  自动计算
+                  <span class="pack-switch-hint">可见的公式自动出结果（改完立刻重算）</span>
+                </span>
+                <input type="checkbox" id="pack-auto-compute">
+                <span class="pack-switch-track" aria-hidden="true"></span>
+              </label>
+            </div>
+
             <div class="pack-mode-row">
               当前：<strong id="pack-mode-label">只读</strong>
             </div>
@@ -2263,6 +2292,16 @@ for (const relPath of TARGET_FILES) {
         const rootRel = document.documentElement.getAttribute('data-root') || './';
         const mod = await import(rootRel + 'assets/plugins/capability-pack.mjs?v=__PACK_VER__');
         const pack = mod.createCapabilityPack({ store: mod.createOpfsStore(), root: rootRel });
+
+        // 公式单元格模块（2026-10-31）：暴露工厂函数，装配层（pack-runtime.js）
+        // 在需要时自己 createFormulaCells —— 两层分工：本层管 import 与版本戳，
+        // 装配层管「什么时候装、装在哪个容器上」。
+        try {
+          const cellsMod = await import(rootRel + 'assets/plugins/formula-cells.mjs?v=__CELLS_VER__');
+          window.__createFormulaCells = cellsMod.createFormulaCells;
+        } catch (e) {
+          console.warn('[pack] formula-cells 载入失败，页内单元格不可用', e);
+        }
 
         // ── 计算适配器（2026-10-31，按上游 Octave-Full-Wasm 「mail/002」 实现）──
         //
