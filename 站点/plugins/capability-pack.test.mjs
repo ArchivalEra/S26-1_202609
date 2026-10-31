@@ -415,6 +415,9 @@ test('★ 装配层不许改动公式节点（MCP 读面必须是只读的旁路
   assert.ok(!/\.ML__latex[\s\S]{0,40}?\.remove\(/.test(code), '不许 remove 公式容器');
   assert.ok(!/querySelectorAll\(['"]\.ML__latex['"]\)[\s\S]{0,80}?\.innerHTML\s*=/.test(code),
     '不许写公式容器的 innerHTML');
-  // 正面断言：编辑态用的是独立元素
-  assert.ok(code.includes('pack-editor-overlay'), '编辑态应是独立覆盖层');
+  // 正面断言：编辑态用独立元素，但**不再是覆盖层**（2026-10-31 改成页内单元格）。
+  // 判据：装配层要么不碰编辑（单元格模块自己包），要么只调 detach/attach。
+  // 它不该自己造 DOM 去替换公式 —— 那条是旧 openEditor 的老路。
+  assert.ok(!/pack-editor-overlay/.test(code),
+    '覆盖层编辑已删除（改用页内单元格），装配层不该再造覆盖层');
 });

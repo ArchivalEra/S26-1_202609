@@ -67,6 +67,35 @@ test('自动计算遇到算不了的公式要静默（不把版面铺满红字�
   assert.match(fn, /result\.hidden = true/, 'quiet 模式下算不了的结果没有收起');
 });
 
+test('编辑入口只有一个：旧覆盖层路径必须已删除（两套并存必漏）', () => {
+  // 2026-10-31 站长报「没有开启的时候也能点击公式编辑」。根因是 pack-runtime 里
+  // 还留着旧的 openEditor/bindFormulaClicks —— 它用 document 的**捕获阶段**监听，
+  // 先于单元格触发，于是新开关拦得住单元格、拦不住它。
+  // 两套机制并存 = 两套判据 = 必然有一个漏，这是本仓反复吃过的教训。
+  const pr = readFileSync(path.join(HERE, 'pack-runtime.mjs'), 'utf8');
+  assert.ok(!/function openEditor/.test(pr), '旧覆盖层 openEditor 又回来了');
+  assert.ok(!/function bindFormulaClicks/.test(pr), '旧绑定 bindFormulaClicks 又回来了');
+  assert.ok(!/openEditor\(tex, el\)/.test(pr), '还在调用旧的 openEditor');
+});
+
+test('开关关掉时必须收回单元格（detach），不是只翻个 UI 状态', () => {
+  // 站长原话：「开关关掉的时候也要坦荡收回啊」。
+  // 第一版 change 处理器只有 if、没有 else —— 关掉后播放按钮与原地编辑全都还在。
+  const pr = readFileSync(path.join(HERE, 'pack-runtime.mjs'), 'utf8');
+  const i = pr.indexOf('prefs.allowEdit = !!ae.checked');
+  assert.ok(i > 0, '找不到 allowEdit 的 change 处理器');
+  const seg = pr.slice(i, i + 900);
+  assert.match(seg, /else if \(cells\)/, '关掉开关时没有收回分支');
+  assert.match(seg, /cells\.detach\(\)/, '关掉开关时没有真的 detach');
+});
+
+test('mountCells 必须按开关门控（关着不许挂单元格）', () => {
+  const pr = readFileSync(path.join(HERE, 'pack-runtime.mjs'), 'utf8');
+  const i = pr.indexOf('function mountCells()');
+  const seg = pr.slice(i, i + 700);
+  assert.match(seg, /if \(!prefs\.allowEdit\)/, 'mountCells 没检查 allowEdit —— 开关关着也会冒出播放按钮');
+});
+
 test('compute 是注入的，不在模块里读全局（node 里能测）', () => {
   assert.match(SRC, /deps\.compute/, '没从 deps 取 compute');
   assert.ok(!/window\.__packCompute/.test(SRC),

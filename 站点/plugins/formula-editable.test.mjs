@@ -142,10 +142,14 @@ test('data-math-tex 必须能被解析器重新读进去（防「烘了个残串
     'data-math-tex 解析不回原文（编辑器打开就是错的）：\n' + bad.join('\n'));
 });
 
-test('pack-runtime 只认 data-math-tex，不许回退到 data-math-plain', () => {
-  const src = readFileSync(path.join(HERE, 'pack-runtime.mjs'), 'utf8');
-  assert.match(src, /getAttribute\("data-math-tex"\)/, '没读 data-math-tex');
-  // 关键：不许出现「拿 plain 当 latex 传进 openEditor」这条老路
-  assert.ok(!/getAttribute\("data-math-plain"\)\s*\|\|\s*el\.getAttribute\("aria-label"\)/.test(src),
+test('单元格模块只认 data-math-tex，不许回退到 data-math-plain', () => {
+  // 2026-10-31 改：编辑入口从 pack-runtime 的覆盖层搬到 formula-cells 的单元格，
+  // 所以这条断言的对象也换到那边（旧路径已删，见 formula-cells.test.mjs 那条）。
+  const src = readFileSync(path.join(HERE, 'formula-cells.mjs'), 'utf8');
+  assert.match(src, /getAttribute\(['"]data-math-tex['"]\)/, '没读 data-math-tex');
+  // 关键：不许出现「拿 plain 当 latex 喂进 math-field」这条老路
+  assert.ok(!/getAttribute\(['"]data-math-plain['"]\)\s*\|\|\s*.*aria-label/.test(src),
     '又回到「读 data-math-plain 当 LaTeX」了——那会把公式改错（见本条测试的头注释）');
+  // 而且必须只挑构建期判过能算的公式（站长要求：只有带 mathfield 的才能算）
+  assert.match(src, /data-computable/, '没按 data-computable 过滤 —— 不给能算的公式建单元格');
 });
