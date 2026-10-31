@@ -73,7 +73,11 @@ export function createFormulaCells(deps = {}) {
   function attach(root) {
     if (destroyed) return;
     rootEl = root || document;
-    const anchors = rootEl.querySelectorAll('.katex[data-math-tex]');
+    // ⚠️ 只挑**构建期判过能算的**公式（2026-10-31 站长：只让带 mathfield 的能算）。
+    // 判据是 `data-computable="1"`，由 build.mjs 用同一个转译器烘出来——
+    // 含裸变量的公式（a₁₁、D_j）、含 ⟺ 的关系式一律不在其中。
+    // 不给它们建单元格：既不出播放按钮，也不会在自动计算时刷一屏「没有数值」。
+    const anchors = rootEl.querySelectorAll('.katex[data-computable="1"][data-math-tex]');
     for (let i = 0; i < anchors.length; i += 1) {
       const anchor = anchors[i];
       if (anchor.closest('.' + WRAP_CLASS)) continue;      // 已经包过了

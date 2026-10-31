@@ -25,6 +25,12 @@
   --md-sys-color-surface-container: hsl(var(--primary-h), 15%, 94%);
   --md-sys-color-surface-container-high: hsl(var(--primary-h), 12%, 91%);
   --md-sys-color-surface-container-highest: hsl(var(--primary-h), 10%, 88%);
+  /* 错误色（2026-10-31 补）：原来全站靠 CSS 回退值吃浅粉，深色模式下白底粉字。
+     定义成主题变量之后，深浅两套各给一份，不再依赖回退。 */
+  --md-sys-color-error: hsl(6, 72%, 42%);
+  --md-sys-color-on-error: hsl(0, 0%, 100%);
+  --md-sys-color-error-container: hsl(6, 80%, 92%);
+  --md-sys-color-on-error-container: hsl(6, 70%, 20%);
   --md-sys-color-on-surface: hsl(var(--primary-h), 10%, 12%);
   --md-sys-color-on-surface-variant: hsl(var(--primary-h), 8%, 30%);
   --md-sys-color-outline: hsl(var(--primary-h), 6%, 48%);
@@ -79,6 +85,12 @@
   --md-sys-color-inverse-surface: hsl(var(--primary-h), 12%, 89%);
   --md-sys-color-inverse-on-surface: hsl(var(--primary-h), 10%, 15%);
   --md-sys-color-inverse-primary: hsl(var(--primary-h), 75%, 42%);
+
+  /* 错误色（深色一套）：底色压暗、文字提亮，避免深色页面里冒白块。 */
+  --md-sys-color-error: hsl(6, 78%, 72%);
+  --md-sys-color-on-error: hsl(6, 90%, 14%);
+  --md-sys-color-error-container: hsl(6, 45%, 22%);
+  --md-sys-color-on-error-container: hsl(6, 80%, 88%);
 
   --shadow-1: 0 1px 3px rgba(0,0,0,0.3);
   --shadow-2: 0 3px 6px rgba(0,0,0,0.4);
@@ -2097,25 +2109,58 @@ body.search-open {
 .fcell-play:disabled { cursor: progress; opacity: 0.8; }
 
 /* 结果区：独立的一块，与公式本体视觉分开（读者要知道哪个是题、哪个是答案） */
+/* 结果框（2026-10-31 站长定案：不要气泡，要一个**跟着单元格的虚线框**）。
+ *
+ * 形态照 Octave-UI 那种笔记本单元格：输入区块 + 一条虚线与输出区块分开。
+ * 要求：
+ *   · **上下左右都能滚**（矩阵/长表达式会撑宽撑高）；
+ *   · **自动伸展到一定大小但有上限**（短结果不占地方、长结果不撑破版面）；
+ *   · 深色模式跟随主题（**不许写死浅色回退值** —— 之前
+ *     `var(--md-sys-color-error-container, #ffdad6)` 里那个回退值就是浅粉，
+ *     深色模式下白底粉字，实测被站长抓了）。
+ */
 .fcell-result {
-  display: inline-block;
-  margin-left: 0.45rem;
-  padding: 0.05rem 0.4rem;
-  border-radius: 5px;
-  font-size: 0.86em;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  background: color-mix(in srgb, var(--md-sys-color-primary) 9%, transparent);
+  display: block;
+  margin: 0.35rem 0 0;
+  padding: 0.4rem 0.6rem;
+  border: 1px dashed var(--md-sys-color-outline-variant);
+  border-radius: 8px;
+  background: var(--md-sys-color-surface-container-low);
   color: var(--md-sys-color-on-surface);
-  vertical-align: baseline;
+  font-size: 0.9em;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  /* 自动伸展 + 上限：min-height 让短结果也有块的样子，
+     max-height/max-width 防止长结果撑破版面；两级滚动交给 auto。 */
+  min-height: 1.9em;
+  min-width: 4em;
+  max-height: 26vh;
+  max-width: 100%;
+  overflow: auto;
+  white-space: pre;
+  box-sizing: border-box;
+  /* 长串不折行（矩阵/表达式折行更难读），横向滚动即可 */
+  overflow-wrap: normal;
+  word-break: normal;
 }
-.math-display .fcell-result { display: block; margin: 0.2rem 0 0; }
-.fcell-result.is-pending { color: var(--md-sys-color-outline); font-style: italic; }
+
+.fcell-result.is-pending {
+  color: var(--md-sys-color-outline);
+  font-style: italic;
+}
 .fcell-result.is-err {
-  background: var(--md-sys-color-error-container, #ffdad6);
-  color: var(--md-sys-color-on-error-container, #410002);
+  /* ⚠️ 用主题里**确实存在**的变量。这里原本写
+     `var(--md-sys-color-error-container, #ffdad6)` —— 那个变量在主题里根本没定义，
+     于是回退成浅粉，深色模式下就是白底粉字。现在只用一个真实存在的颜色叠透明度。 */
+  border-color: var(--md-sys-color-error);
+  color: var(--md-sys-color-error);
+  background: color-mix(in srgb, var(--md-sys-color-error) 10%, transparent);
   font-family: inherit;
+  white-space: pre-wrap;
 }
-.fcell-result.is-ok { color: var(--md-sys-color-primary); }
+.fcell-result.is-ok {
+  color: var(--md-sys-color-on-surface);
+  border-color: color-mix(in srgb, var(--md-sys-color-primary) 45%, transparent);
+}
 .fcell-result[hidden] { display: none; }
 
 /* 编辑态：MathLive 接管公式本体那块 */
