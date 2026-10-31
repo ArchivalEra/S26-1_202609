@@ -33,6 +33,10 @@ const COMPUTES = [
   ['\\frac{3}{4}+\\sin\\frac{\\pi}{2}', '(3)/(4)+sin((pi)/(2))'],
   ['\\det\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}', 'det([1 2; 3 4])'],
   ['\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}', '[1 2; 3 4]'],
+  // 竖线包起来的是**行列式**不是矩阵（2026-10-31 站长指出「3x3 矩阵算出来是
+  // 数字本身」—— 因为 vmatrix 被当普通矩阵输出了，语义错）
+  ['\\begin{vmatrix}1&2\\\\3&4\\end{vmatrix}', 'det([1 2; 3 4])'],
+  ['\\begin{Vmatrix}1&2\\\\3&4\\end{Vmatrix}', 'det([1 2; 3 4])'],
   ['\\sin\\frac{\\pi}{2}', 'sin((pi)/(2))'],
 ];
 
@@ -71,7 +75,7 @@ test('矩阵单元格：负号不能与数字之间留空格（会变成减法�
   // 与邻行的三列不符。
   const r = tr('\\begin{vmatrix}2&-1&1\\\\3&2&1\\\\1&-2&1\\end{vmatrix}');
   assert.equal(r.ok, true, `应当能转：${r.reason || ''}`);
-  assert.equal(r.code, '[2 -1 1; 3 2 1; 1 -2 1]',
+  assert.equal(r.code, 'det([2 -1 1; 3 2 1; 1 -2 1])',
     `负号必须紧贴数字（写成 '- 1' 会被 Octave 当成减法，整行少一列）：${r.code}`);
 });
 
