@@ -10,18 +10,24 @@
   "checks": [
     {
       "path": "课程总览/电路原理/index.md",
-      "must_not_contain": ["150 张"],
+      "must_not_contain": [
+        "150 张"
+      ],
       "why": "配图张数旧值（实际 171，见台账 figures 键）——R-101 已翻案，旧值不许无标记地回来"
     },
     {
       "path": "课程总览/电路原理/作业/index.md",
-      "must_not_contain": ["150 张"],
+      "must_not_contain": [
+        "150 张"
+      ],
       "why": "同上：配图张数旧值不得回潮"
     },
     {
-      "path": "zreflect/facts.py",
-      "must_contain": ["measure_edu"],
-      "why": "本仓数据层入口：facts.py 必须分派到 measure_edu（换掉它 = 台账量的是上游示例，不是本仓事实）"
+      "path": "reflect-hooks/Einfacht.env",
+      "must_contain": [
+        "REFLECT_MEASURE_MODULE=\"measure_edu\""
+      ],
+      "why": "本仓数据层入口。⚠️ 2026-10-31 接入整改版 Einfacht 后，判据从「facts.py 里写死 measure_edu」换成「Einfacht.env 里配这个旋钮」——上游把这件事做成了正式旋钮（REFLECT_MEASURE_MODULE），内核不再硬编码本仓模块名。若这条配置消失，facts.py 会回落到上游的 measure_example()，台账量的是示例（py/md 文件数）而不是本仓的课程/站点事实。"
     }
   ]
 }

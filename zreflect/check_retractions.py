@@ -14,7 +14,6 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import fatal, finish, guard_nonempty, main_selftest_or, meta, repo  # noqa: E402
-from gate import selftest                                 # noqa: E402
 from ledger import load                                  # noqa: E402
 from living import HIST_MARK, living_lines               # noqa: E402
 

@@ -37,21 +37,21 @@ sh gates-selftest.sh                             # 每道闸门先证明自己�
 
 | 键 | 值 | 测于 | 复跑命令 |
 |---|---|---|---|
-| `courses` | **7** | 2026-10-31T17:09:55+0800 | `ls -d 课程总览/*/ | wc -l` |
-| `figures` | **174** | 2026-10-31T17:09:55+0800 | `ls 课程总览/电路原理/作业/figures/ | wc -l` |
-| `glossary_entries` | **219** | 2026-10-31T17:09:55+0800 | `awk '/^:::glossary-dict/{f=1;next} /^:::/{f=0} f&&/^sym-/{n++} END{print n}' 站点/符号包/通用.md 课程总览/*/教材解析/符号入门.md` |
-| `handoff_lines` | **2859** | 2026-10-31T17:10:18+0800 | `wc -l < .zcode/handoff.md` |
-| `handoff_sections` | **55** | 2026-10-31T17:10:18+0800 | `grep -c '^### 0\.' .zcode/handoff.md` |
-| `homework` | **25** | 2026-10-31T17:09:55+0800 | `find 课程总览 -path '*/作业/*.md' ! -name 'index.md' | wc -l` |
-| `hooktests` | **31** | 2026-10-31T17:10:09+0800 | `python3 .githooks/test-update-readme.py 2>&1 | grep -oE 'Ran [0-9]+ tests' | awk '{print $2}'` |
-| `lab_tests` | **74** | 2026-10-31T17:09:56+0800 | `cd .zcode/学习通API && node --test chaoxing.test.mjs 判据.test.mjs bridge.test.mjs 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2=="tests"||$2=="fail"||$2=="cancelled") {v[$2]=$3} END {t=v["tests"]; f=v["fail"]+0; c=v["cancelled"]+0; if (t=="") {print "lab_tests：没读到 tests 汇总行" > "/dev/stderr"; exit 1} print t; if (f+c>0) {print "lab_tests：fail=" f " cancelled=" c " ⇒ 红测试，非零退出" > "/dev/stderr"; exit 1}}'` |
-| `md_files` | **167** | 2026-10-31T17:09:56+0800 | `git ls-files '*.md' | wc -l` |
-| `notes` | **39** | 2026-10-31T17:09:55+0800 | `find 课程总览 -path '*/课堂笔记/*.md' ! -name 'index.md' | wc -l` |
-| `plugin_tests` | **550** | 2026-10-31T17:10:18+0800 | `cd 站点 && node --test plugins/ 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2=="tests"||$2=="fail"||$2=="cancelled") {v[$2]=$3} END {t=v["tests"]; f=v["fail"]+0; c=v["cancelled"]+0; if (t=="") {print "plugin_tests：没读到 tests 汇总行（node --test 没跑完？）" > "/dev/stderr"; exit 1} print t; if (f+c>0) {print "plugin_tests：fail=" f " cancelled=" c " ⇒ 红测试，非零退出（issue #18 决策 #7）" > "/dev/stderr"; exit 1}}'` |
-| `problems` | **278** | 2026-10-31T17:09:55+0800 | `python3 -c "import re,glob;print(sum(len(re.findall(r'[0-9]+',s)) for f in glob.glob('课程总览/电路原理/作业/习题册第*.md') for ln in open(f,encoding='utf-8') if ln.startswith('### ') for s in re.findall(r'(?:选|填|计|判|画图)\s*([0-9][0-9、,\s]*)', re.sub(r'（[^）]*）','',ln[4:]))))"` |
-| `sitepages` | **140** | 2026-10-31T17:09:56+0800 | `sed -n '/^export const TARGET_FILES = \[/,/^\];/p' 站点/页面清单.mjs | grep -c "^  '"` |
-| `symbol_packs` | **5** | 2026-10-31T17:09:55+0800 | `grep -cE "^  '[^']+': '[^']+.md',$" 站点/符号环境.mjs` |
-| `textbook` | **27** | 2026-10-31T17:09:55+0800 | `find 课程总览 -path '*/教材解析/*.md' ! -name 'index.md' | wc -l` |
+| `courses` | **7** | 2026-10-31T20:16:05+0800 | `ls -d 课程总览/*/ | wc -l` |
+| `figures` | **174** | 2026-10-31T20:16:05+0800 | `ls 课程总览/电路原理/作业/figures/ | wc -l` |
+| `glossary_entries` | **219** | 2026-10-31T20:16:05+0800 | `awk '/^:::glossary-dict/{f=1;next} /^:::/{f=0} f&&/^sym-/{n++} END{print n}' 站点/符号包/通用.md 课程总览/*/教材解析/符号入门.md` |
+| `handoff_lines` | **2909** | 2026-10-31T20:16:29+0800 | `wc -l < .zcode/handoff.md` |
+| `handoff_sections` | **56** | 2026-10-31T20:16:29+0800 | `grep -c '^### 0\.' .zcode/handoff.md` |
+| `homework` | **25** | 2026-10-31T20:16:05+0800 | `find 课程总览 -path '*/作业/*.md' ! -name 'index.md' | wc -l` |
+| `hooktests` | **31** | 2026-10-31T20:16:20+0800 | `python3 .githooks/test-update-readme.py 2>&1 | grep -oE 'Ran [0-9]+ tests' | awk '{print $2}'` |
+| `lab_tests` | **74** | 2026-10-31T20:16:06+0800 | `cd .zcode/学习通API && node --test chaoxing.test.mjs 判据.test.mjs bridge.test.mjs 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2=="tests"||$2=="fail"||$2=="cancelled") {v[$2]=$3} END {t=v["tests"]; f=v["fail"]+0; c=v["cancelled"]+0; if (t=="") {print "lab_tests：没读到 tests 汇总行" > "/dev/stderr"; exit 1} print t; if (f+c>0) {print "lab_tests：fail=" f " cancelled=" c " ⇒ 红测试，非零退出" > "/dev/stderr"; exit 1}}'` |
+| `md_files` | **167** | 2026-10-31T20:16:06+0800 | `git ls-files '*.md' | wc -l` |
+| `notes` | **39** | 2026-10-31T20:16:05+0800 | `find 课程总览 -path '*/课堂笔记/*.md' ! -name 'index.md' | wc -l` |
+| `plugin_tests` | **550** | 2026-10-31T20:16:29+0800 | `cd 站点 && node --test plugins/ 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2=="tests"||$2=="fail"||$2=="cancelled") {v[$2]=$3} END {t=v["tests"]; f=v["fail"]+0; c=v["cancelled"]+0; if (t=="") {print "plugin_tests：没读到 tests 汇总行（node --test 没跑完？）" > "/dev/stderr"; exit 1} print t; if (f+c>0) {print "plugin_tests：fail=" f " cancelled=" c " ⇒ 红测试，非零退出（issue #18 决策 #7）" > "/dev/stderr"; exit 1}}'` |
+| `problems` | **278** | 2026-10-31T20:16:05+0800 | `python3 -c "import re,glob;print(sum(len(re.findall(r'[0-9]+',s)) for f in glob.glob('课程总览/电路原理/作业/习题册第*.md') for ln in open(f,encoding='utf-8') if ln.startswith('### ') for s in re.findall(r'(?:选|填|计|判|画图)\s*([0-9][0-9、,\s]*)', re.sub(r'（[^）]*）','',ln[4:]))))"` |
+| `sitepages` | **140** | 2026-10-31T20:16:06+0800 | `sed -n '/^export const TARGET_FILES = \[/,/^\];/p' 站点/页面清单.mjs | grep -c "^  '"` |
+| `symbol_packs` | **5** | 2026-10-31T20:16:05+0800 | `grep -cE "^  '[^']+': '[^']+.md',$" 站点/符号环境.mjs` |
+| `textbook` | **27** | 2026-10-31T20:16:05+0800 | `find 课程总览 -path '*/教材解析/*.md' ! -name 'index.md' | wc -l` |
 
 15 条事实。
 <!-- /AUTO:FACTS -->
@@ -70,7 +70,7 @@ sh gates-selftest.sh                             # 每道闸门先证明自己�
 | `check_identity.py`（身份白名单闸门） | commit | 只有上游发放的 id 才许出现在活代码里，自造 id 出现即红 | `REFLECT_IDENTITY` |
 | `check_instruments.py`（仪器生命周期闸门） | commit | 恒常检测（first_seen）+ 被证伪量法登记 | `REFLECT_INSTRUMENTS`, `REFLECT_INSTRUMENT_DAYS`, `REFLECT_FACTS` |
 | `check_invariants.py`（不变量闸门） | commit | 声明式不变量：仓库文件必须/不得含某片段（grep 级） | `REFLECT_INVARIANTS` |
-| `check_locks.py`（锁定源闸门） | commit | 锁定源清单（URL + 文件 + sha256 的内容指纹） | — |
+| `check_locks.py`（锁定源闸门） | commit | 锁定源清单（URL + 文件 + sha256 的内容指纹） | `REFLECT_LOCKS` |
 | `check_pins.py`（pin 闸门） | commit | 派生树 pin 一致性（stamp commit / dirty / 版本串对读） | `REFLECT_PINS` |
 | `check_questions.py`（悬案闸门） | commit | 未结案的问题必须挂一个能跑的结算件 | `REFLECT_QUESTIONS` |
 | `check_readme_sync.py`（三语 README 闸门） | commit | 语言版本是同一条断言的三份拷贝：结构互链 + 每次推送同批 | `REFLECT_READMES` |

@@ -35,9 +35,8 @@ from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import fatal, finish, guard_nonempty, main_selftest_or, meta, repo  # noqa: E402
-from gate import selftest                                 # noqa: E402
 from ledger import age_days, facts_of, load, value_of     # noqa: E402
-from living import DATED_RECORD, HIST_MARK, living_lines  # noqa: E402
+from living import DATED_RECORD, living_lines  # noqa: E402
 
 DOCS = tuple(d for d in os.environ.get(
     "REFLECT_DOCS",
@@ -74,24 +73,39 @@ def _sha_facts(f):
     return out
 
 
+# 引用式出处（issue #25）：`[[键名]]` 指向台账 —— 与「历史」标记不同，
+# 它是**可复跑**的锚。
+CITE_RE = re.compile(r"\[\[[A-Za-z_][A-Za-z0-9_]*\]\]")
+
+
 def _is_sourced(line):
-    """这一行自己带了**明确**出处（历史标记 / 交付名 / 反引号 sha）。"""
-    return bool(HIST_MARK.search(line) or DATED_RECORD.search(line))
+    """这一行带了**明确的、可核的**出处吗？
 
+    issue #25 之前：`HIST_MARK`（「历史」二字）**单独**就算出处 ⇒ 任意断言
+    加「历史」即获整行豁免 —— 下游实测：同一句编造 sha，只多「历史」两个字，
+    就从红变绿。闸门的报错文案自己就写着「或带上历史标记/出处」，**在教用户
+    绕过自己**（`living.py:11-19` 早就自认这个漏检，但只写成注释）。
 
-def problems(ledger, docs, retired=RETIRED, hist_secs=None, stale_days=None):
-    """返回问题清单（纯函数：自证要用）。`docs` = {文件名: 正文}。
+    现在：「历史」**不豁免内容**，只表示「不与今天对账」；这一行仍必须给出
+    可核的出处之一：
 
-    `hist_secs=None` ⇒ 用模块级的 `REFLECT_HISTORY_SECS`；自证显式传，才能测到它。
-    `stale_days=None` ⇒ 用 `REFLECT_STALE_DAYS`（未配 ⇒ 测龄规则未启用）。
+      · `DATED_RECORD` —— 交付包名（含 8 位日期）或**反引号里的** commit sha；
+      · `[[键名]]` —— 引用台账事实（可复跑）。
+
+    纯「历史」二字不再够 —— 它只是**提示**，不是证据。要真正豁免一条历史
+    断言，把它登记进 `retractions.json` / `REFLECT_RETIRED`（单一产地），
+    或给出交付名/sha 引用。
     """
-    hist = HIST_SECS if hist_secs is None else hist_secs
+    return bool(DATED_RECORD.search(line) or CITE_RE.search(line))
+
+
+def _sha_assertion_problems(f, docs, hist):
+    """R1：活状态里靠近 sha / hash 字样的十六进制串必须有可核出处。
+
+    三种归宿（台账事实 / 可核出处）；都不是 ⇒ 报。台账里一个 sha 类事实都没有
+    ⇒ 单独报「先量进台账」（空不是通过）。
+    """
     out = []
-    f = facts_of(ledger)
-    if not f:
-        return ["台账为空 —— 空不是通过（零值守卫）：先查 measure() 是不是坏了"]
-    if not docs:
-        return ["一份活状态文档都没扫到 —— 空输入不是通过（零值守卫）"]
     shas = _sha_facts(f)
     for name, body in sorted(docs.items()):
         for lineno, line, is_living in living_lines(body, hist):
@@ -108,21 +122,39 @@ def problems(ledger, docs, retired=RETIRED, hist_secs=None, stale_days=None):
                 if not any(tok == s or s.startswith(tok) or tok.startswith(s[:len(tok)])
                            for s in shas):
                     out.append("%s:%d sha 断言无出处：`%s` 不在台账里 —— "
-                               "改写成 [[键名]] 引用，或带上历史标记/出处"
+                               "改写成 [[键名]] 引用，或给出可核出处"
+                               "（交付包名 / 反引号 commit sha）。注意："
+                               "「历史」二字**不构成出处**（issue #25）"
                                % (name, lineno, tok[:16]))
-    # 测龄（issue #3 ②）：台账里的 measured_at 距今天的天数超阈值 ⇒ 报。
-    # 未配置 ⇒ 不查（明说未启用）；读不到时间戳 ⇒ 也报（读不到就明说，不许猜 0）。
-    sd = _stale_days() if stale_days is None else stale_days
-    if sd is not None:
-        for k in sorted(f):
-            d = age_days(f[k])
-            if d is None:
-                out.append("`%s` 的 measured_at 缺失或不可解析 —— 测龄判据无法评估"
-                           "（读不到就明说，不许猜）" % k)
-            elif d > sd:
-                out.append("`%s` 已 %.0f 天没测（阈值 %.0f 天）—— 重测并显式 "
-                           "`--accept-changes`" % (k, d, sd))
-    # R2 退役名：名单不配 = 未启用（run() 会明说，这里不打印 —— 纯函数保持安静）。
+    return out
+
+
+def _stale_age_problems(f, sd):
+    """测龄（issue #3 ②）：台账里的 measured_at 距今天的天数超阈值 ⇒ 报。
+
+    未配置（sd is None）⇒ 不查（明说未启用）；读不到时间戳 ⇒ 也报
+    （读不到就明说，不许猜 0）。
+    """
+    out = []
+    if sd is None:
+        return out
+    for k in sorted(f):
+        d = age_days(f[k])
+        if d is None:
+            out.append("`%s` 的 measured_at 缺失或不可解析 —— 测龄判据无法评估"
+                       "（读不到就明说，不许猜）" % k)
+        elif d > sd:
+            out.append("`%s` 已 %.0f 天没测（阈值 %.0f 天）—— 重测并显式 "
+                       "`--accept-changes`" % (k, d, sd))
+    return out
+
+
+def _retired_name_problems(docs, hist, retired):
+    """R2 退役名：独立成词出现在活状态 ⇒ 报。
+
+    名单不配 = 未启用（run() 会明说，这里不打印 —— 纯函数保持安静）。
+    """
+    out = []
     for name, body in sorted(docs.items()):
         for lineno, line, is_living in living_lines(body, hist):
             if not is_living or _is_sourced(line):
@@ -133,6 +165,26 @@ def problems(ledger, docs, retired=RETIRED, hist_secs=None, stale_days=None):
                     out.append("%s:%d 退役名 `%s` 出现在活状态里 —— 要么它没退役，"
                                "要么这行带上历史标记" % (name, lineno, w))
     return out
+
+
+def problems(ledger, docs, retired=RETIRED, hist_secs=None, stale_days=None):
+    """返回问题清单（纯函数：自证要用）。`docs` = {文件名: 正文}。
+
+    一层判据 = 一个函数，按 R1 → 测龄 → R2 的顺序拼接（顺序即报错顺序）。
+
+    `hist_secs=None` ⇒ 用模块级的 `REFLECT_HISTORY_SECS`；自证显式传，才能测到它。
+    `stale_days=None` ⇒ 用 `REFLECT_STALE_DAYS`（未配 ⇒ 测龄规则未启用）。
+    """
+    hist = HIST_SECS if hist_secs is None else hist_secs
+    f = facts_of(ledger)
+    if not f:
+        return ["台账为空 —— 空不是通过（零值守卫）：先查 measure() 是不是坏了"]
+    if not docs:
+        return ["一份活状态文档都没扫到 —— 空输入不是通过（零值守卫）"]
+    sd = _stale_days() if stale_days is None else stale_days
+    return (_sha_assertion_problems(f, docs, hist)
+            + _stale_age_problems(f, sd)
+            + _retired_name_problems(docs, hist, retired))
 
 
 def run(argv):
@@ -178,8 +230,14 @@ def _cases():
         # ① 正常不报
         ("sha 与台账一致（16 位前缀也能对上）⇒ 不报",
          lambda: problems(led_sha, {"A.md": "部署 sha256 %s…（截断显示）\n" % ("a" * 16)}) == []),
-        ("带历史标记的 sha ⇒ 不报",
-         lambda: problems(led_plain, {"A.md": "旧 sha abcdef01（已翻案，见 R-1）\n"}) == []),
+        ("历史标记 + 反引号 sha（可核出处）⇒ 不报",
+         lambda: problems(led_plain, {"A.md": "旧 sha abcdef01（已翻案，见 `abc1234`）\n"}) == []),
+        # ② 反向判据（issue #25）：历史标记**不再是**免死金牌
+        ("★ 只有「历史」二字、无可核出处的假 sha ⇒ 必须报（issue #25）",
+         lambda: any("sha 断言无出处" in x for x in problems(
+             led_plain, {"A.md": "部署的 sha256 历史是 8287589ebdb53b4c 这串\n"}))),
+        ("★ [[键名]] 引用构成出处（可复跑锚）⇒ 不报",
+         lambda: problems(led_sha, {"A.md": "旧 sha256 [[site_sha]] 已翻案\n"}) == []),
         ("台账无 sha + 正文无 sha 断言 ⇒ 不报",
          lambda: problems(led_plain, {"A.md": "今天是好日子\n"}) == []),
         ("声明过的历史章节里的 sha ⇒ 不报",

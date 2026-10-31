@@ -29,7 +29,61 @@ interface（决策与执行分离 —— 决策可自证，执行归 measure()�
 """
 from __future__ import annotations
 
+import os
+
+from gate import GATE_REPO
 from ledger import changed_keys, dropped_keys, short_value
+
+
+def _gitignored(path):
+    """路径是否被 .gitignore 覆盖；非 git 仓库 / git 不在 ⇒ None（无法判断，不猜）。"""
+    import subprocess                                    # noqa: PLC0415
+    try:
+        r = subprocess.run(["git", "-C", GATE_REPO, "check-ignore", "-q", path],
+                           capture_output=True)
+    except OSError:
+        return None
+    if r.returncode == 0:
+        return True
+    if r.returncode == 1:
+        return False
+    return None                     # rc=128 等：不是仓库 / git 坏了
+
+
+def write_target_problems(path, knob_set, ignored=None, carrier_exists=None):
+    """**盲写守卫**（issue #20 ②）：写盘前查目标。返回 (fatal 句, warn 句)。
+
+    两个产地的病：`Einfacht.env` 只在钩子语境被 source（issue #8），手工
+    裸跑时**代码默认值**接管 —— 若默认路径恰好被 .gitignore 覆盖，写盘
+    「成功」且没有任何东西会响（下游实测：重测一直「成功」，pre-commit
+    读的是另一份台账，排查 40 分钟 —— 写进被 ignore 的位置等于没写）。
+
+    · 目标被 gitignore 覆盖 ⇒ **FATAL**（版本控制看不见它、钩子永远读
+      旧台账）—— 与语境无关，永远该查（C3 纪律：判据的家不随语境移动）；
+    · `ignored=None`（非 git 仓库 / git 不在，无法判断）⇒ 放行并明说一行
+      （夹具场景大量是非 git 目录，不拦，但不静默）；
+    · 仓里有 Einfacht.env 载体而本次进程没设旋钮 ⇒ **warn**：载体在、
+      这次跑没用它 —— 两个产地此刻分叉，写盘目标可能与钩子语境不同。
+      （判据精确到「载体存在」：无载体的仓裸跑是正常用法，不警告。）
+    """
+    fatal = warn = None
+    ig = _gitignored(path) if ignored is None else ignored
+    if ig is True:
+        fatal = ("台账目标 %s 被 .gitignore 覆盖 —— 写进去等于没写"
+                 "（版本控制看不见，钩子读的是另一份）；撤销该 ignore 规则，"
+                 "或显式设 REFLECT_FACTS 指向被跟踪的位置" % path)
+    elif ig is None:
+        warn = "（非 git 仓库或 git 不可用：跳过 gitignore 检查）"
+    if carrier_exists is None:
+        carrier_exists = any(os.path.exists(os.path.join(d, "Einfacht.env"))
+                             for d in (os.path.join(GATE_REPO, "reflect-hooks"),
+                                       GATE_REPO))
+    if carrier_exists and not knob_set and ig is not True:
+        warn = ((warn + "；" if warn else "")
+                + "仓里有 Einfacht.env 但本次进程未加载它（REFLECT_FACTS 用了"
+                  "代码默认值）—— 手工跑请先 source，否则写盘目标可能与钩子"
+                  "语境不同（issue #20 ②）")
+    return fatal, warn
 from gate import module_meta
 
 
@@ -147,6 +201,21 @@ def _cases():
          lambda: accepted_keys([]) is False),
         ("解析：=空串 ⇒ 空集（一个都不收）",
          lambda: accepted_keys(["--accept-changes="]) == set()),
+        # ② 盲写守卫（issue #20 ②）
+        ("目标不被 gitignore 覆盖、无载体 ⇒ 无 warn 无 fatal",
+         lambda: write_target_problems("/x/FACTS.json", knob_set=True,
+                                       ignored=False, carrier_exists=False)
+         == (None, None)),
+        ("★ 目标被 gitignore 覆盖 ⇒ FATAL（写进去等于没写）",
+         lambda: write_target_problems("/x/FACTS.json", knob_set=True,
+                                       ignored=True)[0] is not None),
+        ("★ 仓里有 Einfacht.env 而本次未设旋钮 ⇒ warn（两个产地分叉）",
+         lambda: "Einfacht.env" in (write_target_problems(
+             "/x/FACTS.json", knob_set=False, ignored=False,
+             carrier_exists=True)[1] or "")),
+        ("非 git 目录（无法判断）⇒ 放行但明说",
+         lambda: write_target_problems("/x/F.json", knob_set=True,
+                                       ignored=None)[1] is not None),
         # ③ 空输入必须报
         ("★ 新事实为空 ⇒ refuse（零值守卫：空不是通过）",
          lambda: decide(old, {})[0] == "refuse"),

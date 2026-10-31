@@ -152,7 +152,7 @@ def age_days(entry):
 
 # ── 自证（三档：正常不报 / 该报的必须报 / 空输入必须报）──────────────────────────
 def _cases():
-    from gate import module_meta, raises                            # noqa: PLC0415
+    from gate import raises                            # noqa: PLC0415
     return [
         # ① 正常不报
         ("掉条：不掉条时不报", lambda: dropped_keys({"a": 1}, {"a": 1, "c": 3}) == []),

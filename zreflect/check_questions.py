@@ -23,7 +23,6 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from gate import GATE_REPO, finish, guard_nonempty, main_selftest_or, meta  # noqa: E402
-from gate import repo, selftest                           # noqa: E402
 
 VALID_STATUS = ("needs-triage", "needs-info", "ready-for-agent",
                 "ready-for-human", "wontfix", "resolved")
@@ -38,8 +37,23 @@ def field(text, name):
     （真实顺序是 `**` + `Status` + `:` + `**`，冒号**在**那对星号中间）。于是所有字段都读成
     None，闸门把「合规的悬案」也报成「缺字段」。**冒号后面还要容许一对星号**。
     """
-    m = re.search(r"(?mi)^\*{0,2}%s\*{0,2}\s*:\s*\*{0,2}\s*(.+?)\s*$" % re.escape(name), text)
-    return m.group(1).strip() if m else None
+    # 值支持**续行**（issue #15 B1）：下一行若不以 `**X:**` / `X:` 开头，
+    # 并入本字段。下游同一形状踩过两次（Settling 折行 ⇒ rc= 判据在第二行
+    # ⇒ 误报「没给出可区分的两种结论」）。
+    lines = text.splitlines()
+    for i, ln in enumerate(lines):
+        m = re.match(r"(?i)^\*{0,2}%s\*{0,2}\s*:\s*\*{0,2}\s*(.*?)\s*$"
+                     % re.escape(name), ln)
+        if not m:
+            continue
+        val = [m.group(1).strip()]
+        for nxt in lines[i + 1:]:
+            if re.match(r"^\s*(?:\*\*)?[A-Za-z][A-Za-z0-9_-]*(?:\*\*)?\s*:", nxt):
+                break                    # 下一个字段开始
+            if nxt.strip():
+                val.append(nxt.strip())
+        return " ".join(v for v in val if v) or None
+    return None
 
 
 def problems(files, exists=None):
@@ -139,6 +153,10 @@ def _cases():
          lambda: any("缺 `**Status:**`" in x for x in problems(
              {"questions/07.md": "**Settling:** x.py —— rc=0 ⇒ a；rc=1 ⇒ b"},
              exists=lambda p: True))),
+        # ② UX（issue #15 B1）：Settling 折行必须能取到完整判据
+        ("Settling 折行 ⇒ 续行并入（曾误报「没给出两种结论」）",
+         lambda: "rc=7" in (field("**Status:** x\n**Settling:** 跑：\nrc=0 ⇒ A；"
+                                 "rc=7 ⇒ B\n", "Settling") or "")),
         # ③ 空输入必须报
         ("★ 一条悬案都没有 ⇒ 必须报（零值守卫）", lambda: problems({}, exists=lambda p: True) != []),
     ]

@@ -55,9 +55,48 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from gate import fatal, finish, main_selftest_or, meta, off, repo, selftest  # noqa: E402
+from gate import fatal, finish, main_selftest_or, meta, off, repo  # noqa: E402
 from ledger import facts_of, load, value_of              # noqa: E402
 from runner import default_timeout, quote, run_cmd       # noqa: E402
+
+
+def _replay_one(k, raw_entry, run, t, out, stats):
+    """复跑**一条**事实，把结果写进 out / stats（issue #22 复杂度拆分）。
+
+    每个分支只做一件事：跳过（replay=False）/ 缺 cmd / 超时 / 坏 rc / 值不符。
+    """
+    entry = raw_entry if isinstance(raw_entry, dict) else {"value": raw_entry}
+    cmd = str(entry.get("cmd") or "").strip()
+    if entry.get("replay") is False:
+        stats["skipped"] += 1
+        return
+    if not cmd:
+        out.append("`%s` 没有复跑命令 —— 没 cmd 的事实就是散文（裸值契约的前提"
+                   "是它有 cmd）" % k)
+        return
+    stats["attempts"] += 1
+    rc, stdout = run(cmd)
+    if rc is None:
+        out.append("`%s` 复跑**超时**（%.0fs）：`%s` —— 要起服务/要构建的条目应写 "
+                   "replay=False，别拿超时当数据。注：重启后冷启动首跑可能超时"
+                   "（文件系统冷，热缓存后往往秒回）—— 重跑一次再判，或调大 "
+                   "REFLECT_REPLAY_TIMEOUT" % (k, t, cmd))
+        return
+    if rc != 0:
+        out.append("`%s` 复跑**命令报错**（rc=%s）：`%s` —— 坏 cmd 印在活状态文档里，"
+                   "就是每行都绿着的假断言" % (k, rc, cmd))
+        return
+    stats["ran"] += 1
+    got = stdout.strip()
+    want = str(value_of(entry))
+    if got != want:
+        out.append("`%s` 复跑输出与台账不符：stdout=%s vs 台账=%s —— 修法是"
+                   "**重测**：python3 zreflect/facts.py，改口逐条"
+                   " `--accept-changes=k1,k2` 放行；重测后仍不符，才是"
+                   "cmd 违反裸值契约（stdout 只能打值本身）"
+                   % (k, quote(got), quote(want)))
+        return
+    stats["ok"] += 1
 
 
 def replay_all(ledger, runner=None):
@@ -78,36 +117,7 @@ def replay_all(ledger, runner=None):
         return stats
     t = default_timeout()
     for k in sorted(f):
-        entry = f[k] if isinstance(f[k], dict) else {"value": f[k]}
-        cmd = str(entry.get("cmd") or "").strip()
-        if entry.get("replay") is False:
-            stats["skipped"] += 1
-            continue
-        if not cmd:
-            out.append("`%s` 没有复跑命令 —— 没 cmd 的事实就是散文（裸值契约的前提"
-                       "是它有 cmd）" % k)
-            continue
-        stats["attempts"] += 1
-        rc, stdout = run(cmd)
-        if rc is None:
-            out.append("`%s` 复跑**超时**（%.0fs）：`%s` —— 要起服务/要构建的条目应写 "
-                       "replay=False，别拿超时当数据" % (k, t, cmd))
-            continue
-        if rc != 0:
-            out.append("`%s` 复跑**命令报错**（rc=%s）：`%s` —— 坏 cmd 印在活状态文档里，"
-                       "就是每行都绿着的假断言" % (k, rc, cmd))
-            continue
-        stats["ran"] += 1      # 「跑成」= 命令本身成功（rc=0）；值不符是数据问题，另一条判据
-        got = stdout.strip()
-        want = str(value_of(entry))
-        if got != want:
-            out.append("`%s` 复跑输出与台账不符：stdout=%s vs 台账=%s —— 修法是"
-                       "**重测**：python3 zreflect/facts.py，改口逐条"
-                       " `--accept-changes=k1,k2` 放行；重测后仍不符，才是"
-                       "cmd 违反裸值契约（stdout 只能打值本身）"
-                       % (k, quote(got), quote(want)))
-            continue
-        stats["ok"] += 1
+        _replay_one(k, f[k], run, t, out, stats)
     if stats["attempts"] and stats["ran"] == 0:
         out.append("%d 条尝试复跑**一条都没跑成**（全部 rc≠0/超时）—— 环境或 shell "
                    "整体坏了的时候，逐条报错会伪装成「数据都查过了」（零值守卫）"

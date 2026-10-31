@@ -26,6 +26,8 @@ import json
 import os
 import sys
 
+_AST_CACHE = {}
+
 # 被检查的仓库根：默认是本包的上一级，可用 GATE_REPO 覆盖（测试夹具靠它）。
 GATE_REPO = os.environ.get("GATE_REPO") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -74,6 +76,7 @@ def off(notice):
     off —— 与本仓立身要消灭的假绿同形）。
     """
     print("OFF: %s" % notice)
+    _maybe_hint()
     return 0
 
 
@@ -101,9 +104,85 @@ def finish(name, problems, ok):
         print("%s：%d 个问题" % (name, len(problems)), file=sys.stderr)
         for p in problems:
             print("  · " + p, file=sys.stderr)
+        _maybe_hint()
         return 1
     print(ok)
+    _maybe_hint()
     return 0
+
+
+def _maybe_hint():
+    """把 env 提示打到 stderr（**绝不进 stdout** —— 那里有机器契约）。
+
+    `REFLECT_ENV_HINT=off` 可整体关闭（本仓「不喜欢提示的仓」的出口；
+    提示本身是**人性化**，不是判据）。
+    """
+    if os.environ.get("REFLECT_ENV_HINT", "").strip().lower() == "off":
+        return
+    h = env_hint()
+    if h:
+        print("ℹ %s" % h, file=sys.stderr)
+
+
+def env_carrier():
+    """仓里的 Einfacht.env 载体路径（钩子目录优先、仓库根次之），没有 ⇒ None。"""
+    name = (os.environ.get("REFLECT_ENV_FILE", "Einfacht.env").strip()
+            or "Einfacht.env")
+    for d in (repo("reflect-hooks"), repo()):
+        p = os.path.join(d, name)
+        if os.path.exists(p):
+            return p
+    return None
+
+
+def gate_knobs(module=None):
+    """调用方模块声明的 `GATE = meta(…, knobs=…)`（拿不到 ⇒ 空）。
+
+    让 `env_hint()` 不必每个入口手写旋钮名 —— 声明已经有一份（单一产地）。
+    """
+    import sys as _sys                                   # noqa: PLC0415
+    mod = module if module is not None else _sys.modules.get("__main__")
+    decl = getattr(mod, "GATE", None)
+    if isinstance(decl, dict):
+        return tuple(decl.get("knobs") or ())
+    return ()
+
+
+def env_hint(consumed=(), module=None):
+    """**人性化提示**：喂了 env 的入口，在「带了 env 却没生效」时该怎么跑。
+
+    `consumed` = 这个入口实际读的旋钮名（如 `("REFLECT_FACTS",)`）。
+    返回一行提示字符串，或 None（无需提示）。
+
+    什么时候提示（三类，都只在对用户**有帮助**时出现）：
+
+      1. 仓里**有** Einfacht.env，但本轮进程**一个旋钮都没设**（`consumed`
+         全不在环境里）—— 典型的手工裸跑：`python3 zreflect/check_x.py`
+         ⇒ 判据全部回落默认名，结果可能与钩子语境不同，而且**没有任何东西
+         会告诉用户**（issue #20② / #15 都栽在这上面）。
+      2. 仓里**有** Einfacht.env 且当前设置与它**不一致**？—— 不查（要看值
+         才能判，而值依赖 shell 语义）；只查「有没有设」，保持判据廉价可靠。
+      3. 仓里**没有** Einfacht.env ⇒ **不提示**（这类仓裸跑是正常用法，提示
+         只会变成噪音 —— 本仓「会误报的闸门最终被整闸关掉」的教训）。
+
+    提示语集中在这里（一处措辞），各入口调它 —— 不再各写一份。
+    """
+    carrier = env_carrier()
+    if not carrier:
+        return None                      # 无载体的仓：裸跑是正常用法，不吵
+    if not consumed:
+        consumed = gate_knobs(module)     # 声明里的旋钮清单（零手写）
+    if not consumed:
+        return None
+    if any(os.environ.get(k, "").strip() for k in consumed):
+        return None                      # 至少设了一个旋钮 ⇒ 认为是有意配置
+    rel = os.path.relpath(carrier, GATE_REPO)
+    return ("检测到 %s，但本次进程一个旋钮都没设 —— 判据可能回落默认名，"
+            "结果与钩子语境不同。\n"
+            "       try running it with %s：\n"
+            "         set -a; . %s; set +a\n"
+            "       （或 `REFLECT_*=<值> python3 ...` 显式给旋钮）"
+            % (rel, rel, rel))
 
 
 def meta(name, desc, knobs=(), name_dependent=False, runs_at="commit"):
@@ -151,6 +230,123 @@ def raises(fn):
     return False
 
 
+
+def _ast_for(fname):
+    """整文件 AST（按文件名缓存）。读不到 / 解析不了 ⇒ False（缓存负结果）。"""
+    import ast as _ast                                   # noqa: PLC0415
+    import linecache                                     # noqa: PLC0415
+    tree = _AST_CACHE.get((fname,))
+    if tree is not None:
+        return tree
+    try:
+        tree = _ast.parse("".join(linecache.getlines(fname)))
+    except (OSError, SyntaxError):
+        tree = False
+    _AST_CACHE[(fname,)] = tree
+    return tree
+
+
+def _lambda_nodes(tree, lineno):
+    """起始行 == lineno 的**全部** Lambda 节点（按 col_offset 升序）。
+
+    ⚠️ 为什么返回列表而不是单个：**同一行里可以有多条 lambda**（`return
+    [("a", lambda: …), ("b", lambda: …)]` 全在一行）—— 这时 code object 的
+    `co_firstlineno` 相同、`co_positions()` 也只给外层位置，**无法区分**是哪
+    一条。取 col_offset 最小的那条会让同行的其它断言全部按第一条判定
+    （实测踩到：`lambda: 1 == 2` 被同行的 `lambda: … or True` 带累判成恒真）。
+
+    因此返回同行全部候选；调用方对**每一条**都扫一遍，任一条恒真即报 ——
+    「同行内任一条断言恒真」本来就该被抓，多报不算误伤。
+    """
+    import ast as _ast                                   # noqa: PLC0415
+    nodes = [n for n in _ast.walk(tree)
+             if isinstance(n, _ast.Lambda) and n.lineno == lineno]
+    return sorted(nodes, key=lambda n: n.col_offset)
+
+
+def _const_truthy(node):
+    """这个常量节点恒为真吗（`or True` / `or 1` 的右操作数形状）。"""
+    import ast as _ast                                   # noqa: PLC0415
+    if not isinstance(node, _ast.Constant) or node.value is None:
+        return False
+    return node.value is not False and bool(node.value) is True
+
+
+def _const_falsy(node):
+    """这个常量节点恒为假吗（`and False` / `and 0` 的右操作数形状）。"""
+    import ast as _ast                                   # noqa: PLC0415
+    if not isinstance(node, _ast.Constant) or node.value is None:
+        return False
+    return node.value is False or node.value == 0
+
+
+def _short_circuit_reason(node):
+    """这个 AST 节点构成恒真短路吗 ⇒ 原因字符串；否则 None。"""
+    import ast as _ast                                   # noqa: PLC0415
+    if isinstance(node, _ast.BoolOp):
+        if isinstance(node.op, _ast.Or) and any(
+                _const_truthy(o) for o in node.values):
+            return "`or <真值常量>` —— 布尔或被常量短路，永远 PASS"
+        if isinstance(node.op, _ast.And) and any(
+                _const_falsy(o) for o in node.values):
+            return "`and <假值常量>` —— 布尔与被常量短路，永远 fail"
+    if isinstance(node, _ast.Compare) and len(node.comparators) == 1:
+        left, right = node.left, node.comparators[0]
+        # 排除裸函数调用两次的**合法**纯函数性检验
+        # （`render_gates(gs) == render_gates(gs)` 证明渲染确定性）。
+        if isinstance(left, _ast.Call) and isinstance(right, _ast.Call):
+            return None
+        if _ast.dump(left) == _ast.dump(right) and isinstance(
+                node.ops[0], (_ast.Eq, _ast.LtE, _ast.GtE)):
+            return "比较两侧是同一个表达式 —— 恒真（x == x）"
+    return None
+
+
+def never_falsifiable(fn):
+    """**恒真断言探测**（issue #23）：这条自证用例有证伪能力吗？
+
+    下游实测的事故：一条 `or True` 的断言在 `--selftest` 里永远是 PASS ——
+    `gates-selftest` 判的是「返回 0 + 打摘要行」，真断言与恒真断言在这个面上
+    完全同形。`AGENTS.md` 纪律 4 说「断言要能证伪」，但此前没有机器判据。
+
+    判据（AST，零执行、零副作用）：**整文件解析 + 按 co_firstlineno 定位**
+    lambda 节点（不用 inspect.getsourcelines —— 它对列表里的 lambda 只给首行，
+    重建脆弱，实测三次失明）。找到节点后扫恒真短路：
+
+      · `or <真值常量>` / `and <假值常量>` —— 布尔被常量短路，永远 PASS/fail；
+      · `x == x` 型自我比较（**排除**裸函数调用两次的合法纯函数性检验）。
+
+    返回原因字符串（不可证伪）或 None（看起来有牙）。
+
+    诚实边界：静态形状判据 —— 抓得到显式短路与自我比较，抓不到更隐蔽的恒真
+    （同一变量换写法）。更强的保证是变异测试（每条断言注入破坏器），代价过大；
+    见 issue #23 的讨论。本判据的价值：把已知的几种无意识写法从「人工复查才
+    发现」变成「自证当场红」。
+    """
+    import ast as _ast                                   # noqa: PLC0415
+    code = getattr(fn, "__code__", None)
+    if code is None:
+        return None                                      # 非 Python 函数 ⇒ 不猜
+    tree = _ast_for(code.co_filename)
+    if not tree:
+        return None                                      # 读不到 / 解析不了 ⇒ 不猜
+    nodes = _lambda_nodes(tree, code.co_firstlineno)
+    if not nodes:
+        return None                                      # 定位不到 ⇒ 不猜
+    if len(nodes) > 1:
+        # 同一行有多条 lambda：code object 无法告诉我们是哪一条（co_firstlineno
+        # 相同、co_positions 只给外层位置）。**不确定就不猜** —— 与「读不到就
+        # 明说」同一条纪律：这里宁可漏报也不误伤（本仓 99% 的断言都独占一行，
+        # 这个退化只影响把多条断言挤一行的写法）。
+        return None
+    for node in nodes:
+        for n in _ast.walk(node):
+            reason = _short_circuit_reason(n)
+            if reason:
+                return reason
+    return None
+
+
 def selftest(name, cases):
     """跑三档用例。每个 case = (标签, callable) -> bool。
 
@@ -169,6 +365,13 @@ def selftest(name, cases):
         )
     bad = 0
     for label, fn in cases:
+        # issue #23：恒真断言探测 —— 一条 `or True` 的断言与真断言
+        # 在「返回 0 + 打摘要行」这个面上同形，必须单独判。
+        why = never_falsifiable(fn)
+        if why:
+            print("fail | %s（断言不可证伪：%s）" % (label, why))
+            bad += 1
+            continue
         try:
             ok = bool(fn())
         except SystemExit as e:

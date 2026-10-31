@@ -38,7 +38,7 @@ from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gate import fatal, finish, load_spec, main_selftest_or, meta, off  # noqa: E402
-from gate import repo, selftest                            # noqa: E402
+from gate import repo                            # noqa: E402
 from ledger import facts_of, load                         # noqa: E402
 
 INSTRUMENTS_RAW = os.environ.get("REFLECT_INSTRUMENTS", "").strip()

@@ -41,7 +41,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from gate import fatal, finish, load_spec, main_selftest_or, meta, off  # noqa: E402
-from gate import repo, selftest                            # noqa: E402
+from gate import repo                            # noqa: E402
 
 INVARIANTS_RAW = os.environ.get("REFLECT_INVARIANTS", "").strip()
 

@@ -22,39 +22,25 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from gate import module_meta, GATE_REPO, main_selftest_or, repo, selftest  # noqa: E402
+from gate import module_meta, GATE_REPO, main_selftest_or, repo  # noqa: E402
 from ledger import age_days, fact, facts_of, load, value_of  # noqa: E402
-from render import BLOCK_BEGIN, BLOCK_END, body_of, prose_of, render_block  # noqa: E402
+from render import BLOCK_BEGIN, BLOCK_END, render_block  # noqa: E402
 import guard                                             # noqa: E402
 import registry                                          # noqa: E402
 
+REPO_REAL = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LEDGER_NAME = os.environ.get("REFLECT_FACTS", "FACTS.json")
 OUT = repo(LEDGER_NAME)
 DOC = os.environ.get("REFLECT_DOC", "STATE.md")
 
 
-# ══ 你的部分（本仓数据层）════════════════════════════════════════════════════
-# 机制在本目录（Einfacht 上游，逐字节照抄、可原样升级）；**本仓要量的东西**在
-# measure_edu.py（数据 vs 机制分离：换仓库只换那一个文件）。
-#
-# ⚠️ 为什么还留着上游那个「通用 measure」（数 py/md 文件）：
-#   `gates-selftest.sh` 的**跨仓库可配置性自证**会搭一个**临时夹具仓库**，
-#   把三个默认名全换掉、在夹具里真跑 `facts.py` 生成台账。夹具里没有本仓的
-#   课程/站点 ⇒ 本仓的 measure 量出的是空表，于是 check_facts / replay 在
-#   夹具里必红 —— 那会误报成「名字写死在代码里」（**正是这条自证要抓的**，
-#   但这里不是真因）。所以：**真仓用本仓 measure，夹具用通用 measure**
-#   （判据 = GATE_REPO 是不是本仓）。
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from measure_edu import measure as measure_edu              # noqa: E402
+# ══ 你的部分 ══════════════════════════════════════════════════════════════════
+def measure_example():
+    """**占位实现 —— 换掉它。** 系统只提供机制，你的输入只有你知道怎么量。
 
-_REAL_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-
-def _generic_measure():
-    """上游自带的通用 measure（数 py/md 文件）—— **GATE_REPO 相对**，夹具里也能跑。
-
-    照抄上游语义：cmd 用 `find .`（闸门在仓库根逐字执行），计数用
-    `os.walk(GATE_REPO)` —— 换名自证里量到的必须是**夹具**的行数。
+    这里量的东西和「事实」无关，只是为了让仓库开箱能跑。真要落地时，把每条
+    `fact(值, 复跑命令, 出处)` 换成你自己量出来的数；特别是那条复跑命令 ——
+    它必须**真的能跑**，否则这条事实就又变成了一句散文。
     """
     facts = {}
     n_py = 0
@@ -73,7 +59,8 @@ def _generic_measure():
                     pass                      # 数不出来的文件不计数 —— 宁缺勿假
             elif f.endswith(".md"):
                 n_md += 1
-    facts["py_files"] = fact(n_py, "find . -name '*.py' -not -path './.git/*' | wc -l", "repo")
+    facts["py_files"] = fact(n_py, "find . -name '*.py' -not -path './.git/*' | wc -l",
+                             "repo", "示例事实：换掉 measure_example()")
     facts["md_files"] = fact(n_md, "find . -name '*.md' -not -path './.git/*' | wc -l", "repo")
     # 这条刻意大于 BARE_MIN（check_facts 的裸数字阈值 = 100），好在 STATE.md 里
     # 演示「手抄这个数字会被闸门拦下」。太小的数字遍地都是，查了全是噪音 ⇒ 不查。
@@ -104,13 +91,6 @@ def _generic_measure():
         facts["upstream_version"] = fact(v, "echo \"$UPSTREAM_VERSION\"", "env",
                                          "量不到就不写 —— 宁缺勿假")
     return facts
-
-
-def measure_example():
-    """平台契约要求的入口：真仓走本仓 measure，夹具（换名自证）走通用 measure。"""
-    if os.path.abspath(GATE_REPO) == os.path.abspath(_REAL_REPO):
-        return measure_edu()
-    return _generic_measure()
 
 
 # ══ 以下不用改 ════════════════════════════════════════════════════════════════
@@ -210,6 +190,32 @@ def _age_human(entry):
     return "%d 天前测的" % int(d)
 
 
+def _measure():
+    """采集入口（issue #15 A1/C3）：`REFLECT_MEASURE_MODULE` 旋钮分派。
+
+    · 旋钮未配 / 模块导入失败 / 夹具场景（GATE_REPO 不是本仓）⇒ 回落
+      `measure_example()`（占位），并**打印警告** —— 下游实测过：手动跑
+      facts.py 忘带旋钮 ⇒ 空表 + `--allow-drop` 诱惑（OM 仓「会掉 24 条」
+      的吓人 FATAL，真因只是旋钮没传）。回落必须可闻，不许静默。
+    · 旋钮已配且导入成功且 GATE_REPO 是真仓 ⇒ 用旋钮指定的 measure()。
+    """
+    mod_name = os.environ.get("REFLECT_MEASURE_MODULE", "").strip()
+    if mod_name:
+        try:
+            _m = __import__(mod_name)
+            fn = getattr(_m, "measure")   # noqa: B009 — 模块是变量，属性名固定是契约
+            if os.path.abspath(GATE_REPO) == os.path.abspath(REPO_REAL):
+                return fn()
+        except Exception as e:                            # noqa: BLE001
+            print("⚠ REFLECT_MEASURE_MODULE=%s 不可用（%r）⇒ 回落占位 measure_example()"
+                  % (mod_name, e), file=sys.stderr)
+    elif os.path.abspath(GATE_REPO) == os.path.abspath(REPO_REAL):
+        print("⚠ measure_example() used; set REFLECT_MEASURE_MODULE for real repo"
+              "（换仓只改 Einfacht.env 一行；回落占位时台账会空）",
+              file=sys.stderr)
+    return measure_example()
+
+
 def measure(argv):
     """量一遍并写台账。**必须接 `argv`** —— 两道守卫都要读它。
 
@@ -219,7 +225,7 @@ def measure(argv):
     那不叫守卫，那叫故障。所以本文件把 argv 显式传进来；守卫的**决策**在
     `zreflect/guard.py`（decide()，接线有自证），本函数只执行它。
     """
-    facts = measure_example()
+    facts = _measure()
 
     old = facts_of(load(OUT)) if os.path.exists(OUT) else {}
 
@@ -244,6 +250,15 @@ def measure(argv):
         if fs and value_of(o) == value_of(entry):
             entry["first_seen"] = fs
 
+    # 盲写守卫（issue #20 ②）：写盘前查目标 —— 被 gitignore 覆盖 ⇒ FATAL；
+    # 仓里有 Einfacht.env 而本次没设旋钮 ⇒ warn（两个产地此刻分叉）。
+    fatal_w, warn_w = guard.write_target_problems(
+        OUT, knob_set=bool(os.environ.get("REFLECT_FACTS", "").strip()))
+    if warn_w:
+        print("⚠ %s" % warn_w, file=sys.stderr)
+    if fatal_w:
+        print("FATAL: %s" % fatal_w, file=sys.stderr)
+        return 2
     import json                                         # noqa: PLC0415
     import time                                         # noqa: PLC0415
     doc = {"schema": 1, "generated": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
@@ -281,9 +296,16 @@ def _load_or_die():
     FileNotFoundError —— 那是"为本仓写死"的味道（我们那边永远有 FACTS.json）。
     语义仍是 fail-loud（空台账照样拒绝渲染），只是**把下一步写在错误里**。"""
     if not os.path.exists(OUT):
-        print("FATAL: 还没有台账 %s\n"
-              "       先在仓库根跑一遍量测：python3 zreflect/facts.py\n"
-              "       然后再 --render-doc 把机器块写进文档。" % os.path.basename(OUT),
+        # issue #20 ② 补充 2：旧提示「先在仓库根跑一遍量测」正是写出野文件
+        # 的那个动作 —— 提示文本本身也是「默认值产地」的一部分，不许教人
+        # 踩坑。改说「先确认 REFLECT_FACTS 指向哪里」。
+        print("FATAL: 还没有台账 %s（路径 = REFLECT_FACTS，当前解析为 %s）\n"
+              "       先确认本仓的台账路径：检查 Einfacht.env / facts 壳脚本里"
+              " REFLECT_FACTS 设了什么，\n"
+              "       再带着同样的环境跑一遍量测：python3 zreflect/facts.py"
+              "（裸跑会用代码默认值 —— 目标可能与钩子语境不同）\n"
+              "       然后再 --render-doc 把机器块写进文档。"
+              % (os.path.basename(OUT), os.path.relpath(OUT, GATE_REPO)),
               file=sys.stderr)
         raise SystemExit(2)
     return load(OUT)

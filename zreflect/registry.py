@@ -71,9 +71,36 @@ RENAMED_DEFAULTS = tuple(FIXTURE_RENAMES)
 # 已知相位（C1）：闸门声明自己的运行频率。执行面（gate.run_phase）按它过滤。
 #   commit        每次提交跑（pre-commit / pre-push / CI）
 #   start-of-work 开工前手动跑（doctor —— 查会死的东西，挂提交频率错）
-#   lab           实验空改造后手动跑（.zcode/ 不入库 ⇒ 不产生 commit，
-#                 挂 commit 频率形同虚设；questions/02 悬案的 Settling 引用它）
-PHASES = ("commit", "start-of-work", "lab")
+# ⚠️ issue #21：相位清单**焊死在这里**会逼下游 fork —— 使用方有自己的相位
+# （S26 仓的 lab：*.lab.py 只在实验目录在场时跑）。旋钮 `REFLECT_PHASES`
+# 追加自定义相位（逗号分隔，追加在两个内置相位之后）；核心两个不可删、
+# 不可重名 —— 相位是执行面与声明的公共词汇，乱改会让既有 runs_at 声明
+# 静默变孤儿。problems() 仍拦未知相位：声明了 runs_at 却不在清单 ⇒ 红。
+BUILTIN_PHASES = ("commit", "start-of-work")
+
+
+def phases():
+    """已知相位 = 内置两个 + `REFLECT_PHASES` 追加（下游自定义，如 lab）。"""
+    raw = os.environ.get("REFLECT_PHASES", "").strip()
+    out = list(BUILTIN_PHASES)
+    for p in (x.strip() for x in raw.split(",")):
+        if p and p not in out:
+            out.append(p)
+    return tuple(out)
+
+
+def phases_problems():
+    """相位清单自洽（旋钮坏值的判据；纯函数）。"""
+    raw = os.environ.get("REFLECT_PHASES", "").strip()
+    out = []
+    if raw:
+        dup = [p for p in (x.strip() for x in raw.split(","))
+               if p in BUILTIN_PHASES]
+        if dup:
+            out.append("REFLECT_PHASES 里的 %s 是内置相位（commit / "
+                       "start-of-work 不可重名也不必重报）—— 删掉它们，"
+                       "只留自定义相位" % ", ".join(sorted(set(dup))))
+    return out
 
 def modules(zdir=None):
     """平台模块名录（C5）：ast 解析 `MODULE = module_meta(…)` 声明行。
@@ -178,6 +205,54 @@ def gates(zdir=None):
     return out, missing
 
 
+def _decl_call(node, attr, func):
+    """`node` 是不是 `<attr> = <func>(…)` 形状的声明行？是 ⇒ 那个调用节点。
+
+    两种等价写法都认：meta(…)（裸导入名）与 gate.meta(…)（属性）。
+    不是声明行 / 调用的不是 `func` ⇒ None（调用方继续扫下一行）。
+    """
+    if not (isinstance(node, ast.Assign) and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id == attr
+            and isinstance(node.value, ast.Call)
+            and len(node.value.args) >= 2):
+        return None
+    fn = node.value.func
+    if getattr(fn, "id", "") == func or getattr(fn, "attr", "") == func:
+        return node.value
+    return None
+
+
+def _module_meta(call, rel):
+    """`MODULE = module_meta(…)` → {file, name, desc, selftest}。"""
+    st = True
+    for kw in call.keywords:
+        if kw.arg == "selftest":
+            st = ast.literal_eval(kw.value)
+    return {"file": rel,
+            "name": ast.literal_eval(call.args[0]),
+            "desc": ast.literal_eval(call.args[1]),
+            "selftest": bool(st)}
+
+
+def _gate_meta(call, rel):
+    """`GATE = gate.meta(…)` → {file, name, desc, knobs, name_dependent, runs_at}。"""
+    knobs, name_dep, runs_at = (), False, "commit"
+    for kw in call.keywords:
+        if kw.arg == "knobs":
+            knobs = ast.literal_eval(kw.value)
+        elif kw.arg == "name_dependent":
+            name_dep = ast.literal_eval(kw.value)
+        elif kw.arg == "runs_at":
+            runs_at = ast.literal_eval(kw.value)
+    return {"file": rel,
+            "name": ast.literal_eval(call.args[0]),
+            "desc": ast.literal_eval(call.args[1]),
+            "knobs": tuple(knobs),
+            "name_dependent": bool(name_dep),
+            "runs_at": str(runs_at)}
+
+
 def _declaration(path, rel, attr="GATE", func="meta"):
     """从文件里 ast 提取声明行（默认 `GATE = meta(…)`；C5 用
     `MODULE = module_meta(…)`）。没有 ⇒ None。
@@ -189,42 +264,15 @@ def _declaration(path, rel, attr="GATE", func="meta"):
     except (OSError, SyntaxError):
         return None
     for node in tree.body:
-        if (isinstance(node, ast.Assign) and len(node.targets) == 1
-                and isinstance(node.targets[0], ast.Name)
-                and node.targets[0].id == attr
-                and isinstance(node.value, ast.Call)
-                and len(node.value.args) >= 2):
-            fn = node.value.func
-            # 两种等价写法都认：meta(…)（裸导入名）与 gate.meta(…)（属性）
-            if not (getattr(fn, "id", "") == func
-                    or getattr(fn, "attr", "") == func):
-                continue
-            try:
-                if func == "module_meta":
-                    st = True
-                    for kw in node.value.keywords:
-                        if kw.arg == "selftest":
-                            st = ast.literal_eval(kw.value)
-                    return {"file": rel,
-                            "name": ast.literal_eval(node.value.args[0]),
-                            "desc": ast.literal_eval(node.value.args[1]),
-                            "selftest": bool(st)}
-                knobs, name_dep, runs_at = (), False, "commit"
-                for kw in node.value.keywords:
-                    if kw.arg == "knobs":
-                        knobs = ast.literal_eval(kw.value)
-                    elif kw.arg == "name_dependent":
-                        name_dep = ast.literal_eval(kw.value)
-                    elif kw.arg == "runs_at":
-                        runs_at = ast.literal_eval(kw.value)
-                return {"file": rel,
-                        "name": ast.literal_eval(node.value.args[0]),
-                        "desc": ast.literal_eval(node.value.args[1]),
-                        "knobs": tuple(knobs),
-                        "name_dependent": bool(name_dep),
-                        "runs_at": str(runs_at)}
-            except (ValueError, IndexError):
-                return None
+        call = _decl_call(node, attr, func)
+        if call is None:
+            continue
+        try:
+            if func == "module_meta":
+                return _module_meta(call, rel)
+            return _gate_meta(call, rel)
+        except (ValueError, IndexError):
+            return None
     return None
 
 
@@ -250,6 +298,87 @@ def _touches_renamed(g):
     return False
 
 
+def _missing_declaration_problems(missing):
+    """叫 check_ 却没有 GATE 声明行 —— 忘写声明 = 叙述会漂。"""
+    if not missing:
+        return []
+    return ["以下闸门没有 GATE = gate.meta(…) 声明行 —— 名录不收"
+            "无名之辈（手写名录会漂，声明即登记）：%s"
+            % ", ".join(missing)]
+
+
+def _phase_problems(gs):
+    """runs_at 必须是已知相位 —— 频率是声明字段，写错值会让执行面漏掉它。"""
+    out = []
+    for g in gs:
+        if g.get("runs_at", "commit") not in phases():
+            out.append("`%s` 的 runs_at=%r 不是已知相位（%s）—— 频率是声明"
+                       "字段，写错值会让执行面漏掉它"
+                       % (g["file"], g.get("runs_at"), " | ".join(phases())))
+    return out
+
+
+def _name_dependent_problems(gs):
+    """标了 name_dependent 却不消费任何改名默认名 —— 旗标错了。"""
+    out = []
+    for g in gs:
+        if g["name_dependent"] and not _touches_renamed(g):
+            out.append("`%s` 标了 name_dependent，但消费的旋钮没有一个默认名"
+                       "在换名自证的改名清单里 —— 旗标错了（要么去掉旗标，"
+                       "要么把新默认名加进 registry.RENAMED_DEFAULTS）"
+                       % g["file"])
+    return out
+
+
+def _empty_gate_problems(gs, missing):
+    """名录整体为空 —— 零值守卫：空输入不是通过。"""
+    if not gs and not missing:
+        return ["一个闸门都没发现 —— 零值守卫：空输入不是通过"]
+    return []
+
+
+def _selftest_roster_problems(mods, mods_missing):
+    """平台模块自证名册：声明了就必须能跑，且名录不许为空。"""
+    if mods is None or mods_missing is None:
+        mods, mods_missing = selftest_modules()
+    out = []
+    if mods_missing:
+        out.append("以下模块声明了 selftest=True 却没有 --selftest 入口 —— "
+                   "写而不跑的自证 = 装饰：%s" % ", ".join(mods_missing))
+    if not mods:
+        out.append("没有任何平台模块自证可发现 —— 零值守卫：空输入不是通过")
+    return out
+
+
+def _undeclared_module_problems(undeclared):
+    """C5：平台模块必须声明自己（MODULE = module_meta(…)），否则
+    「该有自证却没写」无人问（文本猜 _cases 猜不出「本该有」）。"""
+    if undeclared is None:
+        _decl, undeclared = modules()
+    if not undeclared:
+        return []
+    return ["以下 .py 既非闸门（无 GATE 声明）也非已声明的平台模块"
+            "（无 MODULE = module_meta(…)）—— 平台模块必须声明自己，"
+            "哪怕 selftest=False（正面说「我不用自证」）：%s"
+            % ", ".join(undeclared)]
+
+
+def _knob_problems(knob_problems, gs):
+    """名册自洽性（C3）：幻影旋钮 / README 幻影 —— 与任何载体是否存在无关。
+
+    此前焊在 check_envfile.run() 的「载体存在」前置之后，本仓没有
+    Einfacht.env ⇒ 从未执行（实测踩到）。名册的家在这里收口。
+    """
+    if knob_problems is None:
+        import knobs                                     # noqa: PLC0415
+        knob_problems = (knobs.scan_surface_problems()
+                         + knobs.readme_problems()
+                         # C4 对账：声明↔实读、REGISTRY↔README 表
+                         + knobs.declared_vs_read_problems(gs)
+                         + knobs.registry_vs_readme_problems())
+    return list(knob_problems)
+
+
 def problems(gs, missing, mods=None, mods_missing=None,
              knob_problems=None, undeclared=None):
     """名录的对账（纯函数）：空 = 绿。自证期间不许 print。
@@ -265,51 +394,25 @@ def problems(gs, missing, mods=None, mods_missing=None,
     · 名录整体为空 ⇒ 报（零值守卫）。
     """
     out = []
-    if missing:
-        out.append("以下闸门没有 GATE = gate.meta(…) 声明行 —— 名录不收"
-                   "无名之辈（手写名录会漂，声明即登记）：%s"
-                   % ", ".join(missing))
-    for g in gs:
-        if g.get("runs_at", "commit") not in PHASES:
-            out.append("`%s` 的 runs_at=%r 不是已知相位（%s）—— 频率是声明"
-                       "字段，写错值会让执行面漏掉它"
-                       % (g["file"], g.get("runs_at"), " | ".join(PHASES)))
-    for g in gs:
-        if g["name_dependent"] and not _touches_renamed(g):
-            out.append("`%s` 标了 name_dependent，但消费的旋钮没有一个默认名"
-                       "在换名自证的改名清单里 —— 旗标错了（要么去掉旗标，"
-                       "要么把新默认名加进 registry.RENAMED_DEFAULTS）"
-                       % g["file"])
-    if not gs and not missing:
-        out.append("一个闸门都没发现 —— 零值守卫：空输入不是通过")
-    if mods is None or mods_missing is None:
-        mods, mods_missing = selftest_modules()
-    if mods_missing:
-        out.append("以下模块声明了 selftest=True 却没有 --selftest 入口 —— "
-                   "写而不跑的自证 = 装饰：%s" % ", ".join(mods_missing))
-    if not mods:
-        out.append("没有任何平台模块自证可发现 —— 零值守卫：空输入不是通过")
-    # C5：平台模块必须声明自己（MODULE = module_meta(…)），否则
-    # 「该有自证却没写」无人问（文本猜 _cases 猜不出「本该有」）。
-    if undeclared is None:
-        _decl, undeclared = modules()
-    if undeclared:
-        out.append("以下 .py 既非闸门（无 GATE 声明）也非已声明的平台模块"
-                   "（无 MODULE = module_meta(…)）—— 平台模块必须声明自己，"
-                   "哪怕 selftest=False（正面说「我不用自证」）：%s"
-                   % ", ".join(undeclared))
-    # 名册自洽性（C3）：幻影旋钮 / README 幻影 —— 与任何载体是否存在无关。
-    # 此前焊在 check_envfile.run() 的「载体存在」前置之后，本仓没有
-    # Einfacht.env ⇒ 从未执行（实测踩到）。名册的家在这里收口。
-    if knob_problems is None:
-        import knobs                                     # noqa: PLC0415
-        knob_problems = (knobs.scan_surface_problems()
-                         + knobs.readme_problems()
-                         # C4 对账：声明↔实读、REGISTRY↔README 表
-                         + knobs.declared_vs_read_problems(gs)
-                         + knobs.registry_vs_readme_problems())
-    out += list(knob_problems)
+    out += phases_problems()
+    out += _missing_declaration_problems(missing)
+    out += _phase_problems(gs)
+    out += _name_dependent_problems(gs)
+    out += _empty_gate_problems(gs, missing)
+    out += _selftest_roster_problems(mods, mods_missing)
+    out += _undeclared_module_problems(undeclared)
+    out += _knob_problems(knob_problems, gs)
     return out
+
+
+def _with_phases(val):
+    """自证帮手：临时设 REFLECT_PHASES，返回 (phases(), problems())，恢复现场。"""
+    old = os.environ.get("REFLECT_PHASES", "")
+    os.environ["REFLECT_PHASES"] = val
+    try:
+        return phases(), phases_problems()
+    finally:
+        os.environ["REFLECT_PHASES"] = old
 
 
 def red_need(gs=None):
@@ -366,16 +469,68 @@ def render_gates(gs):
     return "\n".join(lines)
 
 
-def main(argv):
+def _arg_after(argv, flag):
+    """`--flag [value]` 的可选值（缺省 / 以 - 开头 ⇒ 默认 commit）。"""
+    i = argv.index(flag)
+    return (argv[i + 1] if len(argv) > i + 1
+            and not argv[i + 1].startswith("-") else "commit")
+
+
+def _main_run(argv):
+    """执行面：跑一个相位的全部闸门并聚合 ran / off / failed（C1+C2）。
+
+    hooks / CI 只调这一行 —— glob 退役，谓词只有 gates() 一处。
+    """
+    phase = _arg_after(argv, "--run")
+    from gate import run_phase                          # noqa: PLC0415
+    gs = runnable(phase)
+    if not gs:
+        return fatal("相位 %s 没有可跑的闸门 —— 零值守卫：空清单不是通过"
+                     "（谓词或声明坏了？）" % phase)
+    res = run_phase(phase, gs)
+    print("相位 %s：ran %d / off %d / failed %d"
+          % (phase, res["ran"], res["off"], res["failed"]))
+    for f in res["off_list"]:
+        print("  off    %s（未启用 —— 没查，不是通过）" % f)
+    for f in res["fail_list"]:
+        print("  FAILED %s" % f, file=sys.stderr)
+    return 1 if res["failed"] else 0
+
+
+def _main_selftest_modules():
+    mods, missing = selftest_modules()
+    for m in missing:
+        print("  ❌ %s 写了自证却没有 --selftest 入口（写而不跑 = 装饰）" % m,
+              file=sys.stderr)
+    if missing:
+        return 1
+    print("\n".join(mods))
+    return 0
+
+
+def _main_gates():
+    gs, missing = gates()
+    probs = problems(gs, missing)
+    for x in probs:
+        print("  · %s" % x, file=sys.stderr)
+    if probs:
+        return fatal("名录有问题（%d）" % len(probs))
+    for g in gs:
+        print("%s\t%s\t%s" % (g["file"], g["name"], g["desc"]))
+    return 0
+
+
+def _main_lists(argv):
+    """`--red-need` / `--runnable` / `--all-runnable` 三个清单打印。
+
+    返回 rc；没有这些旗标 ⇒ None（调用方继续往下探）。
+    """
     if "--red-need" in argv:
         print(" ".join(red_need()))
         return 0
     if "--runnable" in argv:
         # 执行面唯一产地（C1）：--runnable [phase]，默认 commit。
-        i = argv.index("--runnable")
-        phase = (argv[i + 1] if len(argv) > i + 1
-                 and not argv[i + 1].startswith("-") else "commit")
-        for g in runnable(phase):
+        for g in runnable(_arg_after(argv, "--runnable")):
             print(g["file"])
         return 0
     if "--all-runnable" in argv:
@@ -384,25 +539,14 @@ def main(argv):
         for g in gs:
             print(g["file"])
         return 0
-    if "--run" in argv:
-        # 执行面：跑一个相位的全部闸门并聚合 ran / off / failed（C1+C2）。
-        # hooks / CI 只调这一行 —— glob 退役，谓词只有 gates() 一处。
-        i = argv.index("--run")
-        phase = (argv[i + 1] if len(argv) > i + 1
-                 and not argv[i + 1].startswith("-") else "commit")
-        from gate import run_phase                          # noqa: PLC0415
-        gs = runnable(phase)
-        if not gs:
-            return fatal("相位 %s 没有可跑的闸门 —— 零值守卫：空清单不是通过"
-                         "（谓词或声明坏了？）" % phase)
-        res = run_phase(phase, gs)
-        print("相位 %s：ran %d / off %d / failed %d"
-              % (phase, res["ran"], res["off"], res["failed"]))
-        for f in res["off_list"]:
-            print("  off    %s（未启用 —— 没查，不是通过）" % f)
-        for f in res["fail_list"]:
-            print("  FAILED %s" % f, file=sys.stderr)
-        return 1 if res["failed"] else 0
+    return None
+
+
+def _main_listings(argv):
+    """`--plugins` / `--fixture-renames` 两个逐行清单。
+
+    返回 rc；没有这些旗标 ⇒ None（调用方继续往下探）。
+    """
     if "--plugins" in argv:
         print("\n".join(plugins()))
         return 0
@@ -411,27 +555,27 @@ def main(argv):
         for orig, fix in sorted(FIXTURE_RENAMES.items()):
             print("%s=%s" % (orig, fix))
         return 0
+    return None
+
+
+_USAGE = ("用法：registry.py [--gates|--runnable [phase]|--all-runnable|"
+          "--run [phase]|--red-need|--plugins|--selftest-modules|--selftest]")
+
+
+def main(argv):
+    rc = _main_lists(argv)
+    if rc is not None:
+        return rc
+    if "--run" in argv:
+        return _main_run(argv)
+    rc = _main_listings(argv)
+    if rc is not None:
+        return rc
     if "--selftest-modules" in argv:
-        mods, missing = selftest_modules()
-        for m in missing:
-            print("  ❌ %s 写了自证却没有 --selftest 入口（写而不跑 = 装饰）" % m,
-                  file=sys.stderr)
-        if missing:
-            return 1
-        print("\n".join(mods))
-        return 0
+        return _main_selftest_modules()
     if "--gates" in argv:
-        gs, missing = gates()
-        probs = problems(gs, missing)
-        for x in probs:
-            print("  · %s" % x, file=sys.stderr)
-        if probs:
-            return fatal("名录有问题（%d）" % len(probs))
-        for g in gs:
-            print("%s\t%s\t%s" % (g["file"], g["name"], g["desc"]))
-        return 0
-    print("用法：registry.py [--gates|--runnable [phase]|--all-runnable|--run [phase]|"
-          "--red-need|--plugins|--selftest-modules|--selftest]", file=sys.stderr)
+        return _main_gates()
+    print(_USAGE, file=sys.stderr)
     return 2
 
 
@@ -522,6 +666,22 @@ def _cases():
         ("★ 空名录 + 空模块 ⇒ 必须报（零值守卫）",
          lambda: problems([], [], mods=[], mods_missing=[],
                           knob_problems=[], undeclared=[]) != []),
+        # issue #21：相位旋钮 —— 下游自定义相位（如 S26 的 lab）不再 fork PHASES
+        ("REFLECT_PHASES=lab ⇒ phases() 追加、内置两个不动",
+         lambda: _with_phases("lab")[0] == ("commit", "start-of-work", "lab")),
+        ("★ REFLECT_PHASES 重报内置相位 ⇒ phases_problems 必须报",
+         lambda: any("内置相位" in x for x in _with_phases("commit,lab")[1])),
+        ("REFLECT_PHASES 未设 ⇒ 只有内置两个（现状不变，兼容红线）",
+         lambda: _with_phases("")[0] == ("commit", "start-of-work")),
+        # 人性化提示（env_hint）：四条判据
+        ("无 Einfacht.env 的仓 ⇒ env_hint 不提示（裸跑是正常用法）",
+         lambda: __import__("gate").env_hint(consumed=("REFLECT_FACTS",)) is None
+         or __import__("gate").env_carrier() is not None),
+        ("REFLECT_ENV_HINT=off ⇒ _maybe_hint 不输出（提示可关）",
+         lambda: (lambda: (os.environ.update(REFLECT_ENV_HINT="off"),
+                           __import__("gate")._maybe_hint(),
+                           os.environ.pop("REFLECT_ENV_HINT", None),
+                           True))()),
     ]
 
 
