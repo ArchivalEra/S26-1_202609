@@ -405,6 +405,7 @@
 !/站点/plugins/spa-router.test.mjs
 !/站点/plugins/completion-boundary.test.mjs
 !/站点/plugins/copy-button.test.mjs
+!/站点/plugins/formula-editable.test.mjs
 !/站点/plugins/table-responsive.test.mjs
 # SW 已根除（2026-10-23）：sw-template.js 退役，换成一次性清老用户的 sw-kill.mjs
 !/站点/plugins/sw-kill.mjs

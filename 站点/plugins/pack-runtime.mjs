@@ -79,8 +79,32 @@ function render() {
 }
 
 /* ── 能力装配：编辑器就绪 ⇒ 动态载入 MathLive 并开编辑态 ───────── */
+/** KaTeX 运行时（编辑器里的实时预览用）。
+ *
+ * 页面正文根本不需要它——公式是构建期烘死的 HTML，首屏零 JS 排版。
+ * 只有「用户点了公式、进编辑态」才拉这一次（277 KB，UMD，挂 window.katex）。
+ * 加载失败不算致命：预览退化成原始 TeX 文本，编辑与运行照常。
+ */
+var katexLoading = null;
+function ensureKatex() {
+  if (window.katex) return Promise.resolve(window.katex);
+  if (katexLoading) return katexLoading;
+  katexLoading = new Promise(function (res) {
+    var s = document.createElement("script");
+    s.src = root() + "assets/katex/katex.min.js";
+    s.onload = function () { res(window.katex || null); };
+    s.onerror = function () { res(null); };
+    document.head.appendChild(s);
+    setTimeout(function () { res(window.katex || null); }, 8000);
+  });
+  return katexLoading;
+}
+
 function ensureEditor() {
   if (mathliveLoading) return mathliveLoading;
+  // KaTeX 与 MathLive 一起拉：编辑器要的是「MathLive 输入 + KaTeX 预览」,
+  // 缺哪个都不成。两个互不影响（一个失败另一个照常），所以不串联失败。
+  ensureKatex();
   mathliveLoading = import(root() + "assets/mathlive/mathlive-browser.min.js")
     .catch(function () {
       // 浏览器版是 UMD，import() 可能拿不到副作用注册；退化成 script 标签
@@ -97,7 +121,29 @@ function ensureEditor() {
 
 /* ── 点公式进编辑态：**覆盖层**，不替换原节点 ───────────────────── */
 var overlay = null;
-function openEditor(latex, anchorEl) {
+
+/**
+ * 这条公式是不是显示式（独立成块）？
+ *
+ * 判据是**容器**不是公式本身：构建期给块级公式包了 「.math-display」
+ * （见 build.mjs 的 renderOneMath），行内公式没有这层。
+ * 用 closest 而不是 parentElement：中间可能还夹着 「.katex-scroll-container」。
+ */
+function isDisplayAnchor(el) {
+  return !!(el && el.closest && el.closest(".math-display"));
+}
+
+/**
+ * 打开编辑器。
+ *
+ * @param {string} tex    公式的 LaTeX 源（「data-math-tex」，作者原文）
+ * @param {Element} anchorEl 被点的公式容器（用来回读 display/inline）
+ *
+ * ⚠️ 传进来的必须是 **LaTeX**，不是纯文本投影。「data-math-plain」 是给人读的
+ * （「x1,x2,x3」），把它喂进 math-field 会当场把公式改错——见下面 bindFormulaClicks
+ * 里的守卫。
+ */
+function openEditor(tex, anchorEl) {
   closeEditor();
   overlay = document.createElement("div");
   overlay.className = "pack-editor-overlay";
@@ -105,6 +151,7 @@ function openEditor(latex, anchorEl) {
     '<div class="pack-editor-card" role="dialog" aria-label="编辑公式">' +
       '<div class="pack-editor-head">编辑公式<span class="pack-editor-close" role="button" aria-label="关闭">×</span></div>' +
       '<math-field class="pack-mathfield"></math-field>' +
+      '<div class="pack-editor-preview" aria-live="polite"></div>' +
       '<div class="pack-editor-actions">' +
         '<button class="pack-btn pack-run-btn" hidden>运行</button>' +
         '<span class="pack-editor-result" aria-live="polite"></span>' +
@@ -113,7 +160,55 @@ function openEditor(latex, anchorEl) {
   document.body.appendChild(overlay);
 
   var mf = overlay.querySelector("math-field");
-  try { mf.value = latex || ""; } catch (e) { mf.textContent = latex || ""; }
+  try { mf.value = tex || ""; } catch (e) { mf.textContent = tex || ""; }
+
+  // 实时预览：编辑框里改一个字，下面立刻用 **KaTeX** 重排。
+  // 为什么不用 math-field 自己的渲染：MathLive 的拉伸括号由小片拼成、接缝有
+  // 亚像素缝（站长 2026-10-30 定案），而读者最终看到的就是 KaTeX 版本——
+  // 预览必须预览那个版本，否则「编辑时好看、确认后变样」。
+  var preview = overlay.querySelector(".pack-editor-preview");
+  // lastRendered 既是「上次渲染的源」（给下面的轮询比对），也挡重复渲染。
+  var lastRendered = "__init__";
+  var renderPreview = function () {
+    if (!preview) return;
+    var src = "";
+    try { src = mf.value || ""; } catch (e) { src = ""; }
+    lastRendered = src;
+    if (!src.trim()) { preview.innerHTML = ""; return; }
+    if (!window.katex || typeof window.katex.renderToString !== "function") {
+      // KaTeX 还没到（正常：页面首屏没加载它时能力包自己拉）
+      preview.textContent = src;
+      return;
+    }
+    try {
+      preview.innerHTML = window.katex.renderToString(src, {
+        throwOnError: false, displayMode: isDisplayAnchor(anchorEl), output: "html", strict: false,
+      });
+    } catch (e) {
+      preview.textContent = src;
+    }
+  };
+  // 实时预览的触发源，**三条都要接**：
+  //   ① input  —— 真人敲键盘（MathLive 每次编辑都发）
+  //   ② change —— 某些程序化路径只发 change
+  //   ③ 定时兜底 —— MathLive 的 value 属性被直接赋值时**两种事件都不发**
+  //      （2026-10-31 浏览器实测：mf.value = '...' 之后预览不更新，这是真 bug）。
+  //      兜底比对「当前源 vs 上次渲染的源」，变了才重排；不挂 MutationObserver ——
+  //      math-field 内部结构频繁变动，监听它会把 CPU 吃光。
+  var pending = null;
+  var scheduleRender = function () {
+    if (pending) clearTimeout(pending);
+    pending = setTimeout(renderPreview, 60);
+  };
+  mf.addEventListener("input", scheduleRender);
+  mf.addEventListener("change", scheduleRender);
+  renderPreview();
+  var poll = setInterval(function () {
+    if (!overlay || !overlay.parentNode) { clearInterval(poll); return; }
+    var cur = "";
+    try { cur = mf.value || ""; } catch (e) { cur = ""; }
+    if (cur !== lastRendered) renderPreview();
+  }, 120);
 
   overlay.querySelector(".pack-editor-close").addEventListener("click", closeEditor);
   overlay.addEventListener("click", function (ev) {
@@ -146,9 +241,32 @@ function bindFormulaClicks() {
     if (ev.target.closest && ev.target.closest("[data-term]")) return;
     if (overlay) return;
     ev.preventDefault();
-    var plain = el.getAttribute("data-math-plain") || el.getAttribute("aria-label") || "";
-    openEditor(plain, el);
+
+    // ⚠️ 只认 data-math-tex（LaTeX 源）。**绝不回退到 data-math-plain**：
+    // plain 是给人读的纯文本投影（「x1,x2,x3」），当作 LaTeX 喂进 math-field 会
+    // 静默把公式改错——用户以为在编辑原式，其实拿到的是另一条公式。
+    // 缺 tex 说明构建期没烘上（回归），这时**明说**比给个错值好。
+    var tex = el.getAttribute("data-math-tex") || "";
+    if (!tex) {
+      showEditorError("这条公式没有可编辑的 LaTeX 源（data-math-tex 缺失）——是构建期没烘上，请报告");
+      return;
+    }
+    openEditor(tex, el);
   }, true);
+}
+
+/** 编辑器无法打开时，把原因直接说在页面上（不 console 里闷着）。 */
+function showEditorError(msg) {
+  var box = document.getElementById("pack-editor-error");
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "pack-editor-error";
+    box.className = "pack-editor-error";
+    document.body.appendChild(box);
+  }
+  box.textContent = msg;
+  box.hidden = false;
+  setTimeout(function () { if (box) box.hidden = true; }, 6000);
 }
 
 /* ── 运行（第一次点才真正加载 38 MB）─────────────────────────── */
