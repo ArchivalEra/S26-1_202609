@@ -11,6 +11,11 @@ import { parse as parseMath } from './math/parser.mjs';
 import { compile as compileMath, render as renderMathDoc, probeRenderer } from './math/index.mjs';
 import { compileDictionary } from './math/terms.mjs';
 import { createKatexRenderer, decorateAnchors, DIALECTS } from './math/render.mjs';
+// 构建期判定「这条公式能不能算」：把 IR 喂给转译器，能转出代码才给播放按钮。
+// 为什么在构建期判而不是运行时：一页 283 条公式里多数含裸变量（a₁₁、D_j），
+// 运行时一个个试会白算一遍、还会把版面铺满报错。构建期判一次、烘成属性，
+// 运行时就只给能算的那些挂按钮。
+import { translate as translateToOctave } from './math/to-octave.mjs';
 // 展示引擎 = KaTeX（2026-10-30 站长定案）。理由：MathLive 的拉伸括号由 `⎛⎜⎝/⎞⎟⎠`
 // 小片拼成，接缝处有亚像素缝；KaTeX 用字形伸展机制没这个毛病。
 // 解析器与 IR 是我们自己的，这里只换最末端 adapter。
@@ -267,12 +272,34 @@ function renderOneMath(src, mode, relPath, env, hits) {
     }
   }
 
+  // 构建期判「这条能不能算」。判据是转译器能不能把 IR 转成 Octave 代码——
+  // 与运行时用的是**同一个转译器**，所以不会出现「构建期说能算、运行时算不了」。
+  // 结果烘成 `data-computable="1"`，页面上只给这些公式挂播放按钮。
+  let computable = false;
+  let computeCode = '';
+  try {
+    const t = translateToOctave(doc.expr.root);
+    if (t.ok && t.code) { computable = true; computeCode = t.code; }
+  } catch (e) { /* 转译器抛错就当不可算，不影响渲染 */ }
+
+  let htmlOut = out.html;
+  if (computable) {
+    // 只给「能算的」那个 <span class="katex"> 加上标记（与 data-math-tex 同一层）。
+    // 转义就地做，不复用 escAttr —— 那个 const 定义在文件后段（921 行），
+    // 而本函数在 289 行就被调用了（TDZ 会抛 ReferenceError，实测踩到）。
+    const codeAttr = String(computeCode)
+      .replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    htmlOut = htmlOut.replace('<span class="katex"',
+      `<span class="katex" data-computable="1" data-octave-code="${codeAttr}"`);
+  }
+
   const rendered = mode === 'display'
     // 容器类名：`math-display` 是语义中立的正式名；`katex-scroll-container`
     // 保留为兼容别名（主题 CSS 与 webmcp 工具还在认它），等两处都改完再删。
-    ? `<div class="math-display katex-scroll-container">${out.html}</div>`
-    : out.html;
-  return { rendered: hasError ? rendered : rendered, plain: doc.plain };
+    ? `<div class="math-display katex-scroll-container">${htmlOut}</div>`
+    : htmlOut;
+  return { rendered, plain: doc.plain };
 }
 
 const mathGlossaryDist = path.join(DIST_DIR, 'assets', 'plugins', 'math-glossary.js');

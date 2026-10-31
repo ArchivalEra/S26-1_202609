@@ -94,6 +94,17 @@ test('矩阵：多层 rows/cell 结构不能崩（实测 bug ②）', () => {
   assert.equal(r.code, '[1 2; 3 4]');
 });
 
+test('纯运算符不算完整表达式（不许「成功」转出 +、=、-）', () => {
+  // 2026-10-31 实测：孤零零的 `+`、`-`、`=` 也被判成可算 —— 构建期据此给它们
+  // 挂了播放按钮，运行时 Octave 报 syntax error（页面上就是一串红字框）。
+  // 判据：转出来的代码去掉运算符/括号/空白后必须还剩东西。
+  for (const tex of ['+', '-', '=', '(', ')']) {
+    const r = tr(tex);
+    assert.equal(r.ok, false, `「${tex}」不该被判成可算，实际转出「${r.code}」`);
+    assert.match(r.reason, /不是一个完整的表达式|不认识|空/, `原因要说清：${r.reason}`);
+  }
+});
+
 test('绝不返回空代码的「成功」', () => {
   // 空串交给 Octave 会得到 rc=0 但什么都没算 —— 比报错更糟（读者以为算过了）。
   for (const tex of COMPUTES.map((c) => c[0])) {

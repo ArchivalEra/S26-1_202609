@@ -53,6 +53,19 @@ function isOperatorGlyph(glyph) {
 export function translate(node) {
   const r = emit(node);
   if (!r.ok) return r;
+
+  // ⚠️ **结构校验：转出来的必须是个完整表达式**（2026-10-31 实测）。
+  // 不校验的话，孤零零的 `+`、`-`、`=` 也会「成功」转出 `+`、`=` —— 构建期
+  // 于是给它们挂上播放按钮，运行时 Octave 报 `syntax error`（页面上就是一串
+  // 红字框）。判据：
+  //   · 必须含至少一个**操作数**（数字、标识符、函数调用、矩阵…）；
+  //   · 不能只是个运算符 / 关系符。
+  // 判据用「去掉所有运算符后还剩不剩东西」——比逐个白名单可靠。
+  const bare = String(r.code)
+    .replace(/[\s()\[\]]/g, '')          // 空白与括号不算内容
+    .replace(/==|~=|<=|>=|[+\-*/^=~]/g, ''); // 运算符不算内容
+  if (!bare) return fail('这不是一个完整的表达式（只有运算符，没有可算的量）');
+
   return { ok: true, code: r.code };
 }
 
