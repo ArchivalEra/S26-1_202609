@@ -2299,7 +2299,15 @@ for (const relPath of TARGET_FILES) {
             }
             const out = { lines: [], errs: [] };
             const M = await window.OCTAVE({
-              print: (t) => { out.lines.push(String(t)); },
+              // 启动期 Octave 会往 stdout 打一句「Starting GNU Octave interpreter...」，
+              // 那是**引擎的自述**不是计算结果。它在我们清空 lines 之前就吐了，
+              // 所以清空救不了它 —— 直接在汇里滤掉这一句（只滤这一句，别的一律保留，
+              // 免得把读者的输出也吃掉）。
+              print: (t) => {
+                var str = String(t);
+                if (/^Starting GNU Octave interpreter\.\.\.?\s*$/.test(str)) return;
+                out.lines.push(str);
+              },
               // stderr 必须收下来（2026-10-31 站长实测报「Octave 返回 rc=2」，
               // 界面上没有任何说明——因为这里原本把它整个丢掉了）。
               // 上游 002 §3 坑③ 说启动期会有几条「fft.m shadows a built-in」
@@ -2351,6 +2359,13 @@ for (const relPath of TARGET_FILES) {
           eng.lines.length = 0;
           eng.errs.length = 0;
           try {
+            // ⚠️ 输出必须走 disp，**不能用 printf**（2026-10-31 实测）：
+            // printf 写的是 C 层 stdout，在 wasm 里**不经过 Emscripten 的 print 回调**，
+            // 于是 rc=0 但 print 汇里什么都没有（实测三条全「(无输出)」）。
+            // disp 才是走 print 的那个通道（上游 002 §3 坑③：stdout 只有一个通道）。
+            //
+            // 矩阵确实会被 disp 平铺成一行（2 -1 1 3 2 1 1 -2 1），那是 Octave
+            // 的既成行为；但**算得对**比排得好看重要，显示层的事不在这里解决。
             const rc = await eng.evalAsync('disp(' + code + ')');
             const out = eng.lines.join('').trim();
             if (rc !== 0) {

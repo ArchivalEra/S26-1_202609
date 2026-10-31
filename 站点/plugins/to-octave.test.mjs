@@ -63,6 +63,18 @@ for (const [tex, pat] of REFUSES) {
   });
 }
 
+test('矩阵单元格：负号不能与数字之间留空格（会变成减法）', () => {
+  // 2026-10-31 站长实测报 `vertical dimensions mismatch (1x2 vs 1x3)`，公式是
+  //   \begin{vmatrix}2&-1&1\\3&2&1\\1&-2&1\end{vmatrix}
+  // 根因：`-1` 在 IR 里是**两个节点**（op '-' + num '1'），用空格拼成 `- 1`，
+  // Octave 读作「减 1」⇒ 该行 `2 - 1 1` 被解析成 `[2-1, 1]` 两个元素，
+  // 与邻行的三列不符。
+  const r = tr('\\begin{vmatrix}2&-1&1\\\\3&2&1\\\\1&-2&1\\end{vmatrix}');
+  assert.equal(r.ok, true, `应当能转：${r.reason || ''}`);
+  assert.equal(r.code, '[2 -1 1; 3 2 1; 1 -2 1]',
+    `负号必须紧贴数字（写成 '- 1' 会被 Octave 当成减法，整行少一列）：${r.code}`);
+});
+
 test('函数应用：参数必须整体进括号（sin(pi)/(2) 是错的）', () => {
   // 这条单独钉住实测 bug ①：拼错会得到 sin (pi)/(2)，Octave 算成 sin(pi)/2。
   const r = tr('\\sin\\frac{\\pi}{2}');
