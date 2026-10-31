@@ -254,8 +254,13 @@ function emitSym(n) {
 
 function emitEnv(n) {
   const name = (n.env || n.name || '').replace(/\*$/, '');
-  const MATRIX_ENVS = ['pmatrix', 'bmatrix', 'matrix', 'vmatrix', 'Bmatrix', 'Vmatrix'];
-  if (MATRIX_ENVS.includes(name)) {
+  // ⚠️ 竖线包起来的**不是矩阵，是行列式**（2026-10-31 站长指出：
+  //    `\begin{vmatrix}2&-1&1\\…\end{vmatrix}` 输出"矩阵中的数字本身"是错的）。
+  //    `vmatrix` 的 delims 是 `|…|`、`Vmatrix` 是 `‖…‖`——数学语义都是 det，
+  //    不是"把元素列出来"。所以这两类要包一层 det()。
+  const DET_ENVS = ['vmatrix', 'Vmatrix'];
+  const MATRIX_ENVS = ['pmatrix', 'bmatrix', 'matrix', 'Bmatrix'];
+  if (DET_ENVS.includes(name) || MATRIX_ENVS.includes(name)) {
     const rows = n.rows || [];
     if (!rows.length) return fail('空矩阵');
     const parts = [];
@@ -291,7 +296,10 @@ function emitEnv(n) {
       }
       parts.push(cells.join(' '));
     }
-    return { ok: true, code: `[${parts.join('; ')}]` };
+    const mat = `[${parts.join('; ')}]`;
+    // 竖线包起来 ⇒ 行列式，包一层 det()
+    if (DET_ENVS.includes(name)) return { ok: true, code: `det(${mat})` };
+    return { ok: true, code: mat };
   }
   if (name === 'cases' || name === 'array') {
     return fail('分段定义（cases/array）不是单个表达式，没法一次求值');
