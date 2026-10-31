@@ -400,6 +400,23 @@ const packVer = assetVersion('assets/plugins/capability-pack.mjs');
 const packRuntimeVer = PACK_RUNTIME_JS.split('__PACK_VER__').join(packVer);
 fs.writeFileSync(path.join(webmcpDir, 'pack-runtime.js'), packRuntimeVer);
 
+// ── 数学模块的**浏览器可用子集**（2026-10-31）────────────────────────────
+//
+// 「运行」按钮要把用户编辑后的 LaTeX 转成 Octave 代码，转译器 `to-octave.mjs`
+// 吃的是解析器产出的 IR —— 所以解析器这一小支必须能被浏览器 import。
+//
+// ⚠️ 只拷**这一支**，不是整个 `站点/math/`：`index.mjs`（构建编排）、
+// `render.mjs`（渲染器，61 KB）在浏览器里用不上，拷过去是白重量。
+// 依赖闭包（逐个 grep 确认过）：
+//   to-octave.mjs → 无 import（纯函数，吃 IR）
+//   parser.mjs    → lexer.mjs + commands.mjs
+// 所以四件：to-octave / parser / lexer / commands。
+const mathDistDir = path.join(DIST_DIR, 'assets', 'math');
+fs.mkdirSync(mathDistDir, { recursive: true });
+for (const f of ['to-octave.mjs', 'parser.mjs', 'lexer.mjs', 'commands.mjs']) {
+  fs.copyFileSync(path.join(SITE_DIR, 'math', f), path.join(mathDistDir, f));
+}
+
 // SW 已根除（2026-10-23 用户定案：长任务要「永远新鲜的页面」，SW 的 SWR/预缓存
 // 与它正面冲突——页面先出旧缓存、后台静默更新、下次才生效，模型跳十几次页会拿到
 // 上一版 HTML；且 SW 修过两次版本错配/部署形态坑，是纯负资产。浏览器 HTTP 缓存 +
@@ -2250,18 +2267,99 @@ for (const relPath of TARGET_FILES) {
         const rootRel = document.documentElement.getAttribute('data-root') || './';
         const mod = await import(rootRel + 'assets/plugins/capability-pack.mjs?v=__PACK_VER__');
         const pack = mod.createCapabilityPack({ store: mod.createOpfsStore(), root: rootRel });
-        // 计算适配器：上游 OctaveEmbed 就位后才可用；先占位，运行时再补。
-        window.__packCompute = async (latex, Embed) => {
-          if (!Embed || typeof Embed.create !== 'function') {
-            return { ok: false, error: '计算内核未就绪' };
+
+        // ── 计算适配器（2026-10-31，按上游 Octave-Full-Wasm 「mail/002」 实现）──
+        //
+        // 上游 「002」 给的完整答案：
+        //   ① 「OCTAVE({print, printErr, locateFile})」 建实例（locateFile **必须**带
+        //      目录前缀，否则会去站点根取另一档的产物，报一个完全不提「加载错档」的
+        //      LinkError: imported global does not match the expected type）；
+        //   ② **「M.execute_interp()」 启动解释器** —— 少了这一步，任何解释器调用
+        //      （同步异步一样）都抛 「RuntimeError: null function」；
+        //   ③ 「WebAssembly.promising(M._eval_wait)」 + 手搓 malloc/stringToUTF8
+        //      搬字符串，得到 「await」 可用的 eval；返回值是 **rc**，不是表达式值；
+        //   ④ stdout 的唯一通道是 「print」 回调（不要读 MEMFS）。
+        //
+        // 不需要 「octave-core.js」（那是整页宿主，要 9 个依赖）、不需要 Worker、
+        // 不需要 COOP/COEP 响应头（wasm32-final 是单线程档）。
+        const OCT_BASE = rootRel + 'assets/octave/';
+        let octPromise = null;
+
+        function ensureOctave() {
+          if (octPromise) return octPromise;
+          octPromise = (async () => {
+            // 胶水是 UMD，挂 window.OCTAVE（不是模块导出）
+            if (typeof window.OCTAVE !== 'function') {
+              await new Promise((res, rej) => {
+                const s = document.createElement('script');
+                s.src = OCT_BASE + 'octave.js';
+                s.onload = res;
+                s.onerror = () => rej(new Error('取不到 assets/octave/octave.js'));
+                document.head.appendChild(s);
+              });
+            }
+            if (typeof window.OCTAVE !== 'function') {
+              throw new Error('octave.js 加载了但没挂上 window.OCTAVE');
+            }
+            const out = { lines: [] };
+            const M = await window.OCTAVE({
+              print: (t) => { out.lines.push(String(t)); },
+              printErr: () => {},          // 启动期有几条缺可选资产包的 warning，丢掉
+              locateFile: (f) => OCT_BASE + f,
+            });
+            // ★ 上游 002 §3 坑①：必须先启动解释器，否则 null function
+            M.execute_interp();
+            const promised = WebAssembly.promising(M['_eval_wait']);
+            out.evalAsync = async (code) => {
+              const n = M.lengthBytesUTF8(code) + 1;
+              const ptr = M._malloc(n);
+              M.stringToUTF8(code, ptr, n);
+              try { return await promised(ptr); } finally { M._free(ptr); }
+            };
+            out.M = M;
+            return out;
+          })().catch((e) => { octPromise = null; throw e; });
+          return octPromise;
+        }
+
+        // 契约：「(latex) → {ok, output} | {ok:false, error}」。
+        // 转译失败（公式里有裸变量、求和、分段…）与执行失败分开报——前者是
+        // 「这条公式算不了」，后者是「Octave 报错」，读者要知道是哪一种。
+        window.__packCompute = async (latex) => {
+          const src = String(latex || '').trim();
+          if (!src) return { ok: false, error: '公式是空的' };
+
+          let code;
+          try {
+            const { parse } = await import(rootRel + 'assets/math/parser.mjs');
+            const { translate } = await import(rootRel + 'assets/math/to-octave.mjs');
+            const t = translate(parse(src).expr.root);
+            if (!t.ok) return { ok: false, error: t.reason };
+            code = t.code;
+          } catch (e) {
+            return { ok: false, error: '公式解析失败：' + ((e && e.message) || e) };
           }
-          const embed = await Embed.create({
-            lane: { js: 'octave.js', wasm: 'octave.wasm', data: 'octave.data' },
-          });
-          const code = String(latex || '');
-          const r = await embed.eval(code);
-          return { ok: !!(r && r.ok), output: (r && r.output) || '' };
+          if (!code) return { ok: false, error: '这条公式没有可计算的表达式' };
+
+          let eng;
+          try {
+            eng = await ensureOctave();
+          } catch (e) {
+            return { ok: false, error: '计算内核启动失败：' + ((e && e.message) || e) };
+          }
+          eng.lines.length = 0;
+          try {
+            const rc = await eng.evalAsync('disp(' + code + ')');
+            const out = eng.lines.join('').trim();
+            if (rc !== 0) {
+              return { ok: false, error: out ? out : ('Octave 返回 rc=' + rc), code };
+            }
+            return { ok: true, output: out || '(无输出)', code };
+          } catch (e) {
+            return { ok: false, error: '执行失败：' + ((e && e.message) || e), code };
+          }
         };
+
         if (window.__initPackRuntime) window.__initPackRuntime(pack);
       } catch (e) {
         // 能力包不可用就当它不存在 —— 页面保持只读，这本来就是默认态。

@@ -41,7 +41,6 @@ var S = {
 var state = { mode: "readonly", editor: null, engine: null };
 var pack = null;
 var mathliveLoading = null;
-var engineLoaded = null;
 
 function $(id) { return document.getElementById(id); }
 function root() {
@@ -347,44 +346,57 @@ function showEditorError(msg) {
   setTimeout(function () { if (box) box.hidden = true; }, 6000);
 }
 
-/* ── 运行（第一次点才真正加载 38 MB）─────────────────────────── */
-function ensureEngine() {
-  if (engineLoaded) return engineLoaded;
-  engineLoaded = loadOctave();
-  return engineLoaded;
-}
+/* ── 引擎加载器已删除（2026-10-31）─────────────────────────────────
+ *
+ * 这里原本有 「ensureEngine()」 / 「loadOctave()」：它去页面上找
+ * 「window.OctaveEmbed」 再 「Embed.create(...)」。**那个接口从来不存在** ——
+ * 「OctaveEmbed」 是 Octave-UI 的 UI 层封装，上游产物 「octave.js」 只导出全局工厂
+ * 「OCTAVE」（实测 「grep -c OctaveEmbed octave.js」 = 0）。
+ *
+ * 现在引擎生命周期整个搬进页面里的 「window.__packCompute」：它按上游
+ * 「mail/002」 做 「OCTAVE({...})」 → 「M.execute_interp()」 → 「promising(_eval_wait)」，
+ * 首次调用时载入三件，之后复用同一个实例。本层只管「按钮 → 调它 → 展示结果」。
+ */
 
-function loadOctave() {
-  // 产物由 vendor 进来（assets/octave/）。加载顺序：先 octave.js（胶水）再建实例。
-  // ⚠️ 这里**只做加载**，具体 eval 由页面注入的 OctaveEmbed 提供（上游 API）。
-  return new Promise(function (res, rej) {
-    if (window.OctaveEmbed) return res(window.OctaveEmbed);
-    var sc = document.createElement("script");
-    sc.src = root() + "assets/octave/octave.js";
-    sc.onload = function () {
-      if (window.OctaveEmbed) res(window.OctaveEmbed);
-      else rej(new Error("octave.js 未导出 OctaveEmbed"));
-    };
-    sc.onerror = function () { rej(new Error("octave.js 载入失败")); };
-    document.head.appendChild(sc);
-  });
-}
-
+/* ── 运行：把编辑器里的 LaTeX 交给计算适配器 ────────────────────────
+ *
+ * 2026-10-31 重写：「window.__packCompute」 现在是**真的**（上游 002 那个
+ * 「execute_interp()」 + 「promising(_eval_wait)」 的最小实现），它自己管引擎
+ * 生命周期（首次调用时载入三件 38 MB），所以这里**不要再传 Embed**——
+ * 旧代码等 「ensureEngine()」 拿一个 「OctaveEmbed.create()」，而那个接口压根不存在。
+ *
+ * 结果展示分三种，读者要能分清是哪一种：
+ *   · 算出数 → 直接印数值
+ *   · 这条公式算不了（有裸变量、求和、分段）→ 印中文原因
+ *   · Octave 报错 → 印 rc / stderr
+ */
 function runFormula(latex, outEl, btn) {
+  if (typeof window.__packCompute !== "function") {
+    if (outEl) outEl.textContent = "计算适配器没装好（页面脚本没跑完？）";
+    return;
+  }
   if (btn) { btn.disabled = true; btn.textContent = "运行中…"; }
-  if (outEl) outEl.textContent = "";
+  if (outEl) { outEl.textContent = "（首次运行要载入约 38 MB 内核，慢一点）"; outEl.className = "pack-editor-result"; }
   var restore = function () {
     if (btn) { btn.disabled = false; btn.textContent = "运行"; }
   };
-  ensureEngine()
-    .then(function (Embed) {
-      return window.__packCompute(latex, Embed);
-    })
+  Promise.resolve()
+    .then(function () { return window.__packCompute(String(latex || "")); })
     .then(function (r) {
-      if (outEl) outEl.textContent = (r && r.ok) ? String(r.output || "") : ("失败：" + ((r && r.error) || "未知"));
+      if (!outEl) return;
+      if (r && r.ok) {
+        outEl.textContent = String(r.output == null ? "" : r.output);
+        outEl.className = "pack-editor-result is-ok";
+      } else {
+        outEl.textContent = (r && r.error) || "未知错误";
+        outEl.className = "pack-editor-result is-err";
+      }
     })
     .catch(function (e) {
-      if (outEl) outEl.textContent = "失败：" + ((e && e.message) || e);
+      if (outEl) {
+        outEl.textContent = "失败：" + ((e && e.message) || e);
+        outEl.className = "pack-editor-result is-err";
+      }
     })
     .then(restore, restore);
 }
@@ -480,11 +492,10 @@ function init() {
         chain = chain.then(function () { return pack.remove(n); }).catch(function () {});
       });
       chain.then(function () {
-        // 清完把内存里的加载标记也复位，否则 ensureEditor/ensureEngine 的
-        // Promise 缓存还指着上一次失败的尝试，重下也不会重新载入。
+        // 清完把内存里的加载标记也复位，否则 ensureEditor 的 Promise 缓存
+        // 还指着上一次失败的尝试，重下也不会重新载入。
         mathliveLoading = null;
         katexLoading = null;
-        engineLoaded = null;
         document.__packClickBound = false;
         setDiag("mathlive", "未载入");
         setDiag("katex", "未载入");
