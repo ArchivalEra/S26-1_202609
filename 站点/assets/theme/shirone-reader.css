@@ -2018,25 +2018,24 @@ body.search-open {
   color: var(--md-sys-color-on-error-container, #410002);
   overflow-wrap: anywhere;
 }
-.pack-reset-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.6rem;
-  flex-wrap: wrap;
+/* 「删除」按钮（2026-10-31）：已下载时代替「下载」。
+   用低饱和的危险色描边而不是实心红——删除是次要动作，不该抢走注意力，
+   但要让读者在点之前意识到它不是「下载」。 */
+.pack-btn-danger {
+  background: transparent;
+  border: 1px solid var(--md-sys-color-error, #b3261e);
+  color: var(--md-sys-color-error, #b3261e);
 }
+.pack-btn-danger:hover {
+  background: color-mix(in srgb, var(--md-sys-color-error, #b3261e) 10%, transparent);
+}
+
 .pack-btn-ghost {
   background: transparent;
   border: 1px solid var(--md-sys-color-outline-variant);
   color: var(--md-sys-color-outline);
   font-size: 0.72rem;
   padding: 0.25rem 0.6rem;
-}
-.pack-reset-hint {
-  font-size: 0.68rem;
-  color: var(--md-sys-color-outline);
-  flex: 1 1 8em;
-  min-width: 0;
 }
 
 /* 可编辑态：公式才有可点提示。**只加 outline，不改字号与布局**。

@@ -2111,7 +2111,7 @@ for (const relPath of TARGET_FILES) {
               </div>
               <p class="pack-item-hint">公式可以点击、编辑、复制 LaTeX</p>
               <div class="pack-item-actions">
-                <button class="pack-btn" data-pack-download="editor">下载</button>
+                <button class="pack-btn" data-pack-action="editor">下载</button>
                 <span class="pack-state" id="pack-state-editor">未下载</span>
               </div>
               <div class="pack-progress" id="pack-progress-editor" hidden><div class="pack-progress-bar"></div></div>
@@ -2124,7 +2124,7 @@ for (const relPath of TARGET_FILES) {
               </div>
               <p class="pack-item-hint">用 Octave 真算公式。体积较大，点「运行」时才加载到内存。</p>
               <div class="pack-item-actions">
-                <button class="pack-btn" data-pack-download="engine">下载</button>
+                <button class="pack-btn" data-pack-action="engine">下载</button>
                 <span class="pack-state" id="pack-state-engine">未下载</span>
               </div>
               <div class="pack-progress" id="pack-progress-engine" hidden><div class="pack-progress-bar"></div></div>
@@ -2137,10 +2137,6 @@ for (const relPath of TARGET_FILES) {
                  站长实测「下载完了但点公式没反应」时，界面上没有任何一处能说
                  卡在哪一环——存储？脚本？点击绑定？所以每环都报。 -->
             <div class="pack-diag" id="pack-diag"></div>
-            <div class="pack-reset-row">
-              <button class="pack-btn pack-btn-ghost" data-pack-reset>清空重来</button>
-              <span class="pack-reset-hint">删掉已下载的副本再下（旧副本坏掉时用这个）</span>
-            </div>
           </div>
 
 
