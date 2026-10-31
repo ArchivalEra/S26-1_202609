@@ -238,7 +238,8 @@ function ensureEditor() {
         return false;
       }
       setDiag("mathlive", "已就绪");
-      bindFormulaClicks();
+      // 不再 bindFormulaClicks —— 编辑入口只有单元格那一条（见下方注释块）。
+      // MathLive 就绪后单元格的 canEdit() 才会返回真；那时读者点公式才会进编辑态。
       return true;
     })
     .catch(function (e) {
@@ -250,156 +251,20 @@ function ensureEditor() {
   return mathliveLoading;
 }
 
-/* ── 点公式进编辑态：**覆盖层**，不替换原节点 ───────────────────── */
-var overlay = null;
-
-/**
- * 这条公式是不是显示式（独立成块）？
+/* ── 旧的「覆盖层编辑」整条路径已删除（2026-10-31）─────────────────
  *
- * 判据是**容器**不是公式本身：构建期给块级公式包了 「.math-display」
- * （见 build.mjs 的 renderOneMath），行内公式没有这层。
- * 用 closest 而不是 parentElement：中间可能还夹着 「.katex-scroll-container」。
+ * 这里原本有一整套覆盖层编辑（弹出模态框改完点运行）：
+ * 点公式 → 弹出模态框 → 改 → 点运行 → 关掉；还带一个 KaTeX 实时预览区。
+ *
+ * **为什么删**：它与新的「页内单元格」（plugins/formula-cells.mjs）**并存**，
+ * 而且用的是 document 的**捕获阶段**监听 —— 于是它先于单元格触发，
+ * 读者点公式总是弹出旧模态框。站长实测报的「没有开启的时候也能点击公式编辑」
+ * 就是这个：新开关拦得住单元格那条路，拦不住这条。
+ *
+ * 现在编辑只有一个入口：单元格在 「canEdit()」 为真时把 anchor 点击接管。
+ * 两套机制并存 = 两套判据 = 必然有一个漏，这是本仓反复吃过的教训。
  */
-function isDisplayAnchor(el) {
-  return !!(el && el.closest && el.closest(".math-display"));
-}
 
-/**
- * 打开编辑器。
- *
- * @param {string} tex    公式的 LaTeX 源（「data-math-tex」，作者原文）
- * @param {Element} anchorEl 被点的公式容器（用来回读 display/inline）
- *
- * ⚠️ 传进来的必须是 **LaTeX**，不是纯文本投影。「data-math-plain」 是给人读的
- * （「x1,x2,x3」），把它喂进 math-field 会当场把公式改错——见下面 bindFormulaClicks
- * 里的守卫。
- */
-function openEditor(tex, anchorEl) {
-  closeEditor();
-  overlay = document.createElement("div");
-  overlay.className = "pack-editor-overlay";
-  overlay.innerHTML =
-    '<div class="pack-editor-card" role="dialog" aria-label="编辑公式">' +
-      '<div class="pack-editor-head">编辑公式<span class="pack-editor-close" role="button" aria-label="关闭">×</span></div>' +
-      '<math-field class="pack-mathfield"></math-field>' +
-      '<div class="pack-editor-preview" aria-live="polite"></div>' +
-      '<div class="pack-editor-actions">' +
-        '<button class="pack-btn pack-run-btn" hidden>运行</button>' +
-        '<span class="pack-editor-result" aria-live="polite"></span>' +
-      '</div>' +
-    '</div>';
-  document.body.appendChild(overlay);
-
-  var mf = overlay.querySelector("math-field");
-  try { mf.value = tex || ""; } catch (e) { mf.textContent = tex || ""; }
-
-  // 实时预览：编辑框里改一个字，下面立刻用 **KaTeX** 重排。
-  // 为什么不用 math-field 自己的渲染：MathLive 的拉伸括号由小片拼成、接缝有
-  // 亚像素缝（站长 2026-10-30 定案），而读者最终看到的就是 KaTeX 版本——
-  // 预览必须预览那个版本，否则「编辑时好看、确认后变样」。
-  var preview = overlay.querySelector(".pack-editor-preview");
-  // lastRendered 既是「上次渲染的源」（给下面的轮询比对），也挡重复渲染。
-  var lastRendered = "__init__";
-  var renderPreview = function () {
-    if (!preview) return;
-    var src = "";
-    try { src = mf.value || ""; } catch (e) { src = ""; }
-    lastRendered = src;
-    if (!src.trim()) { preview.innerHTML = ""; return; }
-    if (!window.katex || typeof window.katex.renderToString !== "function") {
-      // KaTeX 还没到（正常：页面首屏没加载它时能力包自己拉）
-      preview.textContent = src;
-      return;
-    }
-    try {
-      preview.innerHTML = window.katex.renderToString(src, {
-        throwOnError: false, displayMode: isDisplayAnchor(anchorEl), output: "html", strict: false,
-      });
-    } catch (e) {
-      preview.textContent = src;
-    }
-  };
-  // 实时预览的触发源，**三条都要接**：
-  //   ① input  —— 真人敲键盘（MathLive 每次编辑都发）
-  //   ② change —— 某些程序化路径只发 change
-  //   ③ 定时兜底 —— MathLive 的 value 属性被直接赋值时**两种事件都不发**
-  //      （2026-10-31 浏览器实测：mf.value = '...' 之后预览不更新，这是真 bug）。
-  //      兜底比对「当前源 vs 上次渲染的源」，变了才重排；不挂 MutationObserver ——
-  //      math-field 内部结构频繁变动，监听它会把 CPU 吃光。
-  var pending = null;
-  var scheduleRender = function () {
-    if (pending) clearTimeout(pending);
-    pending = setTimeout(renderPreview, 60);
-  };
-  mf.addEventListener("input", scheduleRender);
-  mf.addEventListener("change", scheduleRender);
-  renderPreview();
-  var poll = setInterval(function () {
-    if (!overlay || !overlay.parentNode) { clearInterval(poll); return; }
-    var cur = "";
-    try { cur = mf.value || ""; } catch (e) { cur = ""; }
-    if (cur !== lastRendered) renderPreview();
-  }, 120);
-
-  overlay.querySelector(".pack-editor-close").addEventListener("click", closeEditor);
-  overlay.addEventListener("click", function (ev) {
-    if (ev.target === overlay) closeEditor();
-  });
-
-  var runBtn = overlay.querySelector(".pack-run-btn");
-  runBtn.hidden = state.mode !== "computable";
-  runBtn.addEventListener("click", function () {
-    runFormula(mf.value, overlay.querySelector(".pack-editor-result"), runBtn);
-  });
-
-  try { mf.focus(); } catch (e) {}
-}
-
-function closeEditor() {
-  if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
-  overlay = null;
-}
-
-/* ── 点公式 → 打开编辑态（事件委托，对后加载的内容也有效）──────── */
-function bindFormulaClicks() {
-  if (document.__packClickBound) return;
-  document.__packClickBound = true;
-  setDiag("clicks", "已绑定");
-  document.addEventListener("click", function (ev) {
-    if (state.mode === "readonly") return;
-    var el = ev.target && ev.target.closest ? ev.target.closest(".ML__latex, .katex") : null;
-    if (!el) return;
-    // 符号锚点自己有气泡行为，别抢
-    if (ev.target.closest && ev.target.closest("[data-term]")) return;
-    if (overlay) return;
-    ev.preventDefault();
-
-    // ⚠️ 只认 data-math-tex（LaTeX 源）。**绝不回退到 data-math-plain**：
-    // plain 是给人读的纯文本投影（「x1,x2,x3」），当作 LaTeX 喂进 math-field 会
-    // 静默把公式改错——用户以为在编辑原式，其实拿到的是另一条公式。
-    // 缺 tex 说明构建期没烘上（回归），这时**明说**比给个错值好。
-    var tex = el.getAttribute("data-math-tex") || "";
-    if (!tex) {
-      showEditorError("这条公式没有可编辑的 LaTeX 源（data-math-tex 缺失）——是构建期没烘上，请报告");
-      return;
-    }
-    openEditor(tex, el);
-  }, true);
-}
-
-/** 编辑器无法打开时，把原因直接说在页面上（不 console 里闷着）。 */
-function showEditorError(msg) {
-  var box = document.getElementById("pack-editor-error");
-  if (!box) {
-    box = document.createElement("div");
-    box.id = "pack-editor-error";
-    box.className = "pack-editor-error";
-    document.body.appendChild(box);
-  }
-  box.textContent = msg;
-  box.hidden = false;
-  setTimeout(function () { if (box) box.hidden = true; }, 6000);
-}
 
 /* ── 引擎加载器已删除（2026-10-31）─────────────────────────────────
  *
@@ -680,6 +545,12 @@ function ensureCells() {
 function mountCells() {
   var c = ensureCells();
   if (!c) return;
+  // ⚠️ 「允许编辑和计算」关着 ⇒ **一个单元格都不挂**（2026-10-31 站长）。
+  // 第一版这里无条件 attach，于是页面加载就冒出 71 个播放按钮，
+  // 而读者明明没开那个开关 —— 开关看起来是坏的。
+  // 「自动计算」单独开着但编辑关着时也不挂：没有单元格就没有可算的目标，
+  // 那种组合下读者要的是「只读看数」，不是「能改」。
+  if (!prefs.allowEdit) { c.detach(); return; }
   c.attach(document.querySelector(".article-content") || document.body);
   c.setAutoCompute(!!prefs.autoCompute);
 }
@@ -710,8 +581,16 @@ function bindSwitches() {
     ae.addEventListener("change", function () {
       prefs.allowEdit = !!ae.checked;
       savePrefs();
-      // 打开编辑能力 ⇒ 立刻挂上单元格（不进面板、不刷新就能编辑）
-      if (prefs.allowEdit) { try { ensureEditor(); } catch (e) {} mountCells(); }
+      // 开 ⇒ 立刻挂上单元格（不进面板、不刷新就能编辑）；
+      // **关 ⇒ 立刻收回**（2026-10-31 站长：「开关关掉的时候也要坦荡收回啊」）。
+      // 第一版只有 if、没有 else —— 关掉开关后播放按钮和原地编辑全都还在，
+      // 读者会以为开关坏了。收回的动作就是 detach：拆掉包装层、还原原始 DOM。
+      if (prefs.allowEdit) {
+        try { ensureEditor(); } catch (e) {}
+        mountCells();
+      } else if (cells) {
+        cells.detach();
+      }
       renderSwitches();
     });
   }
