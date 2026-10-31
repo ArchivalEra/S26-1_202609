@@ -350,12 +350,10 @@
 !/站点/math/math.test.mjs
 !/站点/plugins/prose-terms.mjs
 !/站点/plugins/prose-terms.test.mjs
-# MathLive（vendored，MIT）：SSR 版（构建期用）+ 静态样式。
-# 字体在 assets/fonts/（逐文件白名单）。2026-10-29 彻底取缔 KaTeX 遗产：
-# 20 个 KaTeX_*.woff2 全删，只留 STIX Two Math 子集（48 KB，一个请求）。
-# 重新生成子集的命令见 站点/assets/mathlive/mathlive-static.css 头部注释。
-!/站点/assets/mathlive/mathlive-ssr.min.mjs
-!/站点/assets/mathlive/mathlive-static.css
+# MathLive（vendored，MIT）：**只剩浏览器版**。
+# 2026-10-31 删掉 SSR 版与 static.css——展示引擎改回 KaTeX 后它们没有消费者
+# （构建期走 katex.mjs、聊天面板走 katex.min.js），MathLive 只服务能力包的
+# math-field 编辑态。STIX Two Math 子集仍留在 assets/fonts/ 给编辑器用。
 # 浏览器版（2026-10-30 能力包）：可编辑公式用。<math-field> 自定义元素 + 完整编辑能力，
 # 约 824 KB，**只在用户点「下载编辑器」后才拉**，首屏不用它。
 !/站点/assets/mathlive/mathlive-browser.min.js
@@ -406,6 +404,7 @@
 !/站点/plugins/pack-runtime.mjs
 !/站点/plugins/spa-router.test.mjs
 !/站点/plugins/completion-boundary.test.mjs
+!/站点/plugins/copy-button.test.mjs
 !/站点/plugins/table-responsive.test.mjs
 # SW 已根除（2026-10-23）：sw-template.js 退役，换成一次性清老用户的 sw-kill.mjs
 !/站点/plugins/sw-kill.mjs
