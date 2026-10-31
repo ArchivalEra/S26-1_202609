@@ -1971,6 +1971,16 @@ body.search-open {
   color: var(--md-sys-color-outline);
 }
 
+/* 能力包面板比调色盘高得多（两件资产 + 状态 + 四行诊断 + 清空按钮），
+   不加约束时在 1280×720 上会顶到视口底、内容被切（2026-10-31 实测截图）。
+   给一个随视口收的 max-height 并允许纵向滚动——比把它压扁好。 */
+.pack-popover {
+  width: 340px;
+  max-height: calc(100vh - var(--header-height) - 1.5rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 /* 诊断行（2026-10-31）：四环状态。失败行标红——「下载完了但点公式没反应」
    这类症状必须能一眼看出卡在哪一环，不能全靠猜。 */
 .pack-diag {
@@ -1982,9 +1992,22 @@ body.search-open {
 .pack-diag-row {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
   gap: 0.8rem;
   padding: 0.12rem 0;
   color: var(--md-sys-color-outline);
+}
+/* 标签列定宽 + 不换行：不这样的话「存 储」会被挤成一字一行（实测截图）。 */
+.pack-diag-row > span:first-child {
+  flex: 0 0 4.6em;
+  white-space: nowrap;
+}
+/* 值列允许换行，但要能断词——长文件名（mathlive-browser.min.js）会把容器撑破。 */
+.pack-diag-row > span:last-child {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
 }
 .pack-diag-row.is-bad { color: var(--md-sys-color-error, #b3261e); }
 .pack-diag-err {
@@ -1993,6 +2016,7 @@ body.search-open {
   border-radius: 6px;
   background: var(--md-sys-color-error-container, #ffdad6);
   color: var(--md-sys-color-on-error-container, #410002);
+  overflow-wrap: anywhere;
 }
 .pack-reset-row {
   display: flex;
@@ -2011,6 +2035,8 @@ body.search-open {
 .pack-reset-hint {
   font-size: 0.68rem;
   color: var(--md-sys-color-outline);
+  flex: 1 1 8em;
+  min-width: 0;
 }
 
 /* 可编辑态：公式才有可点提示。**只加 outline，不改字号与布局**。
