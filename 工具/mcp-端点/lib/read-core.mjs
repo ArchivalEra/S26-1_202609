@@ -12,6 +12,8 @@
 import { collectHits, fillSingleCharCounts, fillSnippets } from './检索核心.mjs';
 import { buildCutIndex, planExcerpt, widenToChildren } from './切块.mjs';
 import { foldSearchText, queryGrams } from '../../../站点/plugins/site-search.mjs';
+// 网址/路径的段位只有一处真相（见 site-url.mjs 的文件头注释）。
+import { courseOf, categoryOf, toSourcePath } from './site-url.mjs';
 
 const DEFAULT_BUDGET = 4000;
 const HARD_CAP = 20000;
@@ -219,36 +221,6 @@ export function createReadCore(deps) {
 
 // ---------------------------------------------------------------- 小工具
 
-/**
- * 课程 / 分类的解析：**按段位，不写死目录名**。
- *
- * ⚠️ 2026-10-31 修（本仓维护侧的真 bug）：这里原本写死 `^课程/([^/]+)/`。
- * 仓库把 `课程/` 改名成 `课程总览/` 之后，这两个函数返回空串 ⇒
- * `ask({course})` 的过滤、`stat().courses` 的清单、`categoryOf` 的分类
- * 全部静默失效（不报错，只是永远过滤掉所有命中）。`工具/` 的 11 条测试
- * 因此红了很久没人知道原因。
- *
- * 现在按**段位**解析：读层的 url 是「顶层分类目录 / 课程 / 类目 / 页」四段式，
- * 顶层目录叫什么不重要（`课程` → `课程总览` 这种改名不该动读层）。
- * 判据不是「第二段是不是课程」——而是**第一段是站点唯一的顶层内容目录**
- * （`课程总览`）。改名时只改这一个常量。
- */
-const TOP_DIR = '课程总览';
-
-function courseOf(url) {
-  const u = decodeURIComponent(url || '');
-  const parts = u.split('/');
-  if (parts[0] !== TOP_DIR) return '';
-  return parts[1] || '';
-}
-
-function categoryOf(url) {
-  const u = decodeURIComponent(url || '');
-  const parts = u.split('/');
-  if (parts[0] !== TOP_DIR) return '';
-  return parts[2] || '';
-}
-
 function coursesOf(docs) {
   const set = new Set();
   for (const d of docs) {
@@ -284,7 +256,7 @@ function parseFrontmatter(src) {
 function resolveRef(ref) {
   if (ref.path) return ref.path;
   if (ref.course && ref.category && ref.file) {
-    return ['课程总览', ref.course, ref.category, ref.file].join('/');
+    return toSourcePath({ course: ref.course, category: ref.category, file: ref.file });
   }
   const err = new Error('read_page 需要 path，或 (course, category, file) 三元组（三者都要给）');
   err.code = 'ambiguous_ref';

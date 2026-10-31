@@ -408,6 +408,8 @@
 !/站点/plugins/formula-editable.test.mjs
 !/站点/plugins/pack-popover.test.mjs
 !/站点/plugins/editor-contrast.test.mjs
+!/工具/mcp-端点/lib/site-url.mjs
+!/工具/mcp-端点/test/site-url.test.mjs
 !/gitroll-dispositions.json
 !/站点/plugins/formula-cells.mjs
 !/站点/plugins/formula-cells.test.mjs

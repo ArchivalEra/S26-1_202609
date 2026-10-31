@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 # mail-read.py —— 读信入口（2026-10-17，用户点令「read 文件夹」第三版定稿）
 #
+# ## 这份代码被分发给所有带 `mail/` 的仓（2026-10-31）
+#
+# 它**自包含**：只用标准库（os / sys / subprocess / tempfile / shutil），
+# 不 import 任何仓内模块，不假设仓库结构 —— 唯一的前提是**存在 `mail/` 目录**
+# （未读 = `mail/*.md`，已读 = `mail/read/*.md`，位置即状态）。
+#
+# 所以：换任何仓都能直接 `python3 zreflect/mail-read.py` 跑；`--selftest`
+# 会在临时目录里造夹具、不碰真 `mail/`，9 条用例自证。
+#
+# 分发规矩（四仓已在用的同一套）：投递 = 落文件到收信方 `mail/`；
+# 提交 = 收信方自己做（每仓闸门不同，发信方不代提交）。
+#
 # 为什么是这个形状（前两版被否的教训）：
 #   v1 闸门化（凭据推断 + pre-commit --check）✘ —— 违反信任边界：mail 不进断言面
 #      （mail/README.md 明写"本目录不进任何闸门的断言面"；闲散往来不可信是刻意的）。
@@ -30,8 +42,32 @@ import re
 import subprocess
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gate import module_meta
+# ⚠️ 真自包含（2026-10-31 修）：原来这里无条件 `from gate import module_meta`，
+# 于是这份脚本**离开 Einfacht 就跑不起来**（`gate.py` 是 Einfacht 的模块）。
+# 但这份代码要分发给所有带 `mail/` 的仓，其中有的仓没有 Einfacht —— 那种情形下
+# 一个 ImportError 就把「读信」这个最基本的动作废掉了，而读信本来只需要标准库。
+#
+# 所以：有 `gate` 就用它登记（本仓与 Einfacht 下游仓保持元数据完整）；
+# 没有就退化成一份等价的最小实现（同样的三个字段，同样的语义），并在 stderr
+# 说明一句 —— **退化要可闻，不许静默**。
+#
+# ⚠️ **`MODULE = module_meta(...)` 必须留在模块顶层、无条件**：`zreflect/registry.py`
+# 用 **AST 静态扫描**来发现「这个 .py 是闸门还是平台模块」，声明落到 try 块里
+# 它就看不见（2026-10-31 实测：闸门报「既非闸门也非已声明的平台模块」）。
+# 所以只把「用哪个 module_meta」做成条件，声明本身保持顶层。
+try:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from gate import module_meta
+except ImportError:
+    def module_meta(name, summary, selftest=False):
+        """`gate.module_meta` 的最小等价物（无 Einfacht 时的退化）。"""
+        class _Meta(object):
+            __slots__ = ("name", "summary", "selftest")
+            def __init__(self, n, s, st):
+                self.name, self.summary, self.selftest = n, s, st
+        return _Meta(name, summary, selftest)
+    print("note: 本仓无 zreflect/gate.py（非 Einfacht 仓）—— mail-read 以自包含模式运行",
+          file=sys.stderr)
 
 MODULE = module_meta("mail 读信入口",
                      "读 = 打印 + 自动归档 read/（纯工具，不进断言面）", selftest=True)
@@ -189,8 +225,9 @@ def _selftest():
         bad += 0 if ok else 1
     HERE, MAIL, READ = saved
     shutil.rmtree(t, True)
+    # 只打一行汇总（原本这里打了**两行**完全同义的汇总，是冗余输出）。
+    # 保留的这一行与 `--selftest` 的调用方约定一致（下游脚本按这一行判成败）。
     print("=== mail-read 自证：%d PASS / %d fail ===" % (len(cases) - bad, bad))
-    print("=== %d PASS / %d FAIL ===" % (len(cases) - bad, bad))
     return 1 if bad else 0
 
 
