@@ -3,7 +3,10 @@
  *
  * 直接复用站点构建期的两张表与两个解析器——**不重写**：
  *   - `站点/符号环境.mjs` 的 `SYMBOL_PACKS`（包 → 符号页路径）与 `COURSE_ENV`（课程 → 包链）；
- *   - `站点/plugins/math-glossary.mjs` 的 `parseGlossaryDict`（围栏 → 词条）。
+ *   - `站点/plugins/prose-terms.mjs` 的 `parseGlossaryDict`（围栏 → 词条）。
+ *     ⚠️ 2026-10-31 修：原引用 `math-glossary.mjs` —— 那个文件在早先的
+ *     「数学引擎换血」里拆成了 `prose-terms.mjs`（正文取词）与 `站点/math/`
+ *     （公式取词）；这里一直指向不存在的路径，导致 `工具/` 的 11 条测试全红。
  *
  * 语义与页面气泡**完全一致**：包链 `通用+电路原理` 用 `+` 拆开、**后者覆盖前者**；
  * 多义项按 `语境=含义` 列在 `senses`；**零回退**——链上没有的 id 就是没有，不去别的包捞。
@@ -12,7 +15,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { SYMBOL_PACKS, COURSE_ENV } from '../../../站点/符号环境.mjs';
-import { parseGlossaryDict } from '../../../站点/plugins/math-glossary.mjs';
+import { parseGlossaryDict } from '../../../站点/plugins/prose-terms.mjs';
 
 /**
  * 建符号词典 adapter。

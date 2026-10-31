@@ -408,6 +408,7 @@
 !/站点/plugins/formula-editable.test.mjs
 !/站点/plugins/pack-popover.test.mjs
 !/站点/plugins/editor-contrast.test.mjs
+!/gitroll-dispositions.json
 !/站点/plugins/formula-cells.mjs
 !/站点/plugins/formula-cells.test.mjs
 !/站点/plugins/to-octave.test.mjs

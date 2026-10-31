@@ -88,7 +88,7 @@ export function textOf(el) {
 
 /** 元素是否带某个 class（不依赖 classList，假 DOM 也能跑）。 */
 export function hasClass(el, name) {
-  return (' ' + String((el && el.className) || '') + ' ').indexOf(' ' + name + ' ') >= 0;
+  return (' ' + String((el?.className) || '') + ' ').indexOf(' ' + name + ' ') >= 0;
 }
 
 /**
@@ -399,10 +399,10 @@ export function renderMarkdown(root, opts) {
  */
 export function createPageView(doc, loc, winOverride) {
   const S = PAGE_SELECTORS;
-  const location = loc || (doc && doc.location) || { href: '' };
+  const location = loc || (doc?.location) || { href: '' };
   // winOverride 让调用方（含测试）注入一个「像 window 的对象」——
   // 需要 Image/canvas 的图片转码、需要 getComputedStyle 的显示设置都靠它。
-  const win = winOverride || (doc && doc.defaultView) || null;
+  const win = winOverride || (doc?.defaultView) || null;
 
   const all = (sel) => {
     try { return Array.prototype.slice.call(doc.querySelectorAll(sel)); } catch (e) { return []; }
@@ -441,12 +441,12 @@ export function createPageView(doc, loc, winOverride) {
 
   /** 显示设置（主题 / 色相 / 侧栏）。 */
   function viewState() {
-    const rootEl = (doc && doc.documentElement) || null;
+    const rootEl = (doc?.documentElement) || null;
     let hue = null;
     try {
       // 真 DOM：样式表里 --hue 有默认值，getComputedStyle 读得到；
       // 也认内联 style 与属性（测试/无计算样式环境）。
-      if (win && win.getComputedStyle && rootEl) {
+      if (win?.getComputedStyle && rootEl) {
         const v = win.getComputedStyle(rootEl).getPropertyValue('--hue');
         if (v) hue = parseInt(v, 10);
       }
@@ -463,7 +463,7 @@ export function createPageView(doc, loc, winOverride) {
       } catch (e) { /* 无内联样式 */ }
     }
     let sidebar = null;
-    const body = (doc && doc.body) || null;
+    const body = (doc?.body) || null;
     const drawer = byId('m3-drawer');
     if (drawer && hasClass(drawer, 'open')) sidebar = 'open';
     else if (body && hasClass(body, 'sidebar-collapsed')) sidebar = 'collapsed';
@@ -478,11 +478,11 @@ export function createPageView(doc, loc, winOverride) {
   function pageInfo() {
     const titleEl = first(S.articleTitle);
     const chip = courseChip();
-    const body = (doc && doc.body) || null;
+    const body = (doc?.body) || null;
     let scrollY = 0, docHeight = 0, viewH = 0;
     try {
       scrollY = win ? Math.round(win.scrollY || 0) : 0;
-      docHeight = doc && doc.documentElement ? doc.documentElement.scrollHeight : 0;
+      docHeight = doc?.documentElement ? doc.documentElement.scrollHeight : 0;
       viewH = win ? win.innerHeight || 0 : 0;
     } catch (e) { /* 无窗口 */ }
     return {
@@ -537,7 +537,7 @@ export function createPageView(doc, loc, winOverride) {
     // 走真人的深链接路径（会同步 URL hash 并触发 :target 高亮与抽屉同步）
     if (target.id) {
       try {
-        if (win2 && win2.__disclosureOpen) win2.__disclosureOpen(target.id);
+        if (win2?.__disclosureOpen) win2.__disclosureOpen(target.id);
         else if (location && typeof location === 'object') location.hash = target.id;
       } catch (e) { /* 无 hash 能力 */ }
     }
@@ -671,7 +671,7 @@ export function createPageView(doc, loc, winOverride) {
     // 绝对路径带的部署前缀：按已知页面后缀对齐，不猜前缀长度。
     // 命中条件：这条绝对路径**以 `/页面` 结尾**（带 `/` 边界，否则
     // `x/index.html` 会被当成任何 `…index.html` 的后缀）。
-    if (wasAbsolute && known && known.length && known.indexOf(p) < 0) {
+    if (wasAbsolute && known?.length && known.indexOf(p) < 0) {
       // 多个命中时取**最长**（最具体）——`index.html` 是所有索引页的合法后缀，
       // 只按长度比会把具体的 `课程总览/…/` 让给更短的。
       const hit = known
@@ -1040,7 +1040,7 @@ export function createPageView(doc, loc, winOverride) {
    */
   function nextInDoc(node, stopAt) {
     const kids = node.children;
-    if (kids && kids.length) return kids[0];
+    if (kids?.length) return kids[0];
     // 真实 DOM 有 nextElementSibling；假 DOM 没有 → 退化成「父节点里找我的下一个兄弟」
     let cur = node;
     while (cur) {
@@ -1059,7 +1059,7 @@ export function createPageView(doc, loc, winOverride) {
   }
 
   function isAncestor(a, b) {
-    for (let p = b && b.parentElement; p; p = p.parentElement) if (p === a) return true;
+    for (let p = b?.parentElement; p; p = p.parentElement) if (p === a) return true;
     return false;
   }
 
@@ -1187,8 +1187,8 @@ export function createPageView(doc, loc, winOverride) {
       //      当前课程从 body[data-site-path] 取；拿不到就用全量。
       //   ② 在池内按三级强度取：文本包含 query > query 包含文本 > 去掉课程名后再比。
       const courseName = (function () {
-        const bodyEl = (doc && doc.body) || null;
-        const p = bodyEl && bodyEl.getAttribute ? (bodyEl.getAttribute('data-site-path') || '') : '';
+        const bodyEl = (doc?.body) || null;
+        const p = bodyEl?.getAttribute ? (bodyEl.getAttribute('data-site-path') || '') : '';
         // 目录 2026-10-29 改名为「课程总览/」：第二段才是课程名。
         // 写死 `课程/` 取到的是课程名，但下面的路径前缀比对会恒为空 ⇒ 作用域失效、
         // 每次「作业」都判成歧义。
@@ -1204,7 +1204,7 @@ export function createPageView(doc, loc, winOverride) {
       const courseFromQuery = COURSE_NAMES.filter((c) => needle.indexOf(c) >= 0)[0] || '';
       const scopeCourse = courseName || courseFromQuery;
       const inCourse = links.map((a, i) => ({ a, i, path: a.getAttribute ? (a.getAttribute('data-path') || '') : '' }))
-        .filter((x) => scopeCourse && x.path.indexOf('课程总览/' + scopeCourse + '/') === 0);
+        .filter((x) => scopeCourse && x.path.startsWith('课程总览/' + scopeCourse + '/'));
       const pools = inCourse.length ? [inCourse, links.map((a, i) => ({ a, i }))] : [links.map((a, i) => ({ a, i }))];
 
       const tier1 = (pool) => pool.filter((x) => labels[x.i].indexOf(needle) >= 0);
@@ -1274,14 +1274,14 @@ export function createPageView(doc, loc, winOverride) {
       const normalized = canonicalPagePath(path, pool);
       const known = pool.indexOf(normalized) >= 0;
       if (!known) {
-        const bodyEl = (doc && doc.body) || null;
-        const curPath = bodyEl && bodyEl.getAttribute ? (bodyEl.getAttribute('data-site-path') || '') : '';
+        const bodyEl = (doc?.body) || null;
+        const curPath = bodyEl?.getAttribute ? (bodyEl.getAttribute('data-site-path') || '') : '';
         // 课程层从本页路径取（`课程总览/<课>/…` 的第二段）。不能写死 `课程/`——
         // 目录 2026-10-29 改名为 `课程总览/`，写死的前缀会让候选恒为空。
         const segs = curPath.split('/');
         const curCourse = segs.length > 2 && segs[0] === '课程总览' ? segs[1] : '';
         const sameCourse = curCourse
-          ? pool.filter((x) => x.indexOf('课程总览/' + curCourse + '/') === 0)
+          ? pool.filter((x) => x.startsWith('课程总览/' + curCourse + '/'))
           : [];
         const tail = normalized.split('/').pop() || '';
         // 优先给「同名文件」——模型经常只是少了前缀层，给同名的真路径一次就能改对。
@@ -1315,7 +1315,7 @@ export function createPageView(doc, loc, winOverride) {
           .then(() => ({ ok: true, to, path: normalized, hash, via: 'spa', verified }),
                 (err) => ({ ok: false, reason: 'navigate_failed', path: normalized,
                             hint: '路由换页失败（页面可能已失效）。别重试同一路径，换个候选。',
-                            error: String((err && err.message) || err) }));
+                            error: String((err?.message) || err) }));
       }
       // 没有 SPA 路由（非标准页/老产物）：不换页，直接回报。
       return { ok: false, reason: 'no_spa_router', path: normalized,
@@ -1329,18 +1329,18 @@ export function createPageView(doc, loc, winOverride) {
   function setView(o) {
     const opt = o || {};
     const w = win || {};
-    const rootEl = (doc && doc.documentElement) || null;
-    const body = (doc && doc.body) || null;
+    const rootEl = (doc?.documentElement) || null;
+    const body = (doc?.body) || null;
     const done = {};
 
     if (opt.theme === 'light' || opt.theme === 'dark') {
-      if (rootEl && rootEl.setAttribute) rootEl.setAttribute('data-theme', opt.theme);
+      if (rootEl?.setAttribute) rootEl.setAttribute('data-theme', opt.theme);
       try { if (w.localStorage) w.localStorage.setItem('theme', opt.theme); } catch (e) { /* 无存储 */ }
       done.theme = opt.theme;
     }
     if (opt.hue !== undefined && opt.hue !== null) {
       const hue = Math.max(0, Math.min(360, parseInt(opt.hue, 10) || 0));
-      if (rootEl && rootEl.style && rootEl.style.setProperty) {
+      if (rootEl?.style && rootEl.style.setProperty) {
         rootEl.style.setProperty('--hue', String(hue));
         rootEl.style.setProperty('--primary-h', String(hue));
       }
@@ -1357,13 +1357,13 @@ export function createPageView(doc, loc, winOverride) {
       const backdrop = byId('drawer-backdrop');
       const isOpen = drawer && hasClass(drawer, 'open');
       const want = opt.sidebar === 'toggle' ? !isOpen : opt.sidebar === 'open';
-      if (drawer && drawer.classList) {
+      if (drawer?.classList) {
         if (want) drawer.classList.add('open'); else drawer.classList.remove('open');
-        if (backdrop && backdrop.classList) {
+        if (backdrop?.classList) {
           if (want) backdrop.classList.add('open'); else backdrop.classList.remove('open');
         }
         done.sidebar = want ? 'open' : 'closed';
-      } else if (body && body.classList) {
+      } else if (body?.classList) {
         // 桌面形态：折叠与否是 body 上的类
         if (want) body.classList.remove('sidebar-collapsed');
         else body.classList.add('sidebar-collapsed');
@@ -1391,13 +1391,13 @@ export function createPageView(doc, loc, winOverride) {
     // `outerWidth=0`、`hasFocus=false`，而 `documentElement.clientWidth` 仍是 1265。
     // 元信息带 0×0 会让调用方（模型/面板）判定「页面没尺寸」而放弃截图。
     // 补一条 documentElement 兜底：它量布局视口，与窗口焦点无关。
-    const el = (doc && doc.documentElement) || null;
-    const vw = (w && w.innerWidth) || (el && el.clientWidth) || 0;
-    const vh = (w && w.innerHeight) || (el && el.clientHeight) || 0;
+    const el = (doc?.documentElement) || null;
+    const vw = (w?.innerWidth) || (el?.clientWidth) || 0;
+    const vh = (w?.innerHeight) || (el?.clientHeight) || 0;
     const viewport = { w: vw, h: vh };
     const meta = {
-      title: (doc && doc.title) || '',
-      url: (location && location.href) || '',
+      title: (doc?.title) || '',
+      url: (location?.href) || '',
       scrollY: w ? Math.round(w.scrollY || 0) : 0,
       docHeight: el ? el.scrollHeight : 0,
       viewport,
@@ -1430,7 +1430,7 @@ export function createPageView(doc, loc, winOverride) {
       .then(() => provider({ format, quality, fullPage: !!o.fullPage, meta }))
       .then((res) => {
         if (!res || !res.dataUrl) {
-          return { ...meta, ok: false, reason: 'capture_failed', detail: res && res.error ? String(res.error) : '' };
+          return { ...meta, ok: false, reason: 'capture_failed', detail: res?.error ? String(res.error) : '' };
         }
         const b64 = String(res.dataUrl).split(',')[1] || '';
         return {
@@ -1440,7 +1440,7 @@ export function createPageView(doc, loc, winOverride) {
           bytes: Math.round(b64.length * 3 / 4),
         };
       })
-      .catch((e) => ({ ...meta, ok: false, reason: 'capture_error', detail: String((e && e.message) || e) }));
+      .catch((e) => ({ ...meta, ok: false, reason: 'capture_error', detail: String((e?.message) || e) }));
   }
 
   /**
@@ -1516,7 +1516,7 @@ export function createPageView(doc, loc, winOverride) {
             bytes: Math.round(b64.length * 3 / 4),
           });
         } catch (e) {
-          done({ ...meta, ok: false, reason: 'capture_tainted', detail: String((e && e.message) || e) });
+          done({ ...meta, ok: false, reason: 'capture_tainted', detail: String((e?.message) || e) });
         }
       };
       img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
@@ -1570,7 +1570,7 @@ export function createPageView(doc, loc, winOverride) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
     }).then((idx) => {
-      const docs = (idx && idx.docs) || [];
+      const docs = (idx?.docs) || [];
       const needle = query.toLowerCase();
       const hits = [];
       for (const d of docs) {
@@ -1610,7 +1610,7 @@ export function createPageView(doc, loc, winOverride) {
       };
     }).catch((e) => ({
       ok: false, reason: 'index_unavailable',
-      detail: String((e && e.message) || e),
+      detail: String((e?.message) || e),
       hint: 'search/index.json 取不到（可能未构建或跨域）。退路：site_index 看结构，或 site_read 读本页',
     }));
   }
@@ -1656,21 +1656,21 @@ export function createPageView(doc, loc, winOverride) {
     // 当前课程：从 body[data-site-path] 取「课程总览/<课名>/…」的第二段。
     // 不能只看下标 1——README.html、课程总览/index.html 这些页的第二段不是课程名，
     // 会拿它去匹配课程节点、静默落空。显式要求首段是课程总览。
-    const body = (doc && doc.body) || null;
-    const curPath = body && body.getAttribute ? (body.getAttribute('data-site-path') || '') : '';
+    const body = (doc?.body) || null;
+    const curPath = body?.getAttribute ? (body.getAttribute('data-site-path') || '') : '';
     const curSegs = curPath.split('/');
     const curCourse = curSegs.length > 2 && curSegs[0] === '课程总览' ? curSegs[1] : '';
 
     // 找「课程总览」子树，再按课程名筛选
     const coursesNode = nodes.find((n) => n.name === '课程总览');
     let picked = nodes;
-    if (scope === 'course' && coursesNode && coursesNode.children) {
+    if (scope === 'course' && coursesNode?.children) {
       const only = coursesNode.children.find((n) => n.name === curCourse);
       picked = only ? [only] : nodes;
     }
 
     // 同时把「其余课程入口」告诉模型（一行提示，不展开）
-    const allCourses = (coursesNode && coursesNode.children ? coursesNode.children : [])
+    const allCourses = (coursesNode?.children ? coursesNode.children : [])
       .map((n) => n.name);
 
     // 渲染：**照侧边栏的样子**（层级 + 标签），而不是把完整仓库路径铺在每行。
@@ -1761,7 +1761,7 @@ export function createPageView(doc, loc, winOverride) {
       const src = String((el.getAttribute && el.getAttribute('src')) || '');
       if (!src) continue;
       if (!includeIcons && /assets\/favicon|site-title-icon/.test(src)) continue;
-      const ext = (src.split('?')[0].match(/\.([a-z0-9]+)$/i) || [])[1] || '';
+      const ext = (/[/.]([a-z0-9]+)$/i.exec(src.split('?')[0]) || [])[1] || '';
       let abs = src;
       try { abs = new URL(src, location.href).href; } catch (e) { /* 相对原样 */ }
       let box = null;
@@ -1890,7 +1890,7 @@ export function createPageView(doc, loc, winOverride) {
           });
         } catch (e) {
           clrT(timer);
-          done({ ok: false, reason: 'convert_failed', detail: String((e && e.message) || e), src: abs });
+          done({ ok: false, reason: 'convert_failed', detail: String((e?.message) || e), src: abs });
         }
       };
       // 同源图不需要 crossOrigin；设了反而在部分环境触发 CORS 预检
@@ -1938,7 +1938,7 @@ export function createPageView(doc, loc, winOverride) {
  */
 
 export function buildToolDefs(doc, win) {
-  const w = win || (doc && doc.defaultView) || null;
+  const w = win || (doc?.defaultView) || null;
   const view = createPageView(doc, null, w);
 
   return [
@@ -2020,13 +2020,13 @@ export function buildToolDefs(doc, win) {
         required: ['query'],
       },
       execute: (a) => {
-        const q = String((a && a.query) || '').trim();
+        const q = String((a?.query) || '').trim();
         if (!q) return { ok: false, reason: 'empty_query' };
         // scope=page：页内查找（Ctrl+F 语义）
-        if ((a && a.scope) === 'page') return view.findInPage(q);
+        if ((a?.scope) === 'page') return view.findInPage(q);
         // scope=site（默认）：**直读 search/index.json**，不开搜索框。
         // 2026-10-19 用户定案：「搜索框明显是给人类用的」——模型要的是结果+链接+锚点。
-        return view.searchIndex(q, { limit: a && a.limit, includeHeadings: true });
+        return view.searchIndex(q, { limit: a?.limit, includeHeadings: true });
       },
     },
     {
@@ -2036,7 +2036,7 @@ export function buildToolDefs(doc, win) {
       description: '查本页某个符号的含义：点开它的气泡，返回标题、解释、全部义项（当前语境标 is-here）与「详细」链接。给 term 可用符号 id（如 sym-U）或显示文字（如 U）。',
       inputSchema: { type: 'object', properties: { term: { type: 'string' } }, required: ['term'] },
       execute: (a) => {
-        const needle = String((a && a.term) || '').trim();
+        const needle = String((a?.term) || '').trim();
         if (!needle) return { ok: false, reason: 'empty_term' };
         const el = view.findSymbol(needle);
         if (!el) {
@@ -2059,14 +2059,14 @@ export function buildToolDefs(doc, win) {
           let bubble = null;
           try { bubble = doc.querySelector(PAGE_SELECTORS.glossaryBubble); } catch (e) { /* 假 DOM */ }
           const senses = [];
-          if (bubble && bubble.querySelectorAll) {
+          if (bubble?.querySelectorAll) {
             try {
               Array.prototype.slice.call(bubble.querySelectorAll('li')).forEach((li) => {
                 senses.push({ text: renderMarkdown(li), here: hasClass(li, 'is-here') });
               });
             } catch (e) { /* 无子查询 */ }
           }
-          const more = bubble && bubble.querySelector ? bubble.querySelector('a') : null;
+          const more = bubble?.querySelector ? bubble.querySelector('a') : null;
           // ⚠️ 2026-10-29：**一次别给太多**。原来 `bubble` 字段是整个气泡的
           // Markdown（上限 1200 字），再叠上 `senses` 全部义项——模型记不住，
           // 而且多数问题只需要「这个符号是什么」，不需要整段原理。
@@ -2074,7 +2074,7 @@ export function buildToolDefs(doc, win) {
           // 需要全文时模型自己去读 detailHref 指向的那页（site_read 能读）。
           const firstSentence = (t, cap) => {
             const flat = String(t || '').replace(/\s+/g, ' ').trim();
-            const m = flat.match(/^[^。；;]{1,200}[。；;]?/);
+            const m = /^[^。；;]{1,200}[。；;]?/.exec(flat);
             const one = (m ? m[0] : flat).trim();
             return one.length > cap ? one.slice(0, cap) + '…' : one;
           };
@@ -2086,7 +2086,7 @@ export function buildToolDefs(doc, win) {
             senses: senses.length > 1
               ? senses.map((x) => ({ brief: firstSentence(x.text, 80), here: x.here }))
               : undefined,
-            detailHref: more && more.getAttribute ? more.getAttribute('href') : undefined,
+            detailHref: more?.getAttribute ? more.getAttribute('href') : undefined,
             hint: '要看全文就 site_read 那个 detailHref 指向的页面（用 what=section 或 what=page）',
           };
         };
@@ -2108,9 +2108,9 @@ export function buildToolDefs(doc, win) {
         },
       },
       execute: (a) => {
-        const act = (a && a.action) || 'toggle';
+        const act = (a?.action) || 'toggle';
         const open = act === 'open' ? true : act === 'close' ? false : undefined;
-        return view.togglePanels(open, a && a.match);
+        return view.togglePanels(open, a?.match);
       },
     },
     {
@@ -2191,9 +2191,9 @@ export function registerTools(doc, nav) {
   // **两个注册表都要探测**（2026-10-16 修）：
   //   Firefox 原生只有 navigator.modelContext；Chromium 走 polyfill 只有 document.modelContext。
   //   只认 navigator ⇒ Chromium 下第一行就 return、工具一个都没注册（实测踩到）。
-  const mc = (doc && doc.modelContext) || (nav && nav.modelContext) || null;
+  const mc = (doc?.modelContext) || (nav?.modelContext) || null;
   if (!mc || typeof mc.registerTool !== 'function') return 0;
-  const defs = buildToolDefs(doc, (doc && doc.defaultView) || null);
+  const defs = buildToolDefs(doc, (doc?.defaultView) || null);
   let attempts = 0;
   for (const d of defs) {
     attempts += 1; // 先记「试了」——单个失败不该把它算漏（2026-10-16 测试抓出的计数偏差）
@@ -2359,7 +2359,7 @@ export function feedText(name, args, r) {
     .filter((k) => a[k] !== undefined && a[k] !== '' && k !== '_positional')
     .map((k) => k + '=' + String(a[k]).slice(0, 40))
     .join(' | ');
-  const head = feedHead(name, argStr, !(r && r.ok));
+  const head = feedHead(name, argStr, !(r?.ok));
 
   if (!r || !r.ok) {
     // 失败原因有两个来源，必须都读（2026-10-29 修）：
@@ -2368,15 +2368,15 @@ export function feedText(name, args, r) {
     // 此前只读前者，于是「这页不存在」「不在导航里」这类**最有用的失败**到了模型那里
     // 统一变成「执行失败」四个字，hint 与候选全丢——模型只能瞎猜下一跳。
     // 实测后果：它拼错路径 → 只看到「执行失败」→ 换个同样错的路径再试。
-    const v = r && r.value && typeof r.value === 'object' ? r.value : null;
-    const code = String((r && r.error) || (v && v.reason) || '');
+    const v = r?.value && typeof r.value === 'object' ? r.value : null;
+    const code = String((r?.error) || (v?.reason) || '');
     // 枚举值给人话（2026-10-29 站长）：`原因：no_such_page` 是机器码，
     // 模型很可能原样复述成「原因：no_such_page」。这里换成一句听得懂的话。
     // 枚举本身不删——`reason` 字段仍在返回值里，机器侧判据照旧。
     const reason = reasonText(code);
     const lines = [head, '- 原因：' + reason];
     const seen = {};
-    if (v && v.hint) lines.push('提示：' + String(v.hint).slice(0, 200));
+    if (v?.hint) lines.push('提示：' + String(v.hint).slice(0, 200));
     if (v && Array.isArray(v.candidates) && v.candidates.length) {
       lines.push('候选：' + v.candidates.slice(0, 12).map((c) => '「' + c + '」').join(' / '));
       seen.cand = 1;
@@ -2389,7 +2389,7 @@ export function feedText(name, args, r) {
     //   · ambiguous —— 候选已经列出来了，该挑一个，不是换参数瞎试；
     //   · not_found  —— 目标不存在，该换关键词或先看大纲；
     //   · 其余       —— 参数或环境问题，换个参数；再不行就说做不到。
-    if (!(v && v.hint)) {
+    if (!(v?.hint)) {
       if (code === 'ambiguous' && seen.cand) {
         lines.push('建议下一步：从上一条候选里挑一个准确的名字重试，别再用现在这个词。');
       } else if (/no_such_page|not_found|not_in_nav|unknown_target|empty_query|empty_path/.test(code)) {
@@ -2476,7 +2476,7 @@ export async function runTool(doc, name, args) {
   // 此前这里有一份手写 MAP，参数解包与 buildToolDefs 各活各的：
   // site_panels 把 {action:"close"} 整个塞给标量参数 open（对象恒真 → close 变 open）、
   // site_show_symbol 把 {term} 塞给字符串参数（String() 出 "[object Object]" → 永远查不到）。
-  const defs = buildToolDefs(doc, (doc && doc.defaultView) || null);
+  const defs = buildToolDefs(doc, (doc?.defaultView) || null);
   const def = defs.find((d) => d.name === name);
   if (!def || typeof def.execute !== 'function') {
     return { ok: false, error: '页面没有工具 ' + String(name) };
@@ -2490,7 +2490,7 @@ export async function runTool(doc, name, args) {
     out.feed = feedText(name, args || {}, out);
     return out;
   } catch (e) {
-    const out = { ok: false, error: String((e && e.message) || e) };
+    const out = { ok: false, error: String((e?.message) || e) };
     out.feed = feedText(name, args || {}, out);
     return out;
   }

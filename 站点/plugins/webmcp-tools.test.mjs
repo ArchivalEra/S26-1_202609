@@ -1393,7 +1393,12 @@ test('serializeSelectors：RegExp 序列化成 new RegExp（JSON 会丢它）', 
 test('WEBMCP_TOOLS_JS：是真函数派生的、语法可解析、含两个注册表探测', () => {
   assert.ok(WEBMCP_TOOLS_JS.includes(createPageView.toString().slice(0, 80)), '应由 createPageView 派生');
   assert.ok(WEBMCP_TOOLS_JS.includes(renderMarkdown.toString().slice(0, 80)), '应由 renderMarkdown 派生');
-  assert.ok(WEBMCP_TOOLS_JS.includes('doc.modelContext') && WEBMCP_TOOLS_JS.includes('nav.modelContext'),
+  // 2026-10-31：可选链改造后源码写成 `doc?.modelContext || nav?.modelContext`。
+  // 断言改成同时接受两种写法（`doc.modelContext` / `doc?.modelContext`），
+  // 判据不变：**两个注册表都必须被探测**（Firefox 原生只有 nav、Chromium polyfill
+  // 只有 doc，漏掉任何一个就会在那一侧静默注册不上）。
+  const probesBoth = (name) => new RegExp(name + '\\??\\.modelContext').test(WEBMCP_TOOLS_JS);
+  assert.ok(probesBoth('doc') && probesBoth('nav'),
     '两个注册表都要探测（Chromium 回归的判据）');
   assert.doesNotThrow(() => new Function(WEBMCP_TOOLS_JS), '内联源码必须语法可解析');
 });

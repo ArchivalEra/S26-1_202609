@@ -63,10 +63,9 @@ export function createReadCore(deps) {
       // 补摘要（与浏览器端同一套：makeSnippet，radius 44）——候选 6 前这里是恒空字段。
       hits = fillSnippets(hits, foldSearchText(query), (id) => corpus.text(id));
 
-      // 课程过滤（按 url 前缀 `课程/<课>/`）
+      // 课程过滤：用 courseOf（按段位解析，不写死目录名）
       if (input.course) {
-        const prefix = `课程/${input.course}/`;
-        hits = hits.filter((h) => decodeURIComponent(h.url).startsWith(prefix));
+        hits = hits.filter((h) => courseOf(h.url) === input.course);
       }
 
       const folded = foldSearchText(query);
@@ -137,8 +136,7 @@ export function createReadCore(deps) {
       hits = fillSnippets(hits, foldSearchText(query), (id) => corpus.text(id));
 
       if (input.course) {
-        const prefix = `课程/${input.course}/`;
-        hits = hits.filter((h) => decodeURIComponent(h.url).startsWith(prefix));
+        hits = hits.filter((h) => courseOf(h.url) === input.course);
       }
       if (input.category) {
         hits = hits.filter((h) => categoryOf(h.url) === input.category);
@@ -181,7 +179,7 @@ export function createReadCore(deps) {
       return {
         path: relPath,
         url: doc ? doc.url : relPath.replace(/\.md$/, '.html'),
-        title: meta.name || (doc && doc.title) || relPath,
+        title: meta.name || (doc?.title) || relPath,
         course: meta.course || courseOf(doc ? doc.url : ''),
         category: meta.category || '',
         format: 'markdown',
@@ -221,16 +219,34 @@ export function createReadCore(deps) {
 
 // ---------------------------------------------------------------- 小工具
 
+/**
+ * 课程 / 分类的解析：**按段位，不写死目录名**。
+ *
+ * ⚠️ 2026-10-31 修（本仓维护侧的真 bug）：这里原本写死 `^课程/([^/]+)/`。
+ * 仓库把 `课程/` 改名成 `课程总览/` 之后，这两个函数返回空串 ⇒
+ * `ask({course})` 的过滤、`stat().courses` 的清单、`categoryOf` 的分类
+ * 全部静默失效（不报错，只是永远过滤掉所有命中）。`工具/` 的 11 条测试
+ * 因此红了很久没人知道原因。
+ *
+ * 现在按**段位**解析：读层的 url 是「顶层分类目录 / 课程 / 类目 / 页」四段式，
+ * 顶层目录叫什么不重要（`课程` → `课程总览` 这种改名不该动读层）。
+ * 判据不是「第二段是不是课程」——而是**第一段是站点唯一的顶层内容目录**
+ * （`课程总览`）。改名时只改这一个常量。
+ */
+const TOP_DIR = '课程总览';
+
 function courseOf(url) {
   const u = decodeURIComponent(url || '');
-  const m = u.match(/^课程\/([^/]+)\//);
-  return m ? m[1] : '';
+  const parts = u.split('/');
+  if (parts[0] !== TOP_DIR) return '';
+  return parts[1] || '';
 }
 
 function categoryOf(url) {
   const u = decodeURIComponent(url || '');
-  const m = u.match(/^课程\/[^/]+\/([^/]+)\//);
-  return m ? m[1] : '';
+  const parts = u.split('/');
+  if (parts[0] !== TOP_DIR) return '';
+  return parts[2] || '';
 }
 
 function coursesOf(docs) {

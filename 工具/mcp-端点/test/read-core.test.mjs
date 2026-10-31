@@ -7,6 +7,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createReadCore } from '../lib/read-core.mjs';
@@ -17,6 +18,22 @@ import { TARGET_FILES } from '../../../站点/页面清单.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '../../..');
+
+/**
+ * 期望页数 = 页面清单（`站点/页面清单.mjs` 的 TARGET_FILES）的条数。
+ *
+ * ⚠️ 2026-10-31：原本这里是写死的 `115`。页面清单长到 140 之后这条断言就红了，
+ * 而它红得**毫无信息量**——它只说明「测试抄了旧数字」，不说明代码坏。
+ * 页数的唯一真相源是页面清单本身；测试要验的是「核心报的页数 == 清单条数」，
+ * 不是「== 某个历史快照」。所以改成动态读，加页时测试自动跟上。
+ */
+const EXPECTED_PAGES = (() => {
+  const src = fs.readFileSync(path.resolve(ROOT, '站点/页面清单.mjs'), 'utf8');
+  const m = /export const TARGET_FILES = \[(.*?)\];/s.exec(src);
+  if (!m) throw new Error('读不到 TARGET_FILES —— 页面清单结构变了');
+  return (m[1].match(/'/g) || []).length / 2;
+})();
+
 const DIST = path.join(ROOT, '站点/dist');
 
 function realCore() {
@@ -74,12 +91,12 @@ test('search：返回命中列表（锚点/摘要/分数），带 total', () => 
 test('search：课程过滤只留该课', () => {
   const core = realCore();
   const r = core.search({ query: '定理', course: '工程数学', limit: 50 });
-  for (const h of r.hits) assert.ok(decodeURIComponent(h.url).startsWith('课程/工程数学/'), h.url);
+  for (const h of r.hits) assert.ok(decodeURIComponent(h.url).startsWith('课程总览/工程数学/'), h.url);
 });
 
 test('read_page：按路径取整页，format=markdown、带 frontmatter 与标题', () => {
   const core = realCore();
-  const r = core.readPage({ path: '课程/电机学/作业/2026-10-15-变压器额定电流与变比.md' });
+  const r = core.readPage({ path: '课程总览/电机学/作业/10-15-变压器变比.md' });
   assert.equal(r.format, 'markdown');
   assert.equal(r.course, '电机学');
   assert.equal(r.category, '作业');
@@ -90,9 +107,9 @@ test('read_page：按路径取整页，format=markdown、带 frontmatter 与标�
 
 test('read_page：带 anchor 只取该小节', () => {
   const core = realCore();
-  const full = core.readPage({ path: '课程/电机学/作业/2026-10-15-变压器额定电流与变比.md' });
+  const full = core.readPage({ path: '课程总览/电机学/作业/10-15-变压器变比.md' });
   const h = full.headings[0];
-  const part = core.readPage({ path: '课程/电机学/作业/2026-10-15-变压器额定电流与变比.md', anchor: h.a });
+  const part = core.readPage({ path: '课程总览/电机学/作业/10-15-变压器变比.md', anchor: h.a });
   assert.ok(part.body.length <= full.body.length);
 });
 
@@ -120,7 +137,9 @@ test('symbol：包链覆盖——后者覆盖前者同名', () => {
 test('stat：台账出口（页数/源 hash/stale/课程清单）', () => {
   const core = realCore();
   const r = core.stat();
-  assert.equal(r.pages, 115);
+  // 2026-10-31 修：原写死 115 —— 页面清单早就是 140 页了，写死数字必然腐烂。
+  // 改成交给页面清单自己数（同一份真相源，不在这里抄第二遍）。
+  assert.equal(r.pages, EXPECTED_PAGES, `页数应等于页面清单条数（实际 ${r.pages}）`);
   assert.equal(typeof r.sourceHash, 'string');
   assert.equal(r.stale, false);
   assert.ok(r.courses.length >= 6);

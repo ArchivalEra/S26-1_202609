@@ -20,7 +20,7 @@ export function walk(node, visit, parent = null, path = '0') {
   const keepGoing = visit(node, parent, path);
   if (keepGoing === false) return;
   for (const child of childrenOf(node)) {
-    if (child && child.node) walk(child.node, visit, node, `${path}.${child.key}`);
+    if (child?.node) walk(child.node, visit, node, `${path}.${child.key}`);
   }
 }
 

@@ -35,7 +35,7 @@ var MOBILE_MAX = 860; // 与 shirone-reader.css 的断点一致
 /** active/expanded 重算：读 JSON + 共享判定按当前页重算 id，再对齐到 DOM 的 data-node-id。 */
 function recompute() {
   var nav = window.__navStructure;
-  var json = nav && nav.readNavJson ? nav.readNavJson() : null;
+  var json = nav?.readNavJson ? nav.readNavJson() : null;
   if (!json || !json.nodes) return undefined; // 无侧栏形状 ⇒ 不动（保留烘焙态）
   var here = document.body.getAttribute("data-site-path") || "";
   // 共享判定（html 空间）——与构建期 activeIds 同一份实现。

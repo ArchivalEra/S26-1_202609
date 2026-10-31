@@ -159,11 +159,11 @@ export function createFormulaCells(deps = {}) {
       if (!r) {
         r = await compute(tex);
         // 只缓存成功结果：算不了的公式下次可能因为别的原因能算（比如内核刚载入完）
-        if (r && r.ok) resultCache.set(tex, r);
+        if (r?.ok) resultCache.set(tex, r);
       }
       if (destroyed) return;
       cell.lastComputedFor = tex;
-      if (r && r.ok) {
+      if (r?.ok) {
         cell.result.className = RESULT_CLASS + ' is-ok';
         cell.result.textContent = '= ' + (r.output == null ? '' : String(r.output));
       } else if (quiet) {
@@ -177,12 +177,12 @@ export function createFormulaCells(deps = {}) {
         cell.lastComputedFor = tex;     // 记住"这条算不了"，避免滚动时反复重试
       } else {
         cell.result.className = RESULT_CLASS + ' is-err';
-        cell.result.textContent = (r && r.error) || '算不了';
+        cell.result.textContent = (r?.error) || '算不了';
       }
     } catch (e) {
       if (!destroyed) {
         cell.result.className = RESULT_CLASS + ' is-err';
-        cell.result.textContent = '失败：' + ((e && e.message) || e);
+        cell.result.textContent = '失败：' + ((e?.message) || e);
       }
     } finally {
       if (!destroyed) {
@@ -355,7 +355,7 @@ export function createFormulaCells(deps = {}) {
       if (cell.editing) exitEdit(cell);
       // 把包装层拆掉，恢复原始 DOM 形态（anchor 放回父节点原位）
       const wrap = cell.wrap;
-      if (wrap && wrap.parentNode) {
+      if (wrap?.parentNode) {
         const parent = wrap.parentNode;
         if (cell.anchor && cell.anchor.parentNode === wrap) {
           wrap.removeChild(cell.anchor);

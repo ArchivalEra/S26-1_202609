@@ -140,7 +140,7 @@ export function createResolver(dictionary, cfg = {}) {
         const m = p.re.exec(slice);
         // 正则必须**整段匹配**这个节点，而不是匹配其中一截：
         // 否则 `r_1+r_2` 这种会把整个节点误标成 `sym-rowcol`。
-        if (m && m.index === 0 && m[0].length === slice.length) {
+        if (m?.index === 0 && m[0].length === slice.length) {
           return { pack, entry: p.entry };
         }
       }

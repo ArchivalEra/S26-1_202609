@@ -85,7 +85,7 @@ function emit(n) {
       const parts = [];
       for (let i = 0; i < items.length; i += 1) {
         const it = items[i];
-        const isFn = it && it.kind === 'sym' && it.isFunctionName;
+        const isFn = it?.kind === 'sym' && it.isFunctionName;
         if (isFn) {
           const fn = emit(it);
           if (!fn.ok) return fn;

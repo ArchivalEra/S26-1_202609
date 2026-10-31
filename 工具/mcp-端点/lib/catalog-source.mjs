@@ -20,6 +20,8 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+// url 规则只有一处真相：构建期的 `htmlPathOf`。读层直接用它，不再抄一份。
+import { htmlPathOf } from '../../../站点/plugins/nav-structure.mjs';
 
 /** 源侧标题扫描：允许 0-3 空格缩进（折叠块内的标题是缩进的），跳过代码围栏内的 `#`。
  *
@@ -55,11 +57,14 @@ export function createCatalog(opts) {
   return {
     /** 页面清单（唯一真相源）。 */
     pages() {
-      return targetFiles.map((rel) => ({
-        path: rel,
-        // url：与构建期同一规则（README.md → index.html，其余 .md → .html）
-        url: rel === 'README.md' ? 'index.html' : rel.replace(/\.md$/, '.html'),
-      }));
+      // url：**直接调构建期的 `htmlPathOf`**，不在这里另写一条规则。
+      //
+      // ⚠️ 2026-10-31 修：这里原本自己写 `rel === 'README.md' ? 'index.html' : rel.replace(/\.md$/, '.html')`
+      // —— 那是**旧规则**。构建期早就统一到 htmlPathOf（目录索引页的网址是 `目录/` 而不是
+      // `目录/index.html`，首页是 `''` 而不是 `index.html`）。读层自己抄一份的结果是
+      // 它返回的 url 读者**点不开**（`课程总览/index.html` 在产品里是不存在的路径）。
+      // 注释里写着「与 build.mjs 共用唯一真相源」，实际却抄了第二份 —— 必须 import。
+      return targetFiles.map((rel) => ({ path: rel, url: htmlPathOf(rel) }));
     },
 
     /** 读源 markdown（不做任何转换）。 */

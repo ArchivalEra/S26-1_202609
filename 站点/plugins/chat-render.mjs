@@ -181,7 +181,7 @@ export function parseIncremental(buffer) {
       while (j < n) {
         const l = readLine(j);
         if (!l.complete) { j = -1; break; }             // 最后一行未结束 → 等
-        const m = l.line.match(/^([ \t]*)(?:[-*]|\d+\.)[ \t]+(.*)$/);
+        const m = /^([ \t]*)(?:[-*]|\d+\.)[ \t]+(.*)$/.exec(l.line);
         if (!m) { terminated = true; break; }
         // 缩进 → 层级（每 2 空格或 1 tab 算一级，上限 4 级防跑飞）
         const indent = m[1].replace(/\t/g, '  ').length;
@@ -373,7 +373,7 @@ export function findClosingDollar(s, from) {
     if (s[i] === '$') {
       // 闭合 $ 后面不能紧跟数字（`$5 and $10` 这种）
       const next = s[i + 1] || '';
-      if (/[0-9]/.test(next)) continue;
+      if (/\d/.test(next)) continue;
       return i;
     }
   }
@@ -458,7 +458,7 @@ export function opsToText(ops) {
     if (o.kind === 'heading' || o.kind === 'para') return o.ops.map(one).join('');
     if (o.kind === 'list') return o.items.map((it) => {
       // 2026-10-22：items 是 {ops, depth}；兼容旧的纯 op 数组形态
-      const arr = it && it.ops ? it.ops : (Array.isArray(it) ? it : []);
+      const arr = it?.ops ? it.ops : (Array.isArray(it) ? it : []);
       return arr.map(one).join('');
     }).join(' | ');
     if (o.kind === 'codeblock') return '```' + o.lang + '\n' + o.text + '\n```';

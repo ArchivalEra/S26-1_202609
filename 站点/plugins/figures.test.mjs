@@ -340,6 +340,28 @@ test('kmap：四变量网格 + 圈组', () => {
   assert.deepEqual(p.boxes, [{ r: [1, 2], c: [0, 3] }]);
 });
 
+test('kmap：2 变量是 2×2 网格、3 变量是 4×2（不是 4×4）', () => {
+  // 2026-10-31 修的真 bug：源码里 rowCodes/colCodes 的三元分支**返回值完全相同**
+  // （`vars === 2 ? gray : gray`），于是 2/3 变量也按 4×4 画。
+  // 图库里 4 条 kmap 全是 `kmap 4`，所以这个缺陷从未暴露 ——
+  // 谁写 `kmap 2` 就得到一张 4×4 的错图，而构建不报错、闸门全绿。
+  // 这条断言钉住「网格尺寸跟变量数走」。
+  const k2 = parseFigureLib(['k2 | kmap 2', '00', '01'].join('\n'));
+  const r2 = renderFigures(':::figure k2', { lib: k2 }).figures[0].payload;
+  assert.equal(r2.vars, 2);
+  assert.deepEqual(r2.rowCodes, ['0', '1'], '2 变量：行只有 1 位');
+  assert.deepEqual(r2.colCodes, ['0', '1'], '2 变量：列只有 1 位');
+
+  // 3 变量是 4 行 × **2 列** ⇒ 每个格值行 2 字符（不是 4）
+  const k3 = parseFigureLib(['k3 | kmap 3', '00', '01', '11', '10'].join('\n'));
+  const r3 = renderFigures(':::figure k3', { lib: k3 }).figures[0].payload;
+  assert.equal(r3.vars, 3);
+  assert.deepEqual(r3.rowCodes, ['00', '01', '11', '10'], '3 变量：行 2 位（4 种）');
+  assert.deepEqual(r3.colCodes, ['0', '1'], '3 变量：列 1 位');
+  assert.equal(r3.rowCodes.length, 4, '3 变量是 4 行');
+  assert.equal(r3.colCodes.length, 2, '3 变量是 2 列 —— 不是 4 列');
+});
+
 test('kmap：格值行宽不匹配要报错', () => {
   const lib = parseFigureLib(['k | kmap 4', '000', '1111', '1111', '0000'].join('\n'), 'lib.txt');
   assert.throws(() => renderFigures(':::figure k', { lib, libName: 'lib.txt' }),

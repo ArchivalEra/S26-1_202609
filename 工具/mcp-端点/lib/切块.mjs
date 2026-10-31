@@ -56,14 +56,14 @@ export function buildCutIndex(source) {
 
     // —— 代码围栏内：只找同种围栏的收尾，其他一律不当围栏 ——
     if (codeFence) {
-      const m = line.match(CODE_FENCE);
+      const m = CODE_FENCE.exec(line);
       if (m && m[1][0] === codeFence[0] && m[1].length >= codeFence.length) {
         codeFence = null;
         stack.pop(); // 代码围栏收尾：把 '```' 出栈（否则栈永久污染）
       }
       continue;
     }
-    const cf = line.match(CODE_FENCE);
+    const cf = CODE_FENCE.exec(line);
     if (cf) { codeFence = cf[1]; stack.push('```'); continue; }
 
     // —— 独占行的 $$：切换跨行公式态 ——
@@ -74,9 +74,13 @@ export function buildCutIndex(source) {
     }
 
     // —— ::: 围栏：按嵌套深度 ——
-    const open = line.match(FENCE_OPEN);
+    const open = FENCE_OPEN.exec(line);
     if (open) { stack.push(open[1]); continue; }
-    if (FENCE_CLOSE.test(line)) { if (stack.length) stack.pop(); continue; }
+    // 这句原本写成 `{ if (stack.length) stack.pop(); continue; }` —— 那个 continue
+    // 是冗余跳转（循环体到这儿就结束了，没有后续语句），GitRoll 因此连带报出
+    // 「只有第一条语句会按条件执行」与「Remove this redundant jump」两条。
+    // 语义完全不变，去掉即可。
+    if (FENCE_CLOSE.test(line) && stack.length) stack.pop();
   }
 
   // 文末追加一个「终点切点」，让任意窗口都能以它为右端。

@@ -243,7 +243,7 @@ function ensureEditor() {
       return true;
     })
     .catch(function (e) {
-      setDiag("mathlive", "失败：" + ((e && e.message) || e));
+      setDiag("mathlive", "失败：" + ((e?.message) || e));
       diag.lastError = "MathLive 载入失败，公式无法编辑。可点上方「重新下载」再试。";
       renderDiag();
       return false;
@@ -304,17 +304,17 @@ function runFormula(latex, outEl, btn) {
     .then(function () { return window.__packCompute(String(latex || "")); })
     .then(function (r) {
       if (!outEl) return;
-      if (r && r.ok) {
+      if (r?.ok) {
         outEl.textContent = String(r.output == null ? "" : r.output);
         outEl.className = "pack-editor-result is-ok";
       } else {
-        outEl.textContent = (r && r.error) || "未知错误";
+        outEl.textContent = (r?.error) || "未知错误";
         outEl.className = "pack-editor-result is-err";
       }
     })
     .catch(function (e) {
       if (outEl) {
-        outEl.textContent = "失败：" + ((e && e.message) || e);
+        outEl.textContent = "失败：" + ((e?.message) || e);
         outEl.className = "pack-editor-result is-err";
       }
     })
@@ -407,7 +407,7 @@ function init() {
         diag.lastError = "";
         return syncOnce();
       }).catch(function (e) {
-        diag.lastError = "删除失败：" + ((e && e.message) || e);
+        diag.lastError = "删除失败：" + ((e?.message) || e);
         renderDiag();
       }).then(function () {
         btn.disabled = false;
@@ -425,7 +425,7 @@ function init() {
       onProgress: function (p) {
         if (prog) {
           var bar = prog.querySelector(".pack-progress-bar");
-          if (bar && p && p.bytes) bar.style.width = "100%";
+          if (bar && p?.bytes) bar.style.width = "100%";
         }
       },
     }).then(function () {
@@ -440,7 +440,7 @@ function init() {
         render();
       });
     }).catch(function (e) {
-      var msg = (e && e.message) || String(e);
+      var msg = (e?.message) || String(e);
       setDiag(which === "editor" ? "storeEditor" : "storeEngine", "下载失败：" + msg);
       diag.lastError = "下载失败：" + msg;
       renderDiag();
@@ -492,8 +492,8 @@ function syncOnce() {
       mountCells();
     }
   }).catch(function (e) {
-    setDiag("storeEditor", "失败：" + ((e && e.message) || e));
-    diag.lastError = "查询存储状态出错：" + ((e && e.message) || e);
+    setDiag("storeEditor", "失败：" + ((e?.message) || e));
+    diag.lastError = "查询存储状态出错：" + ((e?.message) || e);
     renderDiag();
   });
 }
