@@ -513,20 +513,21 @@ function syncOnce() {
   }
   return pack.status().then(function (s) {
     state = s;
-    // 存储层的判据：能不能读到编辑器资产、大小对不对。失败原因直接摆出来，
-    // 不写成「未下载」——「没下」和「下了但读不到」是两件事。
-    var e = s.editor || {};
-    if (e.ready) {
-      setDiag("store", "就绪（" + (e.present || 0) + "/" + (e.total || 1) + " 件在位）");
-    } else if (e.missing && e.missing.length) {
-      // 措辞要短：这一格只有约 234px 宽，写「未就绪：缺 mathlive-browser.min.js
-      // （期望 843924 字节）」会折成三行（实测截图）。原因码 + 文件名足够定位。
-      var m = e.missing[0];
-      var why = m.reason === "content" ? "内容坏" : m.reason === "size" ? "大小不对" : "缺";
-      setDiag("store", why + " " + (m.name || "文件"));
-    } else {
-      setDiag("store", "未就绪（读到状态但没有清单）");
-    }
+    // 存储层要报**两件资产**的状态。
+    // 2026-10-31 实测：只报了 editor，于是「引擎已下载、编辑器没下」时诊断行写的是
+    // 「缺 mathlive-browser.min.js」——读者会以为引擎没下成功，实际是编辑器没下。
+    // 两件事必须分开说。
+    var desc = function (a, label) {
+      if (!a) return label + " 未查";
+      if (a.ready) return label + " " + (a.present || 0) + "/" + (a.total || 1);
+      if (a.missing && a.missing.length) {
+        var m = a.missing[0];
+        var why = m.reason === "content" ? "内容坏" : m.reason === "size" ? "大小不对" : "缺";
+        return label + " " + why + " " + (m.name || "");
+      }
+      return label + " 未就绪";
+    };
+    setDiag("store", desc(s.editor, "编辑器") + " · " + desc(s.engine, "内核"));
     render();
     if (s.editor && s.editor.ready) ensureEditor();
   }).catch(function (e) {
