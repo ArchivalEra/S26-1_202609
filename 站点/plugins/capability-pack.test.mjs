@@ -18,14 +18,58 @@ import {
 } from './capability-pack.mjs';
 
 /** 内存版 store（与 OPFS 同接口），并统计每个动词的调用次数 —— 防环测试要用。 */
-function memStore(initial = {}) {
+/**
+ * 测试用的「内容指纹」替身。
+ *
+ * ⚠️ 不能写成固定串——它必须像真 sha256 一样**随内容变**，否则
+ * 「下载后 ready」与「重下坏副本」这两类判据都测不出来。
+ * 用 FNV-1a 拼成 64 位十六进制，语义上等价于 sha256（同内容同串、异内容异串）。
+ */
+async function realSha256(buf) {
+  const b = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  const d = await crypto.subtle.digest('SHA-256', b);
+  return [...new Uint8Array(d)].map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+
+async function fakeSha256(buf) {
+  const b = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  let h1 = 0x811c9dc5, h2 = 0x01000193;
+  for (let i = 0; i < b.length; i++) {
+    h1 = ((h1 ^ b[i]) * 0x01000193) >>> 0;
+    h2 = ((h2 + b[i]) * 0x85ebca6b) >>> 0;
+  }
+  return (h1.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0')).repeat(4);
+}
+
+function memStore(initial = {}, shas = {}) {
   const files = new Map(Object.entries(initial));
+  // 指纹表：name → sha256 十六进制串。真实 store 把它存在 sidecar 里，
+  // 这里用一个平行 Map 模拟同一语义（head 带出 sha256 字段）。
+  const shm = new Map(Object.entries(shas));
   const calls = { head: 0, put: 0, delete: 0 };
   return {
-    files, calls,
-    async head(name) { calls.head++; return files.has(name) ? { bytes: files.get(name).byteLength } : null; },
-    async put(name, buf) { calls.put++; files.set(name, buf); },
-    async delete(name) { calls.delete++; files.delete(name); },
+    files, calls, shas: shm,
+    async head(name) {
+      calls.head++;
+      if (!files.has(name)) return null;
+      const out = { bytes: files.get(name).byteLength };
+      if (shm.has(name)) out.sha256 = shm.get(name);
+      return out;
+    },
+    async put(name, buf) {
+      calls.put++;
+      files.set(name, buf);
+      // 真实 store 在 put 时把**这次字节的哈希**写进 sidecar。测试里也必须这样，
+      // 否则「下载后应就绪」永远不成立：ASSETS 里的真 sha256 是固定值，
+      // 随便造个假指纹会永远对不上，把每条下载路径都判成内容坏。
+      // 这里用「内容摘要的替身」：同一份字节得到同一串，不同字节得到不同串。
+      shm.set(name, await realSha256(buf));
+    },
+    async readBytes(name) {
+      if (!files.has(name)) throw new Error('no such file: ' + name);
+      return files.get(name);
+    },
+    async delete(name) { calls.delete++; files.delete(name); shm.delete(name); },
   };
 }
 
@@ -46,6 +90,29 @@ function fakeFetch() {
   };
   impl.calls = calls;
   return impl;
+}
+
+// ── 测试装置：让 ASSETS 的 sha256 与 fakeFetch 造的字节对得上 ──────────
+//
+// 真实环境里 ASSETS.sha256 是磁盘文件的真哈希，fakeFetch 当然造不出来。
+// 但 fakeFetch 返回**确定的**全零字节（长度 = spec.bytes），所以它的指纹也是
+// 确定的。这里把 ASSETS 的 sha256 换成「那份全零字节的指纹」，语义完全对应
+// 「清单登记的哈希 == 下载到的字节的哈希」——只是换了一套具体的哈希值。
+//
+// ⚠️ 必须在任何 store/pack 构造之前做完：inspectAsset 会读 ASSETS.sha256。
+{
+  // ⚠️ 用**真** sha256 算，不能用 fakeSha256：产品代码在没有 sidecar 时会用
+  // crypto.subtle 现算真哈希来比对。装置若用另一套算法，两边永远对不上，
+  // 「好内容判就绪」这条就假红。Node 里 crypto.subtle 可用，直接用。
+  const realSha = async (buf) => {
+    const d = await crypto.subtle.digest('SHA-256', buf);
+    return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  };
+  for (const a of Object.values(ASSETS)) {
+    for (const f of a.files) {
+      f.sha256 = await realSha(fakeBuf(f.bytes || 1));
+    }
+  }
 }
 
 test('deriveMode：三态由两件资产的 ready 派生', () => {
@@ -78,6 +145,79 @@ test('status 认大小不符为「不在」——不是有文件就算数', asyn
   const s = await pack.status();
   assert.equal(s.editor.ready, false, '尺寸不符必须判「不在」');
   assert.equal(s.mode, 'readonly');
+});
+
+test('★ status 认内容指纹不符为「不在」——大小对但内容坏了也要报', async () => {
+  // 2026-10-31 实测的真实情形：一个 843924 字节全零的文件骗过了 size 校验，
+  // 于是界面显示「已下载」，MathLive 载入却失败。只比大小抓不住这种情况。
+  const spec = ASSETS.editor.files[0];
+  const store = memStore(
+    { [spec.name]: fakeBuf(spec.bytes) },                       // 大小正好对
+    { [spec.name]: '0'.repeat(64) },                            // 但指纹是假的
+  );
+  const pack = createCapabilityPack({ store, fetchImpl: fakeFetch() });
+  const s = await pack.status();
+  assert.equal(s.editor.ready, false, '内容指纹不符必须判「不在」');
+  assert.equal(s.mode, 'readonly');
+  assert.equal(s.editor.missing[0].reason, 'content', '缺的条目要说明原因是 content 而不是 missing');
+});
+
+test('★ status：没有 sidecar 时会现算哈希，而不是盲信大小', async () => {
+  // 2026-10-31 改：原先这里断言「没 sidecar 就只比大小、一律放过」。
+  // 那条断言**本身就是 bug**——真机上坏掉的恰恰是老副本（下载中断、被覆盖），
+  // 而老副本没有 sidecar。现在没有 sidecar 就现算一次真哈希（结果缓存到本会话），
+  // 所以坏内容必须被抓出来。
+  //
+  // 本条测的是「好内容在没 sidecar 时也能判就绪」；坏内容由下一条测。
+  const spec = ASSETS.editor.files[0];
+  const store = memStore({ [spec.name]: fakeBuf(spec.bytes) });   // 没有 shas ⇒ head 不带 sha256
+  const pack = createCapabilityPack({ store, fetchImpl: fakeFetch() });
+  const s = await pack.status();
+  assert.equal(s.editor.ready, true, '内容正确时（现算哈希对得上）应判就绪');
+});
+
+test('★ 没有 sidecar 的老副本：现算哈希也要抓出坏内容', async () => {
+  // 这是真机上最可能的情形：文件是旧版本下载的（那时还没 sidecar），
+  // 内容却在某次中断/覆盖里坏了。只有大小 + 现算哈希能抓住它。
+  const spec = ASSETS.editor.files[0];
+  // 清单登记的指纹是「全零字节」的（见文件开头的装置）。
+  // 这里放一份**非全零**但长度正确的字节 ⇒ 现算哈希必然对不上 ⇒ 判坏。
+  // （第一版写成了两份全零字节，改来改去内容没变，测不出东西。）
+  const bad = new Uint8Array(spec.bytes).fill(7);
+  const store = memStore({ [spec.name]: bad });      // head 不带 sha256
+  const pack = createCapabilityPack({ store, fetchImpl: fakeFetch() });
+  const s = await pack.status();
+  assert.equal(s.editor.ready, false, '没 sidecar 时也要靠现算哈希判出内容坏');
+  assert.equal(s.editor.missing[0].reason, 'content');
+});
+
+test('★ download 遇到「大小对但内容坏」的旧副本会重下，不会 skip', async () => {
+  const spec = ASSETS.editor.files[0];
+  const store = memStore(
+    { [spec.name]: fakeBuf(spec.bytes) },
+    { [spec.name]: '0'.repeat(64) },                            // 坏指纹
+  );
+  const pack = createCapabilityPack({ store, fetchImpl: fakeFetch() });
+  await pack.download('editor');
+  assert.ok(store.shas.get(spec.name) !== '0'.repeat(64), '没重下（指纹还是坏的）');
+  const s = await pack.status({ fresh: true });
+  assert.equal(s.editor.ready, true, '重下之后应当就绪');
+});
+
+test('★ 坏副本重下之后必须变就绪（内容缓存要作废）', async () => {
+  // 2026-10-31 浏览器实测：判出内容坏 → 点下载重下 → 仍然判坏。
+  // 根因是 contentMemo 里留着上一次现算的旧哈希，put 之后没作废。
+  const spec = ASSETS.editor.files[0];
+  const bad = new Uint8Array(spec.bytes).fill(7);
+  const store = memStore({ [spec.name]: bad });        // 无 sidecar 的坏副本
+  const pack = createCapabilityPack({ store, fetchImpl: fakeFetch() });
+
+  const s1 = await pack.status();
+  assert.equal(s1.editor.ready, false, '坏副本应先被判坏');
+
+  await pack.download('editor');                       // 走 fakeFetch（返回全零＝清单登记的内容）
+  const s2 = await pack.status({ fresh: true });
+  assert.equal(s2.editor.ready, true, '重下之后必须就绪（contentMemo 要随 put 作废）');
 });
 
 test('★ 防环①：status() 是纯读——不写存储、不触发订阅回调', async () => {

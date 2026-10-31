@@ -57,9 +57,17 @@ export const ASSETS = {
     hint: '下载后公式可以点击编辑',
     bytes: 843924,
     files: [
-      // `bytes` 必须逐个文件给准：size 校验是「文件在不在」的唯一硬判据
+      // `bytes` 必须逐个文件给准：size 校验是「文件在不在」的**硬判据**
       // （浏览器不保证持久，只能靠大小对账）。
-      { path: 'assets/mathlive/mathlive-browser.min.js', name: 'mathlive-browser.min.js', bytes: 843924 },
+      // `sha256` 是「内容对不对」的第二层判据——2026-10-31 加：实测一个 843924
+      // 字节全零的文件能骗过 size 校验，于是 MathLive 载入失败而界面显示「已下载」。
+      // 由 `zreflect/measure_edu.py`（或手工 sha256sum）在资产更新时同步。
+      {
+        path: 'assets/mathlive/mathlive-browser.min.js',
+        name: 'mathlive-browser.min.js',
+        bytes: 843924,
+        sha256: '51e9ab5c4739209a2951a550042dcecb99ad3047269c1d791d09d7d613226eae',
+      },
     ],
   },
   engine: {
@@ -67,9 +75,20 @@ export const ASSETS = {
     hint: '下载后可以点「运行」用 Octave 求值',
     bytes: 29632229 + 9712174 + 462821,
     files: [
-      { path: 'assets/octave/octave.wasm', name: 'octave.wasm', bytes: 29632229 },
-      { path: 'assets/octave/octave.data', name: 'octave.data', bytes: 9712174 },
-      { path: 'assets/octave/octave.js', name: 'octave.js', bytes: 462821 },
+      // 三个 sha256 取自上游 Release 的 SHA256SUMS.json（tag wasm32-11.3.0-1ed3e528）。
+      // 上游就是按这三条发的版，逐字节相同——用它当内容判据比分大小可靠得多。
+      {
+        path: 'assets/octave/octave.wasm', name: 'octave.wasm', bytes: 29632229,
+        sha256: '1ed3e528561e44750200e9a862bb410c381d639e19f8079a94270b38c9fa6b00',
+      },
+      {
+        path: 'assets/octave/octave.data', name: 'octave.data', bytes: 9712174,
+        sha256: 'f250530ae5abe37869d08ff214f91de6ee8a6acc72585a281ca2cd8779d61ac3',
+      },
+      {
+        path: 'assets/octave/octave.js', name: 'octave.js', bytes: 462821,
+        sha256: 'caac68bf6201585928cdcc39b69ad20f00370bf810770931dd04f5518881154c',
+      },
     ],
   },
 };
@@ -92,6 +111,27 @@ export function deriveMode(s) {
  * @param {string} [deps.root]        站点根（默认从 <html data-root> 取）
  * @param {object} [deps.fetchImpl]   fetch 实现（测试注入）
  */
+/**
+ * 算一份字节的 sha256（十六进制小写）。
+ *
+ * ⚠️ 必须是**模块级**函数：能力包（createCapabilityPack）与 OPFS 存储
+ * （createOpfsStore）都要用它。2026-10-31 它原本嵌在 createOpfsStore 里，
+ * 于是能力包那边调用时抛 ReferenceError，又被 try/catch 当成「算不出来」
+ * 静默放过——坏副本因此一路被判成「已就绪」。
+ *
+ * crypto.subtle 只在安全上下文（https / localhost）可用。取不到就返回 null，
+ * 调用方据此**不做内容校验**而不是判失败——功能不该因为校验手段缺失而不可用。
+ */
+async function sha256Hex(buf) {
+  try {
+    if (!(globalThis.crypto && globalThis.crypto.subtle)) return null;
+    const d = await globalThis.crypto.subtle.digest('SHA-256', buf);
+    return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  } catch (e) {
+    return null;
+  }
+}
+
 export function createCapabilityPack(deps = {}) {
   const store = deps.store;
   if (!store) throw new Error('capability-pack: 需要注入 store');
@@ -147,16 +187,57 @@ export function createCapabilityPack(deps = {}) {
     fire(state);
   }
 
-  /** 读单个资产在存储里的实际情况（纯读：不写、不发通知）。 */
+  /**
+   * 读单个资产在存储里的实际情况（纯读：不写、不发通知）。
+   *
+   * 判据三层，从便宜到贵：
+   *   ① 文件不存在 ⇒ missing
+   *   ② 大小不等于清单字节数 ⇒ size（**硬判据**，唯一无条件成立的）
+   *   ③ 内容对不对：
+   *      · sidecar 有指纹 ⇒ 比对（便宜，只读几十字节）
+   *      · sidecar 没有 ⇒ **现算一次真哈希**（贵：要读整个文件）
+   *
+   * 为什么③要现算：老版本下载的文件没有 sidecar，而「旧副本坏掉」
+   * （下载中断、磁盘写坏、被别的东西覆盖）恰恰最可能发生在老副本上。
+   * 只在没有 sidecar 时算，且算完把结果缓存到本会话（`contentMemo`），
+   * 所以打开面板最多付一次——不是每次 status() 都重算 824 KB。
+   */
+  const contentMemo = new Map();     // name → 实测 sha256（本会话内有效）
+  async function verifyContent(f, info) {
+    if (!f.sha256) return true;                    // 清单没登记指纹 ⇒ 不比
+    if (info.sha256) return info.sha256 === f.sha256;  // 有 sidecar ⇒ 便宜路径
+    const mem = contentMemo.get(f.name);
+    if (mem) return mem === f.sha256;              // 本会话算过
+    // 现算：让 store 读整份字节。store 没有 readBytes 就跳过（不做假断言）。
+    if (typeof store.readBytes !== 'function') return true;
+    try {
+      const buf = await store.readBytes(f.name);
+      const sha = await sha256Hex(buf);
+      if (!sha) return true;                       // 算不出来（非安全上下文）⇒ 不比
+      contentMemo.set(f.name, sha);
+      return sha === f.sha256;
+    } catch (e) {
+      return true;                                 // 读失败当作「无法判定」，不判坏
+    }
+  }
+
   async function inspectAsset(name) {
     const spec = ASSETS[name];
     if (!spec) throw new Error(`未知资产：${name}`);
     const present = [];
     const missing = [];
     for (const f of spec.files) {
-      const info = await store.head(f.name);     // 纯读：只问「有没有、多大」
-      if (info && info.bytes === f.bytes) present.push({ ...f, bytes: info.bytes });
-      else missing.push(f);
+      const info = await store.head(f.name);     // 纯读：只问「有没有、多大、指纹」
+      if (!info) { missing.push({ ...f, reason: 'missing' }); continue; }
+      if (info.bytes !== f.bytes) {
+        missing.push({ ...f, reason: 'size', actual: info.bytes });
+        continue;
+      }
+      if (!(await verifyContent(f, info))) {
+        missing.push({ ...f, reason: 'content', actual: info.bytes });
+        continue;
+      }
+      present.push({ ...f, bytes: info.bytes });
     }
     return {
       name,
@@ -210,9 +291,15 @@ export function createCapabilityPack(deps = {}) {
         const root = deps.root != null ? deps.root : '';
         for (const f of spec.files) {
           const existing = await store.head(f.name);
-          if (existing && existing.bytes === f.bytes) {
+          // ⚠️ 跳过判据必须与 inspectAsset **完全一致**——两处各写一套必然漂移。
+          // 2026-10-31 实测：inspectAsset 现算哈希能判出坏副本，download 这里却
+          // 「没 sidecar 就当内容对」于是跳过 ⇒ 用户点了下载也没重下，一直卡在只读。
+          // 现在统一走 verifyContent（同一份内容缓存、同一套判定）。
+          const sameSize = !!(existing && existing.bytes === f.bytes);
+          const sameContent = sameSize ? await verifyContent(f, existing) : false;
+          if (sameSize && sameContent) {
             if (o.onProgress) o.onProgress({ name, file: f.name, done: true, skipped: true });
-            continue;                                  // 已在位 ⇒ 不重下
+            continue;                                  // 已在位且内容对 ⇒ 不重下
           }
           const url = root + f.path;
           const res = await (deps.fetchImpl || fetch)(url);
@@ -222,6 +309,9 @@ export function createCapabilityPack(deps = {}) {
             throw mkErr('SIZE_MISMATCH', `${f.name} 大小不符：期望 ${f.bytes}，实收 ${buf.byteLength}`);
           }
           await store.put(f.name, buf);
+          // 新字节落地 ⇒ 该文件的内容缓存作废（否则下一次 status 还拿旧哈希比对，
+          // 重下完了仍判「内容坏」——2026-10-31 浏览器实测到这条）。
+          contentMemo.delete(f.name);
           if (o.onProgress) o.onProgress({ name, file: f.name, done: true, bytes: buf.byteLength });
         }
         cached = null;                                  // 状态变了 ⇒ 缓存失效
@@ -239,7 +329,10 @@ export function createCapabilityPack(deps = {}) {
     async remove(name) {
       const spec = ASSETS[name];
       if (!spec) throw new Error(`未知资产：${name}`);
-      for (const f of spec.files) await store.delete(f.name);
+      for (const f of spec.files) {
+        await store.delete(f.name);
+        contentMemo.delete(f.name);                     // 删掉了，内容缓存也作废
+      }
       cached = null;
       const state = await pack.status({ fresh: true });
       broadcast(state);
@@ -310,17 +403,51 @@ export function createOpfsStore(dirName = 'capability-pack') {
     return dirPromise;
   }
 
+  // ── 内容指纹 sidecar ───────────────────────────────────────────────
+  //
+  // 为什么需要：`head()` 只比大小，抓不住「大小对但内容坏了」——真实情形包括
+  // 下载中途被打断后留下同长度垃圾、磁盘写坏、别的东西覆盖了同名文件。
+  // 2026-10-31 实测：预置一个 843924 字节全零的文件，`head()` 判定「已就绪」，
+  // 于是 MathLive 载入失败，而界面上显示「已下载」。
+  //
+  // 做法：`put()` 时算 sha256 写进 `<name>.sha256`（小文本文件），`head()` 只
+  // **读** sidecar 比对，不重算——重算要对 824 KB 做 sha256，每次 status() 都算
+  // 会让打开面板明显卡顿。sidecar 缺失（老版本下载的）就退化成只比大小，
+  // 不做假断言。
+  const sidecarOf = (name) => name + '.sha256';
+
+  async function readSidecar(dir, name) {
+    try {
+      const fh = await dir.getFileHandle(sidecarOf(name));
+      const f = await fh.getFile();
+      const t = (await f.text()).trim();
+      return /^[0-9a-f]{64}$/.test(t) ? t : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   return {
-    /** 纯读：只问「有没有、多大」，不创建任何东西。 */
+    /** 纯读：只问「有没有、多大、指纹对不对」，不创建任何东西。 */
     async head(name) {
       try {
         const dir = await getDir();
         const fh = await dir.getFileHandle(name);
         const file = await fh.getFile();
-        return { bytes: file.size };
+        const out = { bytes: file.size };
+        const sha = await readSidecar(dir, name);
+        if (sha) out.sha256 = sha;      // 有 sidecar 才带指纹，没有就只比大小
+        return out;
       } catch (e) {
         return null;
       }
+    },
+    /** 读整份字节（内容校验用）。只在没有 sidecar 时被调一次。 */
+    async readBytes(name) {
+      const dir = await getDir();
+      const fh = await dir.getFileHandle(name);
+      const file = await fh.getFile();
+      return new Uint8Array(await file.arrayBuffer());
     },
     async put(name, buf) {
       const dir = await getDir();
@@ -328,12 +455,22 @@ export function createOpfsStore(dirName = 'capability-pack') {
       const w = await fh.createWritable();
       await w.write(buf);
       await w.close();
+      // 写指纹。算不出来（非安全上下文）就不写 sidecar——head() 会退化成只比大小。
+      const sha = await sha256Hex(buf);
+      if (sha) {
+        try {
+          const sfh = await dir.getFileHandle(sidecarOf(name), { create: true });
+          const sw = await sfh.createWritable();
+          await sw.write(sha);
+          await sw.close();
+        } catch (e) { /* sidecar 写失败不影响主文件；只是少了内容校验 */ }
+      }
     },
     async delete(name) {
-      try {
-        const dir = await getDir();
-        await dir.removeEntry(name);
-      } catch (e) { /* 不存在即视为已删 */ }
+      const dir = await getDir().catch(() => null);
+      if (!dir) return;
+      try { await dir.removeEntry(name); } catch (e) { /* 不存在即视为已删 */ }
+      try { await dir.removeEntry(sidecarOf(name)); } catch (e) { /* 同上 */ }
     },
   };
 }
