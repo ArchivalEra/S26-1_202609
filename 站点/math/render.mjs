@@ -315,10 +315,28 @@ export function createKatexRenderer(katex) {
 
       // 把 IR 的纯文本投影烘进 aria-label / data-math-plain（与 MathLive 版同一套约定）：
       // 读屏念人话、AI 与搜索索引拿同一份文本，都不必从产物里剥 LaTeX。
+      //
+      // 同时烘 `data-math-tex` = **作者原始写的 LaTeX**（`expr.source`，不含 `$`）。
+      // 为什么不重建：用 irToTex 从 IR 反推会把 `U_{ab}` 拆成 `U_{{a b}}`（实测），
+      // 下标里的空白与嵌套变了，意思也可能变；而编辑器的初始值必须是作者亲手写的
+      // 那串——MathLive 能吃、用户改起来也认得出。
+      // 这个属性是能力包「点公式进 MathLive 编辑」的**唯一数据来源**：
+      // data-math-plain 是纯文本投影（`x1,x2,x3` 这种），喂进编辑器会当场改错公式。
       const plain = expr.plainHint || '';
+      const srcTex = expr.source || '';
+      const attrs = [];
       if (plain) {
-        html = html.replace(/^<span class="katex"/,
-          `<span class="katex" role="math" aria-label="${escapeAttr(plain)}" data-math-plain="${escapeAttr(plain)}"`);
+        attrs.push('role="math"');
+        attrs.push(`aria-label="${escapeAttr(plain)}"`);
+        attrs.push(`data-math-plain="${escapeAttr(plain)}"`);
+      }
+      if (srcTex) attrs.push(`data-math-tex="${escapeAttr(srcTex)}"`);
+      if (attrs.length) {
+        // ⚠️ 不能锚在行首（`^`）：display 模式下 KaTeX 产的是
+        // `<span class="katex-display"><span class="katex">…`，`.katex` 在第二层，
+        // 锚行首就一个属性都注不上（2026-10-31 实测：38 条显示式公式全缺 tex）。
+        // `class="katex"` 带闭引号，所以不会误中 `class="katex-display"`。
+        html = html.replace('<span class="katex"', `<span class="katex" ${attrs.join(' ')}`);
       }
       return { html, tex, problems, rewrites };
     },

@@ -2044,3 +2044,35 @@ body[data-pack-mode="computable"] .article-content .ML__latex:hover {
   white-space: pre-wrap;
   color: var(--md-sys-color-outline);
 }
+
+/* 编辑器里的实时预览（2026-10-31）：用 **KaTeX** 重排，不是 MathLive 自己的渲染。
+   为什么：读者最终看到的就是 KaTeX 版本，预览必须预览那个版本——MathLive 的
+   拉伸括号由小片拼成、接缝有亚像素缝（站长 2026-10-30 定案），
+   拿它当预览会「编辑时好看、确认后变样」。 */
+.pack-editor-preview {
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.8rem;
+  min-height: 2.5rem;
+  border: 1px dashed var(--md-sys-color-outline-variant);
+  border-radius: 8px;
+  background: var(--md-sys-color-surface);
+  overflow-x: auto;
+  font-size: 1.05rem;
+}
+.pack-editor-preview .katex-display { margin: 0.2rem 0; }
+
+/* 编辑器打不开时的原因提示（不 console 里闷着）。 */
+.pack-editor-error {
+  position: fixed;
+  left: 50%;
+  bottom: 1.5rem;
+  transform: translateX(-50%);
+  z-index: 3000;
+  max-width: min(90vw, 40rem);
+  padding: 0.7rem 1rem;
+  border-radius: 10px;
+  background: var(--md-sys-color-error-container, #ffdad6);
+  color: var(--md-sys-color-on-error-container, #410002);
+  font-size: 0.85rem;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 18%);
+}
