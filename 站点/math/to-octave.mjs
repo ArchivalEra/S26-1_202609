@@ -266,13 +266,28 @@ function emitEnv(n) {
       const cells = [];
       for (const cell of (row || [])) {
         const nodes = Array.isArray(cell) ? cell : [cell];
-        const bits = [];
+        // ⚠️ 单元格内的片段**不能一律用空格拼**（2026-10-31 站长实测
+        // `\begin{vmatrix}2&-1&1\\...` 报 `vertical dimensions mismatch (1x2 vs 1x3)`）。
+        //
+        // 原因：`-1` 在 IR 里是**两个节点**（`op '-'` + `num '1'`），用空格拼成
+        // `- 1`，Octave 把它读作「减 1」而不是「负一」——于是 `2 - 1 1` 被当成
+        // `[2-1, 1]` 两个元素，该行少一列，与别的行列数不符。
+        //
+        // 正确拼法照 Octave 的列分隔规则：只有**相邻两个操作数之间**才需要空格
+        // （否则 `2 3` 会粘成 `23`）；运算符两侧**不留空格**。
+        let cellCode = '';
+        let prevWasOperand = false;
         for (const node of nodes) {
           const r = emit(node);
           if (!r.ok) return r;
-          bits.push(r.code);
+          const isOperand = node.kind === 'num' || node.kind === 'sym' || node.kind === 'env'
+            || node.kind === 'root' || node.kind === 'frac' || node.kind === 'script';
+          // 只在「前一个是操作数 且 当前也是操作数」时补空格
+          if (cellCode && prevWasOperand && isOperand) cellCode += ' ';
+          cellCode += r.code;
+          prevWasOperand = isOperand;
         }
-        cells.push(bits.join(' '));
+        cells.push(cellCode || '0');
       }
       parts.push(cells.join(' '));
     }
