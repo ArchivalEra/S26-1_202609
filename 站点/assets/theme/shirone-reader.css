@@ -2098,6 +2098,21 @@ body[data-pack-mode="computable"] .article-content .ML__latex:hover {
   border-radius: 8px;
   padding: 0.5rem 0.7rem;
   background: var(--md-sys-color-surface-container-low);
+  /* ⚠️ 必须显式设 color（2026-10-31 站长报「深色模式 mathlive 进去字是黑的」）。
+     math-field 是自定义元素，内部 shadow DOM 的样式从宿主继承 —— MathLive 的
+     `:host` 只写了 display，**没有** color，所以它吃浏览器默认的黑色。
+     本站的深色是 `data-theme="dark"` 手动切的，而 MathLive 只认
+     `@media (prefers-color-scheme: dark)`，两者不同步 —— 于是系统是浅色、页面
+     切到深色时，背景变深、字还是黑的，完全看不清。
+     这里显式把主题的前景色继承下去，让它跟页面同色。 */
+  color: var(--md-sys-color-on-surface);
+  /* 光标与选区也跟着主题走，否则深色下光标是浅色主题那份蓝、几乎看不见。 */
+  --caret-color: var(--md-sys-color-primary);
+  --selection-background-color: color-mix(in srgb, var(--md-sys-color-primary) 30%, transparent);
+  --selection-color: var(--md-sys-color-on-surface);
+  /* 强制 math-field 内部按浅色渲染 —— 它的暗色规则依赖系统偏好，不可靠；
+     真正的深色由上面继承的 color 决定。 */
+  color-scheme: light;
 }
 .pack-editor-actions {
   display: flex;
@@ -2125,6 +2140,9 @@ body[data-pack-mode="computable"] .article-content .ML__latex:hover {
   background: var(--md-sys-color-surface);
   overflow-x: auto;
   font-size: 1.05rem;
+  /* KaTeX 的字形用 currentColor 画 —— 不显式给 color 的话，深色模式里
+     预览也是黑的（与 math-field 同一类缺陷）。 */
+  color: var(--md-sys-color-on-surface);
 }
 .pack-editor-preview .katex-display { margin: 0.2rem 0; }
 

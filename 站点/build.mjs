@@ -2297,10 +2297,15 @@ for (const relPath of TARGET_FILES) {
             if (typeof window.OCTAVE !== 'function') {
               throw new Error('octave.js 加载了但没挂上 window.OCTAVE');
             }
-            const out = { lines: [] };
+            const out = { lines: [], errs: [] };
             const M = await window.OCTAVE({
               print: (t) => { out.lines.push(String(t)); },
-              printErr: () => {},          // 启动期有几条缺可选资产包的 warning，丢掉
+              // stderr 必须收下来（2026-10-31 站长实测报「Octave 返回 rc=2」，
+              // 界面上没有任何说明——因为这里原本把它整个丢掉了）。
+              // 上游 002 §3 坑③ 说启动期会有几条「fft.m shadows a built-in」
+              // 之类的 warning，不影响数值；所以我们不直接往 stdout 混，
+              // 而是**单独收集**，只在 rc≠0 时拼进错误消息。
+              printErr: (t) => { out.errs.push(String(t)); },
               locateFile: (f) => OCT_BASE + f,
             });
             // ★ 上游 002 §3 坑①：必须先启动解释器，否则 null function
@@ -2344,11 +2349,16 @@ for (const relPath of TARGET_FILES) {
             return { ok: false, error: '计算内核启动失败：' + ((e && e.message) || e) };
           }
           eng.lines.length = 0;
+          eng.errs.length = 0;
           try {
             const rc = await eng.evalAsync('disp(' + code + ')');
             const out = eng.lines.join('').trim();
             if (rc !== 0) {
-              return { ok: false, error: out ? out : ('Octave 返回 rc=' + rc), code };
+              // rc≠0 时 Octave 的报错在 stderr 里（「error: ...」）。
+              // 把 stderr 摆出来，读者才知道是「语法错」「未定义函数」还是别的。
+              const err = eng.errs.join('').trim();
+              const msg = err || out || ('Octave 返回 rc=' + rc + '（没有给出错误信息）');
+              return { ok: false, error: msg, code, rc };
             }
             return { ok: true, output: out || '(无输出)', code };
           } catch (e) {
