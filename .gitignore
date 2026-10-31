@@ -408,6 +408,8 @@
 !/站点/plugins/formula-editable.test.mjs
 !/站点/plugins/pack-popover.test.mjs
 !/站点/plugins/editor-contrast.test.mjs
+!/站点/plugins/formula-cells.mjs
+!/站点/plugins/formula-cells.test.mjs
 !/站点/plugins/to-octave.test.mjs
 !/站点/plugins/template-backtick.test.mjs
 !/站点/math/to-octave.mjs

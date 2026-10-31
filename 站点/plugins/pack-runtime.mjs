@@ -42,6 +42,38 @@ var state = { mode: "readonly", editor: null, engine: null };
 var pack = null;
 var mathliveLoading = null;
 
+/* ── 两个开关（2026-10-31 站长定案）────────────────────────────────
+ *
+ * 「允许编辑和计算公式」：打开后每个公式左上角出播放按钮、点公式本体可原地编辑。
+ * 「自动计算公式」：打开后可见的公式**自动**出结果（没有播放按钮也要算）。
+ *
+ * 两者互相独立：只允许编辑不开自动计算 ⇒ 读者手动点播放；两个都开 ⇒ 笔记本式，
+ * 改完立刻出结果。只开自动计算不开编辑 ⇒ 只读公式也自动出结果（有用：
+ * 复习时想一眼看到所有能算的值）。
+ *
+ * **必须持久化**（站长原话「我希望记忆功能发挥作用」）：存 localStorage，
+ * 刷新与 SPA 跳页都记得。之前「两个都下载了还得点一下按钮才能编辑」就是
+ * 因为没有任何持久状态 —— 每次进页面都从「什么都没开」开始。
+ */
+var PREFS_KEY = "pack-prefs";
+var prefs = { allowEdit: false, autoCompute: false };
+try {
+  var rawPrefs = localStorage.getItem(PREFS_KEY);
+  if (rawPrefs) {
+    var parsed = JSON.parse(rawPrefs);
+    prefs.allowEdit = !!parsed.allowEdit;
+    prefs.autoCompute = !!parsed.autoCompute;
+  }
+} catch (e) { /* 隐私模式读不到就保持默认 */ }
+
+function savePrefs() {
+  try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch (e) {}
+}
+
+/* 单元格管理器（深模块见 plugins/formula-cells.mjs）。装配层只做三件事：
+   注入 compute、告诉它「能不能编辑」、SPA 换页时 attach/detach。 */
+var cells = null;
+
 function $(id) { return document.getElementById(id); }
 function root() {
   return (document.documentElement.getAttribute("data-root") || "./");
@@ -430,6 +462,17 @@ function init() {
   var pop = $(S.popover);
   if (!toggle || !pop) return;
 
+  // 开关：先绑、再把 DOM 刷成持久化值。
+  // ⚠️ 顺序：bindSwitches 里读 checkbox.checked，所以必须先 renderSwitches
+  // 让 DOM 与 prefs 一致，否则读者看到的是「关」而状态是「开」。
+  renderSwitches();
+  bindSwitches();
+
+  // 页面加载就查一次状态并把单元格装上（2026-10-31 修「必须点按钮才能编辑」）。
+  // 这一句是「记忆功能」真正生效的地方：prefs 从 localStorage 恢复，
+  // 资产状态查一次，两者都到位 ⇒ 公式立刻可编辑、可算，读者什么都不用点。
+  syncOnce();
+
   toggle.addEventListener("click", function (ev) {
     ev.stopPropagation();
     var open = pop.hidden;
@@ -570,7 +613,19 @@ function syncOnce() {
     setDiag("storeEditor", desc(s.editor));
     setDiag("storeEngine", desc(s.engine));
     render();
-    if (s.editor && s.editor.ready) ensureEditor();
+    renderSwitches();
+    // 资产到位就**自动**载入编辑器并挂上单元格——不再等读者点一下按钮。
+    //
+    // 站长原话：「即使两个部件都下载了，进了页面也编辑不了公式，必须点一下那个
+    // 按钮才能来编辑，我希望记忆功能发挥作用」。根因就是激活只发生在「点开面板」
+    // 那条路径上（syncOnce 只在打开发面板时被调）。现在：
+    //   · 页面初始化时无条件 syncOnce 一次（见 init）；
+    //   · 状态到位 ⇒ ensureEditor() 载入 MathLive + mountCells() 挂单元格；
+    //   · 「允许编辑」开关也持久化，两者合起来 = 进页面就能编辑。
+    if (s.editor && s.editor.ready) {
+      ensureEditor();
+      mountCells();
+    }
   }).catch(function (e) {
     setDiag("storeEditor", "失败：" + ((e && e.message) || e));
     diag.lastError = "查询存储状态出错：" + ((e && e.message) || e);
@@ -584,9 +639,110 @@ window.__initPackRuntime = function (packInstance) {
   init();
 };
 
+/* ════════════════════════════════════════════════════════════════
+   公式单元格装配（2026-10-31）
+   ════════════════════════════════════════════════════════════════
+ *
+ * 三件事：
+ *   ① 两个开关的绑定与持久化；
+ *   ② 把 「plugins/formula-cells.mjs」 接进来（注入 compute、canEdit）；
+ *   ③ 接 SPA reset 钩子：换页后 attach 新正文、detach 旧的。
+ *
+ * ⚠️ **这里不能自己造 compute**：真实现是页面内联脚本里的
+ * 「window.__packCompute」（它管 Octave 实例生命周期）。本层只转发。
+ */
+
+function ensureCells() {
+  if (cells) return cells;
+  if (typeof window.__createFormulaCells !== "function") return null;
+  cells = window.__createFormulaCells({
+    compute: function (tex) {
+      if (typeof window.__packCompute !== "function") {
+        return Promise.resolve({ ok: false, error: "计算适配器没装好" });
+      }
+      return window.__packCompute(tex);
+    },
+    // 能不能编辑 = 编辑器资产就位 **且** 读者打开了「允许编辑和计算」开关
+    canEdit: function () {
+      return !!(prefs.allowEdit && state.editor && state.editor.ready && window.customElements
+        && window.customElements.get("math-field"));
+    },
+    // 首次要编辑时确保 MathLive 已载入（懒加载只发生一次）
+    onNeedEditor: function () { try { ensureEditor(); } catch (e) {} },
+    onEditToggle: function (on) {
+      document.body.setAttribute("data-fcell-editing", on ? "1" : "0");
+    },
+  });
+  return cells;
+}
+
+/** 按当前状态把单元格装上（幂等）。 */
+function mountCells() {
+  var c = ensureCells();
+  if (!c) return;
+  c.attach(document.querySelector(".article-content") || document.body);
+  c.setAutoCompute(!!prefs.autoCompute);
+}
+
+/** 把开关的 DOM 状态刷成 prefs（不触发 change 事件）。 */
+function renderSwitches() {
+  var ae = $("pack-allow-edit");
+  if (ae) ae.checked = !!prefs.allowEdit;
+  var ac = $("pack-auto-compute");
+  if (ac) ac.checked = !!prefs.autoCompute;
+  // 「允许编辑」需要编辑器资产就位；没下载时禁用并给提示（别让读者以为开关坏了）
+  if (ae) {
+    var ready = !!(state.editor && state.editor.ready);
+    ae.disabled = !ready;
+    var hint = ae.parentNode && ae.parentNode.querySelector(".pack-switch-hint");
+    if (hint) {
+      hint.textContent = ready
+        ? "公式旁出播放按钮，点公式本体可原地编辑"
+        : "需要先下载「公式编辑器」";
+    }
+  }
+}
+
+function bindSwitches() {
+  var ae = $("pack-allow-edit");
+  if (ae && !ae.__packBound) {
+    ae.__packBound = true;
+    ae.addEventListener("change", function () {
+      prefs.allowEdit = !!ae.checked;
+      savePrefs();
+      // 打开编辑能力 ⇒ 立刻挂上单元格（不进面板、不刷新就能编辑）
+      if (prefs.allowEdit) { try { ensureEditor(); } catch (e) {} mountCells(); }
+      renderSwitches();
+    });
+  }
+  var ac = $("pack-auto-compute");
+  if (ac && !ac.__packBound) {
+    ac.__packBound = true;
+    ac.addEventListener("change", function () {
+      prefs.autoCompute = !!ac.checked;
+      savePrefs();
+      var c = ensureCells();
+      if (c) c.setAutoCompute(prefs.autoCompute);
+      renderSwitches();
+    });
+  }
+}
+
+/* SPA 换页钩子：换页前拆单元格、换页后重建。
+ * 为什么必须拆：SPA 会把 .article-content 整块换掉，旧单元格节点随之消失，
+ * 但 cells Map 与 IntersectionObserver 还指着它们 —— 不清就是内存泄漏，
+ * 还会在已脱离文档的节点上跑计算（白烧 CPU、算完没人看得到）。 */
+window.__packCellsReset = function () {
+  if (cells) cells.detach();
+  mountCells();
+};
+
 window.__packRuntime = {
   status: function () { return pack ? pack.status() : Promise.resolve(state); },
   syncOnce: syncOnce,
   get mode() { return state.mode; },
+  get prefs() { return { allowEdit: prefs.allowEdit, autoCompute: prefs.autoCompute }; },
+  /** 测试/调试用：手动重挂单元格。 */
+  remountCells: mountCells,
 };
 })();`;

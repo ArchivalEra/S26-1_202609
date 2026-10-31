@@ -151,6 +151,9 @@ function navigate(rawUrl, hash, push, opts4) {
     try { if (window.__glossaryReset) window.__glossaryReset(); } catch (e) {}
     try { if (window.__readerRescan) window.__readerRescan(); } catch (e) {}
     try { if (window.__disclosureOpen) window.__disclosureOpen(hash); } catch (e) {}
+    // 能力包的公式单元格（2026-10-31）：换页后正文是全新的 DOM，要重新挂单元格；
+    // 旧的那些节点已随 .article-content 一起消失，必须先在换页前 detach（防泄漏）。
+    try { if (window.__packCellsReset) window.__packCellsReset(); } catch (e) {}
   }).catch(function (err) {
     inflight = null;
     if (err && err.name === "AbortError") return;

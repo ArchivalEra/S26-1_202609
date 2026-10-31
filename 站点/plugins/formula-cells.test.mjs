@@ -1,0 +1,74 @@
+// 公式单元格（`站点/plugins/formula-cells.mjs`）的契约闸门。
+//
+// ## 这个模块承担什么
+//
+// 站长 2026-10-31 定案：从「点开覆盖层才能用」改成**页内笔记本式**——
+// 每个公式旁边出播放按钮、点公式本体原地编辑、结果出在公式下方独立区域。
+//
+// 它是个**深模块**：接口只有 attach/detach/setAutoCompute/refresh，
+// 但内部要管单元格生命周期、MathLive 实例、IntersectionObserver（只算可见）、
+// 结果缓存（同一串不重算）、SPA 换页拆除。所以它值得单独守。
+//
+// ## 三条不变量（改这个模块的人必须知道）
+//
+// ① **MCP 读面不动**：绝不替换/删除原来的 `.katex` 节点，也不改它的
+//    `data-math-plain` / `data-math-tex`。单元格是**包在外层**的容器。
+// ② **SPA 安全**：`detach()` 之后不残留 document 级监听与观察者。
+// ③ **不重复算**：同一串 LaTeX 只算一次（自动计算时滚动会反复触发）。
+//
+// ## 这条闸门测什么
+//
+// 测**结构**（源码里必须有的写法），不测行为——行为要真浏览器（Playwright）
+// 才能验，那是另一层。结构断言的价值在于：改动这个模块的人若破坏上面三条
+// 不变量里的任何一条，闸门立刻红。
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const SRC = readFileSync(path.join(HERE, 'formula-cells.mjs'), 'utf8');
+
+test('不变量①：绝不删除或替换原公式节点（MCP 读面）', () => {
+  // 编辑时原 .katex 只能 display:none，不能 remove / replaceWith / innerHTML 清空
+  assert.ok(!/anchor\.remove\(\)/.test(SRC), '不许 remove 原公式节点');
+  assert.ok(!/replaceWith\(/.test(SRC), '不许 replaceWith 原公式节点');
+  assert.ok(!/anchor\.innerHTML\s*=/.test(SRC), '不许改原公式节点的 innerHTML');
+  assert.match(SRC, /anchor\.style\.display\s*=\s*['"]none['"]/,
+    '编辑态应把原节点 display:none 藏起来（而不是删掉）');
+});
+
+test('不变量②：detach 必须断开观察者并清空 Map（SPA 换页防泄漏）', () => {
+  const fn = SRC.slice(SRC.indexOf('function detach()'), SRC.indexOf('function destroy()'));
+  assert.match(fn, /io\.disconnect\(\)/, 'detach 没断开 IntersectionObserver');
+  assert.match(fn, /cells\.clear\(\)/, 'detach 没清空 cells Map（旧节点引用会留着）');
+  assert.match(fn, /clearTimeout/, 'detach 没清排队定时器');
+});
+
+test('不变量③：同一串 LaTeX 不重复算', () => {
+  assert.match(SRC, /lastComputedFor/, '没有「上次算的是哪串」的记录');
+  assert.match(SRC, /cell\.lastComputedFor === tex/, '没有跳过同串重算的判据');
+});
+
+test('自动计算只算可见的（IntersectionObserver，不是整页遍历）', () => {
+  assert.match(SRC, /new IntersectionObserver\(/, '没建 IntersectionObserver');
+  assert.match(SRC, /rootMargin:/, '没设 rootMargin（滚到位时结果应已就绪）');
+  // 断言它真的按 isIntersecting 过滤，而不是把 entries 全算
+  assert.match(SRC, /if \(!e\.isIntersecting\) continue;/, '没按可见性过滤');
+});
+
+test('自动计算遇到算不了的公式要静默（不把版面铺满红字）', () => {
+  // 2026-10-31 实测：一页 283 条公式里多数含裸变量、算不了；自动计算若把
+  // 「符号没有数值」全部显示出来，可见区 10 条里 8 条红字，比公式本身还吵。
+  assert.match(SRC, /quiet/, '没有 quiet 模式');
+  const fn = SRC.slice(SRC.indexOf('} else if (quiet)'), SRC.indexOf('} else {', SRC.indexOf('} else if (quiet)')));
+  assert.match(fn, /result\.hidden = true/, 'quiet 模式下算不了的结果没有收起');
+});
+
+test('compute 是注入的，不在模块里读全局（node 里能测）', () => {
+  assert.match(SRC, /deps\.compute/, '没从 deps 取 compute');
+  assert.ok(!/window\.__packCompute/.test(SRC),
+    '模块里直接读 window.__packCompute —— 那 node 里不可测，且把装配层的责任漏进来');
+});
