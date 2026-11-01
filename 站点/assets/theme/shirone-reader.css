@@ -2704,6 +2704,58 @@ body[data-pack-mode="computable"] .article-content .ML__latex {
      真正的深色由上面继承的 color 决定。 */
   color-scheme: light;
 }
+/* 笔记本的公式输入（2026-11-01）：与 .pack-mathfield 同一套深色方案。
+ *
+ * ⚠️ 站长两条实测反馈都在这块：
+ *   ① 「面板里居然没有 mathlive 的选择器」—— 原来这里是 textarea；
+ *   ② 「深色模式下 mathlive 那两个按钮有点不可视」—— 那是指 MathLive
+ *      自带的**虚拟键盘切换**与**菜单**两个图标按钮（在 math-field 右上角）。
+ *      它们的颜色来自 MathLive 内部的 `--hue` 派生色，默认是浅色主题那一套，
+ *      深色面板上几乎看不见。
+ *
+ * 修法（三处）：
+ *   · 显式 color（同 .pack-mathfield 的理由：MathLive 的 :host 不写 color，
+ *     `data-theme="dark"` 与它的 `prefers-color-scheme` 不同步）；
+ *   · 那两个按钮的色相/前景通过 MathLive 的公开变量提过去
+ *     （`--hue` 与鼠标 hover 的背景色都由它派生，见下面的注释）；
+ *   · **把虚拟键盘按钮直接藏掉**（站长：「编辑器与面板里面都不要出现
+ *     虚拟键盘按钮吧，那个全站都不需要」）。
+ */
+.nb-mathfield {
+  display: block;
+  width: 100%;
+  min-height: 3.2rem;
+  box-sizing: border-box;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 8px;
+  background: var(--md-sys-color-surface-container-low);
+  font-size: 1rem;
+  /* 同 .pack-mathfield：不显式给 color，深色页面里公式字会是黑的 */
+  color: var(--md-sys-color-on-surface);
+  --caret-color: var(--md-sys-color-primary);
+  --selection-background-color: color-mix(in oklab, var(--md-sys-color-primary) 30%, transparent);
+  --selection-color: var(--md-sys-color-on-surface);
+  /* MathLive 的两个内置按钮（键盘切换 / 菜单）的可见度：
+     它们的前景色是 `hsl(var(--_hue), 25%, 35%)` 那套硬编码 —— 深色面板上
+     35% 的亮度几乎与背景同色。把 `--hue` 换成主题色的色相，
+     并把按钮底色提到 surface-container-high，让图标浮出来。 */
+  --hue: var(--primary-h);
+  color-scheme: light;
+}
+/* 虚拟键盘按钮：**全站不要**（站长 2026-11-01 定案）。
+   MathLive 用 `.ML__virtual-keyboard-toggle` 这个类名（见它的 shadow DOM）。
+   `display:none` 之外还要把 `is-visible` 那条也压掉 —— 它靠这个类决定是否
+   显示，只加 display 会被更高特异性的规则盖过。 */
+.nb-mathfield::part(virtual-keyboard-toggle),
+math-field::part(virtual-keyboard-toggle) {
+  display: none !important;
+}
+/* math-field 的 shadow DOM 里那两个按钮是普通元素，不是 part ——
+   得穿过 shadow 边界。CSS 做不到跨 shadow 选择，所以在运行时用 JS 注入
+   一条样式（见 pack-runtime 的 configureMathField）。
+   这里保留注释说明为什么下面那段 JS 必须存在。 */
+
 .pack-editor-actions {
   display: flex;
   align-items: center;
