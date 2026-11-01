@@ -17,8 +17,13 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parse } from '../math/parser.mjs';
 import { translate } from '../math/to-octave.mjs';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 const tr = (tex) => translate(parse(tex).expr.root);
 
@@ -192,4 +197,32 @@ test('希腊字母不许映射成同名变量（Octave 里它是未定义函数�
     const r = tr(tex);
     assert.equal(r.ok, false, `「${tex}」不该判可算，实际转出「${r.code}」`);
   }
+});
+
+// ══════════════════════════════════════════════════════════════════
+// 2026-11-01 站长：「这一波改动又把矩阵计算干没了，输出是纯数字排序」。
+//
+// 病因在**输出通道**，不在转译：Octave 的 print 回调**一次就是一整行**
+// （实测 `disp([1 2;3 4])` 收到 `1   2   3   4` 一张串、字节里一个换行都没有），
+// 所以 3×3 矩阵在页面上就成了 `1 0 0 0 1 0 0 0 0` —— 读者认不出那是矩阵。
+//
+// 修法：输出走 **mat2str**（把矩阵序列化成 `[1 0 0;0 1 0;0 0 0]`，无换行可吞）。
+// 判据取「build.mjs 的输出通道用 mat2str 而不是 disp」—— 这是结构断言，
+// 因为真跑要 38 MB wasm（不在单元测试里跑）。
+// ══════════════════════════════════════════════════════════════════
+
+test('⑬ 公式计算输出走 mat2str（否则矩阵被 print 拍平成数字串）', () => {
+  const BUILD = readFileSync(path.join(HERE, '../build.mjs'), 'utf8');
+  // __packCompute 的输出必须用 mat2str
+  const seg = BUILD.slice(BUILD.indexOf('window.__packCompute = async'),
+                          BUILD.indexOf('window.__packRunCode'));
+  assert.ok(seg.length > 500, '找不到 __packCompute');
+  assert.match(seg, /disp\(mat2str\(/, '__packCompute 没用 mat2str —— 矩阵会被拍平成数字串');
+  // 顺序判据：mat2str 那条必须**先**出现（首选通道），disp 只能作兜底在后。
+  // 只判「存在」不够 —— 两条都在，谁先谁就是实际走的那条。
+  const iMat = seg.indexOf("disp(mat2str(");
+  const iDisp = seg.indexOf("'disp(' + code + ')");
+  assert.ok(iMat >= 0, '没有 mat2str 通道');
+  assert.ok(iDisp >= 0, '缺少非数值类型的 disp 兜底（字符串/cell/struct 会算不了）');
+  assert.ok(iMat < iDisp, 'mat2str 必须在前（它才是首选通道，disp 只作兜底）');
 });

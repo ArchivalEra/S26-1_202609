@@ -2274,7 +2274,7 @@ for (const relPath of TARGET_FILES) {
             <section class="nb-block">
               <div class="nb-block-head">
                 <span class="nb-block-name">MATLAB</span>
-                <span class="nb-block-hint">直接写代码，几行都行（照 Octave 语法）</span>
+                <span class="nb-block-hint">直接写代码；矩阵用 disp(mat2str(A)) 才有结构</span>
               </div>
               <textarea class="nb-code" id="nb-code" spellcheck="false" rows="4"
                 placeholder="A = [1 2; 3 4];&#10;det(A)&#10;inv(A)"></textarea>
@@ -2558,15 +2558,40 @@ for (const relPath of TARGET_FILES) {
           eng.lines.length = 0;
           eng.errs.length = 0;
           try {
-            // ⚠️ 输出必须走 disp，**不能用 printf**（2026-10-31 实测）：
-            // printf 写的是 C 层 stdout，在 wasm 里**不经过 Emscripten 的 print 回调**，
-            // 于是 rc=0 但 print 汇里什么都没有（实测三条全「(无输出)」）。
-            // disp 才是走 print 的那个通道（上游 002 §3 坑③：stdout 只有一个通道）。
+            // ⚠️ 输出走 **mat2str**，不是 disp（2026-11-01 站长实报「矩阵计算
+            // 又没了，输出是纯数字排序」）。
             //
-            // 矩阵确实会被 disp 平铺成一行（2 -1 1 3 2 1 1 -2 1），那是 Octave
-            // 的既成行为；但**算得对**比排得好看重要，显示层的事不在这里解决。
-            const rc = await eng.evalAsync('disp(' + code + ')');
-            const out = eng.lines.join('').trim();
+            // 两层坑：
+            //   ① printf 写 C 层 stdout，wasm 里不经过 Emscripten 的 print 回调
+            //      ⇒ rc=0 但 print 汇全空（2026-10-31 实测）。
+            //   ② disp 走 print 通道，但 **print 回调里的换行被吞掉** ——
+            //      实测 disp([1 2; 3 4]) 收到的字节是 49,32,32,32,50,…（十进制）
+            //      全是数字与空格，**没有一个换行符**。于是 3×3 矩阵显示成
+            //      1 0 0 0 1 0 0 0 0 一串数字，读者根本认不出那是个矩阵。
+            //
+            // mat2str 把矩阵**序列化成一个保留结构的字符串**：[1 2; 3 4]。
+            // 没有换行可吞，且形态与 Octave 代码一致（读者一眼看出是几乘几）。
+            // 标量也一样干净（5 而不是 ans = 5）。
+            //
+            // 保底：mat2str 对非数值（字符串、cell、struct）会抛错，那时退回
+            // disp —— 宁可显示成一行，也不能因为格式化失败就当「算不了」。
+            let rc = 0;
+            let out = '';
+            try {
+              rc = await eng.evalAsync('disp(mat2str(' + code + '))');
+              out = eng.lines.join('').trim();
+            } catch (e) {
+              rc = 1;                       // 落到下面的错误分支…不，这里要重试
+            }
+            if (rc !== 0) {
+              // mat2str 不吃的类型（字符串/cell/struct）⇒ 退回 disp 再试一次。
+              // 注意 evalAsync 的异常与 rc≠0 是两回事：前者是 JS 侧抛，后者是
+              // Octave 返回非零。两种都当作「mat2str 这条路不行」。
+              eng.lines.length = 0;
+              eng.errs.length = 0;
+              rc = await eng.evalAsync('disp(' + code + ')');
+              out = eng.lines.join('').trim();
+            }
             if (rc !== 0) {
               // rc≠0 时 Octave 的报错在 stderr 里（「error: ...」）。
               // 把 stderr 摆出来，读者才知道是「语法错」「未定义函数」还是别的。
@@ -2601,14 +2626,41 @@ for (const relPath of TARGET_FILES) {
           eng.lines.length = 0;
           eng.errs.length = 0;
           try {
+            // ⚠️ 用户写的多行代码原样执行（不能整个包 mat2str：那是给单表达式用的）。
+            // 但多行代码里「裸表达式」的回显同样会被 print 吞掉换行
+            // （实测 [1 2;3 4] 出来是 ans =   1   2   3   4）——
+            // 所以执行完再把 **ans** 用 mat2str 打一遍（只有它是矩阵/标量时才有意义）。
+            //
+            // 顺序：先跑用户代码（它自己的 disp/printf 输出先进汇），
+            // 再单独打 ans。这样「A = ...; det(A)」既有用户要的输出，
+            // 又不会因为上一条赋值的 ans 而被误当成最终结果（重新求值更不会）。
+            // ⚠️ 先清 ans（它是 Octave 全局变量，跨调用活着）——
+            // 不然下面的回显会读到上一次调用的结果。
+            try { await eng.evalAsync('clear ans'); } catch (e) {}
+            eng.lines.length = 0;
+            eng.errs.length = 0;
             const rc = await eng.evalAsync(src);
-            const out = eng.lines.join('').trim();
+            const userOut = eng.lines.join('').trim();
             if (rc !== 0) {
               const err = eng.errs.join('').trim();
-              const msg = err || out || ('Octave 返回 rc=' + rc + '（没有给出错误信息）');
+              const msg = err || userOut || ('Octave 返回 rc=' + rc + '（没有给出错误信息）');
               return { ok: false, error: msg, rc };
             }
-            return { ok: true, output: out || '(无输出)' };
+            // ── 回显 ──────────────────────────────────────────────────
+            // 多行 MATLAB 代码**照原样输出**，不做结构化美化。
+            //
+            // 为什么不美化：Octave 的 print 回调一次就是一整行（实测
+            // disp([1 2;3 4]) 收到 1   2   3   4 一张串、没有换行），所以矩阵
+            // 在页面上会拍平成数字串 —— 这是 **Octave 自己的输出行为**。
+            // 想美化就得猜「用户最后想看哪个变量」，而赋值语句的结果进的是
+            // 变量名（A）不是 ans，猜不到也不该猜。
+            //
+            // 给读者的解法（写在面板提示里）：要看矩阵结构就自己写
+            // disp(mat2str(A))，那会输出 [1 2; 3 4]。
+            //
+            // 单条公式（__packCompute）走的是 mat2str，所以页面上点公式算出来
+            // 的矩阵是**有结构的**（[1 0 0;0 1 0;0 0 0]），不受这里影响。
+            return { ok: true, output: userOut || '(无输出)' };
           } catch (e) {
             return { ok: false, error: '执行失败：' + ((e?.message) || e) };
           }
