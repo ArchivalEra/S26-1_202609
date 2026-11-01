@@ -147,3 +147,78 @@ test('⑧ 深色模式：笔记本输入框必须显式给前景色（不许吃�
   assert.match(rule, /color:\s*var\(--md-sys-color-on-surface\)/, '.nb-code 没给前景色');
   assert.match(rule, /background/, '.nb-code 没给背景色');
 });
+
+// ══════════════════════════════════════════════════════════════════
+// 2026-11-01 站长两条：「右下拖拽标给它改亮一点」「全站都有的框大小自动排版
+// 怎么这里没接上」。
+//
+// 这两条都属于「全站已经有的机制，新面板没接」那一类 —— 新面板是后加的，
+// 老机制在新地方不自动生效。所以判据取「**与老地方同一套**」：
+// 拿全站已有的框（.fcell-result / .pack-popover）当参照，逐条比对。
+// ══════════════════════════════════════════════════════════════════
+
+/**
+ * 取某个选择器的**全部**规则体（同一个选择器可能有多条规则，例如
+ * `.pack-popover` 就分两条写：一条管宽度、一条管高度约束）。
+ * 只取第一条会漏掉一半属性 —— 实测踩到（闸门报「找不到参照物」）。
+ */
+function ruleBody(src, sel) {
+  const code = stripCssComments(src);
+  let out = '';
+  let from = 0;
+  while (true) {
+    const i = code.indexOf(sel + ' {', from);
+    if (i < 0) break;
+    const j = code.indexOf('}', i);
+    if (j < 0) break;
+    out += code.slice(i + sel.length, j) + '\n';
+    from = j + 1;
+  }
+  return out;
+}
+
+test('⑨ 笔记本面板接上全站弹层那套约束（max-height / overflow / overscroll）', () => {
+  // .pack-popover 早就有这三条；笔记本面板原先只有 width/max-width。
+  // 后果：两块输入框 + 两块输出框叠起来在小视口上把面板顶穿。
+  const nb = ruleBody(CSS, '.notebook-popover');
+  const pk = ruleBody(CSS, '.pack-popover');
+  assert.ok(nb.length > 50, '找不到 .notebook-popover 规则');
+  assert.ok(pk.length > 50, '找不到 .pack-popover 规则（参照物）');
+  // 与参照物同一套：三条都必须有
+  for (const prop of ['max-height', 'overflow-y', 'overscroll-behavior']) {
+    assert.match(nb, new RegExp(prop), `.notebook-popover 缺 ${prop} —— 全站弹层都有这条`);
+    assert.match(pk, new RegExp(prop), `参照物 .pack-popover 也没有 ${prop}？闸门前提变了`);
+  }
+});
+
+test('⑩ 输出框接上结果框那套自动伸缩（min/max + 双向滚动 + 不折行）', () => {
+  // .fcell-result 的完整形态：min-height 撑出「块」、min-width 防挤成竖条、
+  // max-height/max-width 封顶、overflow:auto、white-space:pre。
+  // .nb-out 原先只有 max-height + overflow —— 短结果是个贴边小条、长结果横向撑破。
+  const nb = ruleBody(CSS, '.nb-out');
+  const fc = ruleBody(CSS, '.fcell-result');
+  assert.ok(nb.length > 50, '找不到 .nb-out 规则');
+  assert.ok(fc.length > 50, '找不到 .fcell-result 规则（参照物）');
+  for (const prop of ['min-height', 'min-width', 'max-height', 'max-width', 'overflow', 'white-space: pre']) {
+    assert.match(nb, new RegExp(prop.replace(':', '[\\s]*:')),
+      `.nb-out 缺 ${prop} —— 结果框有这条，输出框该跟它一致`);
+    assert.match(fc, new RegExp(prop.replace(':', '[\\s]*:')),
+      `参照物 .fcell-result 也没有 ${prop}？闸门前提变了`);
+  }
+});
+
+test('⑪ 输入框的拖拽把手必须跟主题（不许写死 color-scheme: light）', () => {
+  // 2026-11-01 站长报「右下拖拽标看不见」。病因：.nb-code 写死
+  // `color-scheme: light`（那条本来是为修「深色页面里原生控件黑字」），
+  // 但它同时把**原生 resize 把手**锁成浅色系 —— 深色底上几乎看不见。
+  // 原生把手颜色**只由 color-scheme 决定**，没有别的 CSS 能改。
+  const code = stripCssComments(CSS);
+  const nb = ruleBody(CSS, '.nb-code');
+  assert.match(nb, /color-scheme:\s*inherit/, '.nb-code 该跟随主题（color-scheme: inherit）');
+  assert.ok(!/color-scheme:\s*light/.test(nb), '.nb-code 又写死 color-scheme: light 了 —— 深色下把手会看不见');
+  // 还要自绘一个高对比把手（原生色跟主题走不一定够亮）
+  assert.match(code, /\.nb-code::-webkit-resizer\s*\{/, '没有 ::-webkit-resizer 的自绘把手');
+  assert.match(code, /\.nb-code::-webkit-resizer\s*\{[\s\S]*linear-gradient/, '自绘把手没画斜纹');
+  assert.match(code, /\.nb-code::-webkit-resizer\s*\{[\s\S]*var\(--md-sys-color-primary\)/,
+    '自绘把手没用主题强调色 —— 亮度和对比度要靠它');
+});
