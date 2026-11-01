@@ -90,14 +90,28 @@ export function createFormulaCells(deps = {}) {
     const tex = anchor.getAttribute('data-math-tex') || '';
     if (!tex.trim()) return;
 
-    // ⚠️ 包一层**外层容器**，不动 anchor 本身（不变量 ①）。
+    // ⚠️ 包**两层**容器，不动 anchor 本身（不变量 ①）。
+    //
+    // 为什么两层（2026-11-01 站长两次纠正，两个要求互相冲突）：
+    //   · 「计算按钮统一左上角」⇒ 按钮要锚在**满宽**的盒子上，否则它跟着居中
+    //     的块级公式飘走（实测 758px 的框里按钮在 x=680，每条公式都不同）。
+    //   · 「hover 框要套住公式」⇒ 描边要挂**收缩**的盒子，否则框横贯整行。
+    // 一个盒子做不到这两件事，所以拆成 wrap（满宽，放按钮与结果）+ body（收缩，
+    // 放公式本体）。
     const wrap = document.createElement('span');
     wrap.className = WRAP_CLASS;
     wrap.setAttribute('data-fcell-tex', tex);
-    // 可点提示的锚：CSS 把 hover 描边挂在这个属性上（不是挂 .katex）。
+
+    const body = document.createElement('span');
+    body.className = 'fcell-body';
+    // 块级公式（在 .math-display 容器里）的外层要满宽 —— 按钮才贴左侧、
+    // 所有公式的按钮才对得齐。行内公式的外层则跟着字流收缩。
+    const isBlock = !!anchor.closest('.math-display, .katex-display');
+    if (isBlock) wrap.classList.add('fcell-block');
+    // 可点提示的锚：CSS 把 hover 描边挂在这个属性上（不是 .katex、也不是 wrap）。
     // 为什么：.katex 是 display:inline 的行内盒，高度只有一行（3×3 矩阵实测
-    // 22px vs 公式整体 70px），描边会只框住中间一行（2026-11-01 站长报「错位」）。
-    wrap.setAttribute('data-fcell-wrapped', '1');
+    // 22px vs 公式整体 70px），描边会只框住中间一行；wrap 满宽则框横贯整行。
+    body.setAttribute('data-fcell-wrapped', '1');
 
     const play = document.createElement('button');
     play.type = 'button';
@@ -110,13 +124,20 @@ export function createFormulaCells(deps = {}) {
     result.className = RESULT_CLASS;
     result.hidden = true;
 
-    // 插在 anchor 前面（公式本体位置不变，只是外面多了一层）
+    // 结构：wrap（满宽, 按钮+结果）> body（收缩, 只包公式）
+    //   <span class="fcell">
+    //     <button class="fcell-play">▶</button>
+    //     <span class="fcell-body"><span class="katex">…</span></span>
+    //     <span class="fcell-result">= 2</span>
+    //   </span>
+    // 编辑时 <math-field> 插进 body（跟公式并排），原 anchor 只 display:none。
     anchor.parentNode.insertBefore(wrap, anchor);
     wrap.appendChild(play);
-    wrap.appendChild(anchor);
+    wrap.appendChild(body);
+    body.appendChild(anchor);
     wrap.appendChild(result);
 
-    const cell = { wrap, anchor, play, result, tex, lastComputedFor: null, editing: false, busy: false };
+    const cell = { wrap, body, anchor, play, result, tex, lastComputedFor: null, editing: false, busy: false };
     cells.set(wrap, cell);
 
     play.addEventListener('click', (ev) => {
@@ -215,7 +236,8 @@ export function createFormulaCells(deps = {}) {
 
     // 原公式先藏起来（**不删**：MCP 读面要它，见不变量 ①）
     cell.anchor.style.display = 'none';
-    cell.wrap.insertBefore(mf, cell.result);
+    // math-field 与公式并排放在 body 里（body 收缩到内容宽，编辑时跟着变宽）
+    cell.body.appendChild(mf);
     cell.editing = true;
     cell.mf = mf;
     cell.currentTex = () => {
@@ -357,12 +379,13 @@ export function createFormulaCells(deps = {}) {
     if (io) { io.disconnect(); io = null; }
     for (const cell of cells.values()) {
       if (cell.editing) exitEdit(cell);
-      // 把包装层拆掉，恢复原始 DOM 形态（anchor 放回父节点原位）
+      // 把包装层拆掉，恢复原始 DOM 形态（anchor 放回父节点原位）。
+      // 层级是 wrap > body > anchor，所以 anchor 要先从 body 取出来。
       const wrap = cell.wrap;
       if (wrap?.parentNode) {
         const parent = wrap.parentNode;
-        if (cell.anchor && cell.anchor.parentNode === wrap) {
-          wrap.removeChild(cell.anchor);
+        if (cell.anchor && cell.anchor.parentNode === cell.body) {
+          cell.body.removeChild(cell.anchor);
           cell.anchor.style.display = '';
           parent.insertBefore(cell.anchor, wrap);
         }

@@ -2065,27 +2065,40 @@ body.search-open {
 }
 
 /* ── 公式单元格（2026-10-31）：页内笔记本式 ───────────────────────
-   结构（由 plugins/formula-cells.mjs 建）：
-     <span class="fcell" data-fcell-tex="...">
-       <button class="fcell-play">▶</button>
-       <span class="katex">…</span>          ← 原节点，MCP 读面
+   结构（由 plugins/formula-cells.mjs 建，**两层**盒子，各有各的职责）：
+     <span class="fcell">                     ← 满宽：按钮贴在它左上角
+       <button class="fcell-play">▶</button>   ← 所有公式的按钮在同一条竖线上
+       <span class="fcell-body">               ← 收缩到公式宽：hover 描边挂它
+         <span class="katex">…</span>          ← 原节点，MCP 读面
+       </span>
        <span class="fcell-result">= 2</span>
      </span>
-   点公式本体 → 原地插 <math-field>，原 katex 只 display:none（不删）。 */
+   点公式本体 → 在 body 里并排插 <math-field>，原 katex 只 display:none（不删）。
+
+   ⚠️ 为什么必须是**两层**（2026-11-01 站长两次纠正，两个要求互相冲突）：
+     · 「计算按钮统一左上角」⇒ 按钮要锚在**满宽**的容器上，否则它跟着居中
+       的公式飘，每条公式按钮的 x 坐标都不同（实测 758px 宽的框里按钮在 680）。
+     · 「hover 框要套住公式」⇒ 描边要挂在**收缩**的盒子上，否则框横贯整行。
+   一个盒子做不到这两件事，所以拆成两层。 */
 .fcell {
   position: relative;
-  display: inline-block;
+  display: block;
   max-width: 100%;
   /* 给左上角播放按钮留出位置，避免它压住前一个字的正文 */
   padding-left: 1.15rem;
 }
-/* 块级公式（display math）的单元格。
-   ⚠️ 必须是 inline-block 而不是 block（2026-11-01 站长报「选择框错位」）。
-   block 会让单元格撑满整行（732px），而公式本体只占中间 97px —— 于是 hover
-   描边会拉成一条横贯整行的框，读者看到的却是「框没套住公式」。
-   inline-block 让容器**收缩到公式本身**（实测 732 → 115px），描边才贴着公式。
-   父级 .katex-display 仍然是 block，居中照旧。 */
-.math-display .fcell { display: inline-block; vertical-align: top; }
+/* 行内公式：外层跟着字流收缩（没有「居中飘走」的问题）。 */
+.fcell:not(.fcell-block) { display: inline-block; }
+
+/* 内层：只包公式本体，收缩到公式尺寸。hover 描边与编辑都在它上面。 */
+.fcell-body { display: inline-block; max-width: 100%; }
+/* 块级公式：公式本体居中（与外层满宽无关，外层满宽只为按钮对齐） */
+.math-display .fcell-body,
+.fcell-block .fcell-body { display: inline-block; }
+/* 块级公式（display math）的单元格**必须满宽**：
+   按钮要贴容器左上角、所有公式的按钮对齐同一条竖线（理由见上）。
+   描边不挂这层（挂收缩的 .fcell-body）。公式本体在满宽层里居中。 */
+.math-display .fcell, .fcell-block { display: block; text-align: center; }
 
 .fcell-play {
   position: absolute;
@@ -2250,22 +2263,23 @@ body.search-open {
 
 /* 可编辑态：公式才有可点提示。**只加 outline，不改字号与布局**。
  *
- * ⚠️ 描边挂 `[data-fcell-wrapped]` 的单元格（.fcell）而不是 `.katex`
- * （2026-11-01 站长报「选择框错位」）。原因：`.katex` 是 `display:inline`
- * 的行内盒，它的盒子高度只有**一行行高**（实测 22px），而一个 3×3 矩阵
- * 公式整体高 70px —— 于是描边只框住了中间那一行，看着像「选择框错位」。
+ * ⚠️ 描边挂**收缩的内层** `.fcell-body` 而不是 `.katex`，也不是满宽的外层
+ * `.fcell`（2026-11-01 站长两次纠正，一次一个方向）：
  *
- * 判据是「**框必须套住整条公式**」，不是「框挂在哪个节点上更好写」。
- * 行内公式（`.katex` 只有一行高）不受影响，容器也就一行，两种都成立。
+ *   · 挂 `.katex`（第一版）⇒ 它是 `display:inline` 的行内盒，盒高只有一行行高
+ *     （3×3 矩阵实测 22px vs 公式整体 70px），框只套住中间那一行 = 「错位」。
+ *   · 挂满宽的 `.fcell` ⇒ 框横贯整行（732px）包着一片空白，同样不像「套住公式」。
+ *   · 挂收缩的 `.fcell-body` ⇒ 框正好贴住公式，两条要求同时满足。
+ *
+ * 判据是「**框必须套住整条公式，且不包空白**」。
  *
  * ⚠️ 只在**挂了单元格**的公式上描边：没单元格（开关关着 / 这条算不了）的
- * 公式没有可点的动作，描边会误导。
- * 2026-10-31 补 .katex：产物里早就是 KaTeX 了（ML__latex 零处）。 */
-.fcell[data-fcell-wrapped] {
+ * 公式没有可点的动作，描边会误导。 */
+.fcell-body[data-fcell-wrapped] {
   cursor: pointer;
   border-radius: 4px;
 }
-.fcell[data-fcell-wrapped]:hover {
+.fcell-body[data-fcell-wrapped]:hover {
   outline: 2px solid var(--md-sys-color-primary);
   outline-offset: 2px;
 }

@@ -101,7 +101,8 @@ test('纯运算符不算完整表达式（不许「成功」转出 +、=、-）'
   for (const tex of ['+', '-', '=', '(', ')']) {
     const r = tr(tex);
     assert.equal(r.ok, false, `「${tex}」不该被判成可算，实际转出「${r.code}」`);
-    assert.match(r.reason, /不是一个完整的表达式|不认识|空/, `原因要说清：${r.reason}`);
+    assert.match(r.reason, /不是一个完整的表达式|不认识|空|等式|不等式|运算符开头|运算符结尾/,
+      `原因要说清：${r.reason}`);
   }
 });
 
@@ -111,5 +112,89 @@ test('绝不返回空代码的「成功」', () => {
     const r = tr(tex);
     assert.equal(r.ok, true);
     assert.ok(r.code && r.code.trim().length > 0, `${tex} 转出了空代码`);
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════
+// 2026-11-01 「仍然是计算错误」那一批（站长第三次报同一个症状）
+//
+// 病根与前两轮**同一个**：构建期判「能不能算」的判据太弱，于是页面挂上
+// 播放按钮、读者一点就吃红字框。
+//
+// 这一轮不再靠猜判据，而是**在真浏览器里跑一遍全站**：
+//   142 页、925 条挂按钮的公式，逐条喂给 Octave，记录每条的报错。
+//   实测 50 条失败，全部落在下面这五个形态。于是每条形态一个断言 ——
+//   这些**不是想象的边界情况**，是真实失败样本的归纳。
+// ══════════════════════════════════════════════════════════════════
+
+test('隐含乘法：数或括号紧贴标识符 → 不可算（实测 `2 pi`、`500 kVA` 报 syntax error）', () => {
+  for (const tex of ['2\\pi', '4\\pi\\times10^{-7}', '\\sqrt2\\pi', '500\\ \\mathrm{kVA}']) {
+    const r = tr(tex);
+    assert.equal(r.ok, false, `「${tex}」不该判可算，实际转出「${r.code}」`);
+  }
+});
+
+test('单位：\\mathrm{} 标成 literalMode=unit 的不是数值', () => {
+  // 实测最后两条漏网是 `\mathrm{Y}`（单字母单位）。它走 literal 分支、
+  // 根本不经过 sym 的「单字母 = 未定义变量」判据，所以必须单独拦。
+  for (const tex of ['\\mathrm{Y}', '\\mathrm{kVA}', '\\mathrm{mm}']) {
+    const r = tr(tex);
+    assert.equal(r.ok, false, `单位「${tex}」不该判可算，实际转出「${r.code}」`);
+  }
+});
+
+test('百分号 → 不可算（Octave 里 % 是注释符，后面整行被吃掉）', () => {
+  for (const tex of ['3.21\\%', '1\\%']) {
+    const r = tr(tex);
+    assert.equal(r.ok, false, `「${tex}」不该判可算，实际转出「${r.code}」`);
+  }
+});
+
+test('坐标记法：空格分隔的数串 → 不可算（要写成 [a, b, c]）', () => {
+  for (const tex of ['(-12\\quad-14\\quad0)', '0\\ 0\\ 1', '(1, 2)', '(0, 1, 3, 6)']) {
+    const r = tr(tex);
+    assert.equal(r.ok, false, `「${tex}」不该判可算，实际转出「${r.code}」`);
+  }
+  // 反例：带方括号的向量是**合法**的，不能误伤
+  const ok = tr('\\begin{pmatrix}1&2&3\\end{pmatrix}');
+  assert.equal(ok.ok, true, '矩阵必须仍可算');
+});
+
+test('题号前缀后跟表达式 → 不可算（`(1) det(...)` 是两个并置的量）', () => {
+  for (const tex of ['(1)\\quad\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}', '(1)\\ \\det(A)']) {
+    const r = tr(tex);
+    assert.equal(r.ok, false, `「${tex}」不该判可算，实际转出「${r.code}」`);
+  }
+});
+
+test('关系式不给播放按钮（算出来是布尔值，不是读者要的答案）', () => {
+  // 实测 `det([3 2; 1 2])==4~=0` 点开得到 `1` —— 那是推理步骤的真值，
+  // 不是「这个行列式等于几」。关系式的数学内容是「成不成立」，不是「值是多少」。
+  for (const tex of ['1=2', 'x=y', 'a\\le b']) {
+    const r = tr(tex);
+    assert.equal(r.ok, false, `关系式「${tex}」不该判可算，实际转出「${r.code}」`);
+  }
+  // 纯数值等式走的是「关系式」那条判据，理由必须点明（读者要知道为什么没按钮）
+  const pure = tr('1=2');
+  assert.match(pure.reason, /等式|不等式/, `纯数值等式要说清是关系式：${pure.reason}`);
+});
+
+test('函数应用：嵌套调用的括号必须成对（`\\sin(\\cos(0))` → sin(cos(0))）', () => {
+  // 实测第一版输出 `sin(() cos(() 0))` —— 函数名吃掉的是那个 `(` 而不是括号内容。
+  const r = tr('\\sin(\\cos(0))');
+  assert.equal(r.ok, true);
+  assert.equal(r.code, 'sin(cos(0))');
+  // 括号数量必须配平（多一个少一个都是语法错）
+  const bal = (s) => [...s].reduce((n, c) => n + (c === '(' ? 1 : c === ')' ? -1 : 0), 0);
+  assert.equal(bal(r.code), 0, `括号不配平：${r.code}`);
+});
+
+test('希腊字母不许映射成同名变量（Octave 里它是未定义函数，实测报 unable to open）', () => {
+  // 实测 `disp(alpha(1))` → `error: unable to open /src/work/...` ——
+  // Octave 把 `alpha` 当函数名去加载同名脚本。上一版把它映射成变量，
+  // 于是 8 条公式挂着按钮、一点一个红字框。
+  for (const tex of ['\\alpha', '\\alpha_{1}', '2\\alpha_{1}+3\\alpha_{2}']) {
+    const r = tr(tex);
+    assert.equal(r.ok, false, `「${tex}」不该判可算，实际转出「${r.code}」`);
   }
 });

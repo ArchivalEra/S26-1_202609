@@ -26,26 +26,36 @@ function stripCssComments(src) {
   return src.replace(/\/\*[\s\S]*?\*\//g, '');
 }
 
-test('① hover 描边必须挂在单元格上，不能挂在 .katex（行内盒只有一行高）', () => {
-  // 病因：`.katex` 是 display:inline，盒高只有一行行高（3×3 矩阵实测 22px，
-  // 公式整体 70px）。描边挂它 ⇒ 只框住中间一行，看着就是「框错位」。
+test('① hover 描边挂在**收缩的内层** .fcell-body，不挂 .katex 也不挂满宽的 .fcell', () => {
+  // 病因（2026-11-01 站长两次纠正，两个方向各错一次）：
+  //   · 挂 `.katex` ⇒ 它是 display:inline 的行内盒，盒高只有一行
+  //     （3×3 矩阵实测 22px vs 公式整体 70px），框只套住中间一行 = 「错位」。
+  //   · 挂满宽的 `.fcell` ⇒ 框横贯整行（732px）包着一片空白，也不像套住公式。
+  //   · 挂收缩的 `.fcell-body` ⇒ 正好贴住公式。
   const code = stripCssComments(CSS);
-  // 正向：.fcell 上有描边
-  assert.match(code, /\.fcell\[data-fcell-wrapped\]:hover\s*\{[^}]*outline\s*:/,
-    '单元格上必须有 hover 描边（否则公式没有任何可点提示）');
+  assert.match(code, /\.fcell-body\[data-fcell-wrapped\]:hover\s*\{[^}]*outline\s*:/,
+    '收缩的内层 .fcell-body 上必须有 hover 描边（否则公式没有可点提示，或框会包空白）');
   // 反向：`.katex:hover` 不许再画描边（两份描边会叠成两条框）
   assert.ok(!/\.katex:hover[^{]*\{[^}]*outline\s*:\s*2px/.test(code),
     '.katex:hover 又在画描边了 —— 它的盒只有一行高，会把框画错位');
-  // 单元格标记必须真的被写上（否则上面那条选择器永远不命中）
-  assert.match(CELLS, /setAttribute\('data-fcell-wrapped'/, 'wrapOne 没打 data-fcell-wrapped 标记');
+  // 标记必须打在 body 上（否则上面那条选择器永远不命中）
+  assert.match(CELLS, /body\.setAttribute\('data-fcell-wrapped'/,
+    'wrapOne 没把 data-fcell-wrapped 打到 .fcell-body 上');
 });
 
-test('① 块级公式的单元格必须收缩到公式宽度（block 会撑满整行）', () => {
-  // block 让容器撑满整行（实测 732px），公式本体只占中间 97px ——
-  // 描边于是拉成一条横贯整行的框。inline-block 让它收缩到公式本身（115px）。
+test('① 两层盒子必须分开职责：外层满宽（按钮对齐）、内层收缩（描边贴公式）', () => {
+  // 2026-11-01 站长第二次定案「计算按钮统一左上角」：
+  // 如果外层也收缩，块级公式居中后按钮就跟着飘（实测 758px 的框里按钮在 x=680，
+  // 每条公式的按钮 x 坐标都不同）。所以：
+  //   外层 `.fcell-block` = block（满宽）→ 所有按钮落在同一条竖线
+  //   内层 `.fcell-body` = inline-block（收缩）→ 描边与编辑贴公式
   const code = stripCssComments(CSS);
-  assert.match(code, /\.math-display\s+\.fcell\s*\{[^}]*display:\s*inline-block/,
-    '.math-display .fcell 必须 inline-block；改成 block 会让 hover 框横贯整行');
+  assert.match(code, /\.math-display\s+\.fcell[^{]*\{[^}]*display:\s*block/,
+    '块级公式的外层必须 display:block（满宽），否则播放按钮跟着公式居中飘');
+  assert.match(code, /\.fcell-body\s*\{[^}]*display:\s*inline-block/,
+    '内层 .fcell-body 必须 inline-block（收缩），否则 hover 框横贯整行');
+  // DOM 结构也要对：wrap > body > anchor
+  assert.match(CELLS, /body\.appendChild\(anchor\)/, 'anchor 没有挂进 .fcell-body');
 });
 
 test('② 正常态面板不许显示诊断行（站长：只需下俩玩意开俩开关）', () => {
