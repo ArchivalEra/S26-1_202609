@@ -1,0 +1,116 @@
+// 2026-11-01 站长实拍的三个缺陷，逐条锁死。
+//
+// 起因是一张截图里的三件事：
+//   ① 公式上的 hover 框只框住中间一行（「选择框错位」）
+//   ② 能力包面板摆着五行诊断 + 一行「当前：只读」（「本来只需要下俩玩意开俩开关」）
+//   ③ 下了两个部件、开了两个开关，点公式还是「取不到 assets/octave/octave.js」
+//
+// 三条都**不是笔误**，是各自一类会再次发生的错。所以每条一个闸门，
+// 判据取「源码里必须有的写法」——这些缺陷的特征恰恰是**行为测试全绿、
+// 自动闸门全过，只有真在浏览器里看一眼才发现**（和 pack-popover 那个同族）。
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const CSS = readFileSync(path.join(HERE, '../assets/theme/shirone-reader.css'), 'utf8');
+const PR = readFileSync(path.join(HERE, 'pack-runtime.mjs'), 'utf8');
+const CELLS = readFileSync(path.join(HERE, 'formula-cells.mjs'), 'utf8');
+const BUILD = readFileSync(path.join(HERE, '../build.mjs'), 'utf8');
+
+/** 剥掉注释，避免断言被说明文字误伤（CSS 里大段注释讲了反面例子）。 */
+function stripCssComments(src) {
+  return src.replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
+test('① hover 描边必须挂在单元格上，不能挂在 .katex（行内盒只有一行高）', () => {
+  // 病因：`.katex` 是 display:inline，盒高只有一行行高（3×3 矩阵实测 22px，
+  // 公式整体 70px）。描边挂它 ⇒ 只框住中间一行，看着就是「框错位」。
+  const code = stripCssComments(CSS);
+  // 正向：.fcell 上有描边
+  assert.match(code, /\.fcell\[data-fcell-wrapped\]:hover\s*\{[^}]*outline\s*:/,
+    '单元格上必须有 hover 描边（否则公式没有任何可点提示）');
+  // 反向：`.katex:hover` 不许再画描边（两份描边会叠成两条框）
+  assert.ok(!/\.katex:hover[^{]*\{[^}]*outline\s*:\s*2px/.test(code),
+    '.katex:hover 又在画描边了 —— 它的盒只有一行高，会把框画错位');
+  // 单元格标记必须真的被写上（否则上面那条选择器永远不命中）
+  assert.match(CELLS, /setAttribute\('data-fcell-wrapped'/, 'wrapOne 没打 data-fcell-wrapped 标记');
+});
+
+test('① 块级公式的单元格必须收缩到公式宽度（block 会撑满整行）', () => {
+  // block 让容器撑满整行（实测 732px），公式本体只占中间 97px ——
+  // 描边于是拉成一条横贯整行的框。inline-block 让它收缩到公式本身（115px）。
+  const code = stripCssComments(CSS);
+  assert.match(code, /\.math-display\s+\.fcell\s*\{[^}]*display:\s*inline-block/,
+    '.math-display .fcell 必须 inline-block；改成 block 会让 hover 框横贯整行');
+});
+
+test('② 正常态面板不许显示诊断行（站长：只需下俩玩意开俩开关）', () => {
+  // 判据：renderDiag 只输出**有问题**的行；全部正常时 innerHTML 必须是空串。
+  assert.match(PR, /DIAG_BAD_RE/, '没有「哪些值算坏」的判据');
+  const fn = PR.slice(PR.indexOf('function renderDiag()'), PR.indexOf('var katexLoading'));
+  assert.ok(fn.length > 100, '找不到 renderDiag 函数体');
+  // 必须有「只挑坏的」这一步
+  assert.match(fn, /if\s*\(DIAG_BAD_RE\.test\(/, 'renderDiag 没按 DIAG_BAD_RE 过滤，正常态仍会全部输出');
+  // 不许有无条件 rows 全量的写入（旧写法是 for 循环里直接 html +=，不看 bad）
+  assert.ok(!/html\s*\+=\s*"<div class='pack-diag-row"\s*\+\s*\(bad\s*\?/.test(fn),
+    'renderDiag 又变回「五行全量输出」了 —— 正常态会把面板刷满');
+  // 「当前：只读」那行已删
+  assert.ok(!/pack-mode-label/.test(PR), 'modeLabel 又回来了（站长要求去掉这一行）');
+});
+
+test('② 「点击绑定」这一环已废（旧覆盖层删了，它会恒报未绑定）', () => {
+  assert.ok(!/clicks:\s*"未绑定"/.test(PR), 'diag.clicks 又回来了 —— 它对应的旧委托已删除');
+  assert.ok(!/\[\s*"点击绑定"\s*,\s*diag\.clicks\s*\]/.test(PR), 'renderDiag 里又摆了「点击绑定」行');
+});
+
+test('③ 站点根前缀必须现取，不许在加载时快照（SPA 换页会改 data-root）', () => {
+  // 病因：rootRel = getAttribute('data-root') 在页面加载那一刻读一次；
+  // SPA 换页把 data-root 换成 ../../../ 之后，闭包里的还是 ./，
+  // 于是 octave.js 拼成 /课程总览/工程数学/作业/assets/octave/octave.js → 404。
+  const inline = BUILD.slice(BUILD.indexOf('<script type="module">'),
+    BUILD.indexOf("console.warn('[pack] 装配失败，保持只读'"));
+  assert.ok(inline.length > 500, '切不到装配脚本');
+  assert.match(inline, /const assetRoot = \(\) =>/, '没有 assetRoot() 现取函数');
+  // 反面判据用**废弃的变量名** rootRel —— 它就是这个缺陷的化石：
+  // 只要它还在某个代码行里被赋值/使用，就说明又有人把前缀快照回来了。
+  // （注释里提到它不算：先剥掉行注释再查。）
+  const codeOnly = inline.split('\n')
+    .map((l) => l.replace(/\/\/.*$/, ''))       // 去掉行注释
+    .join('\n');
+  assert.ok(!/\brootRel\b/.test(codeOnly),
+    'rootRel 又出现在装配脚本的活代码里 —— 那是「加载时快照根前缀」的化石，SPA 换页后会拼出 404');
+  // 三处消费方都必须是现取形态
+  assert.match(inline, /const octBase = \(\) =>/, 'octave 目录没走现取函数');
+  assert.ok(!/const OCT_BASE\s*=/.test(inline), 'OCT_BASE 又被做成常量快照了');
+  // 能力包那边：root 必须是函数（拼 URL 时现取）
+  assert.match(inline, /root:\s*assetRoot/, '能力包没拿到现取的 root，下载仍会用过期前缀');
+  const PACK = readFileSync(path.join(HERE, 'capability-pack.mjs'), 'utf8');
+  assert.match(PACK, /function resolveRoot\(/, 'capability-pack 里没有 resolveRoot');
+  assert.match(PACK, /typeof r === 'function'/, 'resolveRoot 没处理「root 是函数」这种形态');
+});
+
+test('④ 版本占位符必须全部替换（两个占位符，不止一个）', () => {
+  // 病因：模板里有两处 __PACK_VER__ / __CELLS_VER__，但替换只做了前者。
+  // 后果：产物里留着字面 ?v=__CELLS_VER__，浏览器把它当版本号 ⇒ 模块永不更新。
+  // 服务端日志实证 GET /assets/plugins/formula-cells.mjs?v=__CELLS_VER__。
+  const seg = BUILD.slice(BUILD.indexOf('const htmlWithVers'),
+    BUILD.indexOf('const leakedVer') + 400);
+  assert.match(seg, /split\('__PACK_VER__'\)/, '产物没替换 __PACK_VER__');
+  assert.match(seg, /split\('__CELLS_VER__'\)/, '产物没替换 __CELLS_VER__ —— 这个模块会永不更新');
+  // 还要有兜底硬拦，免得以后加第三个占位符时又漏一个
+  assert.match(seg, /const leakedVer = \/__/, '没有「占位符残留」的兜底正则');
+});
+
+test('⑤ MathLive 不许走 import() 试错（会先打一条假 404）', () => {
+  // import() 的相对 URL 是按**调用它的模块**解析的，pack-runtime.js 在
+  // assets/plugins/ 下 ⇒ 拼成 assets/plugins/assets/mathlive/… ⇒ 每次进编辑器
+  // 都在服务端留一条 404，再回退 script 标签。功能通但日志有假警报。
+  assert.ok(!/import\(root\(\)\s*\+\s*"assets\/mathlive/.test(PR),
+    'MathLive 又走 import() 了 —— 会先打一条 assets/plugins/assets/… 的假 404');
+  assert.match(PR, /sc\.src = root\(\) \+ "assets\/mathlive\/mathlive-browser\.min\.js"/,
+    '应该直接用 script 标签加载那个 UMD 包');
+});

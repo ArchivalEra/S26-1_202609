@@ -1977,13 +1977,7 @@ body.search-open {
   background: var(--md-sys-color-primary);
   transition: width 0.2s ease;
 }
-.pack-mode-row {
-  margin-top: 0.4rem;
-  font-size: 0.76rem;
-  color: var(--md-sys-color-outline);
-}
-
-/* 能力包面板比调色盘高得多（两件资产 + 状态 + 四行诊断 + 清空按钮），
+/* 能力包面板比调色盘高（两件资产 + 两个开关 + 偶发的诊断块），
    不加约束时在 1280×720 上会顶到视口底、内容被切（2026-10-31 实测截图）。
    给一个随视口收的 max-height 并允许纵向滚动——比把它压扁好。 */
 .pack-popover {
@@ -1992,6 +1986,10 @@ body.search-open {
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+
+/* 诊断块（2026-11-01）：只在有部件坏掉时才有内容。全绿时 innerHTML 为空，
+   靠 .pack-diag:empty 整块收起——站长要求「正常态一个字都不许显示」。
+   逐行规则见下方同名小节（这里只留说明，不重复定义）。 */
 
 /* ── 两个能力开关（2026-10-31）：iOS 风格滑块 ──────────────────────
    为什么自己画而不用 <input type=checkbox>：原生 checkbox 在各浏览器长得
@@ -2081,8 +2079,13 @@ body.search-open {
   /* 给左上角播放按钮留出位置，避免它压住前一个字的正文 */
   padding-left: 1.15rem;
 }
-/* 块级公式（display math）的容器，按钮在更左一点 */
-.math-display .fcell { display: block; }
+/* 块级公式（display math）的单元格。
+   ⚠️ 必须是 inline-block 而不是 block（2026-11-01 站长报「选择框错位」）。
+   block 会让单元格撑满整行（732px），而公式本体只占中间 97px —— 于是 hover
+   描边会拉成一条横贯整行的框，读者看到的却是「框没套住公式」。
+   inline-block 让容器**收缩到公式本身**（实测 732 → 115px），描边才贴着公式。
+   父级 .katex-display 仍然是 block，居中照旧。 */
+.math-display .fcell { display: inline-block; vertical-align: top; }
 
 .fcell-play {
   position: absolute;
@@ -2179,14 +2182,20 @@ body.search-open {
   color-scheme: light;
 }
 
-/* 诊断行（2026-10-31）：四环状态。失败行标红——「下载完了但点公式没反应」
-   这类症状必须能一眼看出卡在哪一环，不能全靠猜。 */
+/* 诊断块（2026-11-01 站长定案：正常态一个字都不显示）。
+   只在有部件坏掉时才有内容；全绿时 innerHTML 为空，靠 :empty 整块收起。 */
 .pack-diag {
   margin-top: 0.55rem;
   font-size: 0.72rem;
   line-height: 1.55;
 }
 .pack-diag:empty { display: none; }
+.pack-diag-head {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--md-sys-color-error);
+  margin-bottom: 0.15rem;
+}
 .pack-diag-row {
   display: flex;
   justify-content: space-between;
@@ -2207,13 +2216,16 @@ body.search-open {
   text-align: right;
   overflow-wrap: anywhere;
 }
-.pack-diag-row.is-bad { color: var(--md-sys-color-error, #b3261e); }
+.pack-diag-row.is-bad { color: var(--md-sys-color-error); }
 .pack-diag-err {
   margin-top: 0.3rem;
   padding: 0.35rem 0.5rem;
   border-radius: 6px;
-  background: var(--md-sys-color-error-container, #ffdad6);
-  color: var(--md-sys-color-on-error-container, #410002);
+  /* ⚠️ 不许写 `var(--md-sys-color-error-container, #ffdad6)` —— 那个变量在
+     主题里根本没定义，回退值是浅粉，深色模式下就是白底粉字（同一类坑
+     已经吃过一次，见 .fcell-result.is-err 的注释）。只用真实存在的颜色叠透明度。 */
+  background: color-mix(in srgb, var(--md-sys-color-error) 10%, transparent);
+  color: var(--md-sys-color-error);
   overflow-wrap: anywhere;
 }
 /* 「删除」按钮（2026-10-31）：已下载时代替「下载」。
@@ -2237,21 +2249,33 @@ body.search-open {
 }
 
 /* 可编辑态：公式才有可点提示。**只加 outline，不改字号与布局**。
-   2026-10-31 补 .katex：产物里早就是 KaTeX 了（ML__latex 零处），只写 ML__latex
-   时这两个块全打空——公式能点但没有任何可点提示（cursor 和 hover 描边都不生效）。 */
+ *
+ * ⚠️ 描边挂 `[data-fcell-wrapped]` 的单元格（.fcell）而不是 `.katex`
+ * （2026-11-01 站长报「选择框错位」）。原因：`.katex` 是 `display:inline`
+ * 的行内盒，它的盒子高度只有**一行行高**（实测 22px），而一个 3×3 矩阵
+ * 公式整体高 70px —— 于是描边只框住了中间那一行，看着像「选择框错位」。
+ *
+ * 判据是「**框必须套住整条公式**」，不是「框挂在哪个节点上更好写」。
+ * 行内公式（`.katex` 只有一行高）不受影响，容器也就一行，两种都成立。
+ *
+ * ⚠️ 只在**挂了单元格**的公式上描边：没单元格（开关关着 / 这条算不了）的
+ * 公式没有可点的动作，描边会误导。
+ * 2026-10-31 补 .katex：产物里早就是 KaTeX 了（ML__latex 零处）。 */
+.fcell[data-fcell-wrapped] {
+  cursor: pointer;
+  border-radius: 4px;
+}
+.fcell[data-fcell-wrapped]:hover {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+}
+/* 旧的可点提示（直接挂 .katex/.ML__latex）：保留 cursor 但**不再描边**，
+   描边由上面的单元格统一负责（否则两份描边会重叠成两条框）。 */
 body[data-pack-mode="editable"] .article-content .katex,
 body[data-pack-mode="computable"] .article-content .katex,
 body[data-pack-mode="editable"] .article-content .ML__latex,
 body[data-pack-mode="computable"] .article-content .ML__latex {
   cursor: pointer;
-  border-radius: 3px;
-}
-body[data-pack-mode="editable"] .article-content .katex:hover,
-body[data-pack-mode="computable"] .article-content .katex:hover,
-body[data-pack-mode="editable"] .article-content .ML__latex:hover,
-body[data-pack-mode="computable"] .article-content .ML__latex:hover {
-  outline: 2px solid var(--md-sys-color-primary);
-  outline-offset: 2px;
 }
 
 /* 编辑态覆盖层 */
