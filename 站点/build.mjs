@@ -1567,7 +1567,16 @@ for (const relPath of TARGET_FILES) {
   // Restore Math
   htmlContent = htmlContent.replace(/@@MATH_BLOCK_(\d+)@@/g, (_, id) => {
     const math = mathBlocks[parseInt(id)];
-    return `<div class="katex-scroll-container">${math.html}</div>`;
+    // ⚠️ **这里不能再套一层容器**（2026-11-01 站长报「包的框数量越来越多」）。
+    //
+    // display 公式的 `html` 已经是 renderOneMath 的产物
+    // （`<div class="math-display katex-scroll-container">…`，见上面 Step 2.1），
+    // 而这一层原本无条件再包一次 `katex-scroll-container` —— 于是每个块级公式
+    // 外面套了**两层同样带边框的框**。截图里「外框 + 内框」就是这么来的。
+    //
+    // 判据：容器由**生产方**负责（renderOneMath 知道这是 display 公式），
+    // 消费方只管把占位符换成 HTML。两处都包 = 两层框，而且改样式时不知道该改哪层。
+    return math.html;
   });
 
   // ⚠️ 2026-10-30 真 bug（站长截图：表格里冒字面 `">`、整行被拆成竖排）：
