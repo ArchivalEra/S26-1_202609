@@ -261,9 +261,13 @@
   }
 
   if (paletteToggleBtn && palettePopover) {
+    // aria-expanded 是顶栏按钮「展开态高亮」的判据（2026-11-01 统一）：
+    // 五个入口按钮都靠这个属性点亮，调色盘不能只切 .open 类。
+    const setExpanded = (open) => paletteToggleBtn.setAttribute("aria-expanded", open ? "true" : "false");
     paletteToggleBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       palettePopover.classList.toggle("open");
+      setExpanded(palettePopover.classList.contains("open"));
     });
 
     palettePopover.addEventListener("click", (e) => {
@@ -272,6 +276,7 @@
 
     document.addEventListener("click", () => {
       palettePopover.classList.remove("open");
+      setExpanded(false);
     });
   }
 

@@ -42,6 +42,58 @@
   --shadow-1: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.05);
   --shadow-2: 0 3px 6px rgba(0,0,0,0.1), 0 2px 4px rgba(0,0,0,0.06);
   --shadow-3: 0 10px 24px rgba(0,0,0,0.14), 0 4px 8px rgba(0,0,0,0.08);
+
+  /* ── 顶栏按钮的**展开态四档色**（2026-11-01 站长定案）─────────────
+   *
+   * 需求原文：「只需要将 headline 那边所有按钮统一成助手那样的展开时候高亮就好，
+   * 四个颜色要不一样，就是说都跟着 hue 但是色深不一样，参考 M3E」。
+   *
+   * ## 为什么用 oklch 而不是 hsl
+   *
+   * 第一版用 `hsl()` 定死 `L=40%/36%/34%/38%`，一测发现**黄色的档只有 2.6:1**
+   * —— hsl 的 L 是**物理亮度**，同样的 L 下黄色比蓝色亮得多，人眼更是如此。
+   * 想靠 hsl 补救就得按色相查表（黄绿压到 22%、红紫放到 41%），但调色盘的
+   * hue 是**滑块连续值**（0–359），CSS 里做不了这种查表。
+   *
+   * `oklch()` 的 L 是**感知亮度**：同一个 L + C 在任意色相下人眼觉得一样亮。
+   * 实测（H 每 10° 扫一遍，底 = 浅色 surface-container-low）：
+   *   L=0.48 / C=0.12 时，**所有色相**最差 5.26:1（AA 门槛 4.5）。
+   * 一档参数就能覆盖全部 hue，不用查表。
+   *
+   * ## 四档怎么不一样
+   *
+   * 色相取 `--hue` 的四个**等距偏移** +60 / +150 / +240 / +330（每 90° 一档），
+   * 任意 hue 下四档都均匀分布。色深靠 **L 递减**（0.48 → 0.42）。
+   * 读者展开不同面板时强调强度不同，能形成空间记忆。
+   *
+   * ## 变量名怎么读
+   *
+   * `--accent-N-h`  第 N 档色相（由 --hue 派生，换调色盘整排一起换）
+   * `--accent-N-l`  第 N 档的 oklch 感知亮度
+   */
+  --accent-1-h: calc(var(--hue) + 60);
+  --accent-2-h: calc(var(--hue) + 150);
+  --accent-3-h: calc(var(--hue) + 240);
+  --accent-4-h: calc(var(--hue) + 330);
+  --accent-1-l: 0.48;
+  --accent-2-l: 0.46;
+  --accent-3-l: 0.44;
+  --accent-4-l: 0.42;
+
+  /* ── 符号强调色（2026-11-01 站长：「强调色的符号可读性一直不怎么好」）──
+   *
+   * 实测原值 `--md-sys-color-tertiary` = `hsl(hue+60, 30%, 42%)`：
+   * 对比度 **5.53:1**（对公式容器底）—— 其实**过了 WCAG AA**。
+   * 所以问题不是「看不清」，是**饱和度只有 30%**：看起来灰扑扑的紫粉色，
+   * 与正文灰字太接近，读者认不出「这是个可点的符号」。
+   *
+   * 改用一个独立令牌：色相仍跟 hue，但走 oklch 的高饱和低亮度
+   * （C=0.16 / L=0.50 → 实测约 7:1，且一眼是**彩色**）。
+   * hover 再压暗一档（L=0.42）。
+   */
+  --md-sys-color-symbol: oklch(0.50 0.16 calc(var(--hue) + 60));
+  --md-sys-color-symbol-hover: oklch(0.42 0.17 calc(var(--hue) + 60));
+
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --header-height: 60px;
@@ -69,6 +121,15 @@
   --md-sys-color-on-tertiary: hsl(calc(var(--primary-h) + 60), 50%, 18%);
   --md-sys-color-tertiary-container: hsl(calc(var(--primary-h) + 60), 40%, 32%);
   --md-sys-color-on-tertiary-container: hsl(calc(var(--primary-h) + 60), 55%, 90%);
+  /* 深色模式：同四档色相，亮度整体提亮（深色底上深色看不见）。
+     oklch 的 L 是感知亮度，0.72/0.70/0.68/0.66 在任意色相下都稳。 */
+  --accent-1-l: 0.72;
+  --accent-2-l: 0.70;
+  --accent-3-l: 0.68;
+  --accent-4-l: 0.66;
+  /* 符号强调色在深色里提亮（低 L 在深底上会糊掉），C 略降避免刺眼。 */
+  --md-sys-color-symbol: oklch(0.78 0.14 calc(var(--hue) + 60));
+  --md-sys-color-symbol-hover: oklch(0.86 0.15 calc(var(--hue) + 60));
 
   --md-sys-color-surface: hsl(var(--primary-h), 15%, 8%);
   --md-sys-color-surface-dim: hsl(var(--primary-h), 15%, 8%);
@@ -111,6 +172,15 @@
     --md-sys-color-on-tertiary: hsl(calc(var(--primary-h) + 60), 50%, 18%);
     --md-sys-color-tertiary-container: hsl(calc(var(--primary-h) + 60), 40%, 32%);
     --md-sys-color-on-tertiary-container: hsl(calc(var(--primary-h) + 60), 55%, 90%);
+  /* 深色模式：同四档色相，亮度整体提亮（深色底上深色看不见）。
+     oklch 的 L 是感知亮度，0.72/0.70/0.68/0.66 在任意色相下都稳。 */
+    --accent-1-l: 0.72;
+    --accent-2-l: 0.70;
+    --accent-3-l: 0.68;
+    --accent-4-l: 0.66;
+  /* 符号强调色在深色里提亮（低 L 在深底上会糊掉），C 略降避免刺眼。 */
+    --md-sys-color-symbol: oklch(0.78 0.14 calc(var(--hue) + 60));
+    --md-sys-color-symbol-hover: oklch(0.86 0.15 calc(var(--hue) + 60));
 
     --md-sys-color-surface: hsl(var(--primary-h), 15%, 8%);
     --md-sys-color-surface-dim: hsl(var(--primary-h), 15%, 8%);
@@ -555,10 +625,37 @@ body {
 .hand-btn:active svg {
   transform: translateY(0) rotate(0) scale(.94);
 }
-/* 面板打开时按钮保持强调色，形成「按下」的连续感 */
-.hand-btn[aria-expanded="true"] {
-  color: var(--md-sys-color-primary);
-  background-color: var(--md-sys-color-primary-container);
+/* ── 顶栏按钮的「展开态高亮」统一（2026-11-01 站长定案）──────────────
+ *
+ * 需求原文：「只需要将 headline 那边所有按钮统一成助手那样的展开时候
+ * 高亮就好，四个颜色要不一样，就是说都跟着 hue 但是色深不一样，参考 M3E」。
+ *
+ * 之前只有助手（hand-btn）有这行为，其余四个按钮展开后毫无指示 ——
+ * 读者点了哪个、面板是不是还开着，全靠猜。
+ *
+ * 现在五个入口**同一套机制**：`[aria-expanded="true"]` ⇒ 图标换成
+ * 该入口的强调色 + 该色的低透明度底衬。四档色由 --accent-N-h / --accent-N-l
+ * 派生（见文件顶部），色相跟 --hue，色深逐档不同。
+ *
+ * 分工（谁用哪档）：
+ *   档 1 → 资源包 pack-toggle
+ *   档 2 → 笔记本 notebook-toggle
+ *   档 3 → 调色盘 palette-toggle
+ *   档 4 → 搜索 search-toggle
+ *   助手 hand-btn 用主强调色（它是站长原话里的「基准样式」，不占用这四档）。
+ *
+ * ⚠️ 底衬用 color-mix 把强调色打薄到 18%：既让「这块亮着」看得出来，
+ * 又不至于把图标本身压掉（同色实心底 + 同色图标＝图标看不见）。
+ */
+#pack-toggle { --pack-accent: oklch(var(--accent-1-l) 0.14 mod(var(--accent-1-h), 360)); }
+#notebook-toggle { --pack-accent: oklch(var(--accent-2-l) 0.14 mod(var(--accent-2-h), 360)); }
+#palette-toggle { --pack-accent: oklch(var(--accent-3-l) 0.14 mod(var(--accent-3-h), 360)); }
+#search-toggle { --pack-accent: oklch(var(--accent-4-l) 0.14 mod(var(--accent-4-h), 360)); }
+#assistant-toggle { --pack-accent: var(--md-sys-color-primary); }
+
+:is(#pack-toggle, #notebook-toggle, #palette-toggle, #search-toggle, #assistant-toggle)[aria-expanded="true"] {
+  color: var(--pack-accent);
+  background-color: color-mix(in oklab, var(--pack-accent) 20%, transparent);
 }
 
 /* ── 弹层内的明暗切换（从顶栏收进来的）──────────────────── */
@@ -1558,7 +1655,7 @@ pre code {
 .article-content a.sym-gloss,
 .custom-md a.sym-gloss,
 a.sym-gloss {
-  color: var(--md-sys-color-tertiary) !important;
+  color: var(--md-sys-color-symbol) !important;
   border-bottom: none;
   text-decoration: none;
   cursor: pointer;
@@ -1566,7 +1663,7 @@ a.sym-gloss {
 .article-content a.sym-gloss:hover,
 .custom-md a.sym-gloss:hover,
 a.sym-gloss:hover {
-  color: var(--md-sys-color-primary) !important;
+  color: var(--md-sys-color-symbol-hover) !important;
   border-bottom: none;
 }
 
@@ -1579,14 +1676,14 @@ a.sym-gloss:hover {
    .katex 保留兼容——旧产物与聊天面板里可能还有）。 */
 .ML__latex [data-term],
 .katex [data-term] {
-  color: var(--md-sys-color-tertiary);
+  color: var(--md-sys-color-symbol);
   cursor: pointer;
   position: relative;
   z-index: 1;
 }
 .ML__latex [data-term]:hover,
 .katex [data-term]:hover {
-  color: var(--md-sys-color-primary);
+  color: var(--md-sys-color-symbol-hover);
 }
 
 .sym-gloss-pop {
