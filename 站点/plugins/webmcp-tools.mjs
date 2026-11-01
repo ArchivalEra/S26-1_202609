@@ -230,11 +230,65 @@ export function renderMarkdown(root, opts) {
     return out;
   }
 
+  /**
+   * 单元格外壳记的 LaTeX 还原成可读形式。
+   *
+   * `data-fcell-tex` 存的是**用户最后编辑过**的 LaTeX（原样，未转义）。
+   * 这里只做两件最小的事，**不做排版**（读面给 LaTeX 源码本来就是对的）：
+   *   · 把 HTML 实体还原（构建期 attribute 里是 `&amp;` 这类）；
+   *   · 去掉首尾空白。
+   * 不做别的：读者/模型要的是「这条公式是什么」，不是渲染结果。
+   */
+  function restoreTex(tex) {
+    return String(tex || '')
+      .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+      .trim();
+  }
+
+  /**
+   * 取单元格的计算结果，**只取「真的有结果」的那种**。
+   *
+   * 返回空串意味着「不该给」：
+   *   · `hidden`          —— 没算过 / quiet 模式静默收起
+   *   · `is-pending`      —— 计算中…
+   *   · `is-err`          —— 红字报错（读面不该把报错当内容）
+   * 只有落定的成功结果（`is-ok`，或干脆没带状态类但有文字）才返回。
+   *
+   * 判据取「状态类」而不是「有没有文字」：`计算中…` 也是文字，
+   * 但它是过程不是结论。
+   */
+  function fcellResultOf(el) {
+    if (!el) return '';
+    if (el.hidden) return '';
+    if (hasClass(el, 'is-pending') || hasClass(el, 'is-err')) return '';
+    const t = (el.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!t) return '';
+    // ⚠️ 去掉**前导的等号**（2026-11-01 实测）：结果框的文案本身就是 `= 2`，
+    // 而读面拼的是 `$$…$$ = <结果>` —— 直接拼会得到 `= = 2`（双等号）。
+    // 剥掉一处等号，让读面形如 `$$… = 2`。
+    const stripped = t.replace(/^=\s*/, '');
+    return stripped || t;
+  }
+
   function walkInline(node) {
     if (!node) return '';
     if (isTextNode(node)) return node.textContent || '';
     const tag = String(node.tagName || '').toUpperCase();
     if (SKIP[tag]) return '';
+    // 行内公式单元格：与 walk 里的块级分支同一套判据（只给公式 + 真结果）。
+    // 行内不出块级 `$$…$$`，用 `$…$`。
+    if (hasClass(node, 'fcell')) {
+      const tex = node.getAttribute ? node.getAttribute('data-fcell-tex') : null;
+      const body = childrenOf(node).find((c) => hasClass(c, 'fcell-body'));
+      const formula = tex ? restoreTex(tex) : (body ? walkInline(body) : '');
+      const res = childrenOf(node).find((c) => hasClass(c, 'fcell-result'));
+      const shown = fcellResultOf(res);
+      const isBlock = hasClass(node, 'fcell-block');
+      return isBlock
+        ? '$$' + formula + '$$' + (shown ? ' = ' + shown : '')
+        : '$' + formula + '$' + (shown ? ' = ' + shown : '');
+    }
     if (hasClass(node, 'katex') || hasClass(node, 'ML__latex') || (node.getAttribute && node.getAttribute('data-math-plain'))) return katexText(node);
     // KaTeX 的**内部**节点：外层 .katex 已经整体处理过，这里再遇到就是重复
     //（实测正文里出现孤立的 `$...$` 行与 BBBHHH——都是 katex-html 副本被二次读取）
@@ -278,6 +332,39 @@ export function renderMarkdown(root, opts) {
     }
     const tag = String(node.tagName || '').toUpperCase();
     if (SKIP[tag]) return;
+
+    // ⚠️ **公式单元格（`.fcell`）要整块处理**（2026-11-01 站长定案）。
+    //
+    // 这是能力包「可算公式」的包装层，结构是：
+    //   <span class="fcell">                       ← 满宽外壳（播放按钮在这里）
+    //     <button class="fcell-play">▶</button>
+    //     <span class="fcell-body"><span class="katex">…</span></span>
+    //     <span class="fcell-result">= 2</span>    ← 算过的结果
+    //   </span>
+    //
+    // 读面要给的正是**公式 + 它的计算结果**（站长要的滤镜）。三件事：
+    //   ① 外壳本身不进正文（它是 DOM 装饰，不是内容）；
+    //   ② 播放按钮必须**完全跳过**（`▶` 进正文就是噪音）；
+    //   ③ 结果框只在**真的有结果**时附上——`is-pending`（计算中…）、
+    //      `is-err`（红字报错）、`hidden` 都不进正文，否则模型读到
+    //      「计算中…」会当成页面内容，那是纯污染。
+    //
+    // 未开计算时（开关关着 / 公式没单元格）走原来的 `.katex` 分支，输出完全不变
+    // ——这就是「没开计算的回退也确定正常」。
+    if (hasClass(node, 'fcell')) {
+      ensureNl(2);
+      const tex = node.getAttribute ? node.getAttribute('data-fcell-tex') : null;
+      const body = childrenOf(node).find((c) => hasClass(c, 'fcell-body'));
+      // 公式本身：优先用单元格外壳记的 LaTeX 源，退化到 body 里的 katex
+      const formula = tex ? restoreTex(tex) : (body ? walkInline(body) : '');
+      // 结果：只在「有结果」时给
+      const res = childrenOf(node).find((c) => hasClass(c, 'fcell-result'));
+      const shown = fcellResultOf(res);
+      push('$$' + formula + '$$');
+      if (shown) push('\n\n= ' + shown);
+      push('\n\n');
+      return;
+    }
 
     if (hasClass(node, 'katex') || hasClass(node, 'ML__latex') || (node.getAttribute && node.getAttribute('data-math-plain'))) { push(katexText(node)); return; }
     if (hasClass(node, 'katex-html') || hasClass(node, 'katex-mathml')) return;

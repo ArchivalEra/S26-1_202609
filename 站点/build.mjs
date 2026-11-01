@@ -213,9 +213,19 @@ console.log(`[符号] 包：${Object.entries(glossaryPacks).map(([n, p]) => `${n
  * @param {string} relPath 页面路径（诊断定位）
  * @param {object} env     本页数学环境（词典 + 包 + 排除）
  * @param {Map}    hits    本页命中集（累加，供气泡 JSON）
+ * @param {{calc?: boolean}} [o] calc=true 时**手动标记**这条公式可算
  * @returns {{rendered: string, plain: string}}
  */
-function renderOneMath(src, mode, relPath, env, hits) {
+/**
+ * 渲染一条公式。
+ *
+ * @param {string} src      LaTeX 源
+ * @param {'display'|'inline'} mode
+ * @param {string} relPath  源 Markdown 路径（错误信息要用）
+ * @param {*} env, hits     符号环境与本页命中集
+ * @param {{calc?: boolean}} [o]  calc=true 时**手动标记**这条公式可算
+ */
+function renderOneMath(src, mode, relPath, env, hits, o = {}) {
   const compiled = compileMath({ blocks: [{ raw: src, mode }] }, env);
   const doc = compiled.docs[0];
 
@@ -272,24 +282,53 @@ function renderOneMath(src, mode, relPath, env, hits) {
     }
   }
 
-  // 构建期判「这条能不能算」。判据是转译器能不能把 IR 转成 Octave 代码——
-  // 与运行时用的是**同一个转译器**，所以不会出现「构建期说能算、运行时算不了」。
-  // 结果烘成 `data-computable="1"`，页面上只给这些公式挂播放按钮。
-  let computable = false;
+  // ── 可算性：**只认手动标记**（2026-11-01 站长定案）────────────────────
+  //
+  // 之前三轮都试过「自动判哪条公式能算」，结论是这条路不通：判据堆到第十条
+  // 还在冒新形态（题号前缀、隐含乘法、单位、百分号、坐标记法、希腊字母…），
+  // 而且每加一条就可能误伤（矩阵乘法曾因 `] [` 被整批误杀）。
+  // 站长原话「自动匹配效果太好笑了」——观察到的就是这样：真正想算的矩阵
+  // 没按钮，旁边一个孤立的 `1` 反倒有按钮、点开得到 `= 1`。
+  //
+  // 所以改成**作者显式标记**：md 里写 `$$…$$ {:calc}` 才挂播放按钮。
+  // 标记是**声明**不是提示：标了就必须能转译、必须语法合法，
+  // 否则**构建期直接抛错**（不静默降级成一个坏按钮）。
+  //
+  // 为什么报错要响亮：一个标错的公式在页面上表现为「读者点一下吃一屏红字」，
+  // 而构建日志啥都不说 —— 那是最坏的组合（错的东西能上线，且没人知道）。
+  const calcMarked = o.calc === true;
   let computeCode = '';
-  try {
-    const t = translateToOctave(doc.expr.root);
-    if (t.ok && t.code) { computable = true; computeCode = t.code; }
-  } catch (e) { /* 转译器抛错就当不可算，不影响渲染 */ }
+  if (calcMarked) {
+    let t = null;
+    try {
+      t = translateToOctave(doc.expr.root);
+    } catch (e) {
+      throw new Error(
+        `[build] 公式标了 {:calc} 但转译器抛错（${relPath}）：${(e && e.message) || e}\n`
+        + `  公式：${src.slice(0, 120)}`);
+    }
+    if (!t.ok || !t.code) {
+      throw new Error(
+        `[build] 公式标了 {:calc} 但算不了（${relPath}）：${t.reason || '转译器没给出原因'}\n`
+        + `  公式：${src.slice(0, 120)}\n`
+        + `  处置：要么把公式改写成 Octave 能吃的形态，要么去掉 {:calc} 标记。`);
+    }
+    computeCode = t.code;
+  }
 
   let htmlOut = out.html;
-  if (computable) {
-    // 只给「能算的」那个 <span class="katex"> 加上标记（与 data-math-tex 同一层）。
+  if (calcMarked) {
+    // 只给「标了 calc 的」那个 <span class="katex"> 加上标记（与 data-math-tex 同一层）。
     // 转义就地做，不复用 escAttr —— 那个 const 定义在文件后段（921 行），
     // 而本函数在 289 行就被调用了（TDZ 会抛 ReferenceError，实测踩到）。
     const codeAttr = String(computeCode)
       .replace(/&/g, '&amp;').replace(/"/g, '&quot;')
       .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    if (!htmlOut.includes('<span class="katex"')) {
+      throw new Error(
+        `[build] 标了 {:calc} 的公式渲染产物里找不到 <span class="katex">（${relPath}）。`
+        + `渲染器可能换过产物形状，需要同步更新 build.mjs 的属性注入点。`);
+    }
     htmlOut = htmlOut.replace('<span class="katex"',
       `<span class="katex" data-computable="1" data-octave-code="${codeAttr}"`);
   }
@@ -1284,14 +1323,17 @@ for (const relPath of TARGET_FILES) {
   };
 
   // 2.1 Display Math $$...$$
-  raw = raw.replace(/\$\$([\s\S]+?)\$\$/g, (_, tex) => {
+  // 支持尾部手动标记 `{:calc}`（2026-11-01 站长定案：可算性**只认手动标记**）。
+  // 形态：`$$ … $$ {:calc}` —— 标记紧跟闭合的 `$$`，中间允许空白。
+  // 剥掉标记后再进渲染管线，所以公式本体看不见它。
+  raw = raw.replace(/\$\$([\s\S]+?)\$\$([ \t]*\{:\s*calc\s*\})?/g, (whole, tex, mark) => {
     const id = mathBlocks.length;
     totalFormulasRendered++;
     // 教材排版惯例把句末标点写进显示公式（$$….$$），在网页上独立成块后
     // 看着像渲染出了一个多余的点（用户实测反馈）。渲染前剥掉**收尾的一个**
     // 标点——只剥一个：万一公式真以省略号收尾不至于被整串误删。
     const src = tex.trim().replace(/[.。，、；;][ \t]*$/, '');
-    const { rendered, plain } = renderOneMath(src, 'display', relPath, pageMathEnv, pageMathHits);
+    const { rendered, plain } = renderOneMath(src, 'display', relPath, pageMathEnv, pageMathHits, { calc: !!mark });
     mathBlocks.push({ display: true, html: rendered, plain });
     mathPlainOf[id] = plain;
     return `@@MATH_BLOCK_${id}@@`;

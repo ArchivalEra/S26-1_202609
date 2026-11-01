@@ -1677,3 +1677,99 @@ test('失败回喂：枚举仍留在返回值里，机器侧判据不受影响',
   assert.equal(r.value.reason, 'no_such_page', '结构化返回值仍是枚举');
   assert.doesNotMatch(r.feed, /no_such_page/, '只有文本层被翻译');
 });
+
+// ---------------------------------------------------------------- 公式单元格读面（2026-11-01）
+
+// 站长定案：**MCP 读面只允许看到「公式 + 计算结果」**，没开计算时干净回退。
+// 「干净」的定义要精确，否则助手会把装饰当成页面内容：
+//   · 播放按钮 `▶` 是 DOM 装饰 —— 进正文就是噪音；
+//   · `计算中…` 是过程 —— 进正文会让模型以为页面在说这句话；
+//   · 红字报错 `error: syntax error>>> …` 是失败态 —— 不该被当成内容引用；
+//   · 没算过的空白结果框 —— 什么都不该给。
+// 上面任何一条泄漏进读面，都是把「工具状态」当「教材内容」喂给模型。
+
+/** 造一个 .fcell 结构（含按钮/body/katex/result）。 */
+function fcell({ tex = 'x', result = null, hidden = true, cls = '', block = false, resCls = '' } = {}) {
+  const wrap = el('span', '', { className: 'fcell' + (block ? ' fcell-block' : '') + (cls ? ' ' + cls : ''), attrs: { 'data-fcell-tex': tex } });
+  const play = el('button', '▶', { className: 'fcell-play' });
+  const body = el('span', '', { className: 'fcell-body' });
+  const katex = el('span', tex, { className: 'katex', attrs: { 'data-math-plain': tex, 'data-math-tex': tex } });
+  body.children = [katex];
+  const res = el('span', result == null ? '' : result, { className: 'fcell-result' + (resCls ? ' ' + resCls : ''), hidden });
+  wrap.children = [play, body, res];
+  play.parentElement = wrap; body.parentElement = wrap; katex.parentElement = body; res.parentElement = wrap;
+  return wrap;
+}
+
+test('读面：可算公式给出 LaTeX 本身（不是纯文本投影）', () => {
+  const root = el('div', '');
+  root.children = [fcell({ tex: '\\begin{pmatrix}3&2\\\\1&2\\end{pmatrix}' })];
+  const md = renderMarkdown(root);
+  // 读面要给 LaTeX —— 那是能复制到别处算的形态；纯文本投影做不到。
+  assert.match(md, /\\begin\{pmatrix\}3&2\\\\1&2\\end\{pmatrix\}/);
+  // 播放按钮绝不能进正文
+  assert.ok(!md.includes('▶'), `播放按钮泄漏进读面：${md}`);
+  assert.ok(!md.includes('fcell'), '外壳类名泄漏进读面');
+});
+
+test('读面：算过的结果附在公式后面（`$公式$ = 值`）', () => {
+  const root = el('div', '');
+  root.children = [fcell({ tex: '2+3', result: '= 5', hidden: false, resCls: 'is-ok' })];
+  const md = renderMarkdown(root);
+  assert.match(md, /2\+3/, '公式本体必须在');
+  assert.match(md, /= 5/, '结果必须附上');
+});
+
+test('读面：计算中 / 报错 / 隐藏的结果一律不进正文', () => {
+  // 三种「不是结论」的状态，逐个验。
+  for (const [label, opts] of [
+    ['计算中', { tex: '2+3', result: '计算中…', hidden: false, resCls: 'is-pending' }],
+    ['报错', { tex: '1 2 3', result: 'error: syntax error>>> disp(1 2 3)', hidden: false, resCls: 'is-err' }],
+    ['未算过', { tex: '2+3', result: '', hidden: true }],
+  ]) {
+    const root = el('div', '');
+    root.children = [fcell(opts)];
+    const md = renderMarkdown(root);
+    assert.ok(!md.includes('计算中'), `「${label}」状态泄漏进读面：${md}`);
+    assert.ok(!md.includes('error:'), `「${label}」报错泄漏进读面：${md}`);
+    assert.ok(!md.includes('syntax'), `「${label}」报错泄漏进读面：${md}`);
+  }
+});
+
+test('读面：没开计算时（根本没有 .fcell）输出与原来一致', () => {
+  // 这是「回退也确定正常」的判据：同一条公式，有单元格与没单元格，
+  // 读面都必须给出它在页面上的数学内容，且不掺任何工具状态。
+  const bare = el('div', '');
+  bare.children = [el('span', '2+3', { className: 'katex', attrs: { 'data-math-plain': '2+3' } })];
+  const wrapped = el('div', '');
+  wrapped.children = [fcell({ tex: '2+3' })];
+  const a = renderMarkdown(bare);
+  const b = renderMarkdown(wrapped);
+  assert.match(a, /2\+3/);
+  assert.match(b, /2\+3/);
+  // 两者都不含按钮/状态词
+  for (const md of [a, b]) {
+    assert.ok(!md.includes('▶'));
+    assert.ok(!md.includes('计算中'));
+  }
+});
+
+test('读面：行内公式单元格用 $…$，块级用 $$…$$', () => {
+  const root = el('div', '');
+  const inline = fcell({ tex: 'x^2', result: '= 9', hidden: false, resCls: 'is-ok' });
+  const block = fcell({ tex: '\\begin{vmatrix}1&2\\\\3&4\\end{vmatrix}', result: '= -2', hidden: false, resCls: 'is-ok', block: true });
+  root.children = [inline, block];
+  const md = renderMarkdown(root);
+  assert.match(md, /\$x\^2\$ = 9|=\s*9/);
+  assert.match(md, /\$\$\\begin\{vmatrix\}/);
+});
+
+test('读面：结果框自带的 `=` 不能与读面的 `=` 叠成 `= =`', () => {
+  // 2026-11-01 浏览器实测：读面拼的是 `$$…$$ = <结果>`，而结果框的文案本身
+  // 就是 `= 2` —— 直接拼出 `= = 2`。剥掉一处，读面形如 `$$… = 2`。
+  const root = el('div', '');
+  root.children = [fcell({ tex: '\\begin{vmatrix}2&-1&1\\\\3&2&1\\\\1&-2&1\\end{vmatrix}', result: '= 2', hidden: false, resCls: 'is-ok', block: true })];
+  const md = renderMarkdown(root);
+  assert.ok(!/= =/.test(md), `结果出现双等号：${md}`);
+  assert.match(md, /=\s*2/, '结果丢了');
+});
