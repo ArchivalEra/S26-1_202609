@@ -222,3 +222,56 @@ test('⑪ 输入框的拖拽把手必须跟主题（不许写死 color-scheme: l
   assert.match(code, /\.nb-code::-webkit-resizer\s*\{[\s\S]*var\(--md-sys-color-primary\)/,
     '自绘把手没用主题强调色 —— 亮度和对比度要靠它');
 });
+
+// ══════════════════════════════════════════════════════════════════
+// 2026-11-01 站长三条：
+//   「面板里居然没有 mathlive 的选择器」
+//   「深色模式下 mathlive 那两个按钮有点不可视」
+//   「编辑器与面板里面都不要出现虚拟键盘按钮吧，那个全站都不需要」
+// ══════════════════════════════════════════════════════════════════
+
+test('⑬ 笔记本的公式块用 math-field（MathLive），不是 textarea', () => {
+  // 站长原话「面板里居然没有 mathlive 的选择器」—— 页面上公式点开是
+  // MathLive，笔记本里却只有纯文本框，同一个能力两套输入体验说不过去。
+  // 按锚点切：从「公式」块名到下一个 section 结束（正则跨嵌套不可靠）
+  const i = BUILD.indexOf('<span class="nb-block-name">公式</span>');
+  assert.ok(i > 0, '找不到「公式」块');
+  const seg = BUILD.slice(i, BUILD.indexOf('</section>', i));
+  assert.ok(seg.length > 100, '「公式」块切不出来');
+  assert.match(seg, /<math-field/, '公式块不是 math-field —— 它还是纯文本框');
+  assert.ok(!/<textarea/.test(seg), '公式块还在用 textarea（MathLive 才是所见即所得）');
+  // 与之相对：MATLAB 块**必须**还是 textarea（原生代码没有 MathLive 版本）
+  assert.match(BUILD, /<textarea class="nb-code" id="nb-code"/, 'MATLAB 块被误改成 math-field 了');
+});
+
+test('⑭ 虚拟键盘全站不要（含页面编辑器与笔记本）', () => {
+  // 站长：「编辑器与面板里面都不要出现虚拟键盘按钮吧，那个全站都不需要」。
+  // 三处都要拦住：
+  const pr = PR;
+  // ① 笔记本 math-field：运行期注入 shadow 样式藏掉按钮
+  assert.match(pr, /\.ML__virtual-keyboard-toggle/, '没有藏虚拟键盘按钮的规则');
+  assert.match(pr, /display: none !important/, '虚拟键盘按钮没被 display:none 掉');
+  // ② 属性层面（MathLive 自己也会读）
+  assert.match(pr, /math-virtual-keyboard-policy/, '没有设 math-virtual-keyboard-policy');
+  assert.match(pr, /virtualKeyboardMode:\s*"manual"/, '没有设 virtualKeyboardMode: manual');
+  // ③ 页面编辑器（formula-cells 动态建的 math-field）也要设属性
+  const cells = fs.readFileSync(path.join(HERE, 'formula-cells.mjs'), 'utf8');
+  assert.match(cells, /setAttribute\('math-virtual-keyboard-policy',\s*'manual'\)/,
+    '页面公式编辑器的 math-field 没设 policy —— 它还会弹键盘');
+});
+
+test('⑮ math-field 的内置按钮在深色下必须可见（不许吃 MathLive 的硬编码暗色）', () => {
+  // 站长：「深色模式下 mathlive 那两个按钮有点不可视」。
+  // MathLive 的图标色是 hsl(hue, 25%, 35%) 那套硬编码 —— 深色面板上 35%
+  // 亮度几乎与背景同色。CSS 穿不过 shadow 边界（那两个按钮没声明 part=），
+  // 所以必须在运行期注入样式，把它们提到主题前景色。
+  const pr = PR;
+  assert.match(pr, /\.ML__menu-toggle/, '没有给菜单按钮提亮的规则');
+  assert.match(pr, /shadowRoot/, '没有访问 shadowRoot —— 穿不过 shadow 边界就改不了那两个按钮');
+  // 注入的样式要用**具体颜色值**（shadow 内部拿不到外部自定义属性）
+  assert.match(pr, /getComputedStyle\(mf\)\.color/, '注入的样式应该用具体颜色值而不是 var(--…)');
+  // CSS 层面也要给宿主兜底（MathLive 的 :host 不写 color）
+  const code = stripCssComments(CSS);
+  assert.match(code, /\.nb-mathfield\s*\{[^}]*color:\s*var\(--md-sys-color-on-surface\)/,
+    '.nb-mathfield 没显式给 color —— 深色下面板里的公式字会是黑的');
+});

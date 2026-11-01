@@ -33,6 +33,12 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BUILD = fs.readFileSync(path.join(HERE, '../build.mjs'), 'utf8');
 const TOCTC = fs.readFileSync(path.join(HERE, '../math/to-octave.mjs'), 'utf8');
+// 真跑一遍转译器（不是读源码）——下面 ⑫ 第二条要验证「分离后能算」。
+const { translate } = await import(path.join(HERE, '../math/to-octave.mjs'));
+const { parse } = await import(path.join(HERE, '../math/parser.mjs'));
+const tr = (tex) => {
+  try { return translate(parse(tex).expr.root); } catch (e) { return { ok: false, reason: String(e && e.message) }; }
+};
 
 test('① build.mjs 里没有「自动判可算」那条路了', () => {
   // 旧的形状：`const t = translateToOctave(...); if (t.ok && t.code) { computable = true }`
@@ -87,4 +93,54 @@ test('⑤ 转译器不再靠「一堆启发式判据」决定能不能算', () =
   const fails = (seg.match(/return fail\(/g) || []).length;
   assert.ok(fails <= 8, `translate() 里又有 ${fails} 条启发式判据了 —— 这条路已证明会无限膨胀，`
     + '要加新的「能不能算」规则请改成作者标记，不要恢复自动判据');
+});
+
+// ══════════════════════════════════════════════════════════════════
+// 2026-11-01 站长：**题号与题目分离**。
+//
+// 「全站都改，题号与题目分离，这样又有几个公式可以算了」。
+//
+// 病因：题号 `(1)` 被写进公式里（`$$(1)\quad\begin{pmatrix}…\end{pmatrix}$$`），
+// 译出来是 `(1) [3 2 -4; …]` —— 两个操作数并置，Octave 语法错。
+// 但题号**本来就不是公式的一部分**，它是排版的标签。分离之后：
+// 公式回到纯矩阵 ⇒ 能算，题号回到正文 ⇒ 可读性反而更好。
+//
+// 判据：`{:calc}` 标记的公式里**不许有题号前缀**（换行/空白后紧跟 `(N)`
+// 或 `(N)\quad`）。有前缀就说明没分离干净 —— 那样的公式译不出合法产物。
+// ══════════════════════════════════════════════════════════════════
+
+test('⑫ 标了 {:calc} 的公式不许带题号前缀（题号是排版标签，不是公式的一部分）', () => {
+  // 扫全站 md：凡是 `$$…$$ {:calc}` 且公式开头是 `(N)` 的都算没分离干净。
+  const walk = (dir, out = []) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p, out);
+      else if (e.name.endsWith('.md')) out.push(p);
+    }
+    return out;
+  };
+  const ROOT = path.resolve(HERE, '../..');
+  const files = walk(path.join(ROOT, '课程总览'));
+  const bad = [];
+  for (const f of files) {
+    const src = fs.readFileSync(f, 'utf8');
+    // $$(N)...$$ {:calc}
+    const re = /\$\$\s*\([0-9]+\)[\s\S]*?\$\$\s*\{:\s*calc\s*\}/g;
+    let m;
+    while ((m = re.exec(src)) !== null) {
+      bad.push(`${path.relative(ROOT, f)}: ${m[0].slice(0, 60).replace(/\n/g, ' ')}`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    `这些标记公式还带题号前缀，先把题号移到公式外：\n  ${bad.join('\n  ')}`);
+});
+
+test('⑫ 题号分离后的公式仍然能算出结果（至少不是空跑）', () => {
+  // 反例优先：确认 `(1) [3 2 -4; …]` 这种形态**确实**算不了 —— 这是分离的理由。
+  const withNumber = tr('(1)\\quad\\begin{pmatrix}3&2&-4\\\\3&2&-4\\\\1&2&-1\\end{pmatrix}');
+  assert.equal(withNumber.ok, false, '带题号的公式本该算不了（并置），若现在能算说明判据变了');
+  // 分离之后能算
+  const bare = tr('\\begin{pmatrix}3&2&-4\\\\3&2&-4\\\\1&2&-1\\end{pmatrix}');
+  assert.equal(bare.ok, true, '分离题号后的纯矩阵必须能算');
+  assert.match(bare.code, /\[3 2 -4; 3 2 -4; 1 2 -1\]/);
 });

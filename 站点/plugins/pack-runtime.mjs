@@ -244,6 +244,12 @@ function ensureEditor() {
         return false;
       }
       setDiag("mathlive", "已就绪");
+      // MathLive 就绪后，把所有已存在的 math-field 都配置一遍
+      // （关虚拟键盘 + 修深色下那两个内置按钮）。见 configureMathField 的注释。
+      try {
+        var mfs = document.querySelectorAll("math-field");
+        for (var i = 0; i < mfs.length; i += 1) configureMathField(mfs[i]);
+      } catch (e) {}
       // 不再 bindFormulaClicks —— 编辑入口只有单元格那一条（见下方注释块）。
       // MathLive 就绪后单元格的 canEdit() 才会返回真；那时读者点公式才会进编辑态。
       return true;
@@ -399,6 +405,17 @@ function bindNotebookBlock(ids) {
   var outEl = $(ids.out);
   if (!input || !runBtn || !outEl) return;
 
+  // 两种输入控件：MATLAB 块是 textarea，公式块是 math-field（MathLive）。
+  // ⚠️ 不要把它们的取值方式写成一套：math-field 的值在 .value 上但**不是**
+  // 文本节点内容，读 textContent 会拿到渲染后的字符而不是 LaTeX。
+  var isMathField = ids.input === "nb-tex";
+  function readInput() {
+    if (isMathField) {
+      try { return String(input.value || ""); } catch (e) { return ""; }
+    }
+    return String(input.value || "");
+  }
+
   function showOut(text, isErr) {
     outEl.hidden = false;
     outEl.textContent = text;
@@ -406,7 +423,7 @@ function bindNotebookBlock(ids) {
   }
 
   function run() {
-    var src = String(input.value || "").trim();
+    var src = readInput().trim();
     if (!src) { showOut("先写点什么。", true); return; }
     runBtn.disabled = true;
     showOut(ids.mode === "tex" ? "计算中…" : "运行中…", false);
@@ -428,14 +445,88 @@ function bindNotebookBlock(ids) {
   }
 
   runBtn.addEventListener("click", function (ev) { ev.stopPropagation(); run(); });
-  // Ctrl/⌘ + Enter 直接运行（笔记本的肌肉记忆）
+  // Ctrl/⌘ + Enter 直接运行（笔记本的肌肉记忆）。
+  // math-field 的键盘事件在它自己的事件流里（contenteditable），但也会冒泡到元素本身。
   input.addEventListener("keydown", function (ev) {
     if ((ev.ctrlKey || ev.metaKey) && ev.key === "Enter") {
       ev.preventDefault();
       run();
     }
   });
+
+  // 虚拟键盘：**全站都不要**（2026-11-01 站长定案）。
+  // math-field 默认会在手机上弹一个虚拟键盘；本站是桌面阅读场景，
+  // 那个键盘只会挡住公式。属性层面已经写了 math-virtual-keyboard-policy="manual"
+  // （见 build.mjs 的模板），这里再做一次运行期设置，兜住「属性没生效」的情形。
+  if (isMathField) {
+    try { input.setAttribute("math-virtual-keyboard-policy", "manual"); } catch (e) {}
+    try { if (typeof input.setOptions === "function") input.setOptions({ virtualKeyboardMode: "manual" }); } catch (e) {}
+  }
+
   return { run: run };
+}
+
+/**
+ * 把 MathLive 的虚拟键盘关掉 + 让内置按钮在深色下可见。
+ *
+ * ## 为什么必须走 JS 而不能只靠 CSS
+ *
+ * .ML__virtual-keyboard-toggle 与 .ML__menu-toggle 在 math-field 的
+ * **shadow DOM 内部**。CSS 选择器穿不过 shadow 边界（::part() 只对
+ * 声明了 part= 的元素有效，MathLive 没给这两个按钮声明）。
+ * 所以只能从外面注入一条样式到它的 shadowRoot 里。
+ *
+ * ## 两件事
+ *
+ * ① **藏掉虚拟键盘按钮**（站长 2026-11-01：「编辑器与面板里面都不要出现
+ *    虚拟键盘按钮吧，那个全站都不需要」）。本站是桌面阅读场景，那个键盘
+ *    只会挡住公式。
+ * ② **让菜单按钮在深色下可见**（站长：「深色模式下 mathlive 那两个按钮
+ *    有点不可视」）。MathLive 的图标色是 hsl(var(--_hue), 25%, 35%) 那套
+ *    硬编码 —— 深色面板上 35% 亮度几乎与背景同色。这里把它提亮到
+ *    主题的 on-surface-variant。
+ *
+ * 幂等：给 shadowRoot 打一个标记，重复调用不重复注入。
+ */
+function configureMathField(mf) {
+  if (!mf) return;
+  // 属性层面先设一遍（不需要 shadow 访问，最坏情况下也能生效）
+  try { mf.setAttribute("math-virtual-keyboard-policy", "manual"); } catch (e) {}
+  try { if (typeof mf.setOptions === "function") mf.setOptions({ virtualKeyboardMode: "manual" }); } catch (e) {}
+
+  // shadow 里的样式注入。MathLive 的 shadowRoot 是 open 的（mode: open），
+  // 可以直接访问；若哪天改成 closed 模式，这里会静默跳过（不报错、不影响其他功能）。
+  function inject() {
+    var sr;
+    try { sr = mf.shadowRoot; } catch (e) { return; }
+    if (!sr) return;
+    if (sr.querySelector("style[data-pack-shadow]")) return;   // 已注入
+    var st = document.createElement("style");
+    st.setAttribute("data-pack-shadow", "1");
+    // 颜色用**具体值**而不是 var(--md-sys-color-*)：shadow 内部拿不到外部的
+    // 自定义属性（它们不继承进 shadow DOM 的样式表）。
+    var fg = getComputedStyle(mf).color || "#e0e0e6";
+    var bg = getComputedStyle(mf).backgroundColor || "transparent";
+    st.textContent = [
+      // ① 虚拟键盘按钮：彻底不显示（含它自己的 is-visible 状态）
+      ".ML__virtual-keyboard-toggle, .ML__virtual-keyboard-toggle.is-visible {",
+      "  display: none !important;",
+      "}",
+      // ② 菜单按钮：深色下提亮（默认是 hsl(hue,25%,35%)，深底上几乎同色）
+      ".ML__menu-toggle {",
+      "  color: " + fg + " !important;",
+      "}",
+      ".ML__menu-toggle:hover {",
+      "  background: color-mix(in oklab, " + fg + " 14%, transparent) !important;",
+      "}",
+      // ③ 整个容器别吃默认的深色背景（我们自己的宿主已经给了底）
+      ".ML__container { background: transparent !important; }",
+    ].join("\n");
+    try { sr.appendChild(st); } catch (e) {}
+  }
+  // 立即注入一次；再等一拍（MathLive 的 shadow DOM 有时在下一帧才建好）
+  inject();
+  setTimeout(inject, 160);
 }
 
 /** 绑胶囊两半 + 笔记本面板。**幂等**（重复调不会重复绑）。 */
@@ -466,9 +557,15 @@ function bindCapsule() {
     if (notePop && !notePop.hidden) closePanel("notebook");
   });
 
-  // 两块：MATLAB（原生代码）+ 公式（LaTeX）
+  // 两块：MATLAB（原生代码）+ 公式（MathLive）
   bindNotebookBlock({ input: "nb-code", run: "nb-run-code", out: "nb-code-out", hint: "nb-code-hint", mode: "code" });
   bindNotebookBlock({ input: "nb-tex", run: "nb-run-tex", out: "nb-tex-out", hint: "nb-tex-hint", mode: "tex" });
+
+  // 公式块是 math-field —— 关虚拟键盘、修深色下的两个内置按钮（见 configureMathField）。
+  // ⚠️ 要在 MathLive 就绪之后才有效：元素注册之前 shadowRoot 还不存在。
+  // 所以这里先直接把当前实例配置一遍，再在 ensureEditor 成功时补一遍。
+  try { configureMathField($("nb-tex")); } catch (e) {}
+  if (typeof window.__onMathliveReady === "function") { try { window.__onMathliveReady(); } catch (e) {} }
 }
 
 /* ── 启动：只在**用户点开弹窗**时才查一次状态（不在页面加载时查）───── */

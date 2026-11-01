@@ -232,6 +232,10 @@ export function createFormulaCells(deps = {}) {
     const tex = cell.wrap.getAttribute('data-fcell-tex') || '';
     const mf = document.createElement('math-field');
     mf.className = 'fcell-mathfield';
+    // 虚拟键盘**全站不要**（2026-11-01 站长定案）：本站是桌面阅读场景，
+    // 那个键盘只会挡住公式。属性写在元素上，这样即使装配层没跑到配置，
+    // MathLive 自己也会按 manual 策略不弹。
+    mf.setAttribute('math-virtual-keyboard-policy', 'manual');
     try { mf.value = tex; } catch (e) { mf.textContent = tex; }
 
     // 原公式先藏起来（**不删**：MCP 读面要它，见不变量 ①）

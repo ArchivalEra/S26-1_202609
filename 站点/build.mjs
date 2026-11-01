@@ -2288,13 +2288,20 @@ for (const relPath of TARGET_FILES) {
             <section class="nb-block">
               <div class="nb-block-head">
                 <span class="nb-block-name">公式</span>
-                <span class="nb-block-hint">写 LaTeX，与页面公式同一条转译链</span>
+                <span class="nb-block-hint">所见即所得（MathLive），与页面公式同一条转译链</span>
               </div>
-              <textarea class="nb-code nb-tex" id="nb-tex" spellcheck="false" rows="2"
-                placeholder="\begin{vmatrix}2&-1&1\\3&2&1\\1&-2&1\end{vmatrix}"></textarea>
+              <!-- 公式块用 <math-field>（MathLive 输入），不是 textarea。
+                   站长 2026-11-01：「面板里居然没有 mathlive 的选择器」——
+                   页面上的公式点开就是 MathLive，笔记本里却只有纯文本框，
+                   同一个能力两套输入体验说不过去。
+                   ⚠️ 虚拟键盘全站关闭（见 pack-runtime 的 configureMathField）。
+                   math-virtual-keyboard-policy="manual" 也在这里给一份，
+                   这样即使编辑器脚本没跑起来，键盘也不会冒出来。 -->
+              <math-field class="nb-mathfield" id="nb-tex"
+                math-virtual-keyboard-policy="manual"></math-field>
               <div class="nb-actions">
                 <button class="pack-btn" id="nb-run-tex" type="button">计算</button>
-                <span class="nb-hint" id="nb-tex-hint">写整条公式即可，不必加 $$</span>
+                <span class="nb-hint" id="nb-tex-hint">直接写公式；Ctrl/⌘ + Enter 也能算</span>
               </div>
               <pre class="nb-out" id="nb-tex-out" hidden></pre>
             </section>
