@@ -2082,17 +2082,32 @@ for (const relPath of TARGET_FILES) {
         </div>
 
         <div class="top-bar-right">
-          <!-- 能力包入口（2026-10-30）：右上角 package 图样。
-               点开是**两个独立的下载按钮**（编辑器 / 计算内核）——不绑在一起，
-               因为两者成功率差一个数量级（824 KB vs 38 MB），绑了会白丢「能编辑但算不了」的中间态。
-               缺任一件就退回只读静态渲染，不做「半启用」。 -->
-          <button class="m3-icon-btn" id="pack-toggle" aria-label="能力包" title="下载编辑器与计算内核" aria-expanded="false">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-              <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
-              <line x1="12" y1="22.08" x2="12" y2="12"/>
-            </svg>
-          </button>
+          <!-- 能力入口胶囊（2026-11-01 站长定案）。
+               ⚠️ 形态是**一枚胶囊、两半**，中间一条斜线分割：
+                 · 左半加号：资源包面板（下载编辑器 / 计算内核）。**恒在**。
+                 · 右半减号：笔记本面板（可写 MATLAB 多行 / 可写公式当场算）。
+                   只有**本页存在可算公式**（class 上带 data-computable="1"）时才出现。
+               「没有可算的状态」⇒ 只有原来那颗圆按钮（就是左半单独一颗圆）。
+               有可算公式 ⇒ 动画向左延伸成胶囊（CSS transition，无 JS 动画）。
+               两半互斥：开一个面板会关掉另一个。
+
+               为什么 + / - 而不是两个图标按钮：站长原话「有点像以前那种
+               一边+一边-那种胶囊」，那是一个控件被斜线分成两块，不是两颗按钮
+               挨着放。所以用一个 div.pack-capsule 包住两个 button，
+               斜线画在容器上（::after），两半各自可点亮。 -->
+          <div class="pack-capsule" id="pack-capsule" data-has-calc="0">
+            <button class="m3-icon-btn pack-cap-plus" id="pack-toggle" aria-label="资源包" title="下载编辑器与计算内核" aria-expanded="false">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+            </button>
+            <button class="m3-icon-btn pack-cap-minus" id="notebook-toggle" aria-label="计算笔记本" title="打开计算笔记本" aria-expanded="false">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+                <line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+            </button>
+          </div>
           <button class="m3-icon-btn" id="palette-toggle" aria-label="调色盘" title="主题与调色盘" aria-expanded="false">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/>
@@ -2244,6 +2259,48 @@ for (const relPath of TARGET_FILES) {
                  所以：全部环都正常 ⇒ 这块完全空；有一个不正常 ⇒ 只显示那一行
                  （外加一行总述），正常的不报。细节进 console。 -->
             <div class="pack-diag" id="pack-diag"></div>
+          </div>
+
+          <!-- 计算笔记本面板（2026-11-01 站长定案）：胶囊的减号那一半。
+               **两块**：
+                 · 上块「MATLAB」：自由输入多行 Octave 代码，直接跑（不经 LaTeX 翻译）。
+                 · 下块「公式」：写 LaTeX，走与页面公式同一条转译链，算同一个内核。
+               与资源包面板**互斥**（开一个关另一个）——它们是同一枚胶囊的两半。 -->
+          <div class="palette-popover notebook-popover" id="notebook-popover" hidden>
+            <div class="palette-header">
+              <span class="palette-title">计算笔记本</span>
+            </div>
+
+            <section class="nb-block">
+              <div class="nb-block-head">
+                <span class="nb-block-name">MATLAB</span>
+                <span class="nb-block-hint">直接写代码，几行都行（照 Octave 语法）</span>
+              </div>
+              <textarea class="nb-code" id="nb-code" spellcheck="false" rows="4"
+                placeholder="A = [1 2; 3 4];&#10;det(A)&#10;inv(A)"></textarea>
+              <div class="nb-actions">
+                <button class="pack-btn" id="nb-run-code" type="button">运行</button>
+                <span class="nb-hint" id="nb-code-hint">Ctrl/⌘ + Enter 也能运行</span>
+              </div>
+              <pre class="nb-out" id="nb-code-out" hidden></pre>
+            </section>
+
+            <section class="nb-block">
+              <div class="nb-block-head">
+                <span class="nb-block-name">公式</span>
+                <span class="nb-block-hint">写 LaTeX，与页面公式同一条转译链</span>
+              </div>
+              <textarea class="nb-code nb-tex" id="nb-tex" spellcheck="false" rows="2"
+                placeholder="\begin{vmatrix}2&-1&1\\3&2&1\\1&-2&1\end{vmatrix}"></textarea>
+              <div class="nb-actions">
+                <button class="pack-btn" id="nb-run-tex" type="button">计算</button>
+                <span class="nb-hint" id="nb-tex-hint">写整条公式即可，不必加 $$</span>
+              </div>
+              <pre class="nb-out" id="nb-tex-out" hidden></pre>
+            </section>
+
+            <!-- 笔记本自己的诊断位：与资源包面板同一个道理（正常态不显示） -->
+            <div class="pack-diag" id="nb-diag"></div>
           </div>
 
 
@@ -2513,6 +2570,40 @@ for (const relPath of TARGET_FILES) {
             return { ok: true, output: out || '(无输出)', code };
           } catch (e) {
             return { ok: false, error: '执行失败：' + ((e?.message) || e), code };
+          }
+        };
+
+        // 契约：「(code) → {ok, output} | {ok:false, error}」——**原生 Octave 代码**。
+        //
+        // 与 __packCompute 的分工（2026-11-01 笔记本面板要两块）：
+        //   · __packCompute(latex)  吃 LaTeX，先过转译器，再 disp(译出的表达式)
+        //   · __packRunCode(code)   吃**已经是 Octave 语法**的多行代码，原样执行
+        //
+        // 后者不做 disp(...) 包裹：那个包裹只适合「一个表达式」的场景；
+        // 多行代码里读者可能写 A = ...;（无输出）、写 x = 1（Octave 的
+        // 无分号形式自带回显）。原样执行，让 Octave 自己的回显规则生效。
+        window.__packRunCode = async (code) => {
+          const src = String(code || '');
+          if (!src.trim()) return { ok: false, error: '代码是空的' };
+          let eng;
+          try {
+            eng = await ensureOctave();
+          } catch (e) {
+            return { ok: false, error: '计算内核启动失败：' + ((e?.message) || e) };
+          }
+          eng.lines.length = 0;
+          eng.errs.length = 0;
+          try {
+            const rc = await eng.evalAsync(src);
+            const out = eng.lines.join('').trim();
+            if (rc !== 0) {
+              const err = eng.errs.join('').trim();
+              const msg = err || out || ('Octave 返回 rc=' + rc + '（没有给出错误信息）');
+              return { ok: false, error: msg, rc };
+            }
+            return { ok: true, output: out || '(无输出)' };
+          } catch (e) {
+            return { ok: false, error: '执行失败：' + ((e?.message) || e) };
           }
         };
 
