@@ -809,7 +809,19 @@ input.addEventListener("keydown", (e) => {
   }
 });
 
-toggleBtn.addEventListener("click", () => { if (panel.hidden) openPanel(); else closePanel(); });
+toggleBtn.addEventListener("click", () => {
+  // ⚠️ 顶栏四个面板**互斥**（2026-11-01 站长报「调色盘与这个会互相遮挡」）。
+  // 统一入口是 pack-runtime 暴露的 window.__panelToggle。
+  // 它没装配好时（能力包整体失败）退回本地开关，搜索自己至少能用。
+  const bridge = window.__panelToggle;
+  if (bridge && typeof bridge.toggle === "function") {
+    const willOpen = panel.hidden;
+    bridge.toggle("search");
+    if (willOpen) { input.focus(); }
+    return;
+  }
+  if (panel.hidden) openPanel(); else closePanel();
+});
 if (closeBtn) closeBtn.addEventListener("click", closePanel);
 panel.addEventListener("click", (e) => { if (e.target === panel) closePanel(); });
 
