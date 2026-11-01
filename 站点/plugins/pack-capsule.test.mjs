@@ -72,18 +72,45 @@ test('③ 两半面板互斥：openPanel 必须关掉另一半', () => {
   assert.match(click, /openPanel\("pack"\)|closePanel\("pack"\)/, '资源包按钮没走 openPanel/closePanel');
 });
 
-test('④ 右侧展开态由 data-has-calc 驱动（纯 CSS，无 JS 动画）', () => {
+test('④ 展开态由 data-has-calc 驱动：容器宽度是那个动画量（纯 CSS）', () => {
   const code = stripCssComments(CSS);
-  // 收起：宽度 0 + 透明 + 不可点
-  assert.match(code, /\.pack-cap-minus\s*\{[^}]*width:\s*0/, '右半收起态没有 width:0');
+  // 收起：右半透明 + 不可点
   assert.match(code, /\.pack-cap-minus\s*\{[^}]*opacity:\s*0/, '右半收起态没有 opacity:0');
   assert.match(code, /\.pack-cap-minus\s*\{[^}]*pointer-events:\s*none/, '右半收起态仍可点');
-  // 展开
-  assert.match(code, /\[data-has-calc="1"\]\s*\.pack-cap-minus\s*\{[^}]*width:\s*38px/,
-    '没有「data-has-calc=1 时右半展开」的规则');
+  // 容器宽度承载动画（两半绝对定位，宽度变了它们只是被「推出来」，形状不变形）
+  assert.match(code, /\.pack-capsule\s*\{[^}]*width:\s*38px/, '收起态容器宽度不是 38px（原来那颗圆按钮）');
+  assert.match(code, /\[data-has-calc="1"\]\s*\{[^}]*width:\s*68px/, '展开态容器宽度不是 68px');
+  assert.match(code, /transition:[^;]*width/, '容器宽度没有过渡 —— 展开会是硬跳');
 });
 
-test('⑤ 斜线分割只在两半都在时画（单独一颗圆按钮不该有斜线）', () => {
+test('⑤ 两半是**斜边切出来的块**（半圆+梯形），不是竖直切一半再画道装饰线', () => {
+  // 2026-11-01 站长第二次纠正：「形状用斜线分割，所以我会提到按钮形状是
+  // 梯形与半圆组合的样子」。第一版做成「竖直切一半 + 中间画斜线装饰」，
+  // 悬停点亮时一眼就看出亮的是矩形块 —— 装饰线画在哪都行，形状才是判据。
+  //
+  // 判据取 clip-path：两半各自被一条斜边裁开，且**顶点与底点不同 x**
+  // （同 x 就是竖直切）。
+  const code = stripCssComments(CSS);
+  const plus = code.slice(code.indexOf('.pack-capsule[data-has-calc="1"] .pack-cap-plus'),
+                          code.indexOf('.pack-capsule[data-has-calc="1"] .pack-cap-minus'));
+  const minus = code.slice(code.indexOf('.pack-capsule[data-has-calc="1"] .pack-cap-minus'),
+                           code.indexOf('/* ── 点亮'));
+  assert.ok(plus.length > 60, '找不到展开态的左半规则');
+  assert.ok(minus.length > 60, '找不到展开态的右半规则');
+  // 两半都要 clip-path
+  assert.match(plus, /clip-path:\s*polygon/, '左半没有 clip-path —— 它不是斜边块');
+  assert.match(minus, /clip-path:\s*polygon/, '右半没有 clip-path —— 它不是斜边块');
+  // 左半的三/四号顶点必须**不同 x**（顶 100%，底 calc(100% - 8px)）
+  assert.match(plus, /polygon\([^)]*100%\s*0[^)]*calc\(100%\s*-\s*8px\)\s*100%/,
+    '左半的边缘是竖直的（顶底同 x）—— 要的是斜边');
+  // 右半的三号顶点（左上）必须偏移（8px 0），不是 0 0
+  assert.match(minus, /polygon\(8px\s*0/, '右半的边缘是竖直的（从 0 0 起）—— 要的是斜边');
+  // 两半的圆角必须是「半圆 + 直边」，不是四角全圆（四角全圆就没法拼成胶囊）
+  assert.match(plus, /border-radius:\s*9999px\s*0\s*0\s*9999px/, '左半圆角不是「左侧半圆 + 右侧直边」');
+  assert.match(minus, /border-radius:\s*0\s*9999px\s*9999px\s*0/, '右半圆角不是「左侧直边 + 右侧半圆」');
+});
+
+test('⑤b 斜线分割只在两半都在时画（单独一颗圆按钮不该有斜线）', () => {
   const code = stripCssComments(CSS);
   // 斜线是 .pack-capsule::after，且选择器带 data-has-calc="1"
   assert.match(code, /\.pack-capsule\[data-has-calc="1"\]::after/, '斜线没有绑定在展开态上');

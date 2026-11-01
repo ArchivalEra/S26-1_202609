@@ -213,119 +213,138 @@ body {
 
 /* ── 能力入口胶囊（2026-11-01 站长定案）──────────────────────────────
  *
- * 形态：**一枚胶囊、两半、中间一条斜线**。
+ * 形态：一枚胶囊、两半、**斜线是真正的分界线**。
  *   · 左半 `+` 资源包 —— **恒在**（没下载器/内核时也要能点进去下载）。
  *   · 右半 `-` 笔记本 —— 只有**本页有可算公式**时才展开出现。
  *
- * 三种状态（由 `#pack-capsule[data-has-calc]` 驱动，纯 CSS，无 JS 动画）：
- *   data-has-calc="0" ⇒ 右半 width:0 + opacity:0，看到的还是**原来那颗圆按钮**；
- *   data-has-calc="1" ⇒ 右半展开，整枚胶囊向左延伸（transition 0.24s）。
- *   悬停/键盘聚焦到某一半 ⇒ **那一半自己亮**（另一半不亮）——站长要的
- *   「各自一个能亮的块」。
+ * ## 几何（站长第二次纠正的关键，别再退回竖直切）
  *
- * 为什么用容器 + 两个 button，而不是两颗相邻按钮：
- * 站长原话「有点像以前那种一边+一边-那种胶囊」——那是一个控件被斜线切开，
- * 视觉上是一枚胶囊。两颗按钮挨着放会长成两个圆，不是胶囊。
- * 斜线用容器上的渐变画（不占 DOM，也不进无障碍树）。
+ * 站长原话「形状用斜线分割，所以我会提到按钮形状是**梯形与半圆组合**的样子」。
+ * 第一版做成了「竖直切一半 + 中间画一道斜线装饰」—— 那是两件事：
+ * 装饰线画在哪都行，而**半块的形状**还是矩形。悬停点亮时一眼就看出来
+ * 亮的是「左半矩形」而不是「半圆+梯形」。
+ *
+ * 现在：两半各自被 `clip-path` 切出斜边，斜边就是分界线，
+ * 容器上的细线只是把这根斜边画实（它落在两半的接缝上，不是凭空装饰）。
+ *
+ *        顶边    x=0 ────────── x=38   x=68
+ *                        ╱  ← 斜边（8px 水平偏移 / 38px 高 ≈ 11.9°）
+ *        底边    x=0 ──── x=30 ──── x=68
+ *
+ *   · 左半 = 左侧半圆 + 右侧梯形（右边是斜边）
+ *   · 右半 = 左侧梯形 + 右侧半圆（左边是斜边）
+ *   两块**严丝合缝**：左半顶到底 38→30，右半从 38→30 起，同一条线。
+ *
+ * ## 状态（`#pack-capsule[data-has-calc]` 驱动，纯 CSS，无 JS 动画）
+ *
+ *   data-has-calc="0" ⇒ 容器宽 38，右半透明且不可点 ⇒ 看到的是**原来那颗圆按钮**
+ *   data-has-calc="1" ⇒ 容器宽 68，右半显现，整枚胶囊向左延伸（能宽 0.24s）
+ *   悬停/键盘聚焦某一半 ⇒ **只有那一半亮**（亮的是切出来的斜边块）
  */
 .pack-capsule {
   position: relative;
-  display: inline-flex;
-  align-items: center;
+  display: inline-block;
+  width: 38px;
+  height: 38px;
   border-radius: 9999px;
-  /* 底衬：让两半看起来是**一枚**胶囊而不是两个散落的图标。
-     用 surface-container（比按钮默认的 transparent 明显一档，又不抢眼）。
-     只有展开成胶囊时才需要底衬——单独一颗圆按钮有自己的 hover 底衬。 */
   background: transparent;
-  transition: background-color 0.24s ease;
+  transition: width 0.24s ease, background-color 0.24s ease;
 }
+/* 底衬：让两半看起来是**一枚**胶囊而不是两个散落的图标。
+   只有展开成胶囊时才需要底衬 —— 单独一颗圆按钮有自己的 hover 底衬。 */
 .pack-capsule[data-has-calc="1"] {
+  width: 68px;
   background: var(--md-sys-color-surface-container);
 }
-/* 斜线分割：只在**有可算公式**（右半存在）时才画。
-   没有右半时画一道斜线在圆按钮中间会很莫名其妙。 */
+/* 分界斜线：落在两半的接缝上（顶 38 → 底 30）。
+   用 skewX 把一根 1px 竖条的上端钉在 x=38、下端推到 x=30：
+   tan(11.9°) ≈ 8/38。它只是把 clip-path 的斜边画实，不是另一条线。 */
 .pack-capsule[data-has-calc="1"]::after {
   content: '';
   position: absolute;
-  left: 50%;
-  top: 22%;
-  bottom: 22%;
+  left: 38px;
+  top: 0;
   width: 1px;
-  /* 斜线：用 transform 转 18°，配合 1px 宽度在细胶囊里看出斜切感 */
-  transform: translateX(-50%) rotate(18deg);
+  height: 100%;
+  transform-origin: top left;
+  transform: skewX(-11.9deg);
   background: var(--md-sys-color-outline-variant);
   pointer-events: none;     /* 斜线不该吃掉两半的点击 */
-}
-/* 展开成胶囊时，两半的 hover 背景要在**半边**内显示（不能溢出容器圆角）。
-   做法：胶囊 overflow:hidden 裁掉溢出，两半各用自己那侧的圆角。 */
-.pack-capsule[data-has-calc="1"] {
-  overflow: hidden;
+  z-index: 2;               /* 悬停点亮时也看得见（画在两半之上） */
 }
 /* 悬停/聚焦时把胶囊底衬也亮起来，两半各自的高亮由下面的规则叠加 */
 .pack-capsule:has(.m3-icon-btn:hover),
 .pack-capsule:has(.m3-icon-btn:focus-visible) {
   background: var(--md-sys-color-surface-container-high);
 }
-/* 两半各自的内高亮：让「哪一半被按到」看得出来。
-   ⚠️ 在胶囊里**关掉** .m3-icon-btn 自带的整圆背景（那会把半边画成一颗圆），
-   改成「半边方块」——左半贴左侧圆角、右半贴右侧圆角。 */
+
+/* ── 两半的几何 ──────────────────────────────────────────────────
+   两半都**绝对定位**（左钉 left:0、右钉 right:0），这样容器宽度做动画时
+   它们不跟着变形，只是右半从盘子底下被「推出来」。 */
+.pack-cap-plus, .pack-cap-minus {
+  position: absolute;
+  top: 0;
+  width: 38px;
+  height: 38px;
+  /* .m3-icon-btn 自带 display:inline-flex / flex-shrink / transition，
+     这里要把定位相关的压过来（绝对定位下 inline-flex 会让宽度不受控）。 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 0;          /* 圆角由下面按半块各自指定 */
+  transition: background-color 0.2s, color 0.2s, opacity 0.24s ease;
+}
+.pack-cap-plus { left: 0; }
+.pack-cap-minus { right: 0; }
+
+/* 收起态：左半是**完整一颗圆**（这就是「没有可算公式时的原按钮」）。
+   四角全圆 + 不裁切。 */
+.pack-cap-plus { border-radius: 9999px; }
+.pack-capsule[data-has-calc="1"] .pack-cap-plus {
+  /* 左半：左侧半圆 + 右侧梯形。右边缘斜切（顶 100%、底 calc(100%-8px)）。 */
+  border-radius: 9999px 0 0 9999px;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
+}
+
+/* 右半：默认收起（透明 + 不可点，也不进 tab 序） */
+.pack-cap-minus {
+  opacity: 0;
+  pointer-events: none;
+  border-radius: 9999px;
+}
+.pack-capsule[data-has-calc="1"] .pack-cap-minus {
+  opacity: 1;
+  pointer-events: auto;
+  /* 左边缘斜切（顶 8px、底 0）+ 右侧半圆。与左半严丝合缝。 */
+  border-radius: 0 9999px 9999px 0;
+  clip-path: polygon(8px 0, 100% 0, 100% 100%, 0 100%);
+}
+
+/* ── 点亮：亮的必须是**切出来的斜边块** ──────────────────────────
+   ⚠️ 在胶囊里要**压掉** .m3-icon-btn 自带的整圆 hover 背景
+   （那会把半块画成一颗圆，斜边就没了）。开着胶囊时只让背景色变，
+   圆角与裁切沿用上面的几何。 */
 .pack-capsule[data-has-calc="1"] .pack-cap-plus:hover,
 .pack-capsule[data-has-calc="1"] .pack-cap-plus:focus-visible,
 .pack-capsule[data-has-calc="1"] .pack-cap-minus:hover,
 .pack-capsule[data-has-calc="1"] .pack-cap-minus:focus-visible {
   background: var(--md-sys-color-secondary-container);
   color: var(--md-sys-color-on-secondary-container);
-  border-radius: 0;
 }
-.pack-capsule[data-has-calc="1"] .pack-cap-plus:hover,
-.pack-capsule[data-has-calc="1"] .pack-cap-plus:focus-visible {
-  border-top-left-radius: 9999px;
-  border-bottom-left-radius: 9999px;
-}
-.pack-capsule[data-has-calc="1"] .pack-cap-minus:hover,
-.pack-capsule[data-has-calc="1"] .pack-cap-minus:focus-visible {
-  border-top-right-radius: 9999px;
-  border-bottom-right-radius: 9999px;
-}
-.pack-cap-plus, .pack-cap-minus {
-  border-radius: 9999px;
-  transition: background-color 0.2s, color 0.2s, opacity 0.24s ease, width 0.24s ease;
-}
-/* 右半（笔记本）：默认收起。用 width/padding/opacity 一起过渡，
-   只过渡 opacity 会留一条空缝（按钮宽度还在，胶囊已经「长」了）。 */
-.pack-cap-minus {
-  width: 0;
-  padding: 0;
-  opacity: 0;
-  overflow: hidden;
-  pointer-events: none;      /* 收起时不可点，也不进 tab 序 */
-}
-.pack-capsule[data-has-calc="1"] .pack-cap-minus {
-  width: 38px;
-  opacity: 1;
-  pointer-events: auto;
-}
-/* 展开时两半靠得近一点（原来 .m3-icon-btn 的 38px 直径在胶囊里会显得松） */
-.pack-capsule[data-has-calc="1"] .pack-cap-plus { margin-right: -2px; }
-.pack-capsule[data-has-calc="1"] .pack-cap-minus { margin-left: -2px; }
 
 /* 面板打开时，**只有对应那一半**保持「已按下」的观感。
-   ⚠️ 上一版用 .m3-icon-btn:hover 的底衬做「按下」，结果打开面板后
-   两半都是灰的（读者分不出哪半开着）——2026-11-01 实测截图里就是这样。
+   ⚠️ 上一版用整圆底衬做「按下」，结果打开面板后两半都是灰的
+   （读者分不出哪半开着）——2026-11-01 实测截图里就是这样。
    改成只给 aria-expanded="true" 的那一半上色。 */
 .pack-cap-plus[aria-expanded="true"] {
   background: var(--md-sys-color-primary);
   color: var(--md-sys-color-on-primary);
-  border-radius: 0;
-  border-top-left-radius: 9999px;
-  border-bottom-left-radius: 9999px;
 }
 .pack-cap-minus[aria-expanded="true"] {
   background: var(--md-sys-color-primary);
   color: var(--md-sys-color-on-primary);
-  border-radius: 0;
-  border-top-right-radius: 9999px;
-  border-bottom-right-radius: 9999px;
 }
 
 /* ── 计算笔记本面板（2026-11-01）：胶囊的 `-` 半 ───────────────────── */
