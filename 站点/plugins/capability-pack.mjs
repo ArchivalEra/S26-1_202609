@@ -108,7 +108,10 @@ export function deriveMode(s) {
  * @param {object} deps
  * @param {object} deps.store         持久化实现（默认见 createOpfsStore；测试注入内存实现）
  * @param {function} [deps.onState]   状态变化回调（可选；subscribe 是主要通道）
- * @param {string} [deps.root]        站点根（默认从 <html data-root> 取）
+ * @param {string|function} [deps.root] 站点根前缀。**传函数**：SPA 换页会把
+ *   `<html data-root>` 换掉，字符串会在页面加载那一刻过期（2026-11-01 站长实测
+ *   「进了页面算不了」：产物请求变成 `/课程总览/工程数学/作业/assets/octave/…` 404）。
+ *   传函数则**每次拼 URL 时现取**；传字符串是兼容旧调用（会在下载时快照）。
  * @param {object} [deps.fetchImpl]   fetch 实现（测试注入）
  */
 /**
@@ -165,6 +168,22 @@ export function createCapabilityPack(deps = {}) {
    */
   const STATUS_TTL_MS = 200;
   let lastReadAt = 0;
+
+  /**
+   * 站点根前缀，**每次都现算**。
+   *
+   * 为什么要有这一层：`deps.root` 在旧装配里是加载那一刻读到的字符串
+   * （`html[data-root]`），而 SPA 换页会把那个属性换成新页的前缀 —— 快照的
+   * 字符串于是指向上一页的目录，下载/加载产物全 404（2026-11-01 站长实测）。
+   * 传函数就每次现取；传字符串当兼容（那是调用方的选择，语义是「固定前缀」）。
+   */
+  function resolveRoot() {
+    const r = deps.root;
+    if (typeof r === 'function') {
+      try { return String(r() || ''); } catch (e) { return ''; }
+    }
+    return r != null ? String(r) : '';
+  }
 
   function fire(state) {
     for (const fn of [...listeners]) {
@@ -288,7 +307,9 @@ export function createCapabilityPack(deps = {}) {
       const p = (async () => {
         const spec = ASSETS[name];
         if (!spec) throw new Error(`未知资产：${name}`);
-        const root = deps.root != null ? deps.root : '';
+        // ⚠️ 每次下载都**现取**根前缀（2026-11-01）：SPA 换页会把 html[data-root] 换掉，
+        // 在这里快照一次就会拼出 `/课程总览/工程数学/作业/assets/…` 这种 404。
+        const rootNow = resolveRoot();
         for (const f of spec.files) {
           const existing = await store.head(f.name);
           // ⚠️ 跳过判据必须与 inspectAsset **完全一致**——两处各写一套必然漂移。
@@ -301,7 +322,7 @@ export function createCapabilityPack(deps = {}) {
             if (o.onProgress) o.onProgress({ name, file: f.name, done: true, skipped: true });
             continue;                                  // 已在位且内容对 ⇒ 不重下
           }
-          const url = root + f.path;
+          const url = rootNow + f.path;
           const res = await (deps.fetchImpl || fetch)(url);
           if (!res.ok) throw mkErr('DOWNLOAD_FAILED', `取 ${f.name} 失败：HTTP ${res.status}`, { status: res.status });
           const buf = await res.arrayBuffer();

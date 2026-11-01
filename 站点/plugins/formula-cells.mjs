@@ -94,6 +94,10 @@ export function createFormulaCells(deps = {}) {
     const wrap = document.createElement('span');
     wrap.className = WRAP_CLASS;
     wrap.setAttribute('data-fcell-tex', tex);
+    // 可点提示的锚：CSS 把 hover 描边挂在这个属性上（不是挂 .katex）。
+    // 为什么：.katex 是 display:inline 的行内盒，高度只有一行（3×3 矩阵实测
+    // 22px vs 公式整体 70px），描边会只框住中间一行（2026-11-01 站长报「错位」）。
+    wrap.setAttribute('data-fcell-wrapped', '1');
 
     const play = document.createElement('button');
     play.type = 'button';

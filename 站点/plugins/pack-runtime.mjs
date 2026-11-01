@@ -35,7 +35,6 @@ if (typeof document === "undefined" || window.__packRuntime) return;
 var S = {
   toggle: "pack-toggle",
   popover: "pack-popover",
-  modeLabel: "pack-mode-label",
 };
 
 var state = { mode: "readonly", editor: null, engine: null };
@@ -111,23 +110,16 @@ function render() {
     b.className = "pack-btn" + (isReady ? " pack-btn-danger" : "");
     b.setAttribute("title", isReady ? "删除已下载的副本" : "");
   }
-  var ml = $(S.modeLabel);
-  if (ml) {
-    ml.textContent = state.mode === "computable" ? "可计算"
-      : state.mode === "editable" ? "可编辑" : "只读";
-  }
-  // 「运行」按钮只在可计算态出现
-  var runBtns = document.querySelectorAll(".pack-run-btn");
-  for (var i = 0; i < runBtns.length; i++) {
-    runBtns[i].hidden = state.mode !== "computable";
-  }
+  // 「当前：只读/可编辑/可计算」那一行 2026-11-01 删掉了（站长：本来就只需要
+  // 下俩玩意开俩开关，不必再摆一个模式读数）。模式仍然写在 body[data-pack-mode]
+  // 上——那是 CSS 与测试的判据，只是不再给读者看一行文本。
   // 正文里的公式：只在可编辑态才显示可点样式（用 body 上的属性做 CSS 开关，
   // 不改任何公式节点本身 —— 那条是 MCP 的读面）
   document.body.setAttribute("data-pack-mode", state.mode);
   renderDiag();
 }
 
-/* ── 诊断行 ────────────────────────────────────────────────────────
+/* ── 诊断 ──────────────────────────────────────────────────────────
  *
  * 为什么需要：这套能力包有四个部件（OPFS 存储 / 状态派生 / MathLive 载入 /
  * 公式点击绑定），每一处失败都可能被吞掉，而**症状全都一样**——
@@ -135,16 +127,25 @@ function render() {
  * 存储请求弹了、按钮也变「已下载」，但模式仍是只读、MathLive 影子都没有，
  * 界面上没有任何一处能说他到底卡在哪一环。
  *
- * 所以把每一环的结果都摆到面板上。判据是「**任何一环失败都能被看见**」，
- * 不是「成功后显示成功」。 */
+ * 判据是「**任何一环失败都能被看见**」，不是「成功后显示成功」。
+ *
+ * ⚠️ 2026-11-01 站长定案：正常态**一个字都不许显示**。
+ * 第一版把五环（编辑器资产/内核资产/编辑器脚本/预览引擎/点击绑定）逐行常驻，
+ * 占了大半屏。站长原话「本来就只需要下俩玩意开俩开关给你搞这么复杂干什么」。
+ * 现在：全绿 ⇒ 空；有问题 ⇒ 只报**有问题的那几行** + 一行总述。正常的不报。
+ *
+ * ⚠️ 「点击绑定」这一环 2026-11-01 拆掉：它描述的是**旧覆盖层**的
+ * bindFormulaClicks 委托，那套已经整条删除（编辑入口只剩公式单元格）。
+ * 留着它只会恒报「未绑定」，把「没部件坏」的面板刷成假警报。 */
 var diag = {
   storeEditor: "未查",   // 编辑器资产在不在
   storeEngine: "未查",   // 内核资产在不在
   mathlive: "未载入",  // MathLive 脚本
   katex: "未载入",     // 预览引擎
-  clicks: "未绑定",    // 公式点击委托
   lastError: "",
 };
+/** 判定某环的值是否算「有问题」。这些词一旦出现就是坏了。 */
+var DIAG_BAD_RE = /失败|不可用|不支持|未载入|未绑定|缺 |内容坏|大小不对/;
 function setDiag(key, value) {
   diag[key] = value;
   renderDiag();
@@ -152,22 +153,25 @@ function setDiag(key, value) {
 function renderDiag() {
   var box = $("pack-diag");
   if (!box) return;
-  // 「存储」这格内容最长（两件资产的合计），单独占一行；其余三环各一行。
-  // 值里的 「·」 只是两件资产之间的分隔，不是行分隔——2026-10-31 截图里
-  // 「内核 缺 octave.wasm」和下面「编辑器脚本」粘成了一行，就是因为没有
-  // 明确的块级分隔。用 <div> 逐行输出即可（下面 rows 循环已经这么做了）。
   var rows = [
     ["编辑器资产", diag.storeEditor],
     ["内核资产", diag.storeEngine],
     ["编辑器脚本", diag.mathlive],
     ["预览引擎", diag.katex],
-    ["点击绑定", diag.clicks],
   ];
-  var html = "";
+  // 只挑坏的。全好 ⇒ html 为空 ⇒ .pack-diag:empty { display:none } 整块消失。
+  var bad = [];
   for (var i = 0; i < rows.length; i++) {
-    var bad = /失败|不可用|不支持|未载入|未绑定|缺 |内容坏|大小不对/.test(rows[i][1]);
-    html += "<div class='pack-diag-row" + (bad ? " is-bad" : "") + "'>" +
-      "<span>" + rows[i][0] + "</span><span>" + rows[i][1] + "</span></div>";
+    if (DIAG_BAD_RE.test(rows[i][1])) bad.push(rows[i]);
+  }
+  var html = "";
+  if (bad.length) {
+    // 一行总述 + 逐行细节：总述让人知道「现在有问题」，细节让人知道是哪一环。
+    html += "<div class='pack-diag-head'>有部件没就绪</div>";
+    for (var j = 0; j < bad.length; j++) {
+      html += "<div class='pack-diag-row is-bad'>" +
+        "<span>" + bad[j][0] + "</span><span>" + bad[j][1] + "</span></div>";
+    }
   }
   if (diag.lastError) {
     html += "<div class='pack-diag-err'>" + diag.lastError + "</div>";
@@ -215,18 +219,20 @@ function ensureEditor() {
   // 缺哪个都不成。两个互不影响（一个失败另一个照常），所以不串联失败。
   ensureKatex();
   setDiag("mathlive", "载入中…");
-  mathliveLoading = import(root() + "assets/mathlive/mathlive-browser.min.js")
-    .catch(function (importErr) {
-      // 浏览器版是 UMD，import() 可能拿不到副作用注册；退化成 script 标签
-      setDiag("mathlive", "import() 失败，改走 script 标签");
-      return new Promise(function (res, rej) {
-        var sc = document.createElement("script");
-        sc.src = root() + "assets/mathlive/mathlive-browser.min.js";
-        sc.onload = res;
-        sc.onerror = function () { rej(new Error("取不到 mathlive-browser.min.js（HTTP 失败）")); };
-        document.head.appendChild(sc);
-      });
-    })
+  // ⚠️ 直接用 script 标签，**不走 import() 试错**（2026-11-01）。
+  //
+  // 原写法先动态 import 那个 UMD 包，import 的 URL 会相对**调用它的模块**
+  // （pack-runtime.js，在 assets/plugins/ 下）解析，于是拼成
+  // …/assets/plugins/assets/mathlive/…，**每次进编辑器都在服务端打一条 404**，
+  // 再回退到 script 标签成功。功能上是通的，但日志里留个假警报，
+  // 排查真 404 时要先排除它。既然它本来就是 UMD，直接上 script 标签即可。
+  mathliveLoading = new Promise(function (res, rej) {
+    var sc = document.createElement("script");
+    sc.src = root() + "assets/mathlive/mathlive-browser.min.js";
+    sc.onload = res;
+    sc.onerror = function () { rej(new Error("取不到 mathlive-browser.min.js（HTTP 失败）")); };
+    document.head.appendChild(sc);
+  })
     .then(function () {
       // ⚠️ 判据必须是「math-field 自定义元素注册上了」，不是「脚本没抛错」。
       // UMD 包加载成功但没注册元素的路径真实存在（依赖缺失、被 CSP 拦、版本不合）。
@@ -400,9 +406,7 @@ function init() {
         // 还指着上一次的尝试，重下也不会重新载入。
         if (which === "editor") {
           mathliveLoading = null;
-          document.__packClickBound = false;
           setDiag("mathlive", "未载入");
-          setDiag("clicks", "未绑定");
         }
         diag.lastError = "";
         return syncOnce();

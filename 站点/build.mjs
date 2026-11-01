@@ -2186,12 +2186,12 @@ for (const relPath of TARGET_FILES) {
               </label>
             </div>
 
-            <div class="pack-mode-row">
-              当前：<strong id="pack-mode-label">只读</strong>
-            </div>
-            <!-- 诊断行（2026-10-31）：四环状态直接摆出来。
-                 站长实测「下载完了但点公式没反应」时，界面上没有任何一处能说
-                 卡在哪一环——存储？脚本？点击绑定？所以每环都报。 -->
+            <!-- 诊断（2026-11-01 站长定案：正常态一个字都不显示）。
+                 上一版把五环状态（编辑器资产/内核资产/编辑器脚本/预览引擎/点击绑定）
+                 逐行摆出来，占了大半屏。站长原话：「本来就只需要下俩玩意开俩开关
+                 给你搞这么复杂干什么」——那一排是给**排障**用的，不该常驻。
+                 所以：全部环都正常 ⇒ 这块完全空；有一个不正常 ⇒ 只显示那一行
+                 （外加一行总述），正常的不报。细节进 console。 -->
             <div class="pack-diag" id="pack-diag"></div>
           </div>
 
@@ -2316,15 +2316,30 @@ for (const relPath of TARGET_FILES) {
     // ⚠️ 这里是全站唯一的「能力包接线点」，改接口只改这一处。
     (async () => {
       try {
-        const rootRel = document.documentElement.getAttribute('data-root') || './';
-        const mod = await import(rootRel + 'assets/plugins/capability-pack.mjs?v=__PACK_VER__');
-        const pack = mod.createCapabilityPack({ store: mod.createOpfsStore(), root: rootRel });
+        // ⚠️ **不能在这里快照 rootRel**（2026-11-01 站长实测「进了页面算不了」）。
+        //
+        // 原写法是 const rootRel = document.documentElement.getAttribute('data-root')，
+        // 在**页面加载那一刻**读一次就再也不更新。SPA 换页时 spa-router 会把
+        // html[data-root] 换成新页的前缀（2026-10-31 的 ③b），但这里闭包住的
+        // 还是初页那个 './' —— 于是换到 课程总览/工程数学/作业/作业1.html 后，
+        // OCT_BASE 拼出 /课程总览/工程数学/作业/assets/octave/octave.js，404。
+        // 服务端日志实证：
+        //   GET /课程总览/工程数学/作业/assets/octave/octave.js  → 404
+        // 而直接打开同一页（不经过 SPA）是通的——所以这个 bug 只在 SPA 路径上露头。
+        //
+        // 修法：assetRoot() 每次调用都现读 data-root。import 语句各自 inline
+        // 调用（模块 URL 反正只加载一次，版本戳不变）；OCT_BASE 与 parser 的
+        // import 改成在函数里现取。
+        const assetRoot = () => document.documentElement.getAttribute('data-root') || './';
+        const mod = await import(assetRoot() + 'assets/plugins/capability-pack.mjs?v=__PACK_VER__');
+        // root 传**函数**而不是字符串：下载拼 URL 的那一刻才取前缀（见上）。
+        const pack = mod.createCapabilityPack({ store: mod.createOpfsStore(), root: assetRoot });
 
         // 公式单元格模块（2026-10-31）：暴露工厂函数，装配层（pack-runtime.js）
         // 在需要时自己 createFormulaCells —— 两层分工：本层管 import 与版本戳，
         // 装配层管「什么时候装、装在哪个容器上」。
         try {
-          const cellsMod = await import(rootRel + 'assets/plugins/formula-cells.mjs?v=__CELLS_VER__');
+          const cellsMod = await import(assetRoot() + 'assets/plugins/formula-cells.mjs?v=__CELLS_VER__');
           window.__createFormulaCells = cellsMod.createFormulaCells;
         } catch (e) {
           console.warn('[pack] formula-cells 载入失败，页内单元格不可用', e);
@@ -2344,7 +2359,10 @@ for (const relPath of TARGET_FILES) {
         //
         // 不需要 「octave-core.js」（那是整页宿主，要 9 个依赖）、不需要 Worker、
         // 不需要 COOP/COEP 响应头（wasm32-final 是单线程档）。
-        const OCT_BASE = rootRel + 'assets/octave/';
+        //
+        // ⚠️ 这里**不缓存** OCT_BASE：SPA 换页后 data-root 会换（见文件顶部注释）。
+        // 每次 ensureOctave / locateFile 现取。
+        const octBase = () => assetRoot() + 'assets/octave/';
         let octPromise = null;
 
         function ensureOctave() {
@@ -2354,7 +2372,7 @@ for (const relPath of TARGET_FILES) {
             if (typeof window.OCTAVE !== 'function') {
               await new Promise((res, rej) => {
                 const s = document.createElement('script');
-                s.src = OCT_BASE + 'octave.js';
+                s.src = octBase() + 'octave.js';
                 s.onload = res;
                 s.onerror = () => rej(new Error('取不到 assets/octave/octave.js'));
                 document.head.appendChild(s);
@@ -2380,7 +2398,7 @@ for (const relPath of TARGET_FILES) {
               // 之类的 warning，不影响数值；所以我们不直接往 stdout 混，
               // 而是**单独收集**，只在 rc≠0 时拼进错误消息。
               printErr: (t) => { out.errs.push(String(t)); },
-              locateFile: (f) => OCT_BASE + f,
+              locateFile: (f) => octBase() + f,
             });
             // ★ 上游 002 §3 坑①：必须先启动解释器，否则 null function
             M.execute_interp();
@@ -2406,8 +2424,8 @@ for (const relPath of TARGET_FILES) {
 
           let code;
           try {
-            const { parse } = await import(rootRel + 'assets/math/parser.mjs');
-            const { translate } = await import(rootRel + 'assets/math/to-octave.mjs');
+            const { parse } = await import(assetRoot() + 'assets/math/parser.mjs');
+            const { translate } = await import(assetRoot() + 'assets/math/to-octave.mjs');
             const t = translate(parse(src).expr.root);
             if (!t.ok) return { ok: false, error: t.reason };
             code = t.code;
@@ -2461,11 +2479,26 @@ for (const relPath of TARGET_FILES) {
 </html>`;
 
   const outFilePath = path.join(DIST_DIR, targetHtmlPath);
-  // 能力包版本戳：页面模板里写着 `__PACK_VER__`（import capability-pack.mjs 的查询串），
-  // 到这里统一替换成它的内容哈希。**必须在这里替换**——上面算 packVer 时
-  // 页面还没渲染，而模板是逐页生成的字符串。漏了这一步，产物里会留着字面
+  // 能力包版本戳：页面模板里写着 `__PACK_VER__` / `__CELLS_VER__`，到这里统一
+  // 替换成对应模块的内容哈希。**必须在这里替换**——上面算 packVer 时页面还没
+  // 渲染，而模板是逐页生成的字符串。漏了这一步，产物里会留着字面
   // `?v=__PACK_VER__`，浏览器把它当版本号，模块永不更新。
-  const htmlWithVers = finalHtml.split('__PACK_VER__').join(packVer);
+  //
+  // ⚠️ 两个占位符都要替（2026-11-01 实测抓到的真 bug）：这里原本只替了
+  // `__PACK_VER__`，`__CELLS_VER__` 一路以字面量写到产物里
+  // （服务端日志实证 `GET /assets/plugins/formula-cells.mjs?v=__CELLS_VER__`）。
+  // 后果与能力包那条一模一样：编辑这个模块、重建、刷新，浏览器仍走旧副本。
+  const htmlWithVers = finalHtml
+    .split('__PACK_VER__').join(packVer)
+    .split('__CELLS_VER__').join(cellsVer);
+  // 构建期兜底：任何版本占位符残留都是 bug（上一条断言的就是这个形状，
+  // 但它是人工约定的；这里硬拦，免得下次再加第三个占位符时又漏一个）。
+  const leakedVer = /__[A-Z]+_VER__/.exec(htmlWithVers);
+  if (leakedVer) {
+    throw new Error(
+      `[build] 产物里残留版本占位符 ${leakedVer[0]}（${targetHtmlPath}）——` +
+      `某处 import 的 ?v= 没被替换，该模块会永不更新。检查 build.mjs 的 htmlWithVers 链。`);
+  }
   // 构建期兜底：任何 `@@MATH_INLINE_<数字>@@` 残留在产物里都是 bug。
   // 它意味着某段文字走了「数学占位符已生成、但没被 Step 6 还原」的路径——
   // 2026-10-29 实测发生在图注上（`:::figure id | 图注里写 $u_i$`）：
