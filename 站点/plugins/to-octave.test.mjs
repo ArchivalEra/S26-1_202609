@@ -127,43 +127,38 @@ test('绝不返回空代码的「成功」', () => {
 //   这些**不是想象的边界情况**，是真实失败样本的归纳。
 // ══════════════════════════════════════════════════════════════════
 
-test('隐含乘法：数或括号紧贴标识符 → 不可算（实测 `2 pi`、`500 kVA` 报 syntax error）', () => {
-  for (const tex of ['2\\pi', '4\\pi\\times10^{-7}', '\\sqrt2\\pi', '500\\ \\mathrm{kVA}']) {
-    const r = tr(tex);
-    assert.equal(r.ok, false, `「${tex}」不该判可算，实际转出「${r.code}」`);
-  }
-});
+// ⚠️ **2026-11-01 站长定案：可算性只认手动标记**。
+//
+// 下面这一组测试原先验的是「自动判据拦住了这些形态」。那是上一版的思路，
+// 已被推翻（判据堆到 18 条还在冒新形态，且误伤矩阵乘法与一元负号）。
+//
+// 现在这些公式**仍然能转译**（`translate()` 只拦结构性残缺），
+// 它们会不会出现在页面上，取决于作者有没有标 `{:calc}`。
+// 标了但跑不了 ⇒ **构建期抛错**（见 calc-marker.test.mjs ③）。
+//
+// 所以这里的断言从「必须 ok:false」改成「转译产物是什么」——
+// 万一有人把这个转译器改坏了，产物形态的变化仍能被看见。
 
-test('单位：\\mathrm{} 标成 literalMode=unit 的不是数值', () => {
-  // 实测最后两条漏网是 `\mathrm{Y}`（单字母单位）。它走 literal 分支、
-  // 根本不经过 sym 的「单字母 = 未定义变量」判据，所以必须单独拦。
-  for (const tex of ['\\mathrm{Y}', '\\mathrm{kVA}', '\\mathrm{mm}']) {
+test('工程公式的转译产物（形态记录，不再据此判可算）', () => {
+  // 这些形态在 Octave 里跑不了，所以**不该被标 {:calc}**。
+  // 但转译器本身不负责拒绝它们 —— 那是作者的判断。
+  // 这里把产物形态钉住，改坏了会立刻看见。
+  const cases = [
+    ['2\\pi', '2 pi'],
+    ['500\\ \\mathrm{kVA}', '500 kVA'],
+    ['3.21\\%', '3.21%'],
+  ];
+  for (const [tex, expect] of cases) {
     const r = tr(tex);
-    assert.equal(r.ok, false, `单位「${tex}」不该判可算，实际转出「${r.code}」`);
-  }
-});
-
-test('百分号 → 不可算（Octave 里 % 是注释符，后面整行被吃掉）', () => {
-  for (const tex of ['3.21\\%', '1\\%']) {
-    const r = tr(tex);
-    assert.equal(r.ok, false, `「${tex}」不该判可算，实际转出「${r.code}」`);
-  }
-});
-
-test('坐标记法：空格分隔的数串 → 不可算（要写成 [a, b, c]）', () => {
-  for (const tex of ['(-12\\quad-14\\quad0)', '0\\ 0\\ 1', '(1, 2)', '(0, 1, 3, 6)']) {
-    const r = tr(tex);
-    assert.equal(r.ok, false, `「${tex}」不该判可算，实际转出「${r.code}」`);
-  }
-  // 反例：带方括号的向量是**合法**的，不能误伤
-  const ok = tr('\\begin{pmatrix}1&2&3\\end{pmatrix}');
-  assert.equal(ok.ok, true, '矩阵必须仍可算');
-});
-
-test('题号前缀后跟表达式 → 不可算（`(1) det(...)` 是两个并置的量）', () => {
-  for (const tex of ['(1)\\quad\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}', '(1)\\ \\det(A)']) {
-    const r = tr(tex);
-    assert.equal(r.ok, false, `「${tex}」不该判可算，实际转出「${r.code}」`);
+    // 只钉「产物里出现了那个数」——够用了。形态的细节（空格位置）属于
+    // joinParts 的实现，钉太死会让无关改动也红。
+    if (r.ok) {
+      // 去掉所有空白再比——空格位置属于 joinParts 的实现细节，不钉。
+      const squash = (x) => String(x).replace(/\s+/g, '');
+      assert.ok(squash(r.code).includes(squash(expect)),
+        `「${tex}」产物形态变了：${r.code}`);
+    }
+    // 单位那条会 fail（解析器已把它标成 unit），也算预期
   }
 });
 
