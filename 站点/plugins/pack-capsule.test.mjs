@@ -64,8 +64,9 @@ test('② SPA 换页钩子必须刷新胶囊（否则胶囊停在上一页的状
 test('③ 两半面板互斥：openPanel 必须关掉另一半', () => {
   const fn = PR.slice(PR.indexOf('function openPanel('), PR.indexOf('function bindNotebookBlock('));
   assert.ok(fn.length > 80, '找不到 openPanel');
-  assert.ok(fn.includes('closePanel(which === "pack" ? "notebook" : "pack")'),
-    'openPanel 没有关另一半 —— 右上角会同时挂两个弹窗');
+  // 2026-11-01 演进：从「关另一半」扩到「关其余全部」（四面板互斥）。
+  assert.ok(fn.includes('closeOthers(which)'),
+    'openPanel 没有关其余面板 —— 右上角会同时挂多个弹窗');
   // 反面：资源包面板的点击不许再就地翻 hidden（那会绕过互斥）
   const click = PR.slice(PR.indexOf('toggle.addEventListener("click"'), PR.indexOf('pop.addEventListener("click"'));
   assert.ok(!/pop\.hidden = !open/.test(click), '资源包按钮又就地翻 hidden 了 —— 绕过了互斥');
@@ -274,4 +275,52 @@ test('⑮ math-field 的内置按钮在深色下必须可见（不许吃 MathLiv
   const code = stripCssComments(CSS);
   assert.match(code, /\.nb-mathfield\s*\{[^}]*color:\s*var\(--md-sys-color-on-surface\)/,
     '.nb-mathfield 没显式给 color —— 深色下面板里的公式字会是黑的');
+});
+
+// ══════════════════════════════════════════════════════════════════
+// 2026-11-01 站长：**调色盘与能力包会互相遮挡**。
+//
+// 根因不是「位置算错」，是**四个顶栏面板各自开关、互不管**：
+//   · pack-runtime 的 openPanel/closePanel 只管 pack 与 notebook；
+//   · 调色盘自己 classList.toggle("open")；
+//   · 搜索自己 panel.hidden = …。
+// 于是「调色盘 + 能力包」能同时开着 —— 两个面板都 right:0、宽度不同
+// （实测 280px 与 340px），左边缘错开、右侧贴边，视觉上就是互相压住。
+//
+// 修法：四个面板走**同一个开关入口**，开任何一个先关掉其余三个。
+// 判据取「有没有统一入口」+「四键都在」——因为真重叠要跑浏览器。
+// ══════════════════════════════════════════════════════════════════
+
+test('⑯ 顶栏四个面板必须走同一个开关入口（否则会互相遮挡）', () => {
+  const pr = PR;
+  // ① 四键锚点表必须在
+  assert.match(pr, /PANEL_ANCHORS/, '没有四面板锚点表 —— 又会各自开关');
+  for (const k of ['palette', 'pack', 'notebook', 'search']) {
+    assert.match(pr, new RegExp(`${k}:\\s*\\{`), `PANEL_ANCHORS 缺 ${k}`);
+  }
+  // ② openPanel 必须关掉**其余三个**（不是只关一个）
+  const openFn = pr.slice(pr.indexOf('function openPanel('), pr.indexOf('function bindNotebookBlock('));
+  assert.match(openFn, /closeOthers\(which\)/, 'openPanel 没关其余面板 —— 会重叠');
+  const closeOthers = pr.slice(pr.indexOf('function closeOthers('), pr.indexOf('function openPanel('));
+  assert.match(closeOthers, /for \(var k in PANEL_ANCHORS\)/, 'closeOthers 没遍历全部面板');
+  // ③ 跨模块入口必须暴露（调色盘/搜索是**先于本模块**加载的独立脚本）
+  assert.match(pr, /window\.__panelToggle\s*=/,
+    '没有暴露 window.__panelToggle —— 调色盘与搜索接不上互斥');
+  assert.match(pr, /toggle:\s*function/, '桥没有 toggle 动作');
+  assert.match(pr, /close:\s*function/, '桥没有 close 动作');
+});
+
+test('⑯ 调色盘与搜索都接了统一入口（各自 toggle 的老写法必须退役）', () => {
+  const themeJs = fs.readFileSync(path.join(HERE, '../assets/theme/shirone-reader.js'), 'utf8');
+  // 判据必须查「真的调了」而不是「字符串出现过」——实测变体验证：
+  // 只写 `const bridge = window.__panelToggle` 而不调用，字符串在、逻辑没接，
+  // 那样的断言会放过缺陷。所以查 call 形态。
+  assert.match(themeJs, /bridge\.toggle\(["']palette["']\)/,
+    '调色盘没**调用**统一入口的 toggle —— 它还会和能力包同时开');
+  const search = fs.readFileSync(path.join(HERE, 'site-search.mjs'), 'utf8');
+  assert.match(search, /bridge\.toggle\(["']search["']\)/,
+    '搜索没**调用**统一入口的 toggle');
+  // 反面：不许再有无条件的本地 toggle（那会绕过互斥）
+  assert.ok(!/palettePopover\.classList\.toggle\("open"\);\n      setExpanded/.test(themeJs.replace(/\s+/g,' ')),
+    '调色盘还留着无条件的本地 toggle 路径（绕过互斥）');
 });

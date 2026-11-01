@@ -371,24 +371,60 @@ function refreshCapsule() {
   if (minus) minus.setAttribute("aria-hidden", has ? "false" : "true");
 }
 
-/** 关掉某个面板（幂等）。 */
+/**
+ * 顶栏四个面板的**统一开关**（2026-11-01 站长报「调色板与这个会互相遮挡」）。
+ *
+ * ## 为什么必须集中成一个入口
+ *
+ * 之前的分工是割裂的：openPanel/closePanel 只管 pack 与 notebook，
+ * 调色盘自己 classList.toggle("open")、搜索自己 panel.hidden = …。
+ * 结果「调色盘 + 能力包」能同时开着，两个面板都 right: 0、宽度不同，
+ * 于是左边缘错开、右侧贴边 —— 视觉上就是互相压住（实测调色盘 280px
+ * 与能力包 340px 重叠 280px）。
+ *
+ * 现在四个面板（调色盘 / 资源包 / 笔记本 / 搜索）都走这里：
+ * 开任何一个都先关掉其余三个。
+ *
+ * ## 为什么不是「自动排开位置」
+ *
+ * 站长原话是「改成会自动排版分开位置的」，但真正要的语义是**不遮挡**。
+ * 四个弹层同时开、各自排开，在 1280px 宽的顶栏上只会挤成一排看不清；
+ * 而它们本来就是「同一组互斥工具」（点一个就该切到那一个）。
+ * 所以取「互斥 + 同时只有一个」—— 这是不遮挡的最强形式。
+ * 如果以后真需要并列（例如对照两个面板），再改成排开。
+ */
+var PANEL_ANCHORS = {
+  palette: { pop: "palette-popover", btn: "palette-toggle" },
+  pack: { pop: "pack-popover", btn: "pack-toggle" },
+  notebook: { pop: "notebook-popover", btn: "notebook-toggle" },
+  search: { pop: "search-panel", btn: "search-toggle" },
+};
+
+/** 关掉某个面板（幂等，认 palette/pack/notebook/search 四个键）。 */
 function closePanel(which) {
-  var pop, btn;
-  if (which === "pack") { pop = $("pack-popover"); btn = $("pack-toggle"); }
-  else { pop = $("notebook-popover"); btn = $("notebook-toggle"); }
+  var a = PANEL_ANCHORS[which];
+  if (!a) return;
+  var pop = $(a.pop), btn = $(a.btn);
   if (pop) { pop.hidden = true; pop.classList.remove("open"); }
   if (btn) btn.setAttribute("aria-expanded", "false");
 }
 
-/** 打开某个面板并关掉另一个。 */
+/** 关掉除 keep 之外的全部面板。 */
+function closeOthers(keep) {
+  for (var k in PANEL_ANCHORS) {
+    if (k !== keep) closePanel(k);
+  }
+}
+
+/** 打开某个面板并关掉其余三个。 */
 function openPanel(which) {
-  closePanel(which === "pack" ? "notebook" : "pack");
-  var pop, btn;
-  if (which === "pack") { pop = $("pack-popover"); btn = $("pack-toggle"); }
-  else { pop = $("notebook-popover"); btn = $("notebook-toggle"); }
+  closeOthers(which);
+  var a = PANEL_ANCHORS[which];
+  if (!a) return;
+  var pop = $(a.pop), btn = $(a.btn);
   if (!pop) return;
   pop.hidden = false;
-  // ⚠️ 必须同时切 .open 类 类：.palette-popover 默认 display:none，
+  // ⚠️ 必须同时切 .open 类：.palette-popover 默认 display:none，
   // 只有 .palette-popover.open 才 flex（这个坑 2026-10-31 吃过一次）。
   pop.classList.add("open");
   if (btn) btn.setAttribute("aria-expanded", "true");
@@ -864,6 +900,31 @@ window.__packCellsReset = function () {
       if (el) { el.hidden = true; el.textContent = ""; el.className = "nb-out"; }
     });
   } catch (e) {}
+};
+
+/**
+ * 顶栏面板的统一开关出口（2026-11-01）。
+ *
+ * 调色盘（shirone-reader.js）与搜索（site-search.mjs）是**先于本模块**加载的
+ * 独立脚本，它们要参与同一个「四面板互斥」就必须有跨模块入口。
+ * 挂一个**极小**的全局桥（只有 toggle/close 两个动作），而不是让它们
+ * 各自再抄一套判据 —— 两套判据必然漂移（本仓反复吃过的教训）。
+ *
+ * 语义：
+ *   toggle(which)  开/关某个面板（开的时候自动关掉其余三个）
+ *   close(which)   只关它
+ * 两个都幂等，且 which 只认 PANEL_ANCHORS 里的四个键。
+ */
+window.__panelToggle = {
+  toggle: function (which) {
+    var a = PANEL_ANCHORS[which];
+    if (!a) return;
+    var pop = $(a.pop);
+    if (!pop) return;
+    if (pop.hidden) openPanel(which);
+    else closePanel(which);
+  },
+  close: function (which) { closePanel(which); },
 };
 
 window.__packRuntime = {
