@@ -417,10 +417,22 @@ body {
   color: var(--md-sys-color-on-primary);
 }
 
-/* ── 计算笔记本面板（2026-11-01）：胶囊的 `-` 半 ───────────────────── */
+/* ── 计算笔记本面板（2026-11-01）：胶囊的减号那一半 ─────────────────────
+ *
+ * ⚠️ 面板约束必须与 `.pack-popover` **同一套**（2026-11-01 站长报「全站都有的
+ * 框大小自动排版怎么这里没接上」）。全站弹层的统一机制是：
+ *   · `max-height: calc(100vh - 顶栏 - 余量)` —— 内容再高也不顶出视口
+ *   · `overflow-y: auto`                     —— 超高就滚，不是被切掉
+ *   · `overscroll-behavior: contain`         —— 滚到底不把整个页面带着滚
+ * 笔记本原先只有 width/max-width 两条，一块都没接 —— 两块输入框 + 两块输出框
+ * 叠起来（96 + 56 + 输出各 22vh）在小视口上会把面板顶穿。
+ */
 .notebook-popover {
   width: 26rem;
   max-width: min(92vw, 30rem);
+  max-height: calc(100vh - var(--header-height) - 1.5rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .nb-block {
   border: 1px solid var(--md-sys-color-outline-variant);
@@ -448,15 +460,34 @@ body {
   resize: vertical;
   border: 1px solid var(--md-sys-color-outline-variant);
   border-radius: 8px;
-  padding: 0.5rem 0.6rem;
+  padding: 0.5rem 0.6rem 0.9rem;   /* 底部多留一点，别让拖拽把手压住最后一行字 */
   background: var(--md-sys-color-surface-container-low);
   color: var(--md-sys-color-on-surface);
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 0.8rem;
   line-height: 1.5;
-  /* 深色模式跟随主题（同一类坑已吃过两次，见 .pack-mathfield 的注释） */
-  color-scheme: light;
+  /* ⚠️ 原来是写死 `color-scheme: light`（2026-11-01 站长报「右下拖拽标看不见」）。
+     那条本来是为修「深色页面里原生控件用默认黑字」，但它同时把**拖拽把手**
+     也锁成浅色系 —— 深色面板上那个小三角颜色跟背景几乎一样。
+     原生 resize 把手的颜色**只由 color-scheme 决定**，没有别的 CSS 能改它。
+     所以：跟随主题（inherit），手把本身再自绘放大（见下面的 ::-webkit-resizer）。 */
+  color-scheme: inherit;
 }
+/* 原生 resize 把手：能改的只有大小/图案/底色，颜色仍跟 color-scheme。
+   这里自绘一个**高对比**的斜纹三角 + 主题色底块，让「这里能拖」一眼看出来。 */
+.nb-code::-webkit-resizer {
+  background:
+    linear-gradient(135deg,
+      transparent 44%,
+      var(--md-sys-color-primary) 44%, var(--md-sys-color-primary) 52%,
+      transparent 52%, transparent 64%,
+      var(--md-sys-color-primary) 64%, var(--md-sys-color-primary) 72%,
+      transparent 72%);
+  background-color: color-mix(in oklab, var(--md-sys-color-primary) 14%, transparent);
+  border-bottom-right-radius: 7px;
+}
+/* Firefox 没有 ::-webkit-resizer（它的把手形状不可定制），
+   但 color-scheme: inherit 已让它跟主题走 —— 这也是能做到的最好。 */
 .nb-code:focus-visible {
   outline: 2px solid var(--md-sys-color-primary);
   outline-offset: 1px;
@@ -472,7 +503,15 @@ body {
   color: var(--md-sys-color-outline);
 }
 /* 输出框：与页面上公式的结果框同一个观感（虚线框 + 可滚 + 有上限） */
+/* 输出框：与页面上公式的结果框（.fcell-result）**同一套自动排版**。
+   原先缺 min-height / min-width / max-width —— 短结果只有一行高（像个
+   贴边的小条），长结果会横向撑破面板。全站那张表的完整形态是：
+     min-height 撑出「块」的样子、min-width 防止一列数字挤成竖条、
+     max-height + max-width 封顶、overflow:auto 交给双向滚动、
+     white-space:pre + word-break:normal 保证矩阵不被折行。
+   2026-11-01 站长报「全站都有的框大小自动排版怎么这里没接上」就是这几条。 */
 .nb-out {
+  display: block;
   margin: 0.55rem 0 0;
   padding: 0.45rem 0.6rem;
   border: 1px dashed var(--md-sys-color-outline-variant);
@@ -482,15 +521,20 @@ body {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 0.78rem;
   line-height: 1.5;
+  min-height: 1.9em;
+  min-width: 4em;
   max-height: 22vh;
+  max-width: 100%;
   overflow: auto;
   white-space: pre;
   box-sizing: border-box;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 .nb-out.is-err {
   border-color: var(--md-sys-color-error);
   color: var(--md-sys-color-error);
-  background: color-mix(in srgb, var(--md-sys-color-error) 10%, transparent);
+  background: color-mix(in oklab, var(--md-sys-color-error) 10%, transparent);
   white-space: pre-wrap;
 }
 
