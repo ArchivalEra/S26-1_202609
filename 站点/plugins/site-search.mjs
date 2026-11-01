@@ -588,12 +588,16 @@ function loadText(id) {
 function openPanel() {
   panel.hidden = false;
   document.body.classList.add("search-open");
+  // aria-expanded 是顶栏按钮「展开态高亮」的判据（2026-11-01 统一）：
+  // 五个入口按钮都靠这个属性点亮，搜索不能漏。
+  if (toggleBtn) toggleBtn.setAttribute("aria-expanded", "true");
   input.focus();
 }
 function closePanel() {
   panel.hidden = true;
   document.body.classList.remove("search-open");
   activeIndex = -1;
+  if (toggleBtn) toggleBtn.setAttribute("aria-expanded", "false");
 }
 
 function showProgress(percent, label) {
