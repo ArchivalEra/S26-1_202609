@@ -327,11 +327,158 @@ function runFormula(latex, outEl, btn) {
     .then(restore, restore);
 }
 
+/* ════════════════════════════════════════════════════════════════
+   能力入口胶囊（2026-11-01 站长定案）
+   ════════════════════════════════════════════════════════════════
+ *
+ * 一枚胶囊两半：左 加号 资源包（恒在）、右 减号 笔记本（**本页有可算公式**时才在）。
+ *
+ * 三个事实决定了这个模块的形状：
+ *
+ * ① **「有没有可算公式」是页面的属性，不是胶囊的**。
+ *    所以判据是扫正文的 data-computable="1"，而不是「读者装没装编辑器」。
+ *    没下载计算内核时，可算公式照样存在（按钮照样该在）——点进去会提示去下载。
+ *
+ * ② **SPA 换页后正文整块换掉，胶囊 DOM 却常驻**（顶栏不被 SPA 替换）。
+ *    所以每次换页都必须**重算** data-has-calc，否则上一页没公式、
+ *    这一页有公式时胶囊永远不展开。这就是 refreshCapsule() 存在的原因，
+ *    由 __packCellsReset 钩子调用（与单元格一起重接）。
+ *
+ * ③ **两个面板互斥**。它们是同一枚胶囊的两半，开一个必须关另一个——
+ *    否则右上角会同时挂两个弹窗，互相遮挡。
+ */
+
+/** 本页有没有可算公式（纯读 DOM，不看资产状态）。 */
+function hasComputable() {
+  var body = document.querySelector(".article-content") || document.body;
+  return !!body.querySelector('.katex[data-computable="1"]');
+}
+
+/** 把 data-has-calc 刷成当前页面的事实。换页后必须调一次。 */
+function refreshCapsule() {
+  var cap = $("pack-capsule");
+  if (!cap) return;
+  var has = hasComputable();
+  cap.setAttribute("data-has-calc", has ? "1" : "0");
+  // 右半收起时把 aria-hidden 也设上：不可见的控件不该被读屏读到。
+  var minus = $("notebook-toggle");
+  if (minus) minus.setAttribute("aria-hidden", has ? "false" : "true");
+}
+
+/** 关掉某个面板（幂等）。 */
+function closePanel(which) {
+  var pop, btn;
+  if (which === "pack") { pop = $("pack-popover"); btn = $("pack-toggle"); }
+  else { pop = $("notebook-popover"); btn = $("notebook-toggle"); }
+  if (pop) { pop.hidden = true; pop.classList.remove("open"); }
+  if (btn) btn.setAttribute("aria-expanded", "false");
+}
+
+/** 打开某个面板并关掉另一个。 */
+function openPanel(which) {
+  closePanel(which === "pack" ? "notebook" : "pack");
+  var pop, btn;
+  if (which === "pack") { pop = $("pack-popover"); btn = $("pack-toggle"); }
+  else { pop = $("notebook-popover"); btn = $("notebook-toggle"); }
+  if (!pop) return;
+  pop.hidden = false;
+  // ⚠️ 必须同时切 .open 类 类：.palette-popover 默认 display:none，
+  // 只有 .palette-popover.open 才 flex（这个坑 2026-10-31 吃过一次）。
+  pop.classList.add("open");
+  if (btn) btn.setAttribute("aria-expanded", "true");
+}
+
+/**
+ * 笔记本的一块（两个块共用一个执行器）。
+ *
+ * @param {{input:string, run:string, out:string, hint:string, mode:'code'|'tex'}} ids
+ */
+function bindNotebookBlock(ids) {
+  var input = $(ids.input);
+  var runBtn = $(ids.run);
+  var outEl = $(ids.out);
+  if (!input || !runBtn || !outEl) return;
+
+  function showOut(text, isErr) {
+    outEl.hidden = false;
+    outEl.textContent = text;
+    outEl.className = "nb-out" + (isErr ? " is-err" : "");
+  }
+
+  function run() {
+    var src = String(input.value || "").trim();
+    if (!src) { showOut("先写点什么。", true); return; }
+    runBtn.disabled = true;
+    showOut(ids.mode === "tex" ? "计算中…" : "运行中…", false);
+    var p = (ids.mode === "tex")
+      ? (typeof window.__packCompute === "function"
+          ? window.__packCompute(src)
+          : Promise.resolve({ ok: false, error: "计算适配器没装好" }))
+      : (typeof window.__packRunCode === "function"
+          ? window.__packRunCode(src)
+          : Promise.resolve({ ok: false, error: "计算适配器没装好" }));
+    Promise.resolve(p).then(function (r) {
+      if (r && r.ok) showOut(String(r.output == null ? "" : r.output) || "(无输出)", false);
+      else showOut(String((r && r.error) || "算不了"), true);
+    }).catch(function (e) {
+      showOut("失败：" + ((e && e.message) || e), true);
+    }).then(function () {
+      runBtn.disabled = false;
+    });
+  }
+
+  runBtn.addEventListener("click", function (ev) { ev.stopPropagation(); run(); });
+  // Ctrl/⌘ + Enter 直接运行（笔记本的肌肉记忆）
+  input.addEventListener("keydown", function (ev) {
+    if ((ev.ctrlKey || ev.metaKey) && ev.key === "Enter") {
+      ev.preventDefault();
+      run();
+    }
+  });
+  return { run: run };
+}
+
+/** 绑胶囊两半 + 笔记本面板。**幂等**（重复调不会重复绑）。 */
+var capsuleBound = false;
+function bindCapsule() {
+  refreshCapsule();
+  if (capsuleBound) return;
+  var cap = $("pack-capsule");
+  if (!cap) return;
+  capsuleBound = true;
+
+  var plus = $("pack-toggle");
+  var minus = $("notebook-toggle");
+  var notePop = $("notebook-popover");
+
+  if (minus && notePop) {
+    minus.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      var isOpen = !notePop.hidden;
+      if (isOpen) closePanel("notebook");
+      else openPanel("notebook");
+    });
+    notePop.addEventListener("click", function (ev) { ev.stopPropagation(); });
+  }
+
+  // 点空白处关掉笔记本（与资源包面板同一套行为）
+  document.addEventListener("click", function () {
+    if (notePop && !notePop.hidden) closePanel("notebook");
+  });
+
+  // 两块：MATLAB（原生代码）+ 公式（LaTeX）
+  bindNotebookBlock({ input: "nb-code", run: "nb-run-code", out: "nb-code-out", hint: "nb-code-hint", mode: "code" });
+  bindNotebookBlock({ input: "nb-tex", run: "nb-run-tex", out: "nb-tex-out", hint: "nb-tex-hint", mode: "tex" });
+}
+
 /* ── 启动：只在**用户点开弹窗**时才查一次状态（不在页面加载时查）───── */
 function init() {
   var toggle = $(S.toggle);
   var pop = $(S.popover);
   if (!toggle || !pop) return;
+
+  // 胶囊另一半（笔记本）与它自己的面板
+  bindCapsule();
 
   // 开关：先绑、再把 DOM 刷成持久化值。
   // ⚠️ 顺序：bindSwitches 里读 checkbox.checked，所以必须先 renderSwitches
@@ -346,29 +493,19 @@ function init() {
 
   toggle.addEventListener("click", function (ev) {
     ev.stopPropagation();
-    var open = pop.hidden;
-    pop.hidden = !open;
-    // ⚠️ 必须同时切 「.open」 类（2026-10-31 修）。
-    //
-    // 面板复用了主题的 「.palette-popover」 样式，那张样式表里写死
-    // 「display: none」，只靠 「.palette-popover.open { display: flex }」 显示。
-    // 而 「hidden」 属性只能设 「display: none」，**没有任何规则会把它设回 flex**——
-    // 于是 「pop.hidden = false」 之后元素依然 「display:none」、宽高为 0：
-    // 面板「打开了」但屏幕上什么都没有。
-    //
-    // 实测判据：点开后 getComputedStyle(pop).display 必须是 flex；
-    // 若仍是 none 而 hidden=false，就是这里漏了类。
-    pop.classList.toggle("open", open);
-    toggle.setAttribute("aria-expanded", open ? "true" : "false");
-    if (open) { syncOnce(); }        // ← 只在打开时查，一次
+    // ⚠️ 走 openPanel/closePanel 而不再就地翻 hidden：
+    // 两个面板**互斥**（胶囊两半，开一个必须关另一个）。就地翻 hidden 会
+    // 让资源包面板开着时点减号那一半，右上角同时挂两个弹窗。
+    if (pop.hidden) {
+      openPanel("pack");
+      syncOnce();            // ← 只在打开时查，一次
+    } else {
+      closePanel("pack");
+    }
   });
   pop.addEventListener("click", function (ev) { ev.stopPropagation(); });
   document.addEventListener("click", function () {
-    if (!pop.hidden) {
-      pop.hidden = true;
-      pop.classList.remove("open");
-      toggle.setAttribute("aria-expanded", "false");
-    }
+    if (!pop.hidden) closePanel("pack");
   });
 
   // 每件资产一个按钮，**动作由状态决定**（2026-10-31 站长定案）：
@@ -618,6 +755,18 @@ function bindSwitches() {
 window.__packCellsReset = function () {
   if (cells) cells.detach();
   mountCells();
+  // ⚠️ **换页后必须重算胶囊**（2026-11-01）：顶栏常驻，但正文是全新的——
+  // 上一页没有可算公式、这一页有（或反过来），不重算的话胶囊永远停在旧状态。
+  // 这是「跟 SPA 兼容」的全部要点：DOM 常驻的东西必须由换页钩子主动刷新。
+  try { refreshCapsule(); } catch (e) { /* 没胶囊的页（理论上不存在）忽略 */ }
+  // 换页时把笔记本的输出清掉：那条结果属于上一页的上下文，留着会误导
+  // （读者看到「= 2」却不知道是哪条公式算的）。
+  try {
+    ["nb-code-out", "nb-tex-out"].forEach(function (id) {
+      var el = $(id);
+      if (el) { el.hidden = true; el.textContent = ""; el.className = "nb-out"; }
+    });
+  } catch (e) {}
 };
 
 window.__packRuntime = {

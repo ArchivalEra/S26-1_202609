@@ -410,6 +410,7 @@
 !/站点/plugins/editor-contrast.test.mjs
 !/工具/mcp-端点/lib/site-url.mjs
 !/工具/mcp-端点/test/site-url.test.mjs
+!/工具/扫可算候选.mjs
 !/gitroll-dispositions.json
 !/站点/plugins/formula-cells.mjs
 !/站点/plugins/formula-cells.test.mjs
@@ -440,6 +441,7 @@
 !/站点/plugins/mathlive-css.test.mjs
 !/站点/plugins/pack-fixes.test.mjs
 !/站点/plugins/calc-marker.test.mjs
+!/站点/plugins/pack-capsule.test.mjs
 !/站点/assets/vendor/webmcp/README.md
 !/站点/assets/vendor/webmcp/polyfill.iife.js
 !/站点/assets/vendor/webmcp/relay-embed.js

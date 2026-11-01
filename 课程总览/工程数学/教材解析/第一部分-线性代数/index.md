@@ -3,7 +3,7 @@ id: okf.course.engineering_math.textbook.part1_index
 name: 第一部分 线性代数
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-10-30"
+last_updated: "2026-11-01"
 stewards:
   - team: 工程数学课程学习记录
 course: 工程数学
@@ -22,6 +22,8 @@ sources:
 
 > 命名规则：目录 `第N部分-<部分名>/第M章-<章名>/`，文件 `<节号>-<节名>.md`。
 > 例：`第一部分-线性代数/第2章-矩阵/2.3-初等变换与矩阵.md`。
+>
+> 各章 `N.0-通关攻略` 里带 `{:calc}` 标记的显示公式在页面上出「计算」按钮（站内 Octave 求值）。
 
 ## 本部分章节目录与解析进度
 

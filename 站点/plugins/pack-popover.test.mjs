@@ -32,11 +32,18 @@ const THEME_CSS = path.join(HERE, '../assets/theme/shirone-reader.css');
 
 test('能力包面板：切 hidden 时必须同时切 .open 类', () => {
   const src = readFileSync(PACK, 'utf8');
+  // ⚠️ 2026-11-01 形态变了：胶囊两半要**互斥**，所以开/关收进了
+  // openPanel / closePanel 两个函数（资源包按钮不再就地翻 hidden）。
+  // 判据本身**一字未改**：显示/隐藏必须同时切 `.open` 类。
+  const openFn = src.slice(src.indexOf('function openPanel('), src.indexOf('function bindNotebookBlock('));
+  const closeFn = src.slice(src.indexOf('function closePanel('), src.indexOf('function openPanel('));
+  assert.ok(openFn.length > 50, '找不到 openPanel');
+  assert.ok(closeFn.length > 50, '找不到 closePanel');
   // 打开路径
-  assert.match(src, /pop\.classList\.toggle\(["']open["']/,
+  assert.match(openFn, /classList\.add\(["']open["']\)/,
     '打开面板只切了 hidden、没切 .open —— 面板会 display:none 而「打不开」');
   // 关闭路径（点别处 / 再点一次）也要清掉
-  assert.match(src, /pop\.classList\.remove\(["']open["']\)/,
+  assert.match(closeFn, /classList\.remove\(["']open["']\)/,
     '关闭路径没清 .open —— 下次再点会残留一个已打开的类');
 });
 
