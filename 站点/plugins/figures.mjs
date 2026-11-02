@@ -84,6 +84,8 @@
  *  **没有闭合行**——图没有正文，块体永远为空。
  *  `(.+?)` 允许只写 `:::figure`（后面什么都没有）以走到「缺少图元 id」那条明确报错，
  *  而不是被正则静默漏掉、当成普通文本留在页面上。 */
+// 「什么是一个符号」的唯一真相住在 站点/plugins/symbol-selector.mjs。
+// 本文件自包含（无 import），这里复写一份；parity 闸门比对复写与真源。
 const FIGURE_RE = /^[\t ]{0,3}:{3,}[\t ]*figure(?:[\t ]+(.*?))?[\t ]*$/i;
 const FENCE_RE = /^[\t ]{0,3}(`{3,}|~{3,})/;
 /** 占位符：不可能被 Markdown 语法误伤。
@@ -2410,6 +2412,7 @@ export function restoreFigures(html, figures) {
  * 「点符号既弹气泡又选中元件」的双重反应。
  */
 export const FIGURES_JS = String.raw`(function () {
+  var SYMBOL_SELECTOR = "a.sym-gloss, .ML__latex [data-term], .katex [data-term]";
   "use strict";
   var SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -2450,7 +2453,7 @@ export const FIGURES_JS = String.raw`(function () {
     var t = e.target;
 
     // 符号气泡优先：它自己会处理，别抢
-    if (t.closest && t.closest("a.sym-gloss")) return;
+    if (t.closest && t.closest(SYMBOL_SELECTOR)) return;
 
     // 点元件
     var comp = t.closest && t.closest(".fig-comp");
@@ -2584,7 +2587,7 @@ export const FIGURES_JS = String.raw`(function () {
     // 读者看到的是「按了没反应」（2026-10-28 站长实测指出）。
     fig.addEventListener("dblclick", function (ev) {
       var t = ev.target;
-      if (t.closest && (t.closest("a.sym-gloss") || t.closest(".fig-zoom"))) return;
+      if (t.closest && (t.closest(SYMBOL_SELECTOR) || t.closest(".fig-zoom"))) return;
       var orig = fig.getAttribute("data-viewbox");
       if (orig) svg.setAttribute("viewBox", orig);
     });
@@ -2680,7 +2683,7 @@ export const FIGURES_JS = String.raw`(function () {
       (function (figEl, svgEl) {
         svgEl.addEventListener("click", function (ev) {
           // 点图内符号时先让气泡处理，不全屏
-          if (ev.target.closest && ev.target.closest("a.sym-gloss")) return;
+          if (ev.target.closest && ev.target.closest(SYMBOL_SELECTOR)) return;
           // 点元件/连线时是「选中」，也不全屏
           if (ev.target.closest && (ev.target.closest(".fig-comp") || ev.target.closest(".fig-wire"))) return;
           var capEl = figEl.querySelector("figcaption");

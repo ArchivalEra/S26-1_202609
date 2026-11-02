@@ -37,6 +37,12 @@
 // ════════════════════════════════════════════════════════════════
 
 /** 站点主题的选择器与发布文案（**改主题只改这里**）。 */
+// 「什么是一个符号」的唯一真相住在 站点/plugins/symbol-selector.mjs。
+// 本文件是**自包含**的（测试用 toString() 派生浏览器副本，不能带 import），
+// 所以这里只能**复写**一份。parity 闸门（symbol-parity.test.mjs）会比对
+// 这份复写与真源是否逐字一致 —— 漂移即红。
+const SYMBOL_SELECTOR = "a.sym-gloss, .ML__latex [data-term], .katex [data-term]";
+
 export const PAGE_SELECTORS = {
   article: '.article-content',
   articleHeadings: '.article-content h2, .article-content h3, .article-content h4',
@@ -47,7 +53,7 @@ export const PAGE_SELECTORS = {
   details: 'details',
   // 符号可点元素：公式里的（.katex 内）与正文里的（a.sym-gloss）**两处都要认**
   // 公式里的符号（`.katex` 是 2026-10-29 换引擎前的旧容器类名，保留兼容）
-  glossaryTerm: '.ML__latex [data-term], .katex [data-term], a.sym-gloss[data-term]',
+  glossaryTerm: SYMBOL_SELECTOR,   // ← 唯一真相（底部 const），与冒泡/强调色同一份
   // 气泡的真实类名是 .sym-gloss-pop（2026-10-19 修：旧值 '.glossary-bubble, [class*=bubble]'
   // 与真实 DOM 完全不匹配，导致 site_show_symbol 的 bubble 字段恒为空——测试用假 DOM
   // 里的 class="glossary-bubble" 掩盖了这个 bug）

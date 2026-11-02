@@ -443,6 +443,8 @@
 !/站点/plugins/calc-marker.test.mjs
 !/站点/plugins/pack-capsule.test.mjs
 !/站点/plugins/accent-colors.test.mjs
+!/站点/plugins/symbol-selector.mjs
+!/站点/plugins/symbol-parity.test.mjs
 !/站点/assets/vendor/webmcp/README.md
 !/站点/assets/vendor/webmcp/polyfill.iife.js
 !/站点/assets/vendor/webmcp/relay-embed.js

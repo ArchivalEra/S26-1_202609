@@ -29,6 +29,11 @@
 // ③ **只在公式真的变了才重算**：每次计算记下「算的是哪串 LaTeX」，
 //    同一串不重复算（自动计算开着时，滚动/重排会反复触发回调）。
 
+// 「什么是一个符号」的唯一真相住在 站点/plugins/symbol-selector.mjs。
+// 本文件是**自包含**的（测试用 toString() 派生浏览器副本，不能带 import），
+// 这里复写一份；parity 闸门（symbol-parity.test.mjs）比对复写与真源是否一致。
+const SYMBOL_SELECTOR = "a.sym-gloss, .ML__latex [data-term], .katex [data-term]";
+
 const WRAP_CLASS = 'fcell';
 const RESULT_CLASS = 'fcell-result';
 const PLAY_CLASS = 'fcell-play';
@@ -149,7 +154,7 @@ export function createFormulaCells(deps = {}) {
     // 点公式本体 → 原地编辑（不再弹覆盖层）
     anchor.addEventListener('click', (ev) => {
       if (!canEdit()) return;                 // 不能编辑时保持原来的点击行为（符号气泡等）
-      if (ev.target.closest && ev.target.closest('[data-term]')) return;   // 符号气泡优先
+      if (ev.target.closest && ev.target.closest(SYMBOL_SELECTOR)) return;   // 符号气泡优先（同一份选择器）
       ev.preventDefault();
       ev.stopPropagation();
       enterEdit(cell);

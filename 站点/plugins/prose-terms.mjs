@@ -14,6 +14,8 @@
  * 留着只会让后来人以为还要用。这里只保留**仍在服务正文**的部分。
  */
 
+import { SYMBOL_SELECTOR } from './symbol-selector.mjs';
+
 const DICT_OPEN_RE = /^[\t ]{0,3}:::glossary-dict(?:[\t ]+([A-Za-z][A-Za-z0-9_-]*))?[\t ]*$/;
 /** 自动取词声明：`id | 正文形式（、分隔）| TeX 形式（、分隔，可省）`。 */
 const MATCH_OPEN_RE = /^[\t ]{0,3}:::glossary-match[\t ]*$/;
@@ -521,7 +523,7 @@ function () {
   }
   document.addEventListener("click", function (e) {
     var link = e.target.closest
-      ? e.target.closest("a.sym-gloss, .ML__latex [data-term], .katex [data-term]")
+      ? e.target.closest("${SYMBOL_SELECTOR}")
       : null;
     // 公式内的几何回退（2026-10-12 用户实测「公式框里符号点击范围严重漂移、几乎点不了」）：
     // KaTeX 的透明堆叠结构盒（.vlist 一套，position:relative）会抢走点击让 closest 落空，
