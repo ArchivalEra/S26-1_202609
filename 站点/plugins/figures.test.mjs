@@ -1094,8 +1094,12 @@ test('交互层：客户端脚本含四个必需能力（选中 / 高亮 / 面�
   assert.match(FIGURES_JS, /fig-inspector/, '缺属性面板');
   assert.match(FIGURES_JS, /function zoom/, '缺缩放');
   assert.match(FIGURES_JS, /__figuresReset/, '缺 SPA 换页重挂');
-  // 符号气泡优先：点符号时不能抢事件
-  assert.match(FIGURES_JS, /closest\("a\.sym-gloss"\)\s*\)\s*return/, '符号点击未被让出');
+  // 符号气泡优先：点符号时不能抢事件。
+  // 2026-11-01 起让路守卫统一走 SYMBOL_SELECTOR（图里也可能有公式符号，
+  // 只认 a.sym-gloss 会漏）—— 断言跟着换，并查常量定义在场。
+  assert.match(FIGURES_JS, /closest\(SYMBOL_SELECTOR\)\s*\)\s*return/, '符号点击未被让出');
+  assert.match(FIGURES_JS, /SYMBOL_SELECTOR\s*=\s*"a\.sym-gloss, \.ML__latex \[data-term\], \.katex \[data-term\]"/,
+    '让路守卫的常量定义缺失（应与 symbol-selector.mjs 真源逐字一致）');
   // 键盘可达
   assert.match(FIGURES_JS, /keydown/, '缺键盘处理');
   assert.match(FIGURES_JS, /setAttribute\("tabindex"/, '元件不可 Tab 聚焦');
@@ -1107,7 +1111,7 @@ test('交互层：双击复位避开缩放条与符号（连点两下「＋」�
   const dbl = FIGURES_JS.slice(FIGURES_JS.indexOf('addEventListener("dblclick"'));
   const block = dbl.slice(0, dbl.indexOf('});') + 3);
   assert.match(block, /closest\("\.fig-zoom"\)/, '双击复位未排除缩放条');
-  assert.match(block, /closest\("a\.sym-gloss"\)/, '双击复位未排除符号锚点');
+  assert.match(block, /closest\(SYMBOL_SELECTOR\)/, '双击复位未排除符号锚点');
 });
 
 test('全屏查看：SVG 与位图都挂了灯箱（不只图元，习题册 img 也要）', () => {
@@ -1123,7 +1127,7 @@ test('全屏查看：SVG 与位图都挂了灯箱（不只图元，习题册 img
 
 test('全屏查看：点图内符号或元件时不触发全屏（与气泡/选中不抢事件）', () => {
   const lb = FIGURES_JS.slice(FIGURES_JS.indexOf('setupLightbox'));
-  assert.match(lb, /closest\("a\.sym-gloss"\)/, '点符号时未让出事件');
+  assert.match(lb, /closest\(SYMBOL_SELECTOR\)/, '点符号时未让出事件');
   assert.match(lb, /closest\("\.fig-comp"\)/, '点元件时未让出事件');
   assert.match(lb, /closest\("\.fig-wire"\)/, '点连线时未让出事件');
 });
