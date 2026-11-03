@@ -453,6 +453,7 @@
 # 收件口（把手机上的文件传进本机；收到的东西按类型归位，不进这个目录的白名单）
 !/工具/收件口/README.md
 !/工具/收件口/recv_server.py
+!/工具/查学习通作业.md
 # 归档：pretext 资料门户试验（活体已拆除；结论与复活步骤见归档 README）
 !/工具/归档-pretext门户/README.md
 !/工具/归档-pretext门户/pretext-feed.mjs
