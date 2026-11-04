@@ -18,11 +18,12 @@ skill 的正文**不会自动加载**——上下文里只有它的名字和一�
 | **新增或改动图元**（`站点/图库/*.figures.txt`、`:::figure`） | `Skill(triple-sign)`：图的判据同三签——**只给图与图注**让独立子代理读，报「每个门能不能确定、字母什么含义、中间量怎么来的、会不会做错题」。理由：2026-10-28 实测图渲染全通但逻辑变量被挂上器件词条、双击误触、布局误导，**全自动闸门皆绿**（见 `维护细则` §3.4.2） |
 | **图元布局出问题**（线穿方框、字被线切开、朝向不对、标签堆叠） | **先停手，不许调参数、不许遮罩**（2026-10-29 定案）。这类缺陷不是「间距差几像素」，是自研布局引擎不成立：实测补了 17 处穿透又冒出新的，文字光晕只是把线盖住、图还是错的（电气原理图里**线本来就不该穿过字**）。判据：**同一个位置修第二遍就说明方向错了**，走去 `.zcode/需求-图元渲染方案选型.md` 那条路（要活组件，类比 MathLive），不要再动 `figures.mjs` 的几何常数 |
 | 站点视觉或交互出问题 | 开浏览器实测，不空猜 |
-| 要写/改**给人读的文本**：备考、Walkthrough（考点摘录）、课程索引摘要、README 片段、issue 正文、个人叙述 | `Skill(adversarial-essay-sparring)`：**Turn 1 不许起草**，先审 brief 并锁基线；追问事实密度、消融测试、对退回俗套的修改请求做结构性拒绝。**它在就必须有人在**——不接受降级为「材料自检」（2026-11-03 站长定案：无人值守用不了就停止无人值守，有人类参与才叫说人话） |
+| 要写/改**写作类页面**：备考、Walkthrough（考点摘录）、课程索引摘要、README 片段、issue 正文 | `Skill(adversarial-writing-autonomous)`：**condense and face the reader** — conclusion first, drop packaging, merge repeats, link out, never drop numbers/conditions/negations/scope/attribution. **Baseline is not asked for** (reader, depth and banned phrasings already live in `维护条例` §1/§2 and `human-first-solution`); only mechanically judgeable criteria apply, **taste is not guaranteed** |
+| 要写/改**个人叙述、对外叙事**，或需要审美判断、确认基线 | `Skill(adversarial-essay-sparring)`：**Turn 1 不许起草**，先审 brief 并锁基线；追问事实密度、消融测试、对退回俗套的修改请求做结构性拒绝。**它在就必须有人在**——不接受降级为「材料自检」（2026-11-03 站长定案：无人值守用不了就停止无人值守，有人类参与才叫说人话） |
 | 用户说「想不到这一层」「怎么试出来的」「云里雾里」「这步怎么来的」 | `Skill(solution-production)`，必用 |
 | 用户说「AI 味」「双签」「他证」「校对答案」 | 按上表对号入座，必用 |
 | 用户说「三签」「读了依赖会不会做」「过程合不合理」「依赖够不够」 | `Skill(triple-sign)`（在双签之后跑） |
-| 用户说「咕噜话」「信息量低」「太长」「压一压」 | `Skill(adversarial-essay-sparring)`（删句测试 + 事实密度拷问；原 `dense-human` 已退休，2026-11-03） |
+| 用户说「咕噜话」「信息量低」「太长」「压一压」 | `Skill(adversarial-writing-autonomous)`（delete-sentence + restate + fidelity + ablation tests; the retired `dense-human` was folded in here, 2026-11-03） |
 
 **同一会话只挂一次**：skill 正文不会变，重复挂每次约 2k token 纯属浪费；每个新会话的第一条内容任务照常先挂。
 

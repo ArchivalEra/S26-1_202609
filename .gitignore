@@ -19,6 +19,7 @@
 !/.agents/skills/double-sign/ratfmt.m
 !/.agents/skills/triple-sign/SKILL.md
 !/.agents/skills/adversarial-essay-sparring/SKILL.md
+!/.agents/skills/adversarial-writing-autonomous/SKILL.md
 !/.githooks/pre-commit
 !/.githooks/pre-push
 !/.githooks/update-readme.py
