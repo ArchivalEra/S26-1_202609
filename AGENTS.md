@@ -1,12 +1,12 @@
 # AGENTS.md：在本仓库干活的常驻规则
 
-本仓库是中文「学期课程学习仓库」：课程资料 + 一个自建静态阅读站。本文件每次会话自动加载，
-所以只放**每次都要生效**的规则。操作规程见[维护细则](./维护细则.md)，原则见[维护条例](./维护条例.md)
-（两者冲突时以条例为准）；进度手记是 `.zcode/handoff.md`（按约定不入库），开工前先读它。
+本仓库是中文「学期课程学习仓库」：`课程总览/` 下的课程资料 + `站点/` 一个自建静态阅读站。
+本文件每次会话自动加载，所以只放**每次都要生效**的规则。原则见[维护条例](./维护条例.md)，
+操作规程见[维护细则](./维护细则.md)（冲突以条例为准）；进度手记是 `.zcode/handoff.md`（不入库），开工前先读它。
 
 ## 一、先挂 skill，再动手
 
-skill 的正文**不会自动加载**——上下文里只有它的名字和一句话描述，必须主动调用 `Skill` 工具才读到正文。
+skill 正文**不会自动加载**——上下文里只有名字和一句描述，必须主动调 `Skill` 才读到正文。
 所以触发条件按**状态**写：出现下表左列的情况就自己挂，不必等用户点名，也不要因为「规则我大致记得」跳过。
 
 | 出现这个状态 | 先做什么 |
@@ -18,12 +18,12 @@ skill 的正文**不会自动加载**——上下文里只有它的名字和一�
 | **新增或改动图元**（`站点/图库/*.figures.txt`、`:::figure`） | `Skill(triple-sign)`：图的判据同三签——**只给图与图注**让独立子代理读，报「每个门能不能确定、字母什么含义、中间量怎么来的、会不会做错题」。理由：2026-10-28 实测图渲染全通但逻辑变量被挂上器件词条、双击误触、布局误导，**全自动闸门皆绿**（见 `维护细则` §3.4.2） |
 | **图元布局出问题**（线穿方框、字被线切开、朝向不对、标签堆叠） | **先停手，不许调参数、不许遮罩**（2026-10-29 定案）。这类缺陷不是「间距差几像素」，是自研布局引擎不成立：实测补了 17 处穿透又冒出新的，文字光晕只是把线盖住、图还是错的（电气原理图里**线本来就不该穿过字**）。判据：**同一个位置修第二遍就说明方向错了**，走去 `.zcode/需求-图元渲染方案选型.md` 那条路（要活组件，类比 MathLive），不要再动 `figures.mjs` 的几何常数 |
 | 站点视觉或交互出问题 | 开浏览器实测，不空猜 |
-| 要写/改**写作类页面**：备考、Walkthrough（考点摘录）、课程索引摘要、README 片段、issue 正文 | `Skill(adversarial-writing-autonomous)`：**condense and face the reader** — conclusion first, drop packaging, merge repeats, link out, never drop numbers/conditions/negations/scope/attribution. **Baseline is not asked for** (reader, depth and banned phrasings already live in `维护条例` §1/§2 and `human-first-solution`); only mechanically judgeable criteria apply, **taste is not guaranteed** |
+| 要写/改**写作类页面**：备考、Walkthrough（考点摘录）、课程索引摘要、README 片段、issue 正文 | `Skill(adversarial-writing-autonomous)`：**condense and face the reader** — conclusion first, drop packaging, merge repeats, link out, never drop numbers/conditions/negations/scope/attribution. **Baseline is not asked for**（读者、深度、禁用措辞已写在 `维护条例` §1/§2 与 `human-first-solution`）；只管机械可判的项，**不保证品味** |
 | 要写/改**个人叙述、对外叙事**，或需要审美判断、确认基线 | `Skill(adversarial-essay-sparring)`：**Turn 1 不许起草**，先审 brief 并锁基线；追问事实密度、消融测试、对退回俗套的修改请求做结构性拒绝。**它在就必须有人在**——不接受降级为「材料自检」（2026-11-03 站长定案：无人值守用不了就停止无人值守，有人类参与才叫说人话） |
 | 用户说「想不到这一层」「怎么试出来的」「云里雾里」「这步怎么来的」 | `Skill(solution-production)`，必用 |
 | 用户说「AI 味」「双签」「他证」「校对答案」 | 按上表对号入座，必用 |
 | 用户说「三签」「读了依赖会不会做」「过程合不合理」「依赖够不够」 | `Skill(triple-sign)`（在双签之后跑） |
-| 用户说「咕噜话」「信息量低」「太长」「压一压」 | `Skill(adversarial-writing-autonomous)`（delete-sentence + restate + fidelity + ablation tests; the retired `dense-human` was folded in here, 2026-11-03） |
+| 用户说「咕噜话」「信息量低」「太长」「压一压」 | `Skill(adversarial-writing-autonomous)`（delete-sentence + restate + fidelity + ablation tests；已退休的 `dense-human` 并入此处，2026-11-03） |
 
 **同一会话只挂一次**：skill 正文不会变，重复挂每次约 2k token 纯属浪费；每个新会话的第一条内容任务照常先挂。
 
@@ -34,7 +34,13 @@ skill 的正文**不会自动加载**——上下文里只有它的名字和一�
   跑检查，这张处理干净了才允许 Read 下一张。禁止一次把 6 张全 Read 进来再统一动手
   （一次塞进来会摊薄注意力，最后两张基本靠猜）。
   禁止 OCR、禁止把图转字符画、禁止装识别工具、禁止裁剪放大增强。
-  JXL 原件一律 `vips copy in.jxl out.png` 转 PNG 再用 Read 看。
+- **派单前先把照片调成能读的样子**（2026-11-06 站长重申）：教材/作业照片一律先过
+  `python3 .githooks/prepare-photos.py <源文件...> [--out DIR]` 生成阅读副本——它做三件事：
+  统一竖屏（拍摄一律竖持，手机陀螺仪常存成横版）、无损解码（HEIC→PNG）、ASCII 文件名
+  （中文名会让子代理误报「分辨率不足」）。**派给子代理的必须是它产出的副本，不是原件**。
+  副本里版面明显倒立时，子代理可自行 `python3 .githooks/flip-photo.py <副本.png>` 转 180° 再读一次
+  （只允许旋转，禁止裁剪/放大/增强/换副本重试）。
+  ⚠️ 不要图省事直接 `vips copy in.jxl out.png` 就派单——那正是 2026-11-06 作业 4 抄题面的失误。
 - **`.zcode/` 一律不推送**，只落盘。
 - **插件侧不入库**（2026-10-26 定案）：助手协议栈（`proto` / `session` / `toolcycle` /
   `chatsvc` / 通道与 iframe 装配）的真相源住 `.zcode/学习通API/protocol/`，**不进仓库**。
@@ -50,14 +56,21 @@ skill 的正文**不会自动加载**——上下文里只有它的名字和一�
   不能只在解答层写「画法说明」或只给提示，那是让人做不了题。题面**鼓励用 markdown / 内联 SVG**
   表达各种元素（表格、矢量示意图）；**解答层不必重抄题面**。判据：**只读题面**（不展开任何折叠面板）
   就能把题完整做出来。
+- **完整解答必须自足**（2026-11-06 站长定案）：每道题的**完整做法写在「完整解答」层**，
+  读者只看这一页就能跟着做完。技法库/教材解析只作「已收录」旁注，**不许接管步骤**——
+  「照…条目走」「完整演算见…」「详见…」这类把步骤推给别页的句子视为**违反三签的可复现判据**。
+  机器闸：`站点/plugins/solution-selfcontained.test.mjs`（扫解答层推走句 + 变异自证），红了就是没写完。
 - **三道内容闸，顺序不能反**（2026-10-14 定案）：作业/解析入库依次过
   **① 反人类解析**（「试探/凑/巧妙看出」= 没写完）→ **② 双签**（独立子代理只拿题面重算，验答案对不对）
   → **③ 三签**（另一个独立子代理**只拿题面 + 依赖表指向的内容**试做，验「读了依赖做不做得出来、过程合不合理」）。
   双签管**答案**、三签管**依赖与过程**；**三签可直接改依赖锚点与作业页步骤**（答案数值仍归双签，三签越界改数要退回双签）。
+  三签盲测材料**只含题面 + 依赖锚点指向的段落**：依赖表之外的裸正文不算依赖，
+  抽料时要把这类段落一并纳入（2026-11-06 三签实测：11-02 作业的语义在依赖节裸正文里，漏抽导致盲做缺桥梁）。
 - **`status` 只允许「开课」或「结课」两档**（2026-10-11 定案，钩子强制，不设其他档）：它是页面顶端
   的第一条信息，语义是**这门课还在不在上**，不是单篇资料的完成度。本学期在上的课一律「开课」，结课后改「结课」。
-- **资料与索引同进同出**：`课程/<课程>/<类别>/` 下任何资料变动，同一次提交必须更新对应 `index.md`。
-- **改 `课程/` 或 `站点/` 的提交必须同轮更新 `.zcode/handoff.md`**（pre-commit 强制）。不要用 `--no-verify`。
+- **资料与索引同进同出**：`课程总览/<课程>/<类别>/` 下任何资料变动，同一次提交必须更新对应 `index.md`，
+  并**逐层更新到 `课程总览/index.md`**（钩子的级联检查会点名缺哪几层）。
+- **改 `课程总览/` 或 `站点/` 的提交必须同轮更新 `.zcode/handoff.md`**（pre-commit 强制）。不要用 `--no-verify`。
 - 提交前跑：`update-readme.py --worktree`、`check-markdown.py`、`test-update-readme.py`、`git fsck --no-progress`。
 - **禁止等 CI**（2026-09-24 用户定案）：本地构建与 CI 构建等效（同一个 `node build.mjs`、同一套钩子、同一批素材），
   **`git push` 就是这一步的终点**——不要 `sleep`、不要轮询、不要为了「看 CI 绿不绿」多等一分钟。
@@ -68,11 +81,11 @@ skill 的正文**不会自动加载**——上下文里只有它的名字和一�
 
 本仓接入了 [Einfacht](https://github.com/ArchivalEra/Einfacht) 反幻觉事实系统的最小包：机制在 `zreflect/`（逐字节照抄上游，可原样升级），**本仓要量的东西**在 `zreflect/measure_edu.py`，配置在 `reflect-hooks/Einfacht.env`。它管的是**数字**：
 
-- **数字只生产一次**：课程/资料/习题/配图/词条/站点页数等计数住在 `FACTS.json`，文档里**引用写
+- **数字只生产一次**：课程/资料/习题/配图/词条/站点页数/符号冒泡数等计数住在 `FACTS.json`，文档里**引用写
   `[[键名]]`**，不手抄。机器块（`STATE.md` 末尾的 `AUTO:FACTS` 与 `AUTO:GATES`）由
   `python3 zreflect/facts.py --render-doc STATE.md` 渲染，**不要手改**（pre-commit 会重算并 `git add`）。
 - **改完数字要重测**：`python3 zreflect/facts.py`（掉条/改口会拒绝；改口逐条
-  `--accept-changes=k1,k2` 放行）。**改口的含义**是「这个数真的变了」，不是「让闸门闭嘴」。
+  `--accept-changes=k1,k2` 放行）。**改口的含义是「这个数真的变了」，不是「让闸门闭嘴」。
 - **闸门**：`python3 zreflect/registry.py --run commit` 跑全部提交相位闸门（`off` 单列，**没查 ≠ 通过**）。
   已接入 pre-commit / pre-push（内嵌在 `.githooks/` 既有钩子链里，不换 `core.hooksPath`）。
 - **旧值不许回来**：翻案进 `retractions.json`（`text` 片段出现在活状态文档里、该行又不带更正标记

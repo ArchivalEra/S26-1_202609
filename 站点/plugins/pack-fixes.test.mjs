@@ -93,9 +93,14 @@ test('③ 站点根前缀必须现取，不许在加载时快照（SPA 换页会
     .join('\n');
   assert.ok(!/\brootRel\b/.test(codeOnly),
     'rootRel 又出现在装配脚本的活代码里 —— 那是「加载时快照根前缀」的化石，SPA 换页后会拼出 404');
-  // 三处消费方都必须是现取形态
-  assert.match(inline, /const octBase = \(\) =>/, 'octave 目录没走现取函数');
+  // 2026-11-06 起三件套改从 OPFS 读（Static-Contract 分块下载后落盘），
+  // 不再拼站点目录前缀 ⇒ octBase/OCT_BASE 都不该存在。
+  // 旧断言「const octBase = () =>」是针对「从 assets/octave/ 取」那版的，已过时：
+  // 现在连那个目录都不进 dist 了，再要求它现取反而会把死变量焊回来。
+  assert.ok(!/const octBase\s*=/.test(inline), 'octBase 还在 —— 三件套不该再从站点目录取');
   assert.ok(!/const OCT_BASE\s*=/.test(inline), 'OCT_BASE 又被做成常量快照了');
+  assert.match(inline, /octBlobUrl\(/, '没有从 OPFS 读字节造 blob URL 的装配');
+  assert.match(inline, /store:\s*octStore/, '能力包与 ensureOctave 没共用同一份 OPFS store');
   // 能力包那边：root 必须是函数（拼 URL 时现取）
   assert.match(inline, /root:\s*assetRoot/, '能力包没拿到现取的 root，下载仍会用过期前缀');
   const PACK = readFileSync(path.join(HERE, 'capability-pack.mjs'), 'utf8');
@@ -103,15 +108,16 @@ test('③ 站点根前缀必须现取，不许在加载时快照（SPA 换页会
   assert.match(PACK, /typeof r === 'function'/, 'resolveRoot 没处理「root 是函数」这种形态');
 });
 
-test('④ 版本占位符必须全部替换（两个占位符，不止一个）', () => {
-  // 病因：模板里有两处 __PACK_VER__ / __CELLS_VER__，但替换只做了前者。
-  // 后果：产物里留着字面 ?v=__CELLS_VER__，浏览器把它当版本号 ⇒ 模块永不更新。
-  // 服务端日志实证 GET /assets/plugins/formula-cells.mjs?v=__CELLS_VER__。
+test('④ 版本占位符必须全部替换（三个占位符，不止一个）', () => {
+  // 病因：模板里有 __PACK_VER__ / __CELLS_VER__ / __STATIC_RELEASE_VER__，
+  // 每加一个新占位符都容易漏进替换链（2026-11-01 漏 CELLS、11-06 漏 STATIC_RELEASE，
+  // 两次都是产物里留着字面 ?v=__XXX_VER__ ⇒ 模块永不更新）。
   const seg = BUILD.slice(BUILD.indexOf('const htmlWithVers'),
     BUILD.indexOf('const leakedVer') + 400);
   assert.match(seg, /split\('__PACK_VER__'\)/, '产物没替换 __PACK_VER__');
-  assert.match(seg, /split\('__CELLS_VER__'\)/, '产物没替换 __CELLS_VER__ —— 这个模块会永不更新');
-  // 还要有兜底硬拦，免得以后加第三个占位符时又漏一个
+  assert.match(seg, /split\('__CELLS_VER__'\)/, '产物没替换 __CELLS_VER__');
+  assert.match(seg, /split\('__STATIC_RELEASE_VER__'\)/, '产物没替换 __STATIC_RELEASE_VER__');
+  // 还要有兜底硬拦，免得以后加第四个占位符时又漏一个
   assert.match(seg, /const leakedVer = \/__/, '没有「占位符残留」的兜底正则');
 });
 
