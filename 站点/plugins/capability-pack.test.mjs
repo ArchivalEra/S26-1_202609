@@ -471,3 +471,38 @@ test('每件资产的 sha256 必须是完整 64 位（空串/截断 = 内容校�
     }
   }
 });
+
+test('带 source 的资产必须各自声明 releaseId（不许共用/写死一个）', () => {
+  // 2026-11-06 站长实测「pyodide 无法下载、无限冒重试按钮」：
+  // 装配层的 releaseLoader 原来写死 Octave-Full-Wasm 一个 release，
+  // 而 pyodide 的三件在 Octave-Extra-Content/supply-pyodide-314.0.7 里
+  // ⇒ 去错的 manifest 里找必然失败，界面无限回到「重试」。
+  // 判据：凡有文件带 source，其所属资产必须声明 releaseId；
+  // 且不同资产不许共用同一个 releaseId（共用说明又写死了一个）。
+  const withSource = Object.entries(ASSETS).filter(([, a]) => a.files.some((f) => f.source));
+  assert.ok(withSource.length >= 2, '应至少有两个资产走 release（engine / pyodide）');
+  const seen = new Map();
+  for (const [name, spec] of withSource) {
+    assert.equal(typeof spec.releaseId, 'string',
+      `资产 ${name} 有 source 但没有 releaseId——装配层无从定位 release`);
+    assert.ok(spec.releaseId.length > 3, `资产 ${name} 的 releaseId 太短`);
+    assert.ok(!seen.has(spec.releaseId),
+      `资产 ${name} 与 ${seen.get(spec.releaseId)} 共用 releaseId ${spec.releaseId}——`
+      + '两个 release 会互相覆盖，后下载的永远失败');
+    seen.set(spec.releaseId, name);
+  }
+});
+
+test('装配层的 releaseLoader 必须按 releaseId 取 handle（不许写死）', () => {
+  const BUILD = fs.readFileSync(import.meta.dirname + '/../build.mjs', 'utf8');
+  // 抓装配层里那个 releaseLoader 函数体
+  const i = BUILD.indexOf('const releaseLoader = async (f)');
+  assert.ok(i > 0, '找不到 releaseLoader');
+  const body = BUILD.slice(i, i + 1200);
+  assert.match(body, /f\.releaseId/,
+    'releaseLoader 没读 f.releaseId——写死一个 release 会让另一个资产的下载必然失败');
+  assert.match(body, /releaseHandles\.(get|set)/,
+    'releaseLoader 没有按 release 分桶缓存 handle（一个 handle 只能服务一个 release）');
+  assert.ok(!/resolveCatalogueRelease\('Octave-Full-Wasm/.test(body),
+    'releaseLoader 又写死了 Octave-Full-Wasm 的 release id');
+});
