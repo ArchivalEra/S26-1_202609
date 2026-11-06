@@ -277,6 +277,30 @@ test('⑮ math-field 的内置按钮在深色下必须可见（不许吃 MathLiv
     '.nb-mathfield 没显式给 color —— 深色下面板里的公式字会是黑的');
 });
 
+test('⑮b 三道杠（菜单按钮）不许被 display:none —— 站长要它可见可用', () => {
+  // ## 2026-11-06 实弹：我把「周边 UI 全消失」误判成三道杠的错，直接
+  // `.ML__menu-toggle { display: none !important }`，下一轮站长就报
+  // 「mathlive 那个按钮也是不见了」。
+  //
+  // ## 实测真相（headless Chromium 量的）
+  //   三道杠弹出的菜单：  156×384 px（26 个编辑项：插入矩阵/上下标/颜色…）
+  //   虚拟键盘：         1265×1000 px = 视口 99%
+  // 铺满全屏的是**虚拟键盘**，菜单压不到 UI。所以：
+  //   · `.ML__virtual-keyboard-toggle` 继续 display:none（它是真凶）
+  //   · `.ML__menu-toggle` **只准改颜色/透明度，不准 display:none**
+  // 判据：找到注入样式串里针对 menu-toggle 的规则，里层不许出现 display。
+  const pr = PR;
+  const rules = [...pr.matchAll(/"([^"]*\.ML__menu-toggle[^"]*?)\s*\{",?([\s\S]{0,240}?)"\}"/g)]
+    .map((m) => ({ sel: m[1], body: m[2] }));
+  const offenders = rules.filter((r) => /display\s*:\s*none/.test(r.body));
+  assert.deepEqual(offenders.map((o) => o.sel), [],
+    '注入样式把三道杠 display:none 掉了 —— 站长要这个按钮在（真凶是虚拟键盘，不是它）。'
+    + '\n  处置：只改 color/opacity，绝不用 display 藏它。');
+  // 正向断言：菜单按钮必须有一条可见性规则在（别整块删掉造成「按钮不可见」复发）
+  assert.match(pr, /\.ML__menu-toggle[^"]*\{",?[\s\S]{0,240}?opacity/s,
+    '菜单按钮没有提亮/可见规则 —— 深色下它会不可视');
+});
+
 // ══════════════════════════════════════════════════════════════════
 // 2026-11-01 站长：**调色盘与能力包会互相遮挡**。
 //
