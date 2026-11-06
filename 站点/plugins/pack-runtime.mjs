@@ -619,11 +619,12 @@ function init() {
   renderSwitches();
   bindSwitches();
 
-  // 页面加载就查一次状态并把单元格装上（2026-10-31 修「必须点按钮才能编辑」）。
-  // 这一句是「记忆功能」真正生效的地方：prefs 从 localStorage 恢复，
-  // 资产状态查一次，两者都到位 ⇒ 公式立刻可编辑、可算，读者什么都不用点。
-  syncOnce();
-
+  // ⚠️ 2026-11-06 站长报「点加号弹不出面板」：原实现把 syncOnce() 放在
+  // **监听器绑定之前**。syncOnce 会碰 OPFS / localStorage —— 在无痕模式、
+  // Safari 隐私设置、或 OPFS 被拒的环境里它会抛/挂住，于是后面的
+  // toggle.addEventListener 永远绑不上，加号成了死按钮（DOM 在、点了没反应）。
+  // 判据：**绑定必须在任何可能失败的副作用之前**。所以顺序改成
+  // 先绑监听器（纯 DOM 操作、不会抛），最后再 try/catch 去查状态。
   toggle.addEventListener("click", function (ev) {
     ev.stopPropagation();
     // ⚠️ 走 openPanel/closePanel 而不再就地翻 hidden：
@@ -640,6 +641,11 @@ function init() {
   document.addEventListener("click", function () {
     if (!pop.hidden) closePanel("pack");
   });
+
+  // 状态查询放最后：它碰存储（OPFS / localStorage），在隐私模式里可能抛。
+  // 包起来是因为「查不到状态」只该让面板显示「未下载」，
+  // **不该把已经绑好的胶囊弄死**（2026-11-06 站长实测的真 bug）。
+  try { syncOnce(); } catch (e) { /* 存储不可用 ⇒ 面板照常可开，显示未下载 */ }
 
   // 每件资产一个按钮，**动作由状态决定**（2026-10-31 站长定案）：
   //
