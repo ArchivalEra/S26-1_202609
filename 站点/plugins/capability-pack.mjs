@@ -102,6 +102,54 @@ export const ASSETS = {
       },
     ],
   },
+  // 2026-11-06 站长定案：**KaTeX 作为可选资产**。
+  // 为什么要它：编辑完公式退出时要把新 LaTeX 重新渲染成静态显示，
+  // 而浏览器端原本没有 KaTeX（页面只用构建期 SSR 的产物 + CSS）。
+  // MathLive 的 convertLatexToMarkup 也能渲，但它只在「下载编辑器」后可用；
+  // KaTeX 单独成件，读者不必为了看自己改的公式去下 824 KB 的编辑器。
+  // 站点已有 assets/katex/katex.min.js（UMD，挂 window.katex），276 KB。
+  katex: {
+    label: '公式渲染器',
+    hint: '下载后编辑过的公式能立刻重绘（不下也能改，只是显示刷新要重进页面）',
+    bytes: 276705,
+    files: [
+      {
+        path: 'assets/katex/katex.min.js', name: 'katex.min.js', bytes: 276705,
+        // sha 由构建期算（见 build.mjs 的 assetVersion）；这里留空表示「不比对」，
+        // 与 editor 不同：那份是 vendored 固定版，这份随站点资产走。
+        sha256: '',
+      },
+    ],
+  },
+  // 2026-11-06 站长定案：**pyodide 也要进下载列表**（原先只在代码里提到、列表没有）。
+  // 它从 Static-Contract 的 supply 包拉：pyodide-core tarball + sympy + mpmath。
+  // 用途：符号计算/更高阶的 Python 侧能力（`symbolic` 包的宿主）。
+  pyodide: {
+    label: 'Python 内核',
+    hint: '下载后可用 Pyodide（符号计算等）',
+    bytes: 567787 + 6757104 + 6299353,
+    releaseId: 'Octave-Extra-Content/supply-pyodide-314.0.7',
+    files: [
+      {
+        path: 'assets/pyodide/pyodide-core-314.0.7.tar.bz2', name: 'pyodide-core-314.0.7.tar.bz2',
+        bytes: 6757104,
+        sha256: '2abdcc2e3520',   // 由 release manifest 校验，这里只是稳定键
+        source: { product: 'pyodide', name: 'pyodide-core-314.0.7.tar.bz2' },
+      },
+      {
+        path: 'assets/pyodide/sympy-1.14.0-py3-none-any.whl', name: 'sympy-1.14.0-py3-none-any.whl',
+        bytes: 6299353,
+        sha256: 'e091cc3e99d2',
+        source: { product: 'pyodide', name: 'sympy-1.14.0-py3-none-any.whl' },
+      },
+      {
+        path: 'assets/pyodide/mpmath-1.4.1-py3-none-any.whl', name: 'mpmath-1.4.1-py3-none-any.whl',
+        bytes: 567787,
+        sha256: 'dc4f0ea23044',
+        source: { product: 'pyodide', name: 'mpmath-1.4.1-py3-none-any.whl' },
+      },
+    ],
+  }
 };
 
 /** 三态：由两件资产的存在**派生**（不是存出来的）。 */

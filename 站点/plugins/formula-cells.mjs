@@ -171,7 +171,21 @@ export function createFormulaCells(deps = {}) {
     // quiet：自动计算路径专用。算不了（含裸变量的公式占多数）时**不显示**任何东西，
     // 保持版面干净。手动点播放时才把原因亮出来——那时读者是主动问"这条能不能算"。
     const quiet = o.quiet === true;
-    const tex = cell.editing ? cell.currentTex() : cell.wrap.getAttribute('data-fcell-tex') || '';
+    // ⚠️ 2026-11-06 站长实测「矩阵改成行列式后仍算不了，但改个数字就能算」：
+    // 原来的取值是 `cell.editing ? currentTex() : data-fcell-tex`。
+    // 点 ▶ 会让 math-field **失焦**，而 blur 里有 150ms 延迟退出编辑：
+    // 若那 150ms 先到（或任何让 editing 变 false 的路径先跑），这里就退回读
+    // data-fcell-tex —— 那个属性只在 exitEdit 里更新，改 border（不触发 input）
+    // 时它还是旧串 ⇒ 拿旧公式去算，得到旧结果或算不了。
+    // 判据：**只要 math-field 还在 DOM 里，就以它为准**；editing 只用来判断
+    // 「要不要退场」，不参与「取哪份 tex」。
+    let tex = '';
+    if (cell.editing && cell.currentTex) {
+      tex = cell.currentTex();
+    } else if (cell.mf && cell.mf.isConnected) {
+      try { tex = cell.mf.value || ''; } catch (e) { tex = ''; }
+    }
+    if (!tex) tex = cell.wrap.getAttribute('data-fcell-tex') || '';
     if (!tex.trim()) return;
 
     // 不变量 ③：同一串不重复算（自动计算时滚动会反复触发）
@@ -243,6 +257,13 @@ export function createFormulaCells(deps = {}) {
     mf.setAttribute('math-virtual-keyboard-policy', 'manual');
     try { mf.value = tex; } catch (e) { mf.textContent = tex; }
 
+    // ⚠️ 2026-11-06 站长实测「点三道杠所有 UI 消失」：编辑态是**新建** math-field，
+    // 而 configureMathField（隐藏虚拟键盘按钮 + 深色修正）只在 MathLive 载入时
+    // 对**当时已存在**的 math-field 跑过一次 ⇒ 新建的这个从未被配置 ⇒
+    // 虚拟键盘按钮还在，读者点到的三道杠其实是键盘开关，键盘铺满全屏。
+    // 这里显式调一次；装配层没暴露就跳过（不报错、不影响编辑本身）。
+    try { if (window.__configureMathField) window.__configureMathField(mf); } catch (e) {}
+
     // 原公式先藏起来（**不删**：MCP 读面要它，见不变量 ①）
     cell.anchor.style.display = 'none';
     // math-field 与公式并排放在 body 里（body 收缩到内容宽，编辑时跟着变宽）
@@ -278,10 +299,49 @@ export function createFormulaCells(deps = {}) {
     const mf = cell.mf;
     let tex = '';
     try { tex = mf.value || ''; } catch (e) { tex = ''; }
-    // 把改过的 LaTeX 记到容器上（下次编辑从改后的开始）
-    if (tex.trim()) cell.wrap.setAttribute('data-fcell-tex', tex);
+    if (tex.trim()) {
+      // 把改过的 LaTeX 记到容器上（下次编辑从改后的开始）
+      cell.wrap.setAttribute('data-fcell-tex', tex);
+      // ⚠️ 2026-11-06 站长实测「编辑过的公式点其他地方出来显示的还是之前的公式」：
+      // 原来只写了 data-fcell-tex（供**下次编辑**用），页面显示的仍是构建期 SSR
+      // 烘死的那份 KaTeX ⇒ 读者改完看到的还是旧公式，等于白改。
+      // 修法：退出编辑时用新 LaTeX **重渲染显示**。浏览器端没有 KaTeX，
+      // 用 MathLive 自带的静态渲染（convertLatexToMarkup）——它就在同一份产物里。
+      //
+      // ⚠️ 不变量①：**绝不动原 .katex 节点**（MCP 读面与「复制 LaTeX」都读它）。
+      // 所以不能写 anchor.innerHTML —— 改成在它**旁边**插一个重新渲染的兄弟节点，
+      // 然后把原 anchor 藏起来（display:none 是允许的，删/替换不允许）。
+      // 渲染器优先级（2026-11-06 站长定案：客户端 KaTeX 也行、且更轻）：
+      //   ① `window.katex`（pack-runtime 的 ensureKatex 拉 277 KB UMD，站点自带资产）
+      //   ② `MathLive.convertLatexToMarkup`（要在下过编辑器后才有）
+      // 两者都没有就保持旧显示、不报错。**渲染产物只是显示层**，原 anchor 节点一律不动。
+      const paint = (html) => {
+        let painted = cell.wrap.querySelector('.fcell-painted');
+        if (!painted) {
+          painted = document.createElement('span');
+          painted.className = 'fcell-painted';
+          cell.body.insertBefore(painted, cell.anchor);
+        }
+        painted.innerHTML = html;
+        cell.anchor.style.display = 'none';        // 藏旧显示，节点保留
+      };
+      try {
+        const isBlock = cell.wrap.classList.contains('fcell-block');
+        const k = globalThis.katex;
+        if (k && typeof k.renderToString === 'function') {
+          paint(k.renderToString(tex, { displayMode: !!isBlock, throwOnError: false }));
+        } else {
+          const ML = globalThis.MathLive;
+          if (ML && typeof ML.convertLatexToMarkup === 'function') {
+            paint(ML.convertLatexToMarkup(tex, { displayMode: !!isBlock }));
+          }
+        }
+      } catch (e) { /* 渲染失败就保持旧显示，不阻塞退出编辑 */ }
+    }
     if (mf.parentNode) mf.parentNode.removeChild(mf);
-    cell.anchor.style.display = '';
+    // 有重绘副本时，原 anchor 继续隐藏（否则新旧两份同时出现）；
+    // 没重绘过（渲染失败/无 MathLive）才恢复显示原节点。
+    if (!cell.wrap.querySelector('.fcell-painted')) cell.anchor.style.display = '';
     cell.editing = false;
     cell.mf = null;
     cell.currentTex = null;

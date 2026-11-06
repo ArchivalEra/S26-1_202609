@@ -2323,6 +2323,36 @@ for (const relPath of TARGET_FILES) {
               <div class="pack-progress" id="pack-progress-engine" hidden><div class="pack-progress-bar"></div></div>
             </div>
 
+            <!-- 2026-11-06 站长定案：KaTeX 与 Pyodide 都进下载列表。
+                 KaTeX（277 KB）管「编辑完公式立刻重绘」——不下它也能改，
+                 只是退出编辑后显示刷新要重进页面。
+                 Pyodide 从 Static-Contract 的 supply 包拉（core+sympy+mpmath）。 -->
+            <div class="pack-item" data-pack="katex">
+              <div class="pack-item-head">
+                <span class="pack-item-name">公式渲染器</span>
+                <span class="pack-item-size">270 KB</span>
+              </div>
+              <p class="pack-item-hint">编辑过的公式立刻按新内容重绘（不下也能改，只是显示刷新要重进页面）。</p>
+              <div class="pack-item-actions">
+                <button class="pack-btn" data-pack-action="katex">下载</button>
+                <span class="pack-state" id="pack-state-katex">未下载</span>
+              </div>
+              <div class="pack-progress" id="pack-progress-katex" hidden><div class="pack-progress-bar"></div></div>
+            </div>
+
+            <div class="pack-item" data-pack="pyodide">
+              <div class="pack-item-head">
+                <span class="pack-item-name">Python 内核</span>
+                <span class="pack-item-size">13 MB</span>
+              </div>
+              <p class="pack-item-hint">用 Pyodide 做符号计算（sympy / mpmath）。从 Static-Contract 分块拉。</p>
+              <div class="pack-item-actions">
+                <button class="pack-btn" data-pack-action="pyodide">下载</button>
+                <span class="pack-state" id="pack-state-pyodide">未下载</span>
+              </div>
+              <div class="pack-progress" id="pack-progress-pyodide" hidden><div class="pack-progress-bar"></div></div>
+            </div>
+
             <!-- 两个能力开关（2026-10-31）：iOS 风格滑块。
                  状态存 localStorage —— 站长原话「我希望记忆功能发挥作用」。
                  之前「两件都下载了还得点一下按钮才能编辑」就是因为没有持久状态。 -->
