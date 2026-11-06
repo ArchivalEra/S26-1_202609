@@ -391,11 +391,16 @@ export function createCapabilityPack(deps = {}) {
             // 把**资产级**的 releaseId 带进文件对象：装配层的 releaseLoader 只拿到
             // 文件（f），拿不到 spec。engine 与 pyodide 在不同的 release 里
             // （2026-11-06 实测：写死 octave 的 release 会让 pyodide 永远失败）。
-            f = { ...f, releaseId: spec.releaseId };
+            //
+            // ⚠️ 2026-11-06 线上实测「pyodide 仍然下不了」：第一版写 `f = {...f,
+            // releaseId}`，而 `f` 是 `for (const f of spec.files)` 的循环常量
+            // ⇒ 抛 **Assignment to constant variable**，被 catch 成
+            // 「下载失败」、按钮回到「重试」。改成**新变量**，不动循环常量。
+            const file = { ...f, releaseId: spec.releaseId };
             // Static-Contract 路径（2026-11-06）：大包从镜像分块拉，不再走本站 assets/。
             // releaseLoader 是装配层注入的 `(f) => Promise<ArrayBuffer>`；它内部做
             // manifest pin 校验、逐块 sha、解码、拼接、全局 sha，这里只收完整字节。
-            buf = await deps.releaseLoader(f);
+            buf = await deps.releaseLoader(file);
           } else {
             const url = rootNow + f.path;
             const res = await (deps.fetchImpl || fetch)(url);
