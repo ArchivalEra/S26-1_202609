@@ -457,3 +457,17 @@ test('新增资产时：status / 按钮 / 面板 三处都必须自动跟上（2
   assert.match(renderFn, /ASSET_NAMES|Object\.keys\(ASSETS\)/,
     '状态显示应有资产清单（写死两件时新资产恒显示「未下载」）');
 });
+
+test('每件资产的 sha256 必须是完整 64 位（空串/截断 = 内容校验形同虚设）', () => {
+  // 2026-11-06 实弹：加 katex / pyodide 时 sha 写成空串与 12 位截断值。
+  // 空串 ⇒ verifyContent 直接 return true（不校验，坏副本会被判「已下载」）；
+  // 截断值 ⇒ 与真哈希永不相等 ⇒ **永远**判「内容坏」、每次都要重下。
+  // 两种都静默，页面上只表现为「下载了但状态不对」。
+  for (const [name, spec] of Object.entries(ASSETS)) {
+    for (const f of spec.files) {
+      assert.equal(typeof f.sha256, 'string', `${name}/${f.name} 缺 sha256`);
+      assert.equal(f.sha256.length, 64, `${name}/${f.name} 的 sha256 只有 ${f.sha256.length} 位（应 64）`);
+      assert.match(f.sha256, /^[0-9a-f]{64}$/, `${name}/${f.name} 的 sha256 不是小写十六进制`);
+    }
+  }
+});
