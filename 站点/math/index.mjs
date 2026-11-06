@@ -110,11 +110,16 @@ export function render(doc, renderer, opts = {}) {
       const dec = decorateAnchors(html, { resolve: opts.resolveHref });
       html = dec.html;
       anchors = dec.decorated;
+      // 2026-11-05 站长定案：认出了符号却包不成链接 = 读者点了没反应，
+      // 跟「标了 {:calc} 却算不了」是同一类硬错，**升为 error** 让构建期响亮失败。
+      // 旧版是 `warn`，而 build.mjs 只数 error ⇒ 这批「冒不了泡」被静默吞掉，
+      // 正是符号系统顽疾的一部分。未包成的 span 会以裸 <span data-term> 留在产物里，
+      // 被符号覆盖闸门（plugins/symbol-coverage.mjs）再抓一次，两道互为兜底。
       dec.missing.forEach((key) => problems.push({
         code: 'term-href-missing',
-        severity: 'warn',
+        severity: 'error',
         where: { key, block: doc.index },
-        message: `词条 ${key} 在当页环境里找不到链接目标`,
+        message: `词条 ${key} 在当页环境里找不到链接目标（公式里认出了符号，却包不成可点锚点）`,
       }));
     }
   }
