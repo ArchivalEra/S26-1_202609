@@ -101,6 +101,23 @@ PLUGIN_TESTS_CMD = (
 HANDOFF_LINES_CMD = "wc -l < .zcode/handoff.md"
 HANDOFF_SECTIONS_CMD = "grep -c '^### 0\\.' .zcode/handoff.md"
 
+# 符号覆盖（2026-11-05 站长定案「构建期能跟公式一样直接 CI 来测试每个是否能冒泡
+# 并且能统计」）：build.mjs 量**最终产物**写进 dist/symbol-coverage.json，台账只读
+# 账本、不重算——量法唯一住在 站点/plugins/symbol-coverage.mjs，构建与
+# symbol-coverage.test.mjs 共用同一把尺。
+#   bubbled   = 全站真冒泡的 a.sym-gloss 锚点数（公式 + 正文令牌 + 图内三路合计）；
+#   uncovered = 「该冒泡却没冒」的符号数（未解析令牌 / 裸 span / 链接目标缺失），
+#               >0 时 build.mjs 自己就 exit 1，CI 走不到部署。
+# dist 是构建产物（gitignore），复跑前提 = 已构建——与 plugin_tests 同一前提。
+SYMBOLS_BUBBLED_CMD = (
+    "python3 -c \"import json;"
+    "print(json.load(open('站点/dist/symbol-coverage.json'))['symbols_bubbled'])\""
+)
+SYMBOLS_UNCOVERED_CMD = (
+    "python3 -c \"import json;"
+    "print(json.load(open('站点/dist/symbol-coverage.json'))['symbols_uncovered'])\""
+)
+
 # (键, 复跑命令, 出处, 备注) —— 可选第五列：dict，透传 ledger.fact() 的贵事实参数
 # （replay=False / witness / calibrate，见 ledger.py 的三档设计）。
 HOOKTESTS_WITNESS = (
@@ -141,6 +158,12 @@ TABLE = [
      "进度手记总行数（超 ~1500 行该归档精简）"),
     ("handoff_sections", HANDOFF_SECTIONS_CMD, ".zcode/handoff.md",
      "进度手记节数（### 0.x 条目数）"),
+    # 符号覆盖：见 SYMBOLS_BUBBLED_CMD 处的注释。uncovered 常态是 0（闸门管着），
+    # 它一旦非 0 说明有人绕过构建硬拦改了内容——台账把它记成可见的事实。
+    ("symbols_bubbled", SYMBOLS_BUBBLED_CMD, "站点/dist/symbol-coverage.json",
+     "全站真冒泡的符号锚点数（a.sym-gloss；公式+正文令牌+图内合计）"),
+    ("symbols_uncovered", SYMBOLS_UNCOVERED_CMD, "站点/dist/symbol-coverage.json",
+     "该冒泡却没冒的符号数（未解析令牌/裸 span/链接目标缺失；>0 构建即红）"),
 ]
 
 

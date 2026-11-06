@@ -320,6 +320,9 @@
 !/课程总览/电子技术/作业/2026-10-14作业.md
 !/课程总览/电子技术/作业/2026-10-19作业.md
 !/课程总览/电子技术/作业/2026-10-21作业.md
+!/课程总览/电子技术/作业/2026-10-26作业.md
+!/课程总览/电子技术/作业/2026-10-28作业.md
+!/课程总览/电子技术/作业/2026-11-02作业.md
 !/课程总览/电子技术/技法库.md
 !/课程总览/电子技术/教材解析/index.md
 !/课程总览/电子技术/教材解析/符号入门.md
@@ -472,6 +475,9 @@
 !/站点/plugins/accent-colors.test.mjs
 !/站点/plugins/symbol-selector.mjs
 !/站点/plugins/symbol-parity.test.mjs
+!/站点/plugins/symbol-coverage.mjs
+!/站点/plugins/symbol-coverage.test.mjs
+!/站点/plugins/solution-selfcontained.test.mjs
 !/站点/assets/vendor/webmcp/README.md
 !/站点/assets/vendor/webmcp/polyfill.iife.js
 !/站点/assets/vendor/webmcp/relay-embed.js

@@ -3,7 +3,7 @@ id: okf.course.engineering_math.index
 name: 工程数学
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-11-05"
+last_updated: "2026-11-06"
 stewards:
   - team: 工程数学课程学习记录
 course: 工程数学
@@ -18,7 +18,7 @@ sources:
 
 ## 分类
 
-[作业](./作业/index.md) · [教材解析](./教材解析/index.md) · [课堂笔记](./课堂笔记/index.md) · [原始资料](./原始资料/index.md) · [技法库](./技法库.md)（一题一条的完整计算路径）
+[作业](./作业/index.md) · [教材解析](./教材解析/index.md) · [课堂笔记](./课堂笔记/index.md) · [原始资料](./原始资料/index.md) · [技法库](./技法库.md)（一题一条的完整计算路径；作业3 逐题演算已回灌作业页，技法库只作旁注）
 
 **课堂笔记覆盖**：行列式（沙路法则与性质法）、降阶法与克拉默法则、矩阵与逆、初等变换与矩阵的秩、
 向量组的线性相关性与秩（线性表示、极大无关组、行秩 = 列秩）。

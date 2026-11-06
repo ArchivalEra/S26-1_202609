@@ -44,6 +44,10 @@ import { WEBMCP_SHIM_JS } from './plugins/webmcp-shim.mjs';
 import { WEBMCP_TOOLS_JS } from './plugins/webmcp-tools.mjs';
 import { TARGET_FILES } from './页面清单.mjs';
 import { computeSourceHash } from './源树hash.mjs';
+// 符号覆盖统计（2026-11-05）：构建期把「哪些符号冒了泡、哪些该冒没冒」写成数据，
+// 供 plugins/symbol-coverage.test.mjs 与 FACTS 量。旧版逐页警告在页面循环之前就打印，
+// 全部被静默丢弃——这正是「符号冒不了泡且无法统计」的根因，见模块头注释。
+import { measurePage, diagnosePage } from './plugins/symbol-coverage.mjs';
 
 const SITE_DIR = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = path.resolve(SITE_DIR, '..');
@@ -201,6 +205,11 @@ for (const [packName, packPage] of Object.entries(SYMBOL_PACKS)) {
   glossaryPacks[packName] = { page: packPage, dict };
 }
 for (const w of glossaryWarn) console.warn(`[符号] ${w}`);
+// ⚠️ 逐页警告是在**下面两个页面循环里**才 `add` 进这个 Set 的，循环结束后
+// （本文件末尾）必须再打印一次。旧版只在这里打印 —— 于是「令牌原样保留」
+// 「符号包未注册」「符号排除指向坏词条」全部被静默丢弃，构建日志一条都不出。
+// 这正是站长说的「符号冒不了泡，并且我们无法统计」的根因（2026-11-05 定案）。
+const symbolPackWarnCount = glossaryWarn.size;
 console.log(`[符号] 包：${Object.entries(glossaryPacks).map(([n, p]) => `${n}(${Object.keys(p.dict).length} 条)`).join('、')}`);
 /**
  * 渲染一条公式：编译（解析 + 唯一一次符号判定）→ 渲染 → 包锚点。
@@ -277,6 +286,9 @@ function renderOneMath(src, mode, relPath, env, hits, o = {}) {
   });
   for (const prob of out.problems) {
     if (prob.severity === 'error') {
+      // `term-href-missing` 2026-11-05 升为 error：公式里认出了符号却包不成链接，
+      // 点了没反应——与「标了 {:calc} 却算不了」同类硬错。计入 formulaErrors 打印；
+      // 同时它会以裸 <span data-term> 留在产物里，被符号覆盖闸门抓成 uncovered。
       formulaErrors++;
       console.warn(`[build] ⚠ ${relPath}：${prob.message}`);
     }
@@ -775,7 +787,10 @@ const NAV_STRUCTURE = [
               { label: "2026-10-12作业", path: "课程总览/电子技术/作业/2026-10-12作业.md" },
               { label: "2026-10-14作业", path: "课程总览/电子技术/作业/2026-10-14作业.md" },
               { label: "2026-10-19作业", path: "课程总览/电子技术/作业/2026-10-19作业.md" },
-              { label: "2026-10-21作业", path: "课程总览/电子技术/作业/2026-10-21作业.md" }
+              { label: "2026-10-21作业", path: "课程总览/电子技术/作业/2026-10-21作业.md" },
+              { label: "2026-10-26作业", path: "课程总览/电子技术/作业/2026-10-26作业.md" },
+              { label: "2026-10-28作业", path: "课程总览/电子技术/作业/2026-10-28作业.md" },
+              { label: "2026-11-02作业", path: "课程总览/电子技术/作业/2026-11-02作业.md" }
             ]
           },
           { label: "教材解析", path: "课程总览/电子技术/教材解析/index.md",
@@ -1126,12 +1141,22 @@ marked.use({
 // 4. Build each page
 let totalFormulasRendered = 0;
 let formulaErrors = 0;
+// 符号覆盖（2026-11-05）：锚点数从**最终产物**量（measurePage，公式+正文令牌+图内
+// 三路都算；renderOneMath 的 out.anchors 只覆盖公式一路，不当全站口径），
+// 「未冒泡」明细由 diagnosePage 把逐页警告与产物信号去重合成。不重跑形状匹配。
+let totalSymbolsBubbled = 0;
+const symbolUncovered = [];
+const symbolCoveragePages = [];
 /** 引用了但磁盘上没有的配图（多半是白名单漏了 → 从未入库，CI 上缺图）。 */
 const missingFigureRefs = new Set();
 
 for (const relPath of TARGET_FILES) {
   const fullPath = path.join(ROOT, relPath);
   if (!fs.existsSync(fullPath)) continue;
+
+  // 逐页符号警告快照：本页循环里 `add` 进 glossaryWarn 的，页尾（产物写盘处）
+  // 按这条分界线切出来交给 diagnosePage，并在构建末尾统一打印。
+  const pageWarnStart = glossaryWarn.size;
 
   let raw = fs.readFileSync(fullPath, 'utf-8');
   const pageMeta = pageMetaMap.get(relPath);
@@ -2729,6 +2754,28 @@ for (const relPath of TARGET_FILES) {
   fs.mkdirSync(path.dirname(outFilePath), { recursive: true });
   fs.writeFileSync(outFilePath, htmlWithVers, 'utf-8');
 
+  // 符号覆盖（2026-11-05）：量**最终产物**，不量中间数据——renderOneMath 的
+  // anchors 只覆盖公式一路，正文令牌与图内符号不经过它；裸 <span data-term>、
+  // 字面残留令牌、气泡词典也都只有产物里看得全。逐页警告用页首的分界线切出来。
+  // diagnosePage 按词条 id 去重：一个坏令牌会同时触发 glossaryWarn 与字面残留。
+  const pageCoverage = measurePage(htmlWithVers);
+  totalSymbolsBubbled += pageCoverage.anchors;
+  const pageWarns = [...glossaryWarn].slice(pageWarnStart)
+    .map((w) => (w.startsWith(`${relPath}：`) ? w.slice(`${relPath}：`.length) : w));
+  const pageUncovered = diagnosePage({
+    relPath,
+    pageWarns,
+    literalTokens: pageCoverage.literalTokens,
+    bareSpans: pageCoverage.bareSpans,
+  });
+  symbolUncovered.push(...pageUncovered);
+  symbolCoveragePages.push({
+    page: relPath,
+    html: targetHtmlPath,
+    anchors: pageCoverage.anchors,
+    uncovered: pageUncovered.length,
+  });
+
   // 检索语料：只收正文（htmlContent），标题用页面标题；URL 存**相对站点根**的路径
   // （不带前导斜杠），这样部署在任意子路径下都能由客户端补上站点根前缀。
   searchDocs.push(extractSearchDoc(htmlContent, {
@@ -2748,7 +2795,41 @@ for (const relPath of TARGET_FILES) {
   // 35 张图里 33 张加载失败）。站点与 EdgeOne 都支持中文路径，站内链接也一律写中文。
 }
 
+// ── 符号覆盖账本（2026-11-05 站长定案）───────────────────────────────────
+//
+// 先把**逐页警告**打印掉——它们是在上面的页面循环里 `add` 进 glossaryWarn 的，
+// 而文件开头（symbolPackWarnCount 之前）那一次打印永远轮不到它们。
+// 旧版只打开头那次 ⇒ 「令牌原样保留 / 符号包未注册」构建日志一条不剩，
+// 这就是「符号冒不了泡，并且我们无法统计」的直接根因。
+const symbolPageWarns = [...glossaryWarn].slice(symbolPackWarnCount);
+for (const w of symbolPageWarns) console.warn(`[符号·逐页] ${w}`);
+
+// 账本落盘：FACTS 的 symbols_bubbled / symbols_uncovered 与
+// plugins/symbol-coverage.test.mjs 都读这一份，别处不重算。
+const symbolCoverageReport = {
+  symbols_bubbled: totalSymbolsBubbled,
+  symbols_uncovered: symbolUncovered.length,
+  uncovered: symbolUncovered,
+  pages: symbolCoveragePages,
+};
+fs.writeFileSync(
+  path.join(DIST_DIR, 'symbol-coverage.json'),
+  JSON.stringify(symbolCoverageReport, null, 2) + '\n',
+  'utf-8',
+);
+
+console.log(`[符号] 全站 ${totalSymbolsBubbled} 个锚点 / ${symbolUncovered.length} 个未解析`);
 console.log(`[build] Completed! Rendered ${totalFormulasRendered} math formulas with ${formulaErrors} errors.`);
+
+if (symbolUncovered.length > 0) {
+  // 硬拦（跟 {:calc} 同一条纪律）：一个冒不了泡的符号，读者点的是字面文本。
+  // 修法看每条 detail——补词条 / 修令牌 / 修排除；真修不了的归 issue 后放行。
+  for (const u of symbolUncovered) {
+    console.error(`[符号] 未解析：${u.page} · ${u.kind} · ${u.detail}`);
+  }
+  console.error(`[build] 符号覆盖闸门未过：${symbolUncovered.length} 处符号该冒泡却没冒（明细见上）。`);
+  process.exitCode = 1;
+}
 
 // 全站搜索索引：等所有页面都渲染完再建（每页正文在渲染循环里已经收进 searchDocs）。
 // 产物落在 dist/search/：index.json（页面清单 + 小节锚点 + **源树 hash**）、g/<n>.json（二元组倒排分桶）、
