@@ -506,3 +506,29 @@ test('装配层的 releaseLoader 必须按 releaseId 取 handle（不许写死�
   assert.ok(!/resolveCatalogueRelease\('Octave-Full-Wasm/.test(body),
     'releaseLoader 又写死了 Octave-Full-Wasm 的 release id');
 });
+
+test('releaseLoader 路径必须能真跑通（catch 到 "Assignment to constant variable" 就是这里）', async () => {
+  // 2026-11-06 线上实测：pyodide 下载永远失败、按钮无限「重试」。
+  // 真因是 `f = { ...f, releaseId }` 给 `for (const f of spec.files)` 的循环常量赋值
+  // ⇒ 抛 Assignment to constant variable，被 catch 成「下载失败」。
+  // 静态 grep 抓不到这类错（语法合法），所以这里**用假 store + 假 loader 真跑一次**。
+  const calls = [];
+  const store = memStore({});
+  const pack = createCapabilityPack({
+    store,
+    releaseLoader: async (f) => {
+      calls.push(f.name);
+      // 断言 loader 能拿到 releaseId（装配层靠它分辨 release）
+      assert.ok(f.releaseId, `${f.name} 没带 releaseId`);
+      return new ArrayBuffer(f.bytes);
+    },
+  });
+  // 给一个带 source 的资产走 releaseLoader 分支
+  const spec = ASSETS.pyodide;
+  assert.ok(spec && spec.files[0].source, 'pyodide 资产应带 source');
+  await pack.download('pyodide');
+  assert.equal(calls.length, spec.files.length,
+    `releaseLoader 应被调 ${spec.files.length} 次（实际 ${calls.length}）——` +
+    '若为 0 说明走了本地路径；若中途抛错会少于该数');
+  for (const c of calls) assert.ok(c, 'loader 收到空文件名');
+});
