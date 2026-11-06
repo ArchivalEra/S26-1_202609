@@ -293,6 +293,11 @@ export function parse(src, opts = {}) {
       if (t.value === '\\') {
         return node('rowbreak', 'separator', {}, t.start, t.end);
       }
+      // `\cr` 也是**合法的行分隔符**（LaTeX 老写法，MathLive 编辑矩阵时可能产出）。
+      // 2026-11-06 站长实测：矩阵改 border 成行列式后再算，报「不认识的命令 \cr」。
+      if (t.value === 'cr') {
+        return node('rowbreak', 'separator', {}, t.start, t.end);
+      }
       if (isSpaceCommand(t.value)) {
         return node('space', 'separator', { tex: `\\${t.value}` }, t.start, t.end);
       }
@@ -303,6 +308,15 @@ export function parse(src, opts = {}) {
     }
 
     if (t.kind === 'cs') {
+      // ⚠️ `\cr` 是 LaTeX 老写法的**行分隔符**，与 `\\` 等价（矩阵换行）。
+      // 2026-11-06 站长实测：矩阵在编辑器里把 border 改成行列式竖线后点计算，
+      // 出不了结果——MathLive 编辑矩阵时产出 `\cr`，而命令表里没有它，
+      // 直接报「不认识的命令 \cr」。
+      // 必须在 parseCommand 之前拦：那条路会按「未知命令」报错。
+      if (t.value === 'cr') {
+        pos += 1;
+        return node('rowbreak', 'separator', {}, t.start, t.end);
+      }
       return parseCommand();
     }
 
@@ -620,7 +634,11 @@ export function parse(src, opts = {}) {
         break;
       }
       if (cur.kind === 'amp') { pos += 1; curRow.push({ marker: 'col' }); continue; }
-      if (cur.kind === 'sym' && cur.value === '\\') {
+      // 行分隔符有两种写法：`\\`（sym 反斜杠）与 `\cr`（cs 控制字）。
+      // 2026-11-06：只认前者时，编辑器产出 `\cr` 的矩阵会被当成「一行里的
+      // 一个 rowbreak 节点」，到 to-octave 那里报「换行符不是表达式的一部分」。
+      if ((cur.kind === 'sym' && cur.value === '\\')
+          || (cur.kind === 'cs' && cur.value === 'cr')) {
         pos += 1;
         rows.push(curRow); curRow = [];
         continue;

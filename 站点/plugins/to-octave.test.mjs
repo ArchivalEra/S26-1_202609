@@ -226,3 +226,52 @@ test('⑬ 公式计算输出走 mat2str（否则矩阵被 print 拍平成数字�
   assert.ok(iDisp >= 0, '缺少非数值类型的 disp 兜底（字符串/cell/struct 会算不了）');
   assert.ok(iMat < iDisp, 'mat2str 必须在前（它才是首选通道，disp 只作兜底）');
 });
+
+test('行列式：\\det+vmatrix 不许套两层 det（2026-11-06 站长实测）', () => {
+  // 站长原话：「矩阵是出的了结果的，然后我点开，给它 border 改成行列式的竖线以后，
+  // 点击三角形计算，出不了结果」。
+  //
+  // 病因：`vmatrix` 在 emitEnv 里自己包了一层 det()（为「只有竖线、没写 \det」的
+  // 写法），而 `\det\begin{vmatrix}…` 里 \det 是函数名，按「函数名吃一个操作数」
+  // 吃掉整个 vmatrix ⇒ `det(det([...]))`，Octave 报参数错。
+  const B = String.fromCharCode(92);
+  const cases = [
+    // 只有竖线：env 自己包
+    [B + 'begin{vmatrix}1&2' + B + B + '3&4' + B + 'end{vmatrix}', 'det([1 2; 3 4])'],
+    // 显式 \det + 竖线：只许一个 det
+    [B + 'det' + B + 'begin{vmatrix}1&2' + B + B + '3&4' + B + 'end{vmatrix}', 'det([1 2; 3 4])'],
+    // Vmatrix（双竖线）同理
+    [B + 'det' + B + 'begin{Vmatrix}1&2' + B + B + '3&4' + B + 'end{Vmatrix}', 'det([1 2; 3 4])'],
+    // pmatrix 仍然只出矩阵
+    [B + 'begin{pmatrix}1&2' + B + B + '3&4' + B + 'end{pmatrix}', '[1 2; 3 4]'],
+  ];
+  for (const [tex, want] of cases) {
+    const r = parse(tex);
+    const errs = (r.problems || []).filter((p) => p.severity === 'error');
+    assert.equal(errs.length, 0, `${tex} 解析失败：${errs[0]?.message}`);
+    const t = translate(r.expr.root);
+    assert.ok(t.ok, `${tex} 翻译失败：${t.reason}`);
+    assert.equal(t.code, want, `${tex} 译出 ${t.code}，期望 ${want}`);
+    assert.ok(!/det\(det/.test(t.code), `${tex} 套了两层 det`);
+  }
+});
+
+test('矩阵行分隔符 \\cr 与 \\\\ 等价（编辑器改 border 后会产出 \\cr）', () => {
+  const B = String.fromCharCode(92);
+  const pairs = [
+    ['pmatrix', '[1 2; 3 4]'],
+    ['vmatrix', 'det([1 2; 3 4])'],
+  ];
+  for (const [env, want] of pairs) {
+    const withBs = B + 'begin{' + env + '}1&2' + B + B + '3&4' + B + 'end{' + env + '}';
+    const withCr = B + 'begin{' + env + '}1&2' + B + 'cr 3&4' + B + 'end{' + env + '}';
+    for (const tex of [withBs, withCr]) {
+      const r = parse(tex);
+      const errs = (r.problems || []).filter((p) => p.severity === 'error');
+      assert.equal(errs.length, 0, `${tex} 解析失败：${errs[0]?.message}`);
+      const t = translate(r.expr.root);
+      assert.ok(t.ok, `${tex} 翻译失败：${t.reason}`);
+      assert.equal(t.code, want, `${tex} 译出 ${t.code}，期望 ${want}`);
+    }
+  }
+});
