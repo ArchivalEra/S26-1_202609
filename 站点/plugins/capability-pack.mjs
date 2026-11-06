@@ -73,21 +73,32 @@ export const ASSETS = {
   engine: {
     label: '计算内核',
     hint: '下载后可以点「运行」用 Octave 求值',
-    bytes: 29632229 + 9712174 + 462821,
+    bytes: 29621256 + 9712192 + 464339,
+    // ⚠️ 2026-11-06 起三个文件**不再从本站 assets/ 拉**：
+    // EdgeOne Pages 单文件 25 MB 硬上限（octave.wasm 解压 29.6 MB 超限），
+    // 且这些二进制从未进仓库白名单，CI 的 dist 里根本没有本地副本。
+    // 改从 Static-Contract 的 release 分块拉（≤5 MiB/块，逐块 sha + 全局 sha），
+    // 见 static-release.mjs。files[].path 保留只为让既有测试的对账逻辑有稳定键，
+    // 实际下载走 release.read(key)；`source` 是分流开关。
+    releaseId: 'Octave-Full-Wasm/v0.1.0',
     files: [
-      // 三个 sha256 取自上游 Release 的 SHA256SUMS.json（tag wasm32-11.3.0-1ed3e528）。
-      // 上游就是按这三条发的版，逐字节相同——用它当内容判据比分大小可靠得多。
+      // 三件的字节与 sha 取自 release manifest 的 wasm32 三个 entry
+      // （manifest pin c3c1adfe…）。本地历史副本与它们有几十字节差异，
+      // 以 release 为准——内容判据随来源一起换，不能沿用旧的 SHA256SUMS。
       {
-        path: 'assets/octave/octave.wasm', name: 'octave.wasm', bytes: 29632229,
-        sha256: '1ed3e528561e44750200e9a862bb410c381d639e19f8079a94270b38c9fa6b00',
+        path: 'assets/octave/octave.wasm', name: 'octave.wasm', bytes: 29621256,
+        sha256: 'a4f5a4143178314075d3b213fd5a48cf02450e9153dd32d2e3be21a987ba1f69',
+        source: { product: 'wasm32', name: 'octave.wasm' },
       },
       {
-        path: 'assets/octave/octave.data', name: 'octave.data', bytes: 9712174,
-        sha256: 'f250530ae5abe37869d08ff214f91de6ee8a6acc72585a281ca2cd8779d61ac3',
+        path: 'assets/octave/octave.data', name: 'octave.data', bytes: 9712192,
+        sha256: '1a2e71a64d8e9b223fb8162ce2714e1fce18d3517ed95c73b7adfada31d7c35f',
+        source: { product: 'wasm32', name: 'octave.data' },
       },
       {
-        path: 'assets/octave/octave.js', name: 'octave.js', bytes: 462821,
-        sha256: 'caac68bf6201585928cdcc39b69ad20f00370bf810770931dd04f5518881154c',
+        path: 'assets/octave/octave.js', name: 'octave.js', bytes: 464339,
+        sha256: 'a12acb29190aff83331d40b7a796f8eecb2aba9d42e3d74b32c4c57dc27ef4f0',
+        source: { product: 'wasm32', name: 'octave.js' },
       },
     ],
   },
@@ -322,10 +333,18 @@ export function createCapabilityPack(deps = {}) {
             if (o.onProgress) o.onProgress({ name, file: f.name, done: true, skipped: true });
             continue;                                  // 已在位且内容对 ⇒ 不重下
           }
-          const url = rootNow + f.path;
-          const res = await (deps.fetchImpl || fetch)(url);
-          if (!res.ok) throw mkErr('DOWNLOAD_FAILED', `取 ${f.name} 失败：HTTP ${res.status}`, { status: res.status });
-          const buf = await res.arrayBuffer();
+          let buf;
+          if (f.source && deps.releaseLoader) {
+            // Static-Contract 路径（2026-11-06）：大包从镜像分块拉，不再走本站 assets/。
+            // releaseLoader 是装配层注入的 `(f) => Promise<ArrayBuffer>`；它内部做
+            // manifest pin 校验、逐块 sha、解码、拼接、全局 sha，这里只收完整字节。
+            buf = await deps.releaseLoader(f);
+          } else {
+            const url = rootNow + f.path;
+            const res = await (deps.fetchImpl || fetch)(url);
+            if (!res.ok) throw mkErr('DOWNLOAD_FAILED', `取 ${f.name} 失败：HTTP ${res.status}`, { status: res.status });
+            buf = await res.arrayBuffer();
+          }
           if (buf.byteLength !== f.bytes) {
             throw mkErr('SIZE_MISMATCH', `${f.name} 大小不符：期望 ${f.bytes}，实收 ${buf.byteLength}`);
           }

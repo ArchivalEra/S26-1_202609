@@ -126,6 +126,26 @@ function navigate(rawUrl, hash, push, opts4) {
     if (nextChips && curChips) curChips.replaceWith(nextChips);
     else if (curChips && !nextChips) curChips.remove();
 
+    // ③e 按页烘焙的 JSON 数据块：它们在 main 之后、article-content 之外，
+    // SPA 不换就永远停留在初页那份。2026-11-06 站长实测的
+    // 「符号冒泡会在 SPA 后失效」正是这里——
+    //   sym-glossary-json：气泡词典。__glossaryReset() 只清缓存，
+    //     清完再读仍是 old DOM 那份，新页符号的 data-term 键
+    //     （如 电路原理:sym-Tperiod）查不到词条，点了弹不出气泡。
+    //   figure-index-json：图元索引（图内符号与交互读它）。
+    // 整块 script 元素替换。必须逐块换——漏一块就是一类功能在新页静默失效。
+    // 排序要求：必须排在 __glossaryReset / __packCellsReset / __readerRescan
+    // 之前，那些钩子会立刻重新读这些块。
+    var PER_PAGE_JSON_IDS = ["sym-glossary-json", "figure-index-json"];
+    for (var pi = 0; pi < PER_PAGE_JSON_IDS.length; pi += 1) {
+      var pid = PER_PAGE_JSON_IDS[pi];
+      var nextJson = doc.getElementById(pid);
+      var curJson = document.getElementById(pid);
+      if (nextJson && curJson) curJson.replaceWith(nextJson);
+      else if (nextJson && !curJson) document.body.appendChild(nextJson);
+      else if (curJson && !nextJson) curJson.remove();
+    }
+
     // ④ 侧栏 active 态（drawer 里当前页高亮由 theme 脚本管；这里触发它的重扫）
     // （shirone-reader 的 active 类基于 URL data 属性——换页后由 __readerRescan 处理）
 

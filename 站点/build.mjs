@@ -48,6 +48,10 @@ import { computeSourceHash } from './源树hash.mjs';
 // 供 plugins/symbol-coverage.test.mjs 与 FACTS 量。旧版逐页警告在页面循环之前就打印，
 // 全部被静默丢弃——这正是「符号冒不了泡且无法统计」的根因，见模块头注释。
 import { measurePage, diagnosePage } from './plugins/symbol-coverage.mjs';
+// 符号**缺口**账本（2026-11-06）：公式里出现、但本页词条没覆盖的形状。
+// 前两道闸只看「判定之后」的事，抓不到「压根没被判定为符号」那一类——
+// 实测电路原理习题册 V/A/T/N/B/M 从没被声明过，构建日志一个字都不说。
+import { measureFormulaShapes, coverageOf } from './plugins/symbol-gaps.mjs';
 
 const SITE_DIR = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = path.resolve(SITE_DIR, '..');
@@ -121,8 +125,23 @@ function copyFileAtomic(srcPath, destPath) {
   fs.renameSync(tmpPath, destPath);
 }
 
-copyDir(path.join(SITE_DIR, 'assets'), path.join(DIST_DIR, 'assets'));
-console.log(`[build] Copied offline assets to dist/assets/`);
+// 2026-11-06 起 Octave / pyodide 的二进制**不再进 dist**：
+// EdgeOne Pages 单文件 25 MB 硬上限（octave.wasm 29.6 MB 超限），且它们从未在
+// 精确白名单里（CI 构建时本机若没有历史副本就会直接缺件）。改由装配层通过
+// static-release.mjs 从 Static-Contract 镜像分块拉（≤5 MiB/块）。
+// 这两个目录若还留在 站点/assets/ 下只是本地历史副本，构建时跳过。
+function copySiteAssets(src, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    if (entry.name === 'octave' || entry.name === 'pyodide') continue;   // ← 大包改远程拉
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) copySiteAssets(srcPath, destPath);
+    else copyFileAtomic(srcPath, destPath);
+  }
+}
+copySiteAssets(path.join(SITE_DIR, 'assets'), path.join(DIST_DIR, 'assets'));
+console.log(`[build] Copied offline assets to dist/assets/ (octave/pyodide 改由 Static-Contract 远程拉)`);
 
 // 工具清单（2026-10-22）：给学习通助手读的 Skill.md，原样复制到 dist 根。
 // 为什么复制而不是渲染：它是**纯文本契约**，给模型读的，不是给人看的页面——
@@ -235,6 +254,7 @@ console.log(`[符号] 包：${Object.entries(glossaryPacks).map(([n, p]) => `${n
  * @param {{calc?: boolean}} [o]  calc=true 时**手动标记**这条公式可算
  */
 function renderOneMath(src, mode, relPath, env, hits, o = {}) {
+  const bubbledLabels = o.bubbledLabels;
   const compiled = compileMath({ blocks: [{ raw: src, mode }] }, env);
   const doc = compiled.docs[0];
 
@@ -255,6 +275,14 @@ function renderOneMath(src, mode, relPath, env, hits, o = {}) {
 
   // 命中记账：只记真正绑上的（旧实现在插宏时就记，所以「插了但渲染器不认」的词条
   // 会进气泡 JSON 却没有锚点——那是空气泡的来源）。
+  //
+  // 2026-11-06 增记 **matched 源文本**：符号缺口闸要回答「这个**词形**在本页冒过泡
+  // 没有」，只靠 `data-term` 键不够——`sym-V_a` 与裸 `V` 是两条词条，
+  // 用键做模糊匹配会把裸 `V`（实测 46 次）误判成已覆盖。decisions[].matched
+  // 是判定器亲手切下的源字符串，是唯一不漂移的 label。
+  for (const d of doc.decisions || []) {
+    if (d.matched && d.ref) bubbledLabels.add(d.matched.trim());
+  }
   for (const t of doc.terms) {
     const key = `${t.ref.pack}:${t.ref.entry}`;
     if (!hits.has(key)) {
@@ -473,16 +501,22 @@ fs.writeFileSync(path.join(webmcpDir, 'drawer-sync.js'), DRAWER_SYNC_JS);
 // ⚠️ **顺序神圣**：必须先写 capability-pack.mjs（被哈希方），再算哈希，
 // 最后写 pack-runtime.js（哈希消费方）——反过来会把上一轮的哈希写进去。
 const capabilitySrc = fs.readFileSync(path.join(SITE_DIR, 'plugins', 'capability-pack.mjs'), 'utf8');
-fs.writeFileSync(path.join(webmcpDir, 'capability-pack.mjs'), capabilitySrc);
+fs.writeFileSync(path.join(webmcpDir, 'capability-pack.js'), capabilitySrc);
 // 公式单元格模块（2026-10-31）：装配层用 import() 取它，所以同样要带版本戳。
 // 这个文件里没有任何 node 专有 API —— 它只碰 DOM，浏览器直接能 import。
 const cellsSrc = fs.readFileSync(path.join(SITE_DIR, 'plugins', 'formula-cells.mjs'), 'utf8');
-fs.writeFileSync(path.join(webmcpDir, 'formula-cells.mjs'), cellsSrc);
-const cellsVer = assetVersion('assets/plugins/formula-cells.mjs');
-const packVer = assetVersion('assets/plugins/capability-pack.mjs');
+fs.writeFileSync(path.join(webmcpDir, 'formula-cells.js'), cellsSrc);
+// Static-Contract 客户端（2026-11-06）：装配层 import() 取它去拉 Octave 分块。
+// 同样是纯浏览器模块（fetch / crypto.subtle / DecompressionStream），原样落地 + 版本戳。
+const staticReleaseSrc = fs.readFileSync(path.join(SITE_DIR, 'plugins', 'static-release.mjs'), 'utf8');
+fs.writeFileSync(path.join(webmcpDir, 'static-release.js'), staticReleaseSrc);
+const cellsVer = assetVersion('assets/plugins/formula-cells.js');
+const packVer = assetVersion('assets/plugins/capability-pack.js');
+const staticReleaseVer = assetVersion('assets/plugins/static-release.js');
 const packRuntimeVer = PACK_RUNTIME_JS
   .split('__PACK_VER__').join(packVer)
-  .split('__CELLS_VER__').join(cellsVer);
+  .split('__CELLS_VER__').join(cellsVer)
+  .split('__STATIC_RELEASE_VER__').join(staticReleaseVer);
 fs.writeFileSync(path.join(webmcpDir, 'pack-runtime.js'), packRuntimeVer);
 
 // ── 数学模块的**浏览器可用子集**（2026-10-31）────────────────────────────
@@ -498,8 +532,19 @@ fs.writeFileSync(path.join(webmcpDir, 'pack-runtime.js'), packRuntimeVer);
 // 所以四件：to-octave / parser / lexer / commands。
 const mathDistDir = path.join(DIST_DIR, 'assets', 'math');
 fs.mkdirSync(mathDistDir, { recursive: true });
+// ⚠️ 拷成 **.js 而不是 .mjs**（2026-11-06 线上实测的真 bug）：
+// EdgeOne Pages 对 `.mjs` 回 `Content-Type: application/octet-stream`，而
+// `import()` 的 MIME 检查会**拒绝**非 JS 类型 ⇒ 「Failed to fetch dynamically
+// imported module」。整段装配脚本被 try/catch 吞掉、`__initPackRuntime` 永不调用，
+// 于是**胶囊 DOM 在、点不出面板**（线上实测：capability-pack.mjs 与
+// formula-cells.mjs 都是 octet-stream）。改后缀后 EdgeOne 按
+// `application/javascript` 发，浏览器才肯当模块加载。内部相互 import 一并改后缀。
 for (const f of ['to-octave.mjs', 'parser.mjs', 'lexer.mjs', 'commands.mjs']) {
-  fs.copyFileSync(path.join(SITE_DIR, 'math', f), path.join(mathDistDir, f));
+  const out = f.replace(/\.mjs$/, '.js');
+  const src = fs.readFileSync(path.join(SITE_DIR, 'math', f), 'utf8')
+    .replace(/from '\.\/([A-Za-z0-9_-]+)\.mjs'/g, "from './$1.js'")
+    .replace(/from "\.\/([A-Za-z0-9_-]+)\.mjs"/g, 'from "./$1.js"');
+  fs.writeFileSync(path.join(mathDistDir, out), src);
 }
 
 // SW 已根除（2026-10-23 用户定案：长任务要「永远新鲜的页面」，SW 的 SWR/预缓存
@@ -619,7 +664,8 @@ const NAV_STRUCTURE = [
             children: [
               { label: "作业1", path: "课程总览/工程数学/作业/作业1.md" },
               { label: "作业2", path: "课程总览/工程数学/作业/作业2.md" },
-              { label: "作业3", path: "课程总览/工程数学/作业/作业3.md" }
+              { label: "作业3", path: "课程总览/工程数学/作业/作业3.md" },
+              { label: "作业4", path: "课程总览/工程数学/作业/作业4.md" }
             ]
           },
           {
@@ -674,6 +720,13 @@ const NAV_STRUCTURE = [
                       { label: "3.3-向量组的秩", path: "课程总览/工程数学/教材解析/第一部分-线性代数/第3章-n维向量与向量空间/3.3-向量组的秩.md" },
                       { label: "3.4-向量空间", path: "课程总览/工程数学/教材解析/第一部分-线性代数/第3章-n维向量与向量空间/3.4-向量空间.md" },
                       { label: "3.5-MATLAB-向量运算", path: "课程总览/工程数学/教材解析/第一部分-线性代数/第3章-n维向量与向量空间/3.5-MATLAB-向量运算.md" }
+                    ]
+                  },
+                  {
+                    label: "第4章-线性方程组",
+                    children: [
+                      { label: "4.1-消元法", path: "课程总览/工程数学/教材解析/第一部分-线性代数/第4章-线性方程组/4.1-消元法.md" },
+                      { label: "4.2-判别定理", path: "课程总览/工程数学/教材解析/第一部分-线性代数/第4章-线性方程组/4.2-判别定理.md" }
                     ]
                   }
                 ]
@@ -1146,6 +1199,8 @@ let formulaErrors = 0;
 // 「未冒泡」明细由 diagnosePage 把逐页警告与产物信号去重合成。不重跑形状匹配。
 let totalSymbolsBubbled = 0;
 const symbolUncovered = [];
+/** 符号**缺口**：公式里出现但词条没覆盖的形状（跨页累加）。 */
+const symbolGaps = [];
 const symbolCoveragePages = [];
 /** 引用了但磁盘上没有的配图（多半是白名单漏了 → 从未入库，CI 上缺图）。 */
 const missingFigureRefs = new Set();
@@ -1344,6 +1399,8 @@ for (const relPath of TARGET_FILES) {
   };
   /** 本页的公式命中集（词条 id → 词条），供气泡 JSON 使用。 */
   const pageMathHits = new Map();
+  /** 本页公式里**实际冒过泡的词形**（decisions[].matched），供符号缺口闸精确比对。 */
+  const pageBubbledLabels = new Set();
   // ⚠️ 2026-10-29 修：公式命中必须**合并进** `glossaryHits`（气泡 JSON 的真相源）。
   //
   // 此前公式取词写进 `pageMathHits`、正文令牌写进 `glossaryHits`，而气泡 JSON 只读
@@ -1369,7 +1426,7 @@ for (const relPath of TARGET_FILES) {
     // 看着像渲染出了一个多余的点（用户实测反馈）。渲染前剥掉**收尾的一个**
     // 标点——只剥一个：万一公式真以省略号收尾不至于被整串误删。
     const src = tex.trim().replace(/[.。，、；;][ \t]*$/, '');
-    const { rendered, plain } = renderOneMath(src, 'display', relPath, pageMathEnv, pageMathHits, { calc: !!mark });
+    const { rendered, plain } = renderOneMath(src, 'display', relPath, pageMathEnv, pageMathHits, { calc: !!mark, bubbledLabels: pageBubbledLabels });
     mathBlocks.push({ display: true, html: rendered, plain });
     mathPlainOf[id] = plain;
     return `@@MATH_BLOCK_${id}@@`;
@@ -1379,7 +1436,7 @@ for (const relPath of TARGET_FILES) {
   raw = raw.replace(/(?<!\$)\$(?!\$)((?:[^$\\\r\n]|\\.)+?)\$(?!\$)/g, (_, tex) => {
     const id = mathBlocks.length;
     totalFormulasRendered++;
-    const { rendered, plain } = renderOneMath(tex.trim(), 'inline', relPath, pageMathEnv, pageMathHits);
+    const { rendered, plain } = renderOneMath(tex.trim(), 'inline', relPath, pageMathEnv, pageMathHits, { bubbledLabels: pageBubbledLabels });
     mathBlocks.push({ display: false, html: rendered, plain });
     mathPlainOf[id] = plain;
     return `@@MATH_INLINE_${id}@@`;
@@ -2459,7 +2516,7 @@ for (const relPath of TARGET_FILES) {
   <script src="${rootRel}${assetUrl('assets/plugins/chat-panel.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/spa-router.js')}" defer></script>
   <!-- 能力包（2026-10-30）：装配层 + 纯逻辑模块。
-       **页面加载时不做任何事**——不查状态、不加载 824 KB 编辑器、不碰 38 MB 内核。
+       **页面加载时不做任何事**——不查状态、不加载 824 KB 编辑器、不碰计算内核（三件套改由 Static-Contract 分块下载到 OPFS）。
        只有用户点右上角 package 图标时，装配层才查一次状态；下载/运行各按各的时机。 -->
   <script src="${rootRel}${assetUrl('assets/plugins/pack-runtime.js')}" defer></script>
   <script type="module">
@@ -2482,15 +2539,30 @@ for (const relPath of TARGET_FILES) {
         // 调用（模块 URL 反正只加载一次，版本戳不变）；OCT_BASE 与 parser 的
         // import 改成在函数里现取。
         const assetRoot = () => document.documentElement.getAttribute('data-root') || './';
-        const mod = await import(assetRoot() + 'assets/plugins/capability-pack.mjs?v=__PACK_VER__');
+        const mod = await import(assetRoot() + 'assets/plugins/capability-pack.js?v=__PACK_VER__');
+        // Static-Contract 客户端：只在用户真的点了「下载计算内核」时才 import，
+        // 首屏零开销。releaseLoader 把「从哪个 release 取哪个 entry」交给纯逻辑层，
+        // 装配层只负责拼版本戳与缓存一次 openRelease（多处文件复用同一 manifest）。
+        let releaseHandle = null;
+        const releaseLoader = async (f) => {
+          if (!releaseHandle) {
+            const sr = await import(assetRoot() + 'assets/plugins/static-release.js?v=__STATIC_RELEASE_VER__');
+            const ref = await sr.resolveCatalogueRelease('Octave-Full-Wasm/v0.1.0');
+            releaseHandle = await sr.openRelease(ref);
+          }
+          const key = f.source.product + '/' + f.source.name;
+          return releaseHandle.read(key);
+        };
         // root 传**函数**而不是字符串：下载拼 URL 的那一刻才取前缀（见上）。
-        const pack = mod.createCapabilityPack({ store: mod.createOpfsStore(), root: assetRoot });
+        // store 单独建一份，ensureOctave 也要从它读已落地的三件（造 blob URL）。
+        const octStore = mod.createOpfsStore();
+        const pack = mod.createCapabilityPack({ store: octStore, root: assetRoot, releaseLoader });
 
         // 公式单元格模块（2026-10-31）：暴露工厂函数，装配层（pack-runtime.js）
         // 在需要时自己 createFormulaCells —— 两层分工：本层管 import 与版本戳，
         // 装配层管「什么时候装、装在哪个容器上」。
         try {
-          const cellsMod = await import(assetRoot() + 'assets/plugins/formula-cells.mjs?v=__CELLS_VER__');
+          const cellsMod = await import(assetRoot() + 'assets/plugins/formula-cells.js?v=__CELLS_VER__');
           window.__createFormulaCells = cellsMod.createFormulaCells;
         } catch (e) {
           console.warn('[pack] formula-cells 载入失败，页内单元格不可用', e);
@@ -2499,9 +2571,10 @@ for (const relPath of TARGET_FILES) {
         // ── 计算适配器（2026-10-31，按上游 Octave-Full-Wasm 「mail/002」 实现）──
         //
         // 上游 「002」 给的完整答案：
-        //   ① 「OCTAVE({print, printErr, locateFile})」 建实例（locateFile **必须**带
-        //      目录前缀，否则会去站点根取另一档的产物，报一个完全不提「加载错档」的
-        //      LinkError: imported global does not match the expected type）；
+        //   ① 「OCTAVE({print, printErr, locateFile})」 建实例（locateFile 必须把
+        //      wasm/data 指到**同一档**的产物，否则报一个完全不提「加载错档」的
+        //      LinkError: imported global does not match the expected type。
+        //      2026-11-06 起这个职责由 OPFS blob URL 承担，不再拼站点目录前缀）；
         //   ② **「M.execute_interp()」 启动解释器** —— 少了这一步，任何解释器调用
         //      （同步异步一样）都抛 「RuntimeError: null function」；
         //   ③ 「WebAssembly.promising(M._eval_wait)」 + 手搓 malloc/stringToUTF8
@@ -2511,27 +2584,49 @@ for (const relPath of TARGET_FILES) {
         // 不需要 「octave-core.js」（那是整页宿主，要 9 个依赖）、不需要 Worker、
         // 不需要 COOP/COEP 响应头（wasm32-final 是单线程档）。
         //
-        // ⚠️ 这里**不缓存** OCT_BASE：SPA 换页后 data-root 会换（见文件顶部注释）。
-        // 每次 ensureOctave / locateFile 现取。
-        const octBase = () => assetRoot() + 'assets/octave/';
+        // 2026-11-06 起三件套**从 OPFS 读**（用户点「下载计算内核」时才落盘），
+        // 不再从本站 assets/octave/ 取 —— 那些二进制已不进 dist。
+        // UMD 胶水用 blob URL 注入；wasm/data 用 blob URL 交给 locateFile。
+        // blob URL 只在本次会话有效，正好配合「浏览器不保证持久」的既有纪律：
+        // 下次进来若 OPFS 被清，pack.status() 会判 missing，用户再点一次下载即可。
         let octPromise = null;
+
+        async function octBlobUrl(name) {
+          if (typeof octStore.readBytes !== 'function') {
+            throw new Error('OPFS store 不支持 readBytes，无法从能力包读 ' + name);
+          }
+          const buf = await octStore.readBytes(name);
+          if (!buf || !buf.byteLength) throw new Error('OPFS 里没有 ' + name + '（先点「下载计算内核」）');
+          const mime = name.endsWith('.js') ? 'text/javascript' : 'application/octet-stream';
+          return URL.createObjectURL(new Blob([buf], { type: mime }));
+        }
 
         function ensureOctave() {
           if (octPromise) return octPromise;
           octPromise = (async () => {
             // 胶水是 UMD，挂 window.OCTAVE（不是模块导出）
             if (typeof window.OCTAVE !== 'function') {
+              const jsUrl = await octBlobUrl('octave.js');
               await new Promise((res, rej) => {
                 const s = document.createElement('script');
-                s.src = octBase() + 'octave.js';
+                s.src = jsUrl;
                 s.onload = res;
-                s.onerror = () => rej(new Error('取不到 assets/octave/octave.js'));
+                s.onerror = () => rej(new Error('octave.js 的 blob URL 加载失败'));
                 document.head.appendChild(s);
               });
             }
             if (typeof window.OCTAVE !== 'function') {
               throw new Error('octave.js 加载了但没挂上 window.OCTAVE');
             }
+            // locateFile 必须给出 wasm/data 的 URL。两件都从 OPFS 造 blob URL。
+            const [wasmUrl, dataUrl] = await Promise.all([
+              octBlobUrl('octave.wasm'), octBlobUrl('octave.data'),
+            ]);
+            const locateFile = (f) => {
+              if (f === 'octave.wasm' || f.endsWith('.wasm')) return wasmUrl;
+              if (f === 'octave.data' || f.endsWith('.data')) return dataUrl;
+              return f;                       // 其余（若有）照原名，别猜
+            };
             const out = { lines: [], errs: [] };
             const M = await window.OCTAVE({
               // 启动期 Octave 会往 stdout 打一句「Starting GNU Octave interpreter...」，
@@ -2549,7 +2644,7 @@ for (const relPath of TARGET_FILES) {
               // 之类的 warning，不影响数值；所以我们不直接往 stdout 混，
               // 而是**单独收集**，只在 rc≠0 时拼进错误消息。
               printErr: (t) => { out.errs.push(String(t)); },
-              locateFile: (f) => octBase() + f,
+              locateFile,
             });
             // ★ 上游 002 §3 坑①：必须先启动解释器，否则 null function
             M.execute_interp();
@@ -2575,8 +2670,8 @@ for (const relPath of TARGET_FILES) {
 
           let code;
           try {
-            const { parse } = await import(assetRoot() + 'assets/math/parser.mjs');
-            const { translate } = await import(assetRoot() + 'assets/math/to-octave.mjs');
+            const { parse } = await import(assetRoot() + 'assets/math/parser.js');
+            const { translate } = await import(assetRoot() + 'assets/math/to-octave.js');
             const t = translate(parse(src).expr.root);
             if (!t.ok) return { ok: false, error: t.reason };
             code = t.code;
@@ -2716,18 +2811,19 @@ for (const relPath of TARGET_FILES) {
 </html>`;
 
   const outFilePath = path.join(DIST_DIR, targetHtmlPath);
-  // 能力包版本戳：页面模板里写着 `__PACK_VER__` / `__CELLS_VER__`，到这里统一
-  // 替换成对应模块的内容哈希。**必须在这里替换**——上面算 packVer 时页面还没
-  // 渲染，而模板是逐页生成的字符串。漏了这一步，产物里会留着字面
-  // `?v=__PACK_VER__`，浏览器把它当版本号，模块永不更新。
+  // 能力包版本戳：页面模板里写着 `__PACK_VER__` / `__CELLS_VER__` /
+  // `__STATIC_RELEASE_VER__`，到这里统一替换成对应模块的内容哈希。
+  // **必须在这里替换**——上面算 packVer 时页面还没渲染，而模板是逐页生成的字符串。
+  // 漏了这一步，产物里会留着字面 `?v=__PACK_VER__`，浏览器把它当版本号，模块永不更新。
   //
-  // ⚠️ 两个占位符都要替（2026-11-01 实测抓到的真 bug）：这里原本只替了
-  // `__PACK_VER__`，`__CELLS_VER__` 一路以字面量写到产物里
-  // （服务端日志实证 `GET /assets/plugins/formula-cells.mjs?v=__CELLS_VER__`）。
-  // 后果与能力包那条一模一样：编辑这个模块、重建、刷新，浏览器仍走旧副本。
+  // ⚠️ 每加一个新占位符都要补进这条链（已踩两次）：
+  //   · 2026-11-01 只替 PACK，CELLS 以字面量漏进产物；
+  //   · 2026-11-06 加了 STATIC_RELEASE 又忘了替，实测 `?v=__STATIC_RELEASE_VER__` 残留。
+  // 下面那道 `/__[A-Z]+_VER__/` 兜底断言就是防这个的，别把它删掉。
   const htmlWithVers = finalHtml
     .split('__PACK_VER__').join(packVer)
-    .split('__CELLS_VER__').join(cellsVer);
+    .split('__CELLS_VER__').join(cellsVer)
+    .split('__STATIC_RELEASE_VER__').join(staticReleaseVer);
   // 构建期兜底：任何版本占位符残留都是 bug（上一条断言的就是这个形状，
   // 但它是人工约定的；这里硬拦，免得下次再加第三个占位符时又漏一个）。
   const leakedVer = /__[A-Z]+_VER__/.exec(htmlWithVers);
@@ -2760,6 +2856,11 @@ for (const relPath of TARGET_FILES) {
   // diagnosePage 按词条 id 去重：一个坏令牌会同时触发 glossaryWarn 与字面残留。
   const pageCoverage = measurePage(htmlWithVers);
   totalSymbolsBubbled += pageCoverage.anchors;
+  // 2026-11-06：另记**符号缺口**——公式里出现但本页词条没覆盖的形状。
+  // 这是「习题册一大堆符号不冒泡」的真因（V/A/T/N/B/M 从没被声明过），
+  // 前两道闸都只看「判定之后」的事，抓不到它。
+  const shapeStats = measureFormulaShapes(htmlWithVers);
+  const { uncovered: shapeGaps } = coverageOf(shapeStats, pageBubbledLabels);
   const pageWarns = [...glossaryWarn].slice(pageWarnStart)
     .map((w) => (w.startsWith(`${relPath}：`) ? w.slice(`${relPath}：`.length) : w));
   const pageUncovered = diagnosePage({
@@ -2769,11 +2870,16 @@ for (const relPath of TARGET_FILES) {
     bareSpans: pageCoverage.bareSpans,
   });
   symbolUncovered.push(...pageUncovered);
+  // 符号缺口：公式里出现、但本页词条没覆盖的形状（按出现次数降序）。
+  for (const g of shapeGaps) {
+    symbolGaps.push({ page: relPath, label: g.label, count: g.count });
+  }
   symbolCoveragePages.push({
     page: relPath,
     html: targetHtmlPath,
     anchors: pageCoverage.anchors,
     uncovered: pageUncovered.length,
+    gaps: shapeGaps.length,
   });
 
   // 检索语料：只收正文（htmlContent），标题用页面标题；URL 存**相对站点根**的路径
@@ -2806,10 +2912,25 @@ for (const w of symbolPageWarns) console.warn(`[符号·逐页] ${w}`);
 
 // 账本落盘：FACTS 的 symbols_bubbled / symbols_uncovered 与
 // plugins/symbol-coverage.test.mjs 都读这一份，别处不重算。
+// 缺口按词形聚合（跨页）：同一符号在多页缺失只算一条，带总出现次数与涉及页数。
+const gapByLabel = new Map();
+for (const g of symbolGaps) {
+  const rec = gapByLabel.get(g.label) || { label: g.label, count: 0, pages: new Set() };
+  rec.count += g.count;
+  rec.pages.add(g.page);
+  gapByLabel.set(g.label, rec);
+}
+const symbolGapSummary = [...gapByLabel.values()]
+  .map((r) => ({ label: r.label, count: r.count, pages: r.pages.size }))
+  .sort((a, b) => b.count - a.count);
+
 const symbolCoverageReport = {
   symbols_bubbled: totalSymbolsBubbled,
   symbols_uncovered: symbolUncovered.length,
   uncovered: symbolUncovered,
+  // 缺口 = **没有词条**（不是「包链接失败」）。这是习题册那批不冒泡的真因。
+  symbols_missing_entries: symbolGapSummary.length,
+  gaps: symbolGapSummary,
   pages: symbolCoveragePages,
 };
 fs.writeFileSync(
@@ -2818,7 +2939,12 @@ fs.writeFileSync(
   'utf-8',
 );
 
-console.log(`[符号] 全站 ${totalSymbolsBubbled} 个锚点 / ${symbolUncovered.length} 个未解析`);
+{
+  const top = symbolGapSummary.slice(0, 10).map((g) => `${g.label}×${g.count}`).join(' ');
+  console.log(`[符号] 全站 ${totalSymbolsBubbled} 个锚点 / ${symbolUncovered.length} 个未解析`);
+  console.log(`[符号] 缺口：${symbolGapSummary.length} 种形状在公式里出现但词条没覆盖`
+    + (top ? `，前 10：${top}` : ''));
+}
 console.log(`[build] Completed! Rendered ${totalFormulasRendered} math formulas with ${formulaErrors} errors.`);
 
 if (symbolUncovered.length > 0) {

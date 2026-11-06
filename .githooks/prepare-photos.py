@@ -26,6 +26,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 sys.dont_write_bytecode = True
@@ -33,7 +34,12 @@ sys.dont_write_bytecode = True
 READABLE_SUFFIXES = {'.png', '.jpg', '.jpeg', '.gif'}
 CONVERT_SUFFIXES = {'.heic', '.heif', '.avif', '.webp', '.tif', '.tiff', '.bmp',
                     '.jp2', '.ppm', '.pcx', '.tga', '.dds', '.qoi', '.psd', '.pdf'}
-ALL_SUFFIXES = READABLE_SUFFIXES | CONVERT_SUFFIXES
+# JXL 走 libvips 而不是 ImageMagick（2026-11-06 实测修复）：
+# **ImageMagick 不带 JXL 解码器**（`magick identify x.jxl` → "no decode delegate"），
+# 而本仓归档规程要求原件一律转 JXL —— 于是「归档完的原件」正好是「读图工具读不了的格式」。
+# libvips 本来就是仓库的归档工具（工具/归档-jxl.py 用它），这里复用同一条路径。
+JXL_SUFFIXES = {'.jxl'}
+ALL_SUFFIXES = READABLE_SUFFIXES | CONVERT_SUFFIXES | JXL_SUFFIXES
 DEFAULT_OUT = Path('/tmp/reading-copies')
 ASCII_SAFE = re.compile(r'^[A-Za-z0-9._-]+$')
 
@@ -42,6 +48,59 @@ def run_identify(path, *pre_args):
     result = subprocess.run(['magick', 'identify', '-format', '%wx%h', *pre_args, str(path)],
                             check=True, capture_output=True, text=True)
     return tuple(int(v) for v in result.stdout.strip().split('x'))
+
+
+def vips_size(path):
+    """libvips 取宽高（JXL/HEIC 等 magick 读不了的格式走这里）。"""
+    out = subprocess.run(['vipsheader', '-a', str(path)], check=True,
+                         capture_output=True, text=True).stdout
+    w = h = None
+    for line in out.splitlines():
+        if ':' not in line:
+            continue
+        key, _, val = line.partition(':')
+        key = key.strip().lower()
+        if key == 'width' and w is None:
+            w = int(val.strip())
+        elif key == 'height' and h is None:
+            h = int(val.strip())
+    if w is None or h is None:
+        raise SystemExit(f'vipsheader 读不出尺寸：{path}')
+    return w, h
+
+
+def is_jxl(path):
+    return path.suffix.lower() in JXL_SUFFIXES
+
+
+def convert_jxl(src, dst, portrait, extra_rotate):
+    """JXL → PNG（libvips）：按需竖屏校正 + 额外旋转。
+
+    竖屏校正是**按需**的：只有宽 > 高（横躺）才转 90° 立起来。
+    `vips rot` 的 d90/d180/d270 是绝对角度（顺时针），所以两步旋转要分两次做，
+    不能把角度相加——相加在 90+180=270 这类组合下与「先转再转」的结果不一致。
+    """
+    # 临时文件放 /tmp，**不写源文件旁边**（归档目录可能只读或不该被塞临时件）。
+    # ⚠️ 每一步都直接落到 PNG 中间文件：先转成 `.v` 再转会报
+    # 「enum 'VipsAngle' has no member 'd90'」（`.v` 中间格式丢了输入类型信息）。
+    tmp_dir = Path(tempfile.mkdtemp(prefix='vipswork-'))
+    steps = []
+    if portrait:
+        w, h = vips_size(src)
+        if w > h:
+            steps.append('d90')
+    if extra_rotate:
+        steps.append({90: 'd90', 180: 'd180', 270: 'd270'}[extra_rotate])
+    try:
+        cur = src
+        for i, angle in enumerate(steps):
+            nxt = tmp_dir / f'step{i}.png'
+            subprocess.run(['vips', 'rot', str(cur), str(nxt), angle], check=True)
+            cur = nxt
+        subprocess.run(['vips', 'copy', str(cur), str(dst)], check=True)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+    return steps
 
 
 def collect(inputs):
@@ -62,7 +121,13 @@ def collect(inputs):
 
 
 def plan_ops(src, portrait, rotate):
-    """决定要施加的旋转：-auto-orient → 统一竖屏 → 额外旋转。返回 (操作列表, 说明)。"""
+    """决定要施加的旋转：-auto-orient → 统一竖屏 → 额外旋转。返回 (操作列表, 说明)。
+
+    JXL 不走这条路径（magick 没有 JXL 解码器），见 convert_jxl。
+    """
+    if is_jxl(src):
+        return [], []
+
     if shutil.which('magick') is None:
         raise SystemExit('缺少 ImageMagick（magick 命令），无法转换。')
 
@@ -129,13 +194,21 @@ def main():
             continue
 
         ops, notes = plan_ops(src, portrait, args.rotate)
-        subprocess.run(['magick', str(src), *ops, str(dst)], check=True)
+        if is_jxl(src):
+            steps = convert_jxl(src, dst, portrait, args.rotate)
+            notes = []
+            if 'd90' in steps and portrait:
+                notes.append('竖屏校正')
+            if args.rotate:
+                notes.append(f'旋转 {args.rotate}°')
+        else:
+            subprocess.run(['magick', str(src), *ops, str(dst)], check=True)
         if dst.suffix.lower() in READABLE_SUFFIXES and src.suffix.lower() in READABLE_SUFFIXES \
                 and not ops[1:]:
             copied += 1
         else:
             converted += 1
-        width, height = run_identify(dst)
+        width, height = (vips_size(dst) if is_jxl(src) else run_identify(dst))
         note = '、'.join(notes) if notes else '无'
         print(f'  {src.name}  →  {dst.name}  ({width}x{height} 竖版'
               f'{"是" if height >= width else "否"}, {dst.stat().st_size / 1024 / 1024:.1f} MB, {note})')
