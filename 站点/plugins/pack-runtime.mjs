@@ -807,7 +807,7 @@ function syncOnce() {
     // 2026-10-31 实测：只报了 editor，于是「引擎已下载、编辑器没下」时诊断行写的是
     // 「缺 mathlive-browser.min.js」——读者会以为引擎没下成功，实际是编辑器没下。
     // 两件事必须分开说。
-    var LABEL = { editor: "公式编辑器", engine: "计算内核" };
+    // 资产清单从 ASSET_META 派生（写死两件时 katex/pyodide 的状态不显示）。
     var desc = function (a) {
       if (!a) return "未查";
       if (a.ready) return "已就绪 " + (a.present || 0) + "/" + (a.total || 1);
@@ -818,8 +818,11 @@ function syncOnce() {
       }
       return "未就绪";
     };
-    setDiag("storeEditor", desc(s.editor));
-    setDiag("storeEngine", desc(s.engine));
+    for (var an in ASSET_META) {
+      if (!Object.prototype.hasOwnProperty.call(ASSET_META, an)) continue;
+      var keyName = an === "editor" ? "storeEditor" : an === "engine" ? "storeEngine" : ("store-" + an);
+      setDiag(keyName, desc(s[an]));
+    }
     render();
     renderSwitches();
     // 资产到位就**自动**载入编辑器并挂上单元格——不再等读者点一下按钮。

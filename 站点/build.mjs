@@ -2573,15 +2573,30 @@ for (const relPath of TARGET_FILES) {
         // Static-Contract 客户端：只在用户真的点了「下载计算内核」时才 import，
         // 首屏零开销。releaseLoader 把「从哪个 release 取哪个 entry」交给纯逻辑层，
         // 装配层只负责拼版本戳与缓存一次 openRelease（多处文件复用同一 manifest）。
-        let releaseHandle = null;
+        // ⚠️ 2026-11-06 站长实测「pyodide 无法下载、无限冒重试按钮」：
+        // 这里原来**写死** Octave-Full-Wasm 一个 release，且只缓存一个 handle。
+        // pyodide 的三件（core/sympy/mpmath）在另一个 release
+        // （Octave-Extra-Content/supply-pyodide-314.0.7）里 ⇒ 去 octave 的
+        // manifest 里找必然找不到 ⇒ 每次都失败 ⇒ 界面无限回到「重试」。
+        // 修法：**按资产的 releaseId 分别取 handle**（Map 缓存，一个 release 一个），
+        // releaseId 由纯逻辑层在 ASSETS 里声明（engine / pyodide 各一个）。
+        let srPromise = null;
+        const releaseHandles = new Map();
         const releaseLoader = async (f) => {
-          if (!releaseHandle) {
-            const sr = await import(assetRoot() + 'assets/plugins/static-release.js?v=__STATIC_RELEASE_VER__');
-            const ref = await sr.resolveCatalogueRelease('Octave-Full-Wasm/v0.1.0');
-            releaseHandle = await sr.openRelease(ref);
+          if (!srPromise) {
+            srPromise = import(assetRoot() + 'assets/plugins/static-release.js?v=__STATIC_RELEASE_VER__');
+          }
+          const sr = await srPromise;
+          const releaseId = f.releaseId || (f.source && f.source.releaseId);
+          if (!releaseId) throw new Error('资产缺 releaseId，无法定位 release：' + f.name);
+          let handle = releaseHandles.get(releaseId);
+          if (!handle) {
+            const ref = await sr.resolveCatalogueRelease(releaseId);
+            handle = await sr.openRelease(ref);
+            releaseHandles.set(releaseId, handle);
           }
           const key = f.source.product + '/' + f.source.name;
-          return releaseHandle.read(key);
+          return handle.read(key);
         };
         // root 传**函数**而不是字符串：下载拼 URL 的那一刻才取前缀（见上）。
         // store 单独建一份，ensureOctave 也要从它读已落地的三件（造 blob URL）。
