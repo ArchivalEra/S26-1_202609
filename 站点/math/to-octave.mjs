@@ -263,6 +263,27 @@ function emitSequence(items) {
 
       // 情形 B：函数名后紧跟一个普通操作数（`\sin\frac{\pi}{2}`、`\sin x`）
       const next = items[i + 1];
+
+      // ⚠️ **特例：`\det` 后面直接跟竖线矩阵**（2026-11-06 站长实测：
+      // 「矩阵能出结果，改 border 成行列式竖线后点计算出不了结果」）。
+      //
+      // 病因：`vmatrix`/`Vmatrix` 在 emitEnv 里**已经自己包了一层 det()**
+      // （那是为了「只有竖线、没写 \det」的写法）。而 `\det\begin{vmatrix}…`
+      // 里 \det 是函数名，按情形 B 吃掉整个 vmatrix ⇒ `det(det([...]))`，
+      // Octave 报参数错。全站 `\det|A|` 与 `\det\begin{vmatrix}` 两种写法都有，
+      // 所以这里必须去重而不是删掉 emitEnv 的包裹。
+      if (next && next.kind === 'env') {
+        const envName = String(next.env || next.name || '').replace(/\*$/, '');
+        if (fn.code === 'det' && (envName === 'vmatrix' || envName === 'Vmatrix')) {
+          // 直接内联矩阵本体，外层这一个 det 就是语义上的那个
+          const bare = emitEnvBare(next);
+          if (!bare.ok) return bare;
+          parts.push(`det(${bare.code})`);
+          i += 1;
+          continue;
+        }
+      }
+
       if (next) {
         const arg = emit(next);
         if (!arg.ok) return arg;
@@ -482,6 +503,38 @@ function emitSym(n) {
   if (isOperatorGlyph(glyph)) return { ok: true, code: glyph };
 
   return fail(`不认识的符号「${glyph || tex}」`);
+}
+
+/**
+ * 输出矩阵环境的**裸矩阵代码**（不包 det），供「\det + vmatrix」去重使用。
+ *
+ * 与 emitEnv 共用同一套单元格拼接规则（见 emitEnv 里的长注释：单元格内
+ * 「相邻操作数才补空格，运算符两侧不补」——否则 `-1` 会被读成「减 1」）。
+ */
+function emitEnvBare(n) {
+  const rows = n.rows || [];
+  if (!rows.length) return fail('空矩阵');
+  const parts = [];
+  for (const row of rows) {
+    const cells = [];
+    for (const cell of (row || [])) {
+      const nodes = Array.isArray(cell) ? cell : [cell];
+      let cellCode = '';
+      let prevWasOperand = false;
+      for (const node of nodes) {
+        const r = emit(node);
+        if (!r.ok) return r;
+        const isOperand = node.kind === 'num' || node.kind === 'sym' || node.kind === 'env'
+          || node.kind === 'root' || node.kind === 'frac' || node.kind === 'script';
+        if (cellCode && prevWasOperand && isOperand) cellCode += ' ';
+        cellCode += r.code;
+        prevWasOperand = isOperand;
+      }
+      cells.push(cellCode || '0');
+    }
+    parts.push(cells.join(' '));
+  }
+  return { ok: true, code: `[${parts.join('; ')}]` };
 }
 
 function emitEnv(n) {
