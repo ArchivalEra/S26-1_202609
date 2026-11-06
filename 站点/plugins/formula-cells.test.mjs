@@ -101,3 +101,30 @@ test('compute 是注入的，不在模块里读全局（node 里能测）', () =
   assert.ok(!/window\.__packCompute/.test(SRC),
     '模块里直接读 window.__packCompute —— 那 node 里不可测，且把装配层的责任漏进来');
 });
+
+test('不变量④：编辑入口不许挂在「会被隐藏的那份节点」上（否则第二遍点不进去）', () => {
+  // ## 2026-11-06 站长实弹：「公式编辑一遍保存后就不让编辑了」
+  //
+  // 病因链：
+  //   ① 退出编辑时为了显示改后的内容，在 anchor 旁边插了重绘副本 `.fcell-painted`，
+  //      并把原 anchor 设成 display:none（不变量①不许删它）；
+  //   ② 「点公式进编辑」的 click 监听**只挂在原 anchor 上**；
+  //   ③ 读者看到、点到的是副本 ⇒ 副本没有监听 ⇒ 第二遍点了没反应。
+  //
+  // 判据：click 监听必须挂在**容器 body**（它不随显示层切换而变），
+  // 而不是挂在 anchor 上。
+  assert.match(SRC, /body\.addEventListener\('click'/,
+    '编辑入口没挂在 .fcell-body 上 —— 换成重绘副本后读者就点不动了');
+  assert.ok(!/anchor\.addEventListener\('click'/.test(SRC),
+    '编辑入口还挂在原 anchor 上 —— anchor 退出编辑后是 display:none，副本上没有监听，第二遍点不进去');
+  // 进编辑时必须把重绘副本也藏起来，否则编辑态里「旧显示 + 编辑器」并排两份
+  const enter = SRC.slice(SRC.indexOf('function enterEdit'), SRC.indexOf('function exitEdit'));
+  assert.match(enter, /fcell-painted/,
+    'enterEdit 没处理重绘副本 —— 再进编辑时副本会和 math-field 并排显示两份公式');
+  assert.match(enter, /painted\.style\.display\s*=\s*'none'/,
+    'enterEdit 没把重绘副本藏起来');
+  // 退出编辑重绘时必须把副本显示恢复（否则第二次「改完退出」屏幕全空）
+  const exit = SRC.slice(SRC.indexOf('function exitEdit'), SRC.indexOf('function showCellError'));
+  assert.match(exit, /painted\.style\.display\s*=\s*''/,
+    'exitEdit 重绘后没恢复副本显示 —— 副本在 enterEdit 里被藏过，不恢复就什么都看不见');
+});

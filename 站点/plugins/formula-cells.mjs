@@ -151,8 +151,16 @@ export function createFormulaCells(deps = {}) {
       computeCell(cell, { force: true });
     });
 
-    // 点公式本体 → 原地编辑（不再弹覆盖层）
-    anchor.addEventListener('click', (ev) => {
+    // 点公式本体 → 原地编辑（不再弹覆盖层）。
+    //
+    // ⚠️ 监听挂在**收缩的容器 body** 上，不是挂在原 anchor 上（2026-11-06 站长实测：
+    // 「公式编辑一遍保存后就不让编辑了」）。
+    // 病因：退出编辑时为了「改完能看见新公式」，在 anchor 旁边插了一份重绘副本
+    // `.fcell-painted`，并把原 anchor 设成 display:none（不变量①不许删它）。
+    // 读者随后**看到的是副本**，点到的是副本 —— 而监听只挂在被藏起来的 anchor 上，
+    // 副本没有监听 ⇒ 第二遍点了没反应，整个单元格看起来"死"了。
+    // 判据：**监听必须挂在读者真正会点到的那个容器上**，容器不随显示层变化而变。
+    body.addEventListener('click', (ev) => {
       if (!canEdit()) return;                 // 不能编辑时保持原来的点击行为（符号气泡等）
       if (ev.target.closest && ev.target.closest(SYMBOL_SELECTOR)) return;   // 符号气泡优先（同一份选择器）
       ev.preventDefault();
@@ -266,6 +274,10 @@ export function createFormulaCells(deps = {}) {
 
     // 原公式先藏起来（**不删**：MCP 读面要它，见不变量 ①）
     cell.anchor.style.display = 'none';
+    // 上一轮退出编辑时插的重绘副本也要藏起来，否则编辑态里「旧显示 + 编辑器」并排两份。
+    // 副本不删：它承载读者改过的内容，退出编辑时会被重绘覆盖（见 exitEdit）。
+    const painted = cell.wrap.querySelector('.fcell-painted');
+    if (painted) painted.style.display = 'none';
     // math-field 与公式并排放在 body 里（body 收缩到内容宽，编辑时跟着变宽）
     cell.body.appendChild(mf);
     cell.editing = true;
@@ -323,6 +335,9 @@ export function createFormulaCells(deps = {}) {
           cell.body.insertBefore(painted, cell.anchor);
         }
         painted.innerHTML = html;
+        // 进编辑时这份副本被 display:none 藏过（见 enterEdit），这里必须显式恢复，
+        // 否则「改第二次 → 退出」以后屏幕上什么都没有（副本藏着、原节点也藏着）。
+        painted.style.display = '';
         cell.anchor.style.display = 'none';        // 藏旧显示，节点保留
       };
       try {

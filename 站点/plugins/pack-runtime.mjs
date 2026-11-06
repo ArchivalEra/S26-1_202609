@@ -567,24 +567,30 @@ function configureMathField(mf) {
     var fg = getComputedStyle(mf).color || "#e0e0e6";
     var bg = getComputedStyle(mf).backgroundColor || "transparent";
     st.textContent = [
-      // ① 虚拟键盘按钮：彻底不显示（含它自己的 is-visible 状态）
+      // ① 虚拟键盘按钮：彻底不显示（含它自己的 is-visible 状态）。
+      // **这才是「所有 UI 消失」的真凶**（2026-11-06 实测）：虚拟键盘一旦弹出就是
+      // 1265×1000、占视口 99% 的一块，压在整页之上，读者看到的正是「周边 UI 全没了」。
+      // 本站是桌面阅读场景，那个键盘只会挡住公式。（注：此处不用反引号，见文件头。）
       ".ML__virtual-keyboard-toggle, .ML__virtual-keyboard-toggle.is-visible {",
       "  display: none !important;",
       "}",
-      // ② 三道杠（菜单按钮）：**整个去掉**（2026-11-06 站长实测）。
-      // 它打开的是 MathLive 的编辑菜单，弹层压在全页之上，读者看到的
-      // 就是「周边 UI 消失、只剩一块东西」——而本站根本不需要那个菜单
-      // （虚拟键盘已禁，剩下的项对读者无用）。（注：此处不用反引号，见文件头。）
-      ".ML__menu-toggle {",
-      "  display: none !important;",
+      // ② 三道杠（菜单按钮）：**必须留着**。
+      // 2026-11-06 上一轮我把它当成罪魁直接 display:none —— 站长随即报「那个按钮也不见了」。
+      // 实测：菜单本身只有 156×384（26 个编辑项：插入矩阵/上下标/颜色…），压不到 UI；
+      // 铺满全屏的是①的虚拟键盘。所以这里改为「留着、并提亮图标」。
+      ".ML__menu-toggle, .ML__menu-toggle > span {",
+      "  color: " + fg + " !important;",
+      "  fill: " + fg + " !important;",
+      "  opacity: 0.75 !important;",
       "}",
-      // ③ 万一菜单仍被其它路径打开（工具栏/快捷键），把它压回可控尺寸而不是铺满
+      ".ML__menu-toggle:hover { opacity: 1 !important; }",
+      // ③ 菜单/工具栏弹层若被别的路径打开，压回可控尺寸而不是铺满
       ".ML__variant-panel, .ML__toolbar, .MLK__plate {",
       "  max-height: 60vh !important;",
       "  max-width: 92vw !important;",
       "  overflow: auto !important;",
       "}",
-      // ③ 整个容器别吃默认的深色背景（我们自己的宿主已经给了底）
+      // ④ 整个容器别吃默认的深色背景（我们自己的宿主已经给了底）
       ".ML__container { background: transparent !important; }",
     ].join("\n");
     try { sr.appendChild(st); } catch (e) {}
