@@ -324,3 +324,32 @@ test('⑯ 调色盘与搜索都接了统一入口（各自 toggle 的老写法�
   assert.ok(!/palettePopover\.classList\.toggle\("open"\);\n      setExpanded/.test(themeJs.replace(/\s+/g,' ')),
     '调色盘还留着无条件的本地 toggle 路径（绕过互斥）');
 });
+
+test('胶囊监听器必须绑在 syncOnce 之前（否则存储抛错会让加号变死按钮）', () => {
+  // 2026-11-06 站长实测「点加号弹不出面板」：原实现把 syncOnce()（碰 OPFS /
+  // localStorage）放在 toggle.addEventListener 之前。无痕模式/隐私设置下
+  // 它抛错 ⇒ 后面的监听器永远绑不上 ⇒ DOM 在、点了没反应。
+  // 判据：源码里 toggle.addEventListener 的位置必须早于 syncOnce() 的**裸调用**。
+  const PR = fs.readFileSync(path.join(HERE, 'pack-runtime.mjs'), 'utf8');
+  const initAt = PR.indexOf('function init()');
+  assert.ok(initAt > 0, '找不到 init()');
+  const body = PR.slice(initAt, initAt + 3000);
+  const bindAt = body.indexOf('toggle.addEventListener');
+  // 找 syncOnce() 的调用点（跳过注释行）。判据是「第一个非注释的 syncOnce(」
+  const lines = body.split('\n');
+  let syncAt = -1;
+  let offset = 0;
+  for (const line of lines) {
+    const isComment = /^\s*\//.test(line);
+    if (!isComment && /syncOnce\s*\(/.test(line)) { syncAt = offset + line.indexOf('syncOnce'); break; }
+    offset += line.length + 1;
+  }
+  assert.ok(bindAt > 0, 'init() 里没有 toggle.addEventListener');
+  assert.ok(syncAt > 0, 'init() 里找不到 syncOnce() 的调用');
+  assert.ok(bindAt < syncAt,
+    `监听器绑定（offset ${bindAt}）必须在 syncOnce()（offset ${syncAt}）之前——`
+    + '否则存储一抛错，加号就是死按钮');
+  // 还要真的被 try/catch 包着
+  assert.match(body, /try \{ syncOnce\(\); \} catch/,
+    'syncOnce() 没被 try/catch 包住——存储不可用时会中断整个 init()');
+});
