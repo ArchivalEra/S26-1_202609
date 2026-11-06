@@ -339,8 +339,13 @@ export function createCapabilityPack(deps = {}) {
       if (inflightStatus) return inflightStatus;
       inflightStatus = (async () => {
         try {
-          const [editor, engine] = await Promise.all([inspectAsset('editor'), inspectAsset('engine')]);
-          const state = { editor, engine };
+          // 2026-11-06：资产从 2 件变 4 件，这里必须**遍历 ASSETS**，
+          // 写死 editor/engine 会让 katex 与 pyodide 永远缺席 state ⇒
+          // 界面上它们恒显示「未下载」、按钮却可能被别处的判定带成「删除」。
+          const names = Object.keys(ASSETS);
+          const inspected = await Promise.all(names.map((n) => inspectAsset(n)));
+          const state = {};
+          names.forEach((n, i) => { state[n] = inspected[i]; });
           state.mode = deriveMode(state);
           cached = state;
           lastReadAt = Date.now();

@@ -13,6 +13,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   ASSETS, deriveMode, createCapabilityPack, createOpfsStore,
 } from './capability-pack.mjs';
@@ -234,13 +235,17 @@ test('★ 防环①：status() 是纯读——不写存储、不触发订阅回�
   store.calls.head = 0;
   for (let i = 0; i < 50; i++) await pack.status();
   const headAfterCached = store.calls.head;
-  assert.ok(headAfterCached <= 4,
-    `非 fresh 连查 50 次只该真读 ≤4 次（TTL 收敛），实际 ${headAfterCached} 次`);
+  // TTL 内复用 ⇒ 50 次查询最多落 1 轮真读（4 件资产 × 各自文件数）。
+  const oneRound = Object.values(ASSETS).reduce((n, a) => n + a.files.length, 0);
+  assert.ok(headAfterCached <= oneRound,
+    `非 fresh 连查 50 次只该真读 ≤${oneRound} 次（TTL 收敛），实际 ${headAfterCached} 次`);
 
   // ② fresh 连查 3 次：每次真读（这是下载后对账用的，必须真读）
   store.calls.head = 0;
   for (let i = 0; i < 3; i++) await pack.status({ fresh: true });
-  const perStatus = ASSETS.editor.files.length + ASSETS.engine.files.length;
+  // 2026-11-06：资产 2→4 件，这里必须**按 ASSETS 全量**算，
+  // 写死 editor+engine 会在加资产时误报（实测 24 !== 12）。
+  const perStatus = Object.values(ASSETS).reduce((n, a) => n + a.files.length, 0);
   assert.equal(store.calls.head, 3 * perStatus, `fresh 每次都该真读（每次 ${perStatus} 个文件各一次 head）`);
 
   // ③ 无论查多少次，都不许写存储、不许发通知
@@ -420,4 +425,35 @@ test('★ 装配层不许改动公式节点（MCP 读面必须是只读的旁路
   // 它不该自己造 DOM 去替换公式 —— 那条是旧 openEditor 的老路。
   assert.ok(!/pack-editor-overlay/.test(code),
     '覆盖层编辑已删除（改用页内单元格），装配层不该再造覆盖层');
+});
+
+test('新增资产时：status / 按钮 / 面板 三处都必须自动跟上（2026-11-06 实弹）', () => {
+  // 站长实测：「octave 点下载、下好了变成删除按钮，然后下面几个全跳出删除按钮
+  // 不让下载，还傻乎乎显示未下载」。
+  // 两个根因都在「写死两件资产」：
+  //   ① status() 只 inspectAsset('editor'|'engine') ⇒ katex/pyodide 永远缺席 state；
+  //   ② 按钮判定是 `name === 'editor' ? state.editor : state.engine` ⇒ 非 editor
+  //      一律跟着 engine 走，于是 engine 一下好，其它三件全变「删除」。
+  const DIR = import.meta.dirname;
+  const PACK = fs.readFileSync(DIR + '/capability-pack.mjs', 'utf8');
+  const PR = fs.readFileSync(DIR + '/pack-runtime.mjs', 'utf8');
+
+  // ① status 必须遍历 ASSETS，不许写死资产名
+  const s0 = PACK.indexOf('async status(');
+  const statusFn = PACK.slice(s0, PACK.indexOf('download(name', s0));
+  assert.ok(!/inspectAsset\('editor'\)|inspectAsset\("editor"\)/.test(statusFn),
+    'status() 还在写死 inspectAsset(\'editor\')——新增资产会永远缺席 state');
+  assert.match(statusFn, /Object\.keys\(ASSETS\)/,
+    'status() 应从 Object.keys(ASSETS) 派生资产名单');
+
+  // ② 按钮判定必须按名字取自己那份状态，不许三元分叉到 engine
+  const renderFn = PR.slice(PR.indexOf('function render()'), PR.indexOf('renderDiag();'));
+  assert.ok(!/name === "editor"\s*\?/.test(renderFn),
+    '按钮判定还在用 name === "editor" 三元——非 editor 会全跟着 engine 变「删除」');
+  assert.match(renderFn, /state\[name\]/,
+    '按钮判定应按名字取 state[name]');
+
+  // ③ 状态显示也不许写死清单
+  assert.match(renderFn, /ASSET_NAMES|Object\.keys\(ASSETS\)/,
+    '状态显示应有资产清单（写死两件时新资产恒显示「未下载」）');
 });
