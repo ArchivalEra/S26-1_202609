@@ -103,9 +103,11 @@ function render() {
     var b = abtns[k];
     if (b.disabled) continue;                 // 进行中，别动
     var name = b.getAttribute("data-pack-action");
-    var isReady = name === "editor"
-      ? !!(state.editor && state.editor.ready)
-      : !!(state.engine && state.engine.ready);
+    // 2026-11-06 站长实测：下载 octave 后**其它三件全变成「删除」、还显示未下载**。
+    // 病因是这里的三元只分 editor / 其它，非 editor 一律读 state.engine ⇒
+    // katex 与 pyodide 的按钮跟着 engine 走。改成**按名字取自己那份状态**。
+    var self = state[name] || {};
+    var isReady = !!self.ready;
     b.textContent = isReady ? "删除" : "下载";
     b.className = "pack-btn" + (isReady ? " pack-btn-danger" : "");
     b.setAttribute("title", isReady ? "删除已下载的副本" : "");
