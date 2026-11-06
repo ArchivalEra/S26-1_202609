@@ -28,15 +28,15 @@
 | 课程 | 资料数 | 入口 |
 | :--- | ---: | :--- |
 | 劳动教育 | 2 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E5%8A%B3%E5%8A%A8%E6%95%99%E8%82%B2/index.md) |
-| 工程数学 | 37 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E5%B7%A5%E7%A8%8B%E6%95%B0%E5%AD%A6/index.md) |
+| 工程数学 | 40 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E5%B7%A5%E7%A8%8B%E6%95%B0%E5%AD%A6/index.md) |
 | 形势与政策 | 9 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E5%BD%A2%E5%8A%BF%E4%B8%8E%E6%94%BF%E7%AD%96/index.md) |
-| 电力大数据与人工智能 | 15 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E7%94%B5%E5%8A%9B%E5%A4%A7%E6%95%B0%E6%8D%AE%E4%B8%8E%E4%BA%BA%E5%B7%A5%E6%99%BA%E8%83%BD/index.md) |
-| 电子技术 | 36 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E7%94%B5%E5%AD%90%E6%8A%80%E6%9C%AF/index.md) |
-| 电机学 | 22 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E7%94%B5%E6%9C%BA%E5%AD%A6/index.md) |
-| 电路原理 | 208 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/index.md) |
+| 电力大数据与人工智能 | 16 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E7%94%B5%E5%8A%9B%E5%A4%A7%E6%95%B0%E6%8D%AE%E4%B8%8E%E4%BA%BA%E5%B7%A5%E6%99%BA%E8%83%BD/index.md) |
+| 电子技术 | 41 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E7%94%B5%E5%AD%90%E6%8A%80%E6%9C%AF/index.md) |
+| 电机学 | 23 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E7%94%B5%E6%9C%BA%E5%AD%A6/index.md) |
+| 电路原理 | 212 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/index.md) |
 
-共 **7** 门课程、**329** 份资料。
-<!-- 仓库内容摘要（不含 README）：cc7a70cdacef25bd57027da5adb5ff6c494631e2c79644fef3eb5da498407a2e -->
+共 **7** 门课程、**343** 份资料。
+<!-- 仓库内容摘要（不含 README）：6a6c92cbc52a239943804a7132435d1edb4b6a1bc772edcb8e9a72b0395b31de -->
 
 <!-- AUTO-CATALOG:END -->
 

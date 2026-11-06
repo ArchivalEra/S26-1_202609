@@ -451,6 +451,8 @@
 !/站点/plugins/spa-perpage-json.test.mjs
 !/站点/plugins/no-control-chars.test.mjs
 !/站点/plugins/module-mime.test.mjs
+!/站点/plugins/whitelist-tracked.test.mjs
+!/tmp-fake-whitelist-probe.md
 !/课程总览/工程数学/教材解析/第一部分-线性代数/第4章-线性方程组/4.1-消元法.md
 !/课程总览/工程数学/教材解析/第一部分-线性代数/第4章-线性方程组/4.2-判别定理.md
 !/课程总览/工程数学/作业/作业4.md
