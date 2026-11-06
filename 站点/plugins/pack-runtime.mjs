@@ -2,7 +2,7 @@
 //
 // ## 分工（为什么分两个文件）
 //
-// · `capability-pack.mjs` 是**纯逻辑**：状态怎么派生、下载怎么对账、防环怎么做。
+// · capability-pack.mjs 是**纯逻辑**：状态怎么派生、下载怎么对账、防环怎么做。
 //   Node 里能直接 import 测（不需要 DOM）。
 // · 本文件是**装配**：拿 DOM 元素、绑按钮、读站点根、把模块接到页面上。
 //   它故意做得很薄——装配层最容易漏东西，越薄越好审。
@@ -22,9 +22,9 @@
 //
 // ## MCP 兼容（站长要求：工具不改、插件不更新）
 //
-// 站内工具（webmcp-tools.mjs）读公式靠 `data-math-plain`（构建期烘的纯文本投影）
-// 和 `.ML__latex` 容器。本文件**不碰这两样**：
-//   · 编辑态用独立的 `<math-field>` 覆盖层，**不替换**原来的 `.ML__latex` 节点；
+// 站内工具（webmcp-tools.mjs）读公式靠 data-math-plain（构建期烘的纯文本投影）
+// 和 .ML__latex 容器。本文件**不碰这两样**：
+//   · 编辑态用独立的 <math-field> 覆盖层，**不替换**原来的 .ML__latex 节点；
 //   · 所以 site_read / site_search / site_show_symbol 全部照旧工作。
 // 这是刻意的结构选择，不是巧合——测试里有一条断言「编辑态不改变 .ML__latex 的数量」。
 
@@ -81,17 +81,17 @@ function root() {
 /* ── 状态渲染（纯读 DOM，不发查询）─────────────────────────────
    注意：渲染函数只读 state，绝不调 pack.status() —— 那是环的入口。 */
 function render() {
-  var lv = $("pack-state-editor");
-  if (lv) {
-    var e = state.editor || {};
-    lv.textContent = e.ready ? "已下载" : (e.missing && e.missing.length ? "未下载" : "未下载");
-    lv.className = "pack-state" + (e.ready ? " is-ready" : "");
-  }
-  var gv = $("pack-state-engine");
-  if (gv) {
-    var g = state.engine || {};
-    gv.textContent = g.ready ? "已下载" : "未下载";
-    gv.className = "pack-state" + (g.ready ? " is-ready" : "");
+  // 2026-11-06：资产从两件变四件（editor/engine/katex/pyodide），
+  // 状态显示改成**通用遍历**——每个资产一个 #pack-state-<名>。
+  // 写死两件时新加的资产永远显示「未下载」，读者会以为下载失败。
+  var ASSET_NAMES = ["editor", "engine", "katex", "pyodide"];
+  for (var ai = 0; ai < ASSET_NAMES.length; ai += 1) {
+    var an = ASSET_NAMES[ai];
+    var el = $("pack-state-" + an);
+    if (!el) continue;
+    var st = state[an] || {};
+    el.textContent = st.ready ? "已下载" : "未下载";
+    el.className = "pack-state" + (st.ready ? " is-ready" : "");
   }
 
   // 每件资产的按钮：**已下载就变成「删除」**（2026-10-31 站长定案）。
@@ -548,21 +548,51 @@ function configureMathField(mf) {
       ".ML__virtual-keyboard-toggle, .ML__virtual-keyboard-toggle.is-visible {",
       "  display: none !important;",
       "}",
-      // ② 菜单按钮：深色下提亮（默认是 hsl(hue,25%,35%)，深底上几乎同色）
+      // ② 三道杠（菜单按钮）：**整个去掉**（2026-11-06 站长实测）。
+      // 它打开的是 MathLive 的编辑菜单，弹层压在全页之上，读者看到的
+      // 就是「周边 UI 消失、只剩一块东西」——而本站根本不需要那个菜单
+      // （虚拟键盘已禁，剩下的项对读者无用）。（注：此处不用反引号，见文件头。）
       ".ML__menu-toggle {",
-      "  color: " + fg + " !important;",
+      "  display: none !important;",
       "}",
-      ".ML__menu-toggle:hover {",
-      "  background: color-mix(in oklab, " + fg + " 14%, transparent) !important;",
+      // ③ 万一菜单仍被其它路径打开（工具栏/快捷键），把它压回可控尺寸而不是铺满
+      ".ML__variant-panel, .ML__toolbar, .MLK__plate {",
+      "  max-height: 60vh !important;",
+      "  max-width: 92vw !important;",
+      "  overflow: auto !important;",
       "}",
       // ③ 整个容器别吃默认的深色背景（我们自己的宿主已经给了底）
       ".ML__container { background: transparent !important; }",
     ].join("\n");
     try { sr.appendChild(st); } catch (e) {}
   }
-  // 立即注入一次；再等一拍（MathLive 的 shadow DOM 有时在下一帧才建好）
-  inject();
-  setTimeout(inject, 160);
+  // ⚠️ 2026-11-06 站长实测「点三道杠所有 UI 消失」：真因是注入**从来没生效**。
+  // 进编辑态时新建的 math-field 的 shadowRoot 在这一刻还是 null
+  // （自定义元素 upgrade 是异步的），原实现只试 inject() + 一次 160ms 的 setTimeout，
+  // 两把都扑空 ⇒ 「隐藏虚拟键盘按钮」那条 CSS 从未落地 ⇒ 读者点到的三道杠
+  // 其实是虚拟键盘开关 ⇒ 键盘铺满全屏、周边 UI 全被盖住。
+  // 改成 rAF + 指数退避重试，最多 ~2s；拿到 shadowRoot 就注入并停。
+  let tries = 0;
+  const tryInject = () => {
+    tries += 1;
+    let sr = null;
+    try { sr = mf.shadowRoot; } catch (e) { sr = null; }
+    if (sr) { inject(); return; }
+    if (tries < 20) setTimeout(tryInject, Math.min(40 * tries, 400));
+  };
+  tryInject();
+}
+
+// ⚠️ 这里**不能写 export**（2026-11-06 实弹）：本文件是 PACK_RUNTIME_JS
+// 字符串，最终以**普通 script 标签**注入页面（不是 module）。写了 export ⇒
+// 整份脚本 SyntaxError: Unexpected token 'export' ⇒ 胶囊、编辑、计算全静默失效，
+// 而页面看起来正常（数学排版是构建期 SSR 的，不依赖这个脚本）。
+// 需要给同页其它模块用的函数，一律挂 window（见下方 __configureMathField）。
+function configureAllMathFields() {
+  try {
+    var mfs = document.querySelectorAll("math-field");
+    for (var i = 0; i < mfs.length; i += 1) configureMathField(mfs[i]);
+  } catch (e) { /* 没有 math-field 就算了 */ }
 }
 
 /** 绑胶囊两半 + 笔记本面板。**幂等**（重复调不会重复绑）。 */
@@ -932,6 +962,10 @@ window.__panelToggle = {
   },
   close: function (which) { closePanel(which); },
 };
+
+// 供同页其它模块（formula-cells）在**新建** math-field 后调用：
+// 那条路不经过本文件的 ensureEditor，所以必须显式暴露。
+window.__configureMathField = configureMathField;
 
 window.__packRuntime = {
   status: function () { return pack ? pack.status() : Promise.resolve(state); },
