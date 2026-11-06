@@ -115,9 +115,9 @@ export const ASSETS = {
     files: [
       {
         path: 'assets/katex/katex.min.js', name: 'katex.min.js', bytes: 276705,
-        // sha 由构建期算（见 build.mjs 的 assetVersion）；这里留空表示「不比对」，
-        // 与 editor 不同：那份是 vendored 固定版，这份随站点资产走。
-        sha256: '',
+        // 与 editor 一样给真 sha：**空串等于不校验**，一个坏副本会被判「已下载」
+        // 而后渲染失败（2026-10-31 那条全零文件事故的同一类坑）。
+        sha256: '5e4f3b03c66a3360fe5c070da797900dd74437f58f23957443f4cbd26149f74e',
       },
     ],
   },
@@ -133,19 +133,19 @@ export const ASSETS = {
       {
         path: 'assets/pyodide/pyodide-core-314.0.7.tar.bz2', name: 'pyodide-core-314.0.7.tar.bz2',
         bytes: 6757104,
-        sha256: '2abdcc2e3520',   // 由 release manifest 校验，这里只是稳定键
+        sha256: '2abdcc2e35208af406e07724cffa85bc582ced97e9028383ecf5462541393f95',
         source: { product: 'pyodide', name: 'pyodide-core-314.0.7.tar.bz2' },
       },
       {
         path: 'assets/pyodide/sympy-1.14.0-py3-none-any.whl', name: 'sympy-1.14.0-py3-none-any.whl',
         bytes: 6299353,
-        sha256: 'e091cc3e99d2',
+        sha256: 'e091cc3e99d2141a0ba2847328f5479b05d94a6635cb96148ccb3f34671bd8f5',
         source: { product: 'pyodide', name: 'sympy-1.14.0-py3-none-any.whl' },
       },
       {
         path: 'assets/pyodide/mpmath-1.4.1-py3-none-any.whl', name: 'mpmath-1.4.1-py3-none-any.whl',
         bytes: 567787,
-        sha256: 'dc4f0ea23044',
+        sha256: 'dc4f0ea2304480d4a9a48a94c1020571558ade522b44a6912efac63a586e140f',
         source: { product: 'pyodide', name: 'mpmath-1.4.1-py3-none-any.whl' },
       },
     ],

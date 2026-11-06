@@ -78,6 +78,23 @@ function root() {
   return (document.documentElement.getAttribute("data-root") || "./");
 }
 
+/**
+ * 每件资产的显示元数据（名字 / 体积文案）。
+ *
+ * 为什么必须有这张表：ASSETS 住在 capability-pack.mjs（纯逻辑，只管下载对账），
+ * 而「确认删除时要念出哪件、多大」是**装配层的话术**。之前这段写成了
+ * which === "editor" ? "公式编辑器" : "计算内核"，加了 katex / pyodide 之后
+ * 点它们的按钮会念成「删除计算内核」（2026-11-06 站长实测）。
+ * 判据：**按资产名查表，不许有「其它」兜底**——加资产时漏登记就显示原名，
+ * 不会冒充别的资产。
+ */
+var ASSET_META = {
+  editor: { label: "公式编辑器", size: "824 KB" },
+  engine: { label: "计算内核", size: "约 38 MB（从 Static-Contract 分块拉）" },
+  katex: { label: "公式渲染器", size: "270 KB" },
+  pyodide: { label: "Python 内核", size: "约 13 MB（从 Static-Contract 分块拉）" },
+};
+
 /* ── 状态渲染（纯读 DOM，不发查询）─────────────────────────────
    注意：渲染函数只读 state，绝不调 pack.status() —— 那是环的入口。 */
 function render() {
@@ -155,12 +172,16 @@ function setDiag(key, value) {
 function renderDiag() {
   var box = $("pack-diag");
   if (!box) return;
-  var rows = [
-    ["编辑器资产", diag.storeEditor],
-    ["内核资产", diag.storeEngine],
-    ["编辑器脚本", diag.mathlive],
-    ["预览引擎", diag.katex],
-  ];
+  // 资产行按 ASSET_META 生成（写死两行时 katex/pyodide 的失败没地方显示）。
+  var rows = [];
+  for (var an in ASSET_META) {
+    if (!Object.prototype.hasOwnProperty.call(ASSET_META, an)) continue;
+    var keyName = an === "editor" ? "storeEditor" : an === "engine" ? "storeEngine" : ("store-" + an);
+    rows.push([ASSET_META[an].label, diag[keyName]]);
+  }
+  // 脚本级诊断（不是资产，单独两行）
+  rows.push(["编辑器脚本", diag.mathlive]);
+  rows.push(["预览引擎", diag.katex]);
   // 只挑坏的。全好 ⇒ html 为空 ⇒ .pack-diag:empty { display:none } 整块消失。
   var bad = [];
   for (var i = 0; i < rows.length; i++) {
@@ -697,15 +718,20 @@ function init() {
     actBtns[i].addEventListener("click", function (ev) {
       var which = ev.currentTarget.getAttribute("data-pack-action");
       var btn = ev.currentTarget;
-      var ready = which === "editor"
-        ? !!(state.editor && state.editor.ready)
-        : !!(state.engine && state.engine.ready);
+      // ⚠️ 2026-11-06 站长实测「点公式渲染器或 pyodide 的下载，跳出『是否删除内核』」：
+      // 这里原来又是「写死两件」——ready 判定非 editor 一律读 state.engine，
+      // label/size 也是 which === "editor" ? … : 计算内核。于是点 katex / pyodide
+      // 时看到的是 engine 的状态：engine 已下载 ⇒ 直接走删除分支、还问「删除计算内核」。
+      // 判据：**每个按钮只认自己那份状态与自己的名字/体积**，不许有任何「其它」兜底。
+      var meta = ASSET_META[which];
+      var self = state[which] || {};
+      var ready = !!self.ready;
 
       if (!ready) { downloadAsset(which, btn); return; }
 
-      // 已下载 ⇒ 删除。确认一次：删掉要重下 824 KB / 三件套（从 Static-Contract 分块拉），不可逆。
-      var label = which === "editor" ? "公式编辑器" : "计算内核";
-      var size = which === "editor" ? "824 KB" : "约 38 MB（分块下载）";
+      // 已下载 ⇒ 删除。确认一次（删掉要重下，不可逆）。
+      var label = (meta && meta.label) || which;
+      var size = (meta && meta.size) || "";
       if (!window.confirm("删除" + label + "？\n\n下次要用得重新下载（" + size + "）。")) return;
       btn.disabled = true;
       btn.textContent = "删除中…";
@@ -753,7 +779,12 @@ function init() {
       });
     }).catch(function (e) {
       var msg = (e?.message) || String(e);
-      setDiag(which === "editor" ? "storeEditor" : "storeEngine", "下载失败：" + msg);
+      // 诊断槽也按资产名走：写死 editor/engine 会让 katex/pyodide 的失败
+      // 记到「计算内核」那一行上，读者以为内核坏了。
+      var diagKey = which === "editor" ? "storeEditor"
+        : which === "engine" ? "storeEngine"
+        : ("store-" + which);
+      setDiag(diagKey, "下载失败：" + msg);
       diag.lastError = "下载失败：" + msg;
       renderDiag();
       btn.disabled = false;
