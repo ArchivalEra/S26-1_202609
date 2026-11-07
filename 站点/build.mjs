@@ -439,7 +439,7 @@ fs.writeFileSync(path.join(searchPluginDir, 'site-search.css'), SEARCH_CSS);
 const assetVersion = (relFromDist) => {
   try {
     return createHash('sha256').update(fs.readFileSync(path.join(DIST_DIR, relFromDist))).digest('hex').slice(0, 10);
-  } catch (e) {
+  } catch {
     throw new Error(`assetVersion：dist 里没有资产 ${relFromDist}——引用了不存在的文件（先构建该资产再引用）`);
   }
 };

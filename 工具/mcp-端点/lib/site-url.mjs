@@ -113,5 +113,5 @@ export function toSource(urlOrUrl) {
 
 /** `decodeURIComponent` 失败时原样返回（坏 URL 不该把整个读层打挂）。 */
 function safeDecode(s) {
-  try { return decodeURIComponent(s); } catch (e) { return s; }
+  try { return decodeURIComponent(s); } catch { return s; }  // 坏编码原样返回
 }

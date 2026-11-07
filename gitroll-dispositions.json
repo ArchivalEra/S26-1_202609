@@ -6,7 +6,12 @@
     "date": "2026-10-31",
     "total_claimed": 444,
     "total_locatable": 338,
-    "by_severity": {"BLOCKER": 2, "CRITICAL": 133, "MAJOR": 197, "MINOR": 112},
+    "by_severity": {
+      "BLOCKER": 2,
+      "CRITICAL": 133,
+      "MAJOR": 197,
+      "MINOR": 112
+    },
     "report": "https://gitroll.io/result/repo/KT3sXI6XGMoumqUPyUnT",
     "truncated": "报告对 5 个规则段截断了位置列表（`…共 N 处` 后只列前 20 个）：optional chain 114→43、catch 47→16、嵌套三元 21→19、控制字符 2→1、运算符方向 2→1。合计 106 条位置不可得。**决定不补齐**——重扫不确定能否给全量，本地装静态分析器会引入新工具链与版本漂移（与「本地不装 lint」的既有决定冲突）。"
   },
@@ -24,7 +29,9 @@
       "rule": "Regex operator precedence may not be what you intended",
       "severity": "BUG",
       "owner": "einfacht",
-      "files": ["zreflect/check_envfile.py"],
+      "files": [
+        "zreflect/check_envfile.py"
+      ],
       "decision": "upstream-synced",
       "why": "上游 2026-10-31 那批整改已处理（加括号显式化 + 两条自证）。本仓整目录同步后此项消失。**记录在此供下轮对账，不再动手改**——改了就跟上游分叉，吃不到后续更新。"
     },
@@ -32,7 +39,17 @@
       "rule": "Cognitive Complexity above threshold",
       "severity": "CRITICAL",
       "owner": "einfacht",
-      "files": ["zreflect/registry.py", "zreflect/check_stale.py", "zreflect/check_pins.py", "zreflect/check_ab.py", "zreflect/check_envfile.py", "zreflect/check_facts.py", "zreflect/check_facts_replay.py", "zreflect/gate.py", "zreflect/doctor.py"],
+      "files": [
+        "zreflect/registry.py",
+        "zreflect/check_stale.py",
+        "zreflect/check_pins.py",
+        "zreflect/check_ab.py",
+        "zreflect/check_envfile.py",
+        "zreflect/check_facts.py",
+        "zreflect/check_facts_replay.py",
+        "zreflect/gate.py",
+        "zreflect/doctor.py"
+      ],
       "decision": "upstream-synced",
       "why": "上游 issue #22 已按 GitRoll 阈值 15 拆函数（每处都做了改前/改后差分，problems 类函数在数千组输入上输出零差异）。本仓同步后消失，不改。"
     },
@@ -40,7 +57,13 @@
       "rule": "Define a constant instead of duplicating this literal (selftest fixtures)",
       "severity": "CRITICAL",
       "owner": "einfacht",
-      "files": ["zreflect/check_ab.py", "zreflect/check_pins.py", "zreflect/check_locks.py", "zreflect/registry.py", "zreflect/render.py"],
+      "files": [
+        "zreflect/check_ab.py",
+        "zreflect/check_pins.py",
+        "zreflect/check_locks.py",
+        "zreflect/registry.py",
+        "zreflect/render.py"
+      ],
       "decision": "accept",
       "why": "上游明确 accept：自证夹具里的重复是**有意的可读性**——`(\"REFLECT_DOC\", \"MYSTATE.md\")` 与 `problems({\"REFLECT_DOC\": \"MYSTATE.md\"})` 用同一个值，让读者一眼看出「期望它报这个」。提成常量反而让夹具变得不可读。"
     },
@@ -48,7 +71,9 @@
       "rule": "'format' is not modified in this loop.",
       "severity": "BUG",
       "owner": "self",
-      "files": ["站点/plugins/webmcp-tools.mjs:1875"],
+      "files": [
+        "站点/plugins/webmcp-tools.mjs:1875"
+      ],
       "decision": "accept",
       "why": "**误报**。`format` 是 `while (bytes > maxBytes && format === 'jpeg' && q > 40 …)` 的**只读条件**——循环里改的是 `q`（JPEG 逐档降质量的档位），不需要改 `format`。这正是该规则要保护的写法本身。"
     },
@@ -56,7 +81,10 @@
       "rule": "Review this redundant assignment: `depth` / `k` already holds the assigned value",
       "severity": "MAJOR",
       "owner": "self",
-      "files": ["站点/plugins/webmcp-tools.mjs:209", "站点/plugins/webmcp-tools.mjs:218"],
+      "files": [
+        "站点/plugins/webmcp-tools.mjs:209",
+        "站点/plugins/webmcp-tools.mjs:218"
+      ],
       "decision": "accept",
       "why": "**误报**。那是两个**独立作用域**的 while 扫描循环（各在一处 `let depth = 1` 初始化）。报告里行号相邻，但作用域不同 —— 不是把同一个变量重复赋值。"
     },
@@ -64,7 +92,9 @@
       "rule": "This conditional operation returns the same value whether the condition is true or false (kmap grid)",
       "severity": "CRITICAL",
       "owner": "self",
-      "files": ["站点/plugins/figures.mjs:413-414（旧版行号；现为 kmap 网格段）"],
+      "files": [
+        "站点/plugins/figures.mjs:413-414（旧版行号；现为 kmap 网格段）"
+      ],
       "decision": "fix",
       "why": "**真语义 bug**，已修。`rowCodes = vars === 2 ? gray : gray`、`grey = vars === 2 ? A : A` 三个分支返回同一个值，于是 **2 变量卡诺图按 4×4 画、3 变量也按 4×4**（正确应是 2×2 与 4×2）。图库里 4 条 kmap 全是 `kmap 4`，所以从未暴露——谁写 `kmap 2` 就得到错图，构建不报错、闸门全绿。修法：按变量数真正分叉 + 新增闸门 `figures.test.mjs` 的「2 变量是 2×2、3 变量是 4×2」断言（变体验证会红）。⚠️ 不属于「图元布局冻结」：冻结的是几何常数与绘制算法，这是网格语义。"
     },
@@ -72,7 +102,10 @@
       "rule": "Remove the declaration of the unused variable (OUT_LABEL_SLOT / CELL_W)",
       "severity": "MAJOR",
       "owner": "self",
-      "files": ["站点/plugins/figures.mjs:903", "站点/plugins/figures.mjs:1963"],
+      "files": [
+        "站点/plugins/figures.mjs:903",
+        "站点/plugins/figures.mjs:1963"
+      ],
       "decision": "fix",
       "why": "**真残留**，已删。`OUT_LABEL_SLOT` 声明时还带注释「输出标签的预留槽位（够放 Y / nB / B̄ 这类）」，但计算里零引用——注释描述的是一个从没落地的设计。`CELL_W`（wave 段）同理（另一处 1157 行的 CELL_W 在不同作用域里在用，未动）。"
     },
@@ -80,7 +113,9 @@
       "rule": "Remove the declaration of the unused variable (glossHref)",
       "severity": "MAJOR",
       "owner": "self",
-      "files": ["站点/plugins/figures.mjs:2182"],
+      "files": [
+        "站点/plugins/figures.mjs:2182"
+      ],
       "decision": "accept",
       "why": "**误报**。`glossHref` 解构后**在用**（同一文件的 `entry.href || \\`${glossHref}#${entry.key}\\`` 那行）。GitRoll 扫的是旧版。"
     },
@@ -88,7 +123,9 @@
       "rule": "Remove this useless assignment to variable hasError",
       "severity": "MAJOR",
       "owner": "self",
-      "files": ["站点/build.mjs"],
+      "files": [
+        "站点/build.mjs"
+      ],
       "decision": "fix",
       "why": "**真死变量**，已删。`hasError` 被赋值两处、从不读取——它原本参与 `hasError ? rendered : rendered` 这个两分支同值的返回，后来那行换成了「可算性判定」，变量就成了死的。留着会误导读者以为「错误有被处理」。真正的错误处理是 `formulaErrors++` 与 console.warn。"
     },
@@ -96,7 +133,11 @@
       "rule": "Handle this exception or don't catch it at all (empty catch)",
       "severity": "MINOR",
       "owner": "self",
-      "files": ["站点/plugins/chat-panel.mjs（12 处）", "站点/plugins/capability-pack.mjs（5 处，已有注释）", "站点/assets/theme/shirone-reader.js（2 处，已有注释）"],
+      "files": [
+        "站点/plugins/chat-panel.mjs（12 处）",
+        "站点/plugins/capability-pack.mjs（5 处，已有注释）",
+        "站点/assets/theme/shirone-reader.js（2 处，已有注释）"
+      ],
       "decision": "accept",
       "why": "**分两类，都已核实**。`capability-pack` 与 `shirone-reader` 的吞掉是**刻意的静默降级**（OPFS 不可用、隐私模式 localStorage 抛错、订阅者抛错不影响其余），且都带了注释——改成 throw 会让页面在降级路径上炸掉。`chat-panel` 那 12 处是清理动作（`stopAnswerRef()`、`stream.abort()`、`tp.cancel()`），吞掉是对的（清理失败不该打断主流程），**但一句注释都没有**——补注释是后续小活，不是本轮的代码改动。"
     },
@@ -104,7 +145,10 @@
       "rule": "Prefer using an optional chain expression instead",
       "severity": "MAJOR",
       "owner": "self",
-      "files": ["站点/（18 个文件，142 处）", "工具/（4 个文件，8 处）"],
+      "files": [
+        "站点/（18 个文件，142 处）",
+        "工具/（4 个文件，8 处）"
+      ],
       "decision": "fix",
       "why": "已改。**只改零风险的形态**：右操作数是纯数据属性（`a && a.b` → `a?.b`）。带方法调用的形态（`ctrl && ctrl.abort()`）保留原样——改成 `ctrl?.abort()` 语义等价于「ctrl 为假时跳过」，但若 `abort` 可能不存在还得写 `ctrl?.abort?.()`，那属于另一类判断，不在批量范围内。验证方式：站点 551 条 + 工具 51 条测试全绿，零行为变化。"
     },
@@ -112,7 +156,10 @@
       "rule": "Use the 'RegExp.exec()' method instead",
       "severity": "MAJOR",
       "owner": "self",
-      "files": ["站点/（6 个文件，30 处）", "工具/（4 个文件，8 处）"],
+      "files": [
+        "站点/（6 个文件，30 处）",
+        "工具/（4 个文件，8 处）"
+      ],
       "decision": "fix",
       "why": "已改，**只改无 `/g` 标志的**。有 `/g` 时 `String.match` 返回全部匹配、`exec` 返回第一个且带捕获组——直接换会改行为，那 3 处保留 `match`。"
     },
@@ -120,7 +167,9 @@
       "rule": "Use 'String#startsWith' method instead",
       "severity": "MAJOR",
       "owner": "self",
-      "files": ["站点/（4 个文件，5 处）"],
+      "files": [
+        "站点/（4 个文件，5 处）"
+      ],
       "decision": "fix",
       "why": "已改。形态是 `x.indexOf(y) === 0` → `x.startsWith(y)`，语义完全等价（含空串：`indexOf('')` 恒 0、`startsWith('')` 恒 true）。"
     },
@@ -128,7 +177,10 @@
       "rule": "Use concise character class syntax '\\d' instead of '[0-9]'",
       "severity": "MINOR",
       "owner": "self",
-      "files": ["站点/math/lexer.mjs（4 处）", "站点/plugins/chat-render.mjs（1 处）"],
+      "files": [
+        "站点/math/lexer.mjs（4 处）",
+        "站点/plugins/chat-render.mjs（1 处）"
+      ],
       "decision": "fix",
       "why": "已改。**只在无 `u`/`v` 标志时等价**——这 5 处都是裸 `/[0-9]/`，`\\d` 在非 Unicode 模式下同样只匹配 ASCII 0-9。"
     },
@@ -136,7 +188,10 @@
       "rule": "Unexpected var, use let or const instead",
       "severity": "CRITICAL",
       "owner": "self",
-      "files": ["站点/plugins/site-root.mjs（19 处）", "站点/plugins/chat-panel.mjs（1 处）"],
+      "files": [
+        "站点/plugins/site-root.mjs（19 处）",
+        "站点/plugins/chat-panel.mjs（1 处）"
+      ],
       "decision": "fix",
       "why": "已改 site-root 的 19 处（值不变的 → const，循环变量与重赋值的 → let）。`chat-panel.mjs` 那 1 处是注入到页面的 IIFE 字符串里的 `var`，同样在函数作用域内、无重复声明，可改。"
     },
@@ -144,7 +199,9 @@
       "rule": "Use 'Object.hasOwn()' instead of 'Object.prototype.hasOwnProperty.call()'",
       "severity": "MINOR",
       "owner": "self",
-      "files": ["站点/plugins/prose-terms.mjs（4 处）"],
+      "files": [
+        "站点/plugins/prose-terms.mjs（4 处）"
+      ],
       "decision": "accept",
       "why": "**不采纳**。`Object.hasOwn` 要求 Node 16.9+ / Safari 15.4+，而本站要照顾旧浏览器（`hasOwnProperty.call` 是那个兼容写法）。为了降一条 MINOR 告警去提浏览器下限，不划算。"
     },
@@ -152,7 +209,9 @@
       "rule": "Use the 'String#endsWith' method instead",
       "severity": "MAJOR",
       "owner": "self",
-      "files": ["工具/mcp-端点/lib/切块.mjs:87（旧版行号）"],
+      "files": [
+        "工具/mcp-端点/lib/切块.mjs:87（旧版行号）"
+      ],
       "decision": "accept",
       "why": "旧版形态已不存在（那处随 `match → exec` 改造一并消失）。若下轮扫描再现，按 `endsWith` 换。"
     },
@@ -160,7 +219,10 @@
       "rule": "Refactor this function to reduce its Cognitive Complexity",
       "severity": "CRITICAL",
       "owner": "self",
-      "files": ["站点/（站点 45 条，含 lexer.mjs parseAtom 84、chat-render.mjs 77（109）、figures.mjs 1521（110）、webmcp-tools.mjs 2355（64））", "工具/（4 条）"],
+      "files": [
+        "站点/（站点 45 条，含 lexer.mjs parseAtom 84、chat-render.mjs 77（109）、figures.mjs 1521（110）、webmcp-tools.mjs 2355（64））",
+        "工具/（4 条）"
+      ],
       "decision": "accept",
       "why": "**不采纳，本轮不动**。理由三条：① 这 45 条里多数是**数学 tokenizer 与解析器**（`parseAtom` 84）——分支密度是本质复杂度，拆开只会更难读；② `figures.mjs` 的布局函数属「图元布局冻结」（2026-10-29 定案：补了 17 处穿透又冒新的，说明方向错）；③ 站点已有 551 条行为测试覆盖，拆函数本身就可能改行为，收益（降一条告警）小于风险。**这是有据的 accept，不是「以后再说」**。"
     },
@@ -168,7 +230,9 @@
       "rule": "Either use this collection's contents or remove the collection from the declaration",
       "severity": "MAJOR",
       "owner": "self",
-      "files": ["站点/（3 处）"],
+      "files": [
+        "站点/（3 处）"
+      ],
       "decision": "accept",
       "why": "与上一条同族：这些集合在**同一函数的后续分支**里被使用（GitRoll 按单层作用域判，看不到跨分支用法）。逐处核实过的都是误报。"
     },
@@ -176,7 +240,9 @@
       "rule": "Refactor this code to not nest functions more than 4 levels deep",
       "severity": "MAJOR",
       "owner": "self",
-      "files": ["站点/（2 处）"],
+      "files": [
+        "站点/（2 处）"
+      ],
       "decision": "accept",
       "why": "嵌套深的是「注入到页面的 IIFE + 事件回调 + 内部 Promise」三层叠加，那是**浏览器端的固有形态**（IIFE 是为了不污染全局、回调是事件驱动的必需）。拆平反而要引入中间状态变量。"
     },
@@ -184,9 +250,48 @@
       "rule": "Build 侧工具链的其余告警（工具/mcp-端点 的未使用 import 等）",
       "severity": "MINOR",
       "owner": "self",
-      "files": ["站点/build.mjs:37, 38", "工具/mcp-端点/lib/*.mjs"],
+      "files": [
+        "站点/build.mjs:37, 38",
+        "工具/mcp-端点/lib/*.mjs"
+      ],
       "decision": "fix",
       "why": "`站点/build.mjs` 的两个未使用 import（`PACK_ASSETS`、`urlSegments`）是真残留，随本轮一并删除。"
+    },
+    {
+      "rule": "Unexpected var, use let or const instead.",
+      "severity": "CRITICAL",
+      "owner": "self",
+      "files": [
+        "站点/assets/katex/katex.mjs",
+        "站点/vendor.mjs",
+        "站点/assets/mathlive/mathlive-browser.min.js",
+        "站点/assets/vendor/**",
+        "站点/dist/**",
+        "工具/归档-pretext门户/vendor/**"
+      ],
+      "decision": "wontfix",
+      "why": "C 档（2026-11-07 定）：katex.mjs 是 vendored KaTeX 源码拷贝（1540 处）、vendor.mjs 是 bundled marked+yaml（38 处）、mathlive-browser.min.js 是上游压缩产物、dist/** 是构建产物、工具/*/vendor 是第三方打包。改了会在下次上游同步/构建时被覆盖，制造本地私版。"
     }
-  ]
+  ],
+  "_scan_round2": {
+    "tool": "GitRoll",
+    "scan_id": "IzW82bt4ryLvgSToyq5K",
+    "date": "2026-11-07",
+    "total": 3123,
+    "delta_vs_round1": -51,
+    "by_type": {
+      "BUG": 142,
+      "VULNERABILITY": 0,
+      "CODE_SMELL": 2981
+    },
+    "quality_gate": "fail",
+    "ratings": {
+      "Reliability": "E",
+      "Security": "A",
+      "Maintainability": "A"
+    },
+    "report": "https://gitroll.io/result/repo/IzW82bt4ryLvgSToyq5K",
+    "detail_archive": "ArchivalEra/trash-can@gitroll/2026-11-07/S26-1_202609.md（3382 行；本地克隆 /tmp/trash-can/）",
+    "_comment": "第二轮扫描（issue #23 新评论 2026-11-07）。判据仍是**明细清单清零**不是评级升档。vendor 明细（katex.mjs 1540 var、vendor.mjs 38 var、mathlive-browser.min、dist/**）归 C 档。"
+  }
 }

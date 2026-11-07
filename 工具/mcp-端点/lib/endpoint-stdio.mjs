@@ -84,7 +84,7 @@ export function createStdioEndpoint(opts) {
         buf = buf.slice(i + 1);
         if (!line) continue;
         let msg;
-        try { msg = JSON.parse(line); } catch (e) { fail(null, -32700, 'JSON 解析失败'); continue; }
+        try { msg = JSON.parse(line); } catch { fail(null, -32700, 'JSON 解析失败'); continue; }
         Promise.resolve(handle(msg)).catch((e) => {
           log(`[error] ${e?.stack ?? e}`);
           if (msg?.id != null) fail(msg.id, -32603, String(e?.message ?? e));
