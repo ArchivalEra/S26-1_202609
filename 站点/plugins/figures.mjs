@@ -2202,7 +2202,7 @@ export function renderFigures(source, opts = {}) {
 
   lines.forEach((line, idx) => {
     // 代码围栏内的 `:::` 一律不动
-    const f = line.match(FENCE_RE);
+    const f = FENCE_RE.exec(line);
     if (f) {
       const marker = f[1];
       if (!fence) fence = { ch: marker[0], len: marker.length };
@@ -2212,7 +2212,7 @@ export function renderFigures(source, opts = {}) {
     }
     if (fence) { out.push(line); return; }
 
-    const m = line.match(FIGURE_RE);
+    const m = FIGURE_RE.exec(line);
     if (!m) { out.push(line); return; }
 
     const spec = m[1] || '';

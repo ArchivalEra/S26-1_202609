@@ -1733,7 +1733,7 @@ for (const relPath of TARGET_FILES) {
     const since = full.lastIndexOf('<', pos);
     if (since < 0) return false;
     const seg = full.slice(since, pos);
-    const q = (seg.match(/"/g) || []).length;
+    const q = (seg.match(/"/g) || []).length;   // 计数场景：要全部匹配（exec 只给第一个）
     return q % 2 === 1;          // 落在某个属性值内部
   };
   htmlContent = htmlContent.replace(/@@MATH_INLINE_(\d+)@@/g, (whole, id, offset) => {
@@ -1798,7 +1798,7 @@ for (const relPath of TARGET_FILES) {
         (m0, plain) => plain)
       .replace(/<span class="katex"[\s\S]*?<\/span><\/span><\/span>/g,
         (m0) => {
-          const ann = m0.match(/<annotation encoding="application\/x-tex">([\s\S]*?)<\/annotation>/);
+          const ann = /<annotation encoding="application\/x-tex">([\s\S]*?)<\/annotation>/.exec(m0);
           return ann ? ann[1].replace(/&amp;/g, '&') : '';
         })
       .replace(/<[^>]+>/g, '')
