@@ -1090,9 +1090,7 @@ renderer.table = function (token) {
  * 这里按同一套下标记「纯文本」，供 heading 渲染器取用。
  * 每个文件开始处理前清空，避免下标串到别的文件。
  */
-const mathPlainOf = [];
-// 每页已用的标题锚点 id（renderer 是模块级的，与 mathPlainOf 同款桥接：
-// 建页循环开头清空，页内用来做碰撞去重）
+// 每页已用的标题锚点 id（renderer 是模块级的：建页循环开头清空，页内做碰撞去重）
 const usedHeadingIds = new Set();
 
 renderer.heading = function ({ depth, text, tokens }) {
@@ -1109,9 +1107,6 @@ renderer.heading = function ({ depth, text, tokens }) {
   // 注意：**只在算 id 时**做这个替换——<h3> 里输出的仍是完整 KaTeX 排版。
   // 曾试过在 marked 之前把整个标题行的公式替换成纯文本，那样标题就不排版了，
   // 属于过度修正；现在改成只在 id 这一处降级，两边都拿到。
-  //
-  // mathPlainOf 是模块级的中转表：mathBlocks 建在每个文件的循环里，
-  // 而本 renderer 是模块级的，作用域不通用它来桥接（见其定义处的注释）。
   //
   // ⚠️ 2026-10-30 改：公式**整体丢弃**，不再把纯文本投影拼进 id。
   // 原实现把 `$u_k\%$` 投影成 `uk` 塞进 slug，生成
@@ -1325,7 +1320,7 @@ for (const relPath of TARGET_FILES) {
   // 环境包词典（本页口径：词条带 href 与纯文本标题）；glossifyTex 与 autoWrapTerms 只看它。
   // 叠加顺序 = 声明顺序，后面的包覆盖前面的同名词条。
   const pageGlossaryDict = {};
-  for (const [i, pack] of envPacks.entries()) {
+  for (const pack of envPacks) {
     if (!pack) continue;
     for (const [id, e] of Object.entries(pack.dict)) {
       pageGlossaryDict[id] = {
@@ -1386,7 +1381,6 @@ for (const relPath of TARGET_FILES) {
   // Step 2: Extract and Render Math
   const mathBlocks = [];
   // 同步清空标题锚点用的中转表（下标与 mathBlocks 完全同构）
-  mathPlainOf.length = 0;
   usedHeadingIds.clear();
 
   // ── 本页数学环境：解析 + 唯一一次符号判定（2026-10-29 重构）───────────
@@ -1434,7 +1428,6 @@ for (const relPath of TARGET_FILES) {
     const src = tex.trim().replace(/[.。，、；;][ \t]*$/, '');
     const { rendered, plain } = renderOneMath(src, 'display', relPath, pageMathEnv, pageMathHits, { calc: !!mark, bubbledLabels: pageBubbledLabels });
     mathBlocks.push({ display: true, html: rendered, plain });
-    mathPlainOf[id] = plain;
     return `@@MATH_BLOCK_${id}@@`;
   });
 
@@ -1444,7 +1437,6 @@ for (const relPath of TARGET_FILES) {
     totalFormulasRendered++;
     const { rendered, plain } = renderOneMath(tex.trim(), 'inline', relPath, pageMathEnv, pageMathHits, { bubbledLabels: pageBubbledLabels });
     mathBlocks.push({ display: false, html: rendered, plain });
-    mathPlainOf[id] = plain;
     return `@@MATH_INLINE_${id}@@`;
   });
 

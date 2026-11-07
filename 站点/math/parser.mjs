@@ -622,7 +622,6 @@ export function parse(src, opts = {}) {
     // 读到配对的 \end{同名}
     const rows = [];
     let curRow = [];
-    let depth = 0;
     let end = beginTok.end;
     while (pos < tokens.length) {
       const cur = peek();

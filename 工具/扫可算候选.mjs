@@ -32,7 +32,6 @@ for (const rel of files) {
   let inBlock = false;
   for (const line of lines) {
     i += 1;
-    const opens = (line.match(/$$/g) || []).length;
     if (!inBlock && line.includes('$$')) {
       const a = line.indexOf('$$');
       const b = line.indexOf('$$', a + 2);
