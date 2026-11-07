@@ -127,8 +127,7 @@ export function createFormulaCells(deps = {}) {
     // 判据是 `data-computable="1"`，由 build.mjs 用同一个转译器烘出来——
     // 含裸变量的公式（a₁₁、D_j）、含 ⟺ 的关系式一律不在其中。
     const anchors = rootEl.querySelectorAll('.katex[data-computable="1"][data-math-tex]');
-    for (let i = 0; i < anchors.length; i += 1) {
-      const anchor = anchors[i];
+    for (const anchor of anchors) {
       if (anchor.closest('.' + WRAP_CLASS)) continue;      // 已经包过了
       wrapOne(anchor);
     }

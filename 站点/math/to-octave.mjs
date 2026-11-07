@@ -56,7 +56,7 @@ const GREEK_LETTERS = new Set([
 
 /** LaTeX 判断：这个 sym 节点是不是「排版用的装饰」而不是数学内容。 */
 function isOperatorGlyph(glyph) {
-  return /^[×·⋅÷±\-\+\=<>（）()\[\]|/,;:]$/.test(glyph || '');
+  return /^[×·⋅÷±+=<>（）()[\]|/,;:\-]$/.test(glyph || '');
 }
 
 /** 关系符（bigop 起点里出现即报错：循环范围确定不了）。 */
