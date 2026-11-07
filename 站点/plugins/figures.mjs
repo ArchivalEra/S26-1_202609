@@ -2206,7 +2206,7 @@ export function renderFigures(source, opts = {}) {
     if (f) {
       const marker = f[1];
       if (!fence) fence = { ch: marker[0], len: marker.length };
-      else if (marker[0] === fence.ch && marker.length >= fence.len) fence = null;
+      else if (marker.startsWith(fence.ch) && marker.length >= fence.len) fence = null;
       out.push(line);
       return;
     }

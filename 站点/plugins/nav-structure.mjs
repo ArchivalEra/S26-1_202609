@@ -69,7 +69,7 @@ export function filePathOf(mdPath) {
 export function htmlPathOf(mdPath) {
   if (!mdPath || typeof mdPath !== 'string') return null;
   if (mdPath === 'README.md') return '';
-  if (/\/index\.md$/.test(mdPath)) return mdPath.replace(/\/index\.md$/, '/');
+  if (mdPath.endsWith('/index.md')) return mdPath.replace(/\/index\.md$/, '/');
   return mdPath.replace(/\.md$/, '.html');
 }
 
@@ -166,7 +166,7 @@ function descendantPaths(node) {
 export function indexHrefOf(node, htmlRelPathFn) {
   const htmlOf = htmlRelPathFn || htmlPathOf;
   if (!node?.children?.length) return null;
-  if (!node.path || !/index\.md$/.test(node.path)) return null;
+  if (!node.path || !node.path.endsWith('/index.md')) return null;
   if (descendantPaths(node).includes(node.path)) return null;
   return htmlOf(node.path);
 }
