@@ -444,6 +444,7 @@
 !/gitroll-dispositions.json
 !/站点/plugins/formula-cells.mjs
 !/站点/plugins/formula-cells.test.mjs
+!/站点/plugins/edit-state.test.mjs
 !/站点/plugins/static-release.mjs
 !/站点/plugins/static-release.test.mjs
 !/站点/plugins/symbol-gaps.mjs

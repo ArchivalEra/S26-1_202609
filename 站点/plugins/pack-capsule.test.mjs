@@ -277,28 +277,57 @@ test('⑮ math-field 的内置按钮在深色下必须可见（不许吃 MathLiv
     '.nb-mathfield 没显式给 color —— 深色下面板里的公式字会是黑的');
 });
 
-test('⑮b 三道杠（菜单按钮）不许被 display:none —— 站长要它可见可用', () => {
-  // ## 2026-11-06 实弹：我把「周边 UI 全消失」误判成三道杠的错，直接
-  // `.ML__menu-toggle { display: none !important }`，下一轮站长就报
-  // 「mathlive 那个按钮也是不见了」。
+test('⑮b 三道杠必须可见：注入 CSS 要有 display:flex !important 压住 MathLive 的 inline 隐藏', () => {
+  // ## 2026-11-06 深夜实弹（站长报「三道杠在全站迷失」）
   //
-  // ## 实测真相（headless Chromium 量的）
-  //   三道杠弹出的菜单：  156×384 px（26 个编辑项：插入矩阵/上下标/颜色…）
-  //   虚拟键盘：         1265×1000 px = 视口 99%
-  // 铺满全屏的是**虚拟键盘**，菜单压不到 UI。所以：
-  //   · `.ML__virtual-keyboard-toggle` 继续 display:none（它是真凶）
-  //   · `.ML__menu-toggle` **只准改颜色/透明度，不准 display:none**
-  // 判据：找到注入样式串里针对 menu-toggle 的规则，里层不许出现 display。
+  // 前一轮我把它当成罪魁直接 `display:none`；再前一轮改成「只提亮 opacity」——
+  // 两次都在 CSS 层打转，测试全绿而按钮依旧不在。**真凶是 MathLive 自己**：
+  // mathlive-browser.min.js 的渲染函数在宿主 offsetWidth<50 时会写
+  // `[part=menu-toggle].style.display = "none"`；笔记本 nb-tex 在默认 hidden
+  // 的面板里首渲染宽度为 0 ⇒ 必命中，且面板打开时站点侧没有钩子让它恢复。
+  // 作者样式表的 !important 能压过非 important 的 inline style，
+  // 而只写 color/opacity **压不住** display 的盒生成。
+  //
+  // 判据：注入样式里 menu-toggle 规则块必须含 display:flex !important，
+  // 且不许出现 display:none。
   const pr = PR;
   const rules = [...pr.matchAll(/"([^"]*\.ML__menu-toggle[^"]*?)\s*\{",?([\s\S]{0,240}?)"\}"/g)]
     .map((m) => ({ sel: m[1], body: m[2] }));
   const offenders = rules.filter((r) => /display\s*:\s*none/.test(r.body));
   assert.deepEqual(offenders.map((o) => o.sel), [],
-    '注入样式把三道杠 display:none 掉了 —— 站长要这个按钮在（真凶是虚拟键盘，不是它）。'
-    + '\n  处置：只改 color/opacity，绝不用 display 藏它。');
-  // 正向断言：菜单按钮必须有一条可见性规则在（别整块删掉造成「按钮不可见」复发）
+    '注入样式把三道杠 display:none 掉了 —— 站长要这个按钮在（真凶是虚拟键盘和 MathLive 的 inline 隐藏）。');
+  assert.ok(rules.some((r) => /display\s*:\s*flex\s*!important/.test(r.body)),
+    'menu-toggle 规则块缺 display:flex !important —— 只写 color/opacity 压不住 MathLive 写的 inline display:none');
+  // 正向断言：提亮规则也还在（深色下不可视是另一类回归）
   assert.match(pr, /\.ML__menu-toggle[^"]*\{",?[\s\S]{0,240}?opacity/s,
     '菜单按钮没有提亮/可见规则 —— 深色下它会不可视');
+});
+
+test('⑮c 面板打开与进编辑态都必须清 MathLive 写的 inline display 并重算', () => {
+  // 光靠 CSS 覆盖能「看起来在」，但 MathLive 内部仍认为按钮是隐藏的；
+  // 右键菜单 / 布局重算等路径可能漂移。refreshMathFieldChrome 清掉 inline
+  // display 并派一次 resize 让 MathLive 按新宽度重渲染。
+  // 三处调用缺一不可：shadowRoot 就绪、笔记本面板打开、页内单元格进编辑态。
+  assert.match(PR, /function refreshMathFieldChrome\(mf\)/, '缺 refreshMathFieldChrome 实现');
+  assert.match(PR, /btn\.style\.removeProperty\("display"\)/,
+    'refreshMathFieldChrome 没清 MathLive 写的 inline display:none');
+  assert.match(PR, /dispatchEvent\(new Event\("resize"\)\)/,
+    'refreshMathFieldChrome 没触发 MathLive 重算按钮布局');
+  // ① 笔记本面板打开（nb-tex 在 hidden 面板里宽度为 0，是最典型的命中场景）
+  const openPanel = PR.slice(PR.indexOf('function openPanel('), PR.indexOf('function bindNotebookBlock'));
+  assert.match(openPanel, /which === "notebook"[\s\S]{0,200}refreshMathFieldChrome\(\$\("nb-tex"\)\)/,
+    'openPanel 打开笔记本时没重算 nb-tex 的三道杠 —— 面板隐藏时 MathLive 已把按钮 inline 藏了');
+  // ② 页内单元格每次进编辑态
+  const CELLS = fs.readFileSync(path.join(HERE, 'formula-cells.mjs'), 'utf8');
+  assert.match(CELLS, /__refreshMathFieldChrome/,
+    'formula-cells 进编辑态没调 __refreshMathFieldChrome —— 懒建/复用的 math-field 三道杠可能仍被 inline 藏');
+  // ③ 暴露到 window（跨模块边界只能用这个）
+  assert.match(PR, /window\.__refreshMathFieldChrome = refreshMathFieldChrome/,
+    '__refreshMathFieldChrome 没挂到 window —— formula-cells 是独立模块，拿不到本文件的局部函数');
+  // ④ shadowRoot 就绪后也要补一次
+  const cfg = PR.slice(PR.indexOf('function configureMathField('), PR.indexOf('function refreshMathFieldChrome'));
+  assert.match(cfg, /refreshMathFieldChrome\(mf\)/,
+    'shadowRoot 就绪后没补一次 refresh —— 新建实例拿不到配置就永远缺三道杠');
 });
 
 // ══════════════════════════════════════════════════════════════════

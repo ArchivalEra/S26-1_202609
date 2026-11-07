@@ -2,12 +2,11 @@
 //
 // ## 为什么是独立模块
 //
-// 之前这套交互挤在 `pack-runtime.mjs`（592 行）里，而且形态是**覆盖层**：
+// 之前这套交互挤在 `pack-runtime.mjs` 里，而且形态是**覆盖层**：
 // 点公式 → 弹出模态 → 改 → 点运行 → 关掉。读者用它得先"进一个页面"，
 // 而不是像笔记本那样**单元格就在正文里**。
 //
 // `pack-runtime` 已经承担了太多事（OPFS 状态派生、面板渲染、诊断、下载/删除）。
-// 再往里塞「公式单元格的完整生命周期」会让它变成一个谁都不敢改的巨物。
 // 所以把单元格这一块提成独立模块，**接口小、行为深**：
 //
 //   const cells = createFormulaCells({ compute, canEdit, onState });
@@ -16,18 +15,30 @@
 //   cells.setAutoCompute(bool)
 //   cells.refresh()           // 重算可见的
 //
-// 调用方只需要知道这五个动作。所有细节（IntersectionObserver 只算可见、
-// 公式变了才重算、MathLive 实例复用、结果区渲染、键盘按钮）都在里面。
+// ## 编辑态是一个**显式状态**（2026-11-06 重构，站长定案）
 //
-// ## 三个不变量
+// 旧实现里「正在编辑」由一堆互不同步的信号拼出来：`cell.editing` 布尔、
+// `cell.mf`、`cell.currentTex`、原 `.katex` 的 display、重绘副本的 display、
+// 以及 6 处分头写的内联 `style.display`。它们会漂移：改完退出后读者看到的是
+// 副本、监听却挂在被藏起来的原节点上 ⇒ 第二遍点不进去；或者副本藏了没恢复
+// ⇒ 屏幕空白。站长原话：「编辑态应该成为一个明确的状态」。
+//
+// 现在的判据：
+//   ① `wrap[data-fcell-state]` 是**唯一状态真相**，取值只有 display / editing；
+//   ② `setState()` 是**唯一写入点**，带显式合法转换表，非法转换响亮报错；
+//   ③ 三层显示节点（原 `.katex` / 重绘副本 / math-field）**常驻 DOM、不增删**，
+//      谁可见全由 CSS 按状态属性派生 —— 源码里**不许再出现 style.display =**；
+//   ④ 所有行为判定（点公式、取 tex、失焦退场、拆除）都读 `stateOf(cell)`，
+//      即现场读属性，不缓存镜像，杜绝两份真相。
+//
+// ## 四个不变量
 //
 // ① **MCP 读面不动**：绝不替换或删除原来的 `.katex` 节点，也不改它的
-//    `data-math-plain` / `data-math-tex`。单元格是**包在外层**的容器，
-//    `site_read` / `site_search` 读到的仍是构建期烘的同一份。
+//    `data-math-plain` / `data-math-tex`。单元格是**包在外层**的容器。
 // ② **不破坏 SPA**：`attach` 只在本模块自己创建的容器里动 DOM；
 //    `detach` 之后不残留任何 document 级监听。
-// ③ **只在公式真的变了才重算**：每次计算记下「算的是哪串 LaTeX」，
-//    同一串不重复算（自动计算开着时，滚动/重排会反复触发回调）。
+// ③ **只在公式真的变了才重算**：同一串 LaTeX 不重复算。
+// ④ **编辑态单一真相**：见上，`data-fcell-state` + `setState` 唯一写入点。
 
 // 「什么是一个符号」的唯一真相住在 站点/plugins/symbol-selector.mjs。
 // 本文件是**自包含**的（测试用 toString() 派生浏览器副本，不能带 import），
@@ -38,16 +49,26 @@ const WRAP_CLASS = 'fcell';
 const RESULT_CLASS = 'fcell-result';
 const PLAY_CLASS = 'fcell-play';
 
+/** 编辑态的两个取值。写在这里是为了让状态机与 CSS 共用同一批字面量。 */
+const STATE_DISPLAY = 'display';
+const STATE_EDITING = 'editing';
+/** 合法转换表：`display → editing → display`，其余一律拒绝。 */
+const STATE_TRANSITIONS = {
+  display: [STATE_EDITING],
+  editing: [STATE_DISPLAY],
+};
+
 /**
  * 建一个公式单元格管理器。
  *
  * @param {object} deps
  * @param {(tex: string) => Promise<{ok: boolean, output?: string, error?: string, code?: string}>} deps.compute
- *   计算适配器（页面上是 window 的那个 compute）。**必须是注入的**，不在这里读全局——
- *   这样 node 里能注入假实现测，页面里注入真的。
+ *   计算适配器（页面上是 window 的那个 compute）。**必须是注入的**，不在这里读全局。
  * @param {() => boolean} [deps.canEdit]  能不能编辑（= 编辑器与内核都到位）
  * @param {(showing: boolean) => void} [deps.onEditToggle] 进入/退出编辑态的通知
- * @param {Function} [deps.onNeedEditor]  首次要编辑时，请调用方确保 MathLive 已载入
+ * @param {() => Promise<boolean|void>} [deps.onNeedEditor] 确保 MathLive 已载入；
+ *   **必须返回 Promise**（装配层 ensureEditor 的缓存 Promise）。等它 resolve 才进编辑态，
+ *   这样修掉旧实现「同步调用后立刻同步检查 customElements ⇒ 首次点击必假」的竞态。
  */
 export function createFormulaCells(deps = {}) {
   const compute = deps.compute;
@@ -66,14 +87,38 @@ export function createFormulaCells(deps = {}) {
     return typeof deps.canEdit === 'function' ? !!deps.canEdit() : true;
   }
 
+  /** 现场读状态属性 —— 不缓存镜像，避免两份真相。 */
+  function stateOf(cell) {
+    return cell.wrap.getAttribute('data-fcell-state') || STATE_DISPLAY;
+  }
+
+  /**
+   * 编辑态的**唯一写入点**。
+   *
+   * 非法转换不静默吞掉：把原因亮在结果区，这样「谁在什么时候试图跳跃状态」
+   * 一眼可见。合法转换只做三件事 —— 写属性、通知装配层、返回成功。
+   * 三层显示节点的显隐由 CSS 按属性派生，本函数一个 display 都不碰。
+   */
+  function setState(cell, next) {
+    const cur = stateOf(cell);
+    if (next === cur) return true;
+    const allowed = STATE_TRANSITIONS[cur] || [];
+    if (allowed.indexOf(next) === -1) {
+      showCellError(cell, '编辑态转换不合法：' + cur + ' → ' + next);
+      return false;
+    }
+    cell.wrap.setAttribute('data-fcell-state', next);
+    if (typeof deps.onEditToggle === 'function') deps.onEditToggle(next === STATE_EDITING);
+    return true;
+  }
+
   /* ── 建单元格 ──────────────────────────────────────────────────── */
 
   /**
    * 扫描 rootEl 里的公式，为每个建一格。
    *
    * 幂等：同一个公式重复 attach 不会建两个格子（用 `data-fcell-wrapped` 标记）。
-   * 只处理**带 data-math-tex** 的公式 —— 没有 LaTeX 源就没法编辑，
-   * 建个空壳只会误导。
+   * 只处理**带 data-math-tex** 的公式 —— 没有 LaTeX 源就没法编辑。
    */
   function attach(root) {
     if (destroyed) return;
@@ -81,7 +126,6 @@ export function createFormulaCells(deps = {}) {
     // ⚠️ 只挑**构建期判过能算的**公式（2026-10-31 站长：只让带 mathfield 的能算）。
     // 判据是 `data-computable="1"`，由 build.mjs 用同一个转译器烘出来——
     // 含裸变量的公式（a₁₁、D_j）、含 ⟺ 的关系式一律不在其中。
-    // 不给它们建单元格：既不出播放按钮，也不会在自动计算时刷一屏「没有数值」。
     const anchors = rootEl.querySelectorAll('.katex[data-computable="1"][data-math-tex]');
     for (let i = 0; i < anchors.length; i += 1) {
       const anchor = anchors[i];
@@ -96,26 +140,17 @@ export function createFormulaCells(deps = {}) {
     if (!tex.trim()) return;
 
     // ⚠️ 包**两层**容器，不动 anchor 本身（不变量 ①）。
-    //
-    // 为什么两层（2026-11-01 站长两次纠正，两个要求互相冲突）：
-    //   · 「计算按钮统一左上角」⇒ 按钮要锚在**满宽**的盒子上，否则它跟着居中
-    //     的块级公式飘走（实测 758px 的框里按钮在 x=680，每条公式都不同）。
-    //   · 「hover 框要套住公式」⇒ 描边要挂**收缩**的盒子，否则框横贯整行。
-    // 一个盒子做不到这两件事，所以拆成 wrap（满宽，放按钮与结果）+ body（收缩，
-    // 放公式本体）。
+    //   外层 wrap 满宽（按钮对齐）、内层 body 收缩（hover 描边贴公式）。
     const wrap = document.createElement('span');
     wrap.className = WRAP_CLASS;
     wrap.setAttribute('data-fcell-tex', tex);
+    // 状态属性从建格子那一刻就存在，且**只有 setState 会改它**。
+    wrap.setAttribute('data-fcell-state', STATE_DISPLAY);
 
     const body = document.createElement('span');
     body.className = 'fcell-body';
-    // 块级公式（在 .math-display 容器里）的外层要满宽 —— 按钮才贴左侧、
-    // 所有公式的按钮才对得齐。行内公式的外层则跟着字流收缩。
     const isBlock = !!anchor.closest('.math-display, .katex-display');
     if (isBlock) wrap.classList.add('fcell-block');
-    // 可点提示的锚：CSS 把 hover 描边挂在这个属性上（不是 .katex、也不是 wrap）。
-    // 为什么：.katex 是 display:inline 的行内盒，高度只有一行（3×3 矩阵实测
-    // 22px vs 公式整体 70px），描边会只框住中间一行；wrap 满宽则框横贯整行。
     body.setAttribute('data-fcell-wrapped', '1');
 
     const play = document.createElement('button');
@@ -129,20 +164,26 @@ export function createFormulaCells(deps = {}) {
     result.className = RESULT_CLASS;
     result.hidden = true;
 
-    // 结构：wrap（满宽, 按钮+结果）> body（收缩, 只包公式）
-    //   <span class="fcell">
-    //     <button class="fcell-play">▶</button>
-    //     <span class="fcell-body"><span class="katex">…</span></span>
-    //     <span class="fcell-result">= 2</span>
-    //   </span>
-    // 编辑时 <math-field> 插进 body（跟公式并排），原 anchor 只 display:none。
+    // 三层显示节点**常驻**：
+    //   painted  空壳（:empty ⇒ CSS 藏它，显示原 SSR 公式）；重绘后装新 KaTeX
+    //   anchor   构建期烘死的原公式，永不删/替换/改 innerHTML
+    //   mf       懒建，首次进编辑时由 ensureMathField 追加；复用不删
+    // painted 必须排在 anchor 之前：CSS 用相邻兄弟选择器
+    // `.fcell-painted:not(:empty) + .katex { display:none }` 藏旧显示，不依赖 :has()。
+    const painted = document.createElement('span');
+    painted.className = 'fcell-painted';
+
     anchor.parentNode.insertBefore(wrap, anchor);
     wrap.appendChild(play);
     wrap.appendChild(body);
     body.appendChild(anchor);
+    body.insertBefore(painted, anchor);
     wrap.appendChild(result);
 
-    const cell = { wrap, body, anchor, play, result, tex, lastComputedFor: null, editing: false, busy: false };
+    const cell = {
+      wrap, body, anchor, painted, play, result, tex,
+      mf: null, pendingEditor: false, lastComputedFor: null, busy: false,
+    };
     cells.set(wrap, cell);
 
     play.addEventListener('click', (ev) => {
@@ -151,18 +192,11 @@ export function createFormulaCells(deps = {}) {
       computeCell(cell, { force: true });
     });
 
-    // 点公式本体 → 原地编辑（不再弹覆盖层）。
-    //
-    // ⚠️ 监听挂在**收缩的容器 body** 上，不是挂在原 anchor 上（2026-11-06 站长实测：
-    // 「公式编辑一遍保存后就不让编辑了」）。
-    // 病因：退出编辑时为了「改完能看见新公式」，在 anchor 旁边插了一份重绘副本
-    // `.fcell-painted`，并把原 anchor 设成 display:none（不变量①不许删它）。
-    // 读者随后**看到的是副本**，点到的是副本 —— 而监听只挂在被藏起来的 anchor 上，
-    // 副本没有监听 ⇒ 第二遍点了没反应，整个单元格看起来"死"了。
-    // 判据：**监听必须挂在读者真正会点到的那个容器上**，容器不随显示层变化而变。
+    // 点公式本体 → 进编辑态。监听挂在**容器 body** 上：它是常驻节点，
+    // 不会像旧实现那样因为「显示层换成副本」而丢监听（2026-11-06 实弹）。
     body.addEventListener('click', (ev) => {
       if (!canEdit()) return;                 // 不能编辑时保持原来的点击行为（符号气泡等）
-      if (ev.target.closest && ev.target.closest(SYMBOL_SELECTOR)) return;   // 符号气泡优先（同一份选择器）
+      if (ev.target.closest && ev.target.closest(SYMBOL_SELECTOR)) return;   // 符号气泡优先
       ev.preventDefault();
       ev.stopPropagation();
       enterEdit(cell);
@@ -176,21 +210,13 @@ export function createFormulaCells(deps = {}) {
 
   async function computeCell(cell, o = {}) {
     if (!cell || cell.busy || destroyed) return;
-    // quiet：自动计算路径专用。算不了（含裸变量的公式占多数）时**不显示**任何东西，
-    // 保持版面干净。手动点播放时才把原因亮出来——那时读者是主动问"这条能不能算"。
+    // quiet：自动计算路径专用。算不了时**不显示**任何东西，保持版面干净。
     const quiet = o.quiet === true;
-    // ⚠️ 2026-11-06 站长实测「矩阵改成行列式后仍算不了，但改个数字就能算」：
-    // 原来的取值是 `cell.editing ? currentTex() : data-fcell-tex`。
-    // 点 ▶ 会让 math-field **失焦**，而 blur 里有 150ms 延迟退出编辑：
-    // 若那 150ms 先到（或任何让 editing 变 false 的路径先跑），这里就退回读
-    // data-fcell-tex —— 那个属性只在 exitEdit 里更新，改 border（不触发 input）
-    // 时它还是旧串 ⇒ 拿旧公式去算，得到旧结果或算不了。
-    // 判据：**只要 math-field 还在 DOM 里，就以它为准**；editing 只用来判断
-    // 「要不要退场」，不参与「取哪份 tex」。
+    // 取哪份 tex **只看状态属性**：editing ⇒ 读 live math-field；display ⇒ 读容器属性。
+    // 点 ▶ 会让 math-field 失焦、150ms 后 blur 退场；无论 blur 先到还是后到，
+    // 两条路径拿到的都是当前内容（exitEdit 退场前已把 tex 写回 data-fcell-tex）。
     let tex = '';
-    if (cell.editing && cell.currentTex) {
-      tex = cell.currentTex();
-    } else if (cell.mf && cell.mf.isConnected) {
+    if (stateOf(cell) === STATE_EDITING && cell.mf) {
       try { tex = cell.mf.value || ''; } catch (e) { tex = ''; }
     }
     if (!tex) tex = cell.wrap.getAttribute('data-fcell-tex') || '';
@@ -245,122 +271,115 @@ export function createFormulaCells(deps = {}) {
     }
   }
 
-  /* ── 编辑 ──────────────────────────────────────────────────────── */
+  /* ── 编辑：display ⇄ editing ───────────────────────────────────── */
 
-  function enterEdit(cell) {
-    if (cell.editing || destroyed) return;
-    // 请调用方确保 MathLive 已载入（本模块不自己拉脚本，那是装配层的事）
-    if (typeof deps.onNeedEditor === 'function') deps.onNeedEditor();
+  /** 懒建并复用 math-field（不在退出时删除，省掉每次自定义元素 upgrade）。 */
+  function ensureMathField(cell) {
+    if (cell.mf && cell.mf.isConnected) return cell.mf;
+    const mf = document.createElement('math-field');
+    mf.className = 'fcell-mathfield';
+    // 虚拟键盘**全站不要**（2026-11-01 站长定案）：本站是桌面阅读场景。
+    mf.setAttribute('math-virtual-keyboard-policy', 'manual');
+    cell.body.appendChild(mf);
+    // 配置一次（注入 shadow 样式：藏虚拟键盘按钮 + 三道杠 display 覆盖 + 提亮）。
+    try { if (window.__configureMathField) window.__configureMathField(mf); } catch (e) {}
+
+    mf.addEventListener('input', () => {
+      cell.lastComputedFor = null;      // 公式变了 ⇒ 允许重算
+      if (autoCompute) scheduleCompute(cell);
+    });
+    // 退出编辑：失焦且焦点不在格子里 ⇒ 回到 display
+    mf.addEventListener('blur', () => {
+      setTimeout(() => {
+        if (stateOf(cell) !== STATE_EDITING || destroyed) return;
+        if (cell.wrap.contains(document.activeElement)) return;
+        exitEdit(cell);
+      }, 150);
+    });
+    mf.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape') { ev.preventDefault(); exitEdit(cell); }
+    });
+    cell.mf = mf;
+    return mf;
+  }
+
+  /**
+   * display → editing。**async**：先等编辑器就绪再切状态。
+   *
+   * 旧实现同步调 onNeedEditor()、紧接着同步检查 customElements.get('math-field')，
+   * 第一次点击必然为假并直接 return（不重试）—— 那就是站长看到的
+   * 「编辑仍然无法使用」：MathLive 其实已经加载好了，右键菜单都能弹，
+   * 但点公式永远进不去。
+   */
+  async function enterEdit(cell) {
+    if (stateOf(cell) === STATE_EDITING || destroyed || cell.pendingEditor) return;
+
+    if (typeof deps.onNeedEditor === 'function') {
+      cell.pendingEditor = true;
+      let ready;
+      try {
+        ready = await deps.onNeedEditor();
+      } catch (e) {
+        cell.pendingEditor = false;
+        showCellError(cell, '编辑器载入失败：' + ((e?.message) || e));
+        return;
+      }
+      cell.pendingEditor = false;
+      // 允许装配层返回 void（老式调用）：那就退回查自定义元素。
+      if (ready === undefined) {
+        ready = !!(window.customElements && window.customElements.get('math-field'));
+      }
+      if (destroyed || stateOf(cell) === STATE_EDITING) return;
+      if (!ready) {
+        showCellError(cell, 'MathLive 还没载入（编辑器资产未就绪）');
+        return;
+      }
+    }
     if (!(window.customElements && window.customElements.get('math-field'))) {
       showCellError(cell, 'MathLive 还没载入（编辑器资产未就绪）');
       return;
     }
 
+    const mf = ensureMathField(cell);
     const tex = cell.wrap.getAttribute('data-fcell-tex') || '';
-    const mf = document.createElement('math-field');
-    mf.className = 'fcell-mathfield';
-    // 虚拟键盘**全站不要**（2026-11-01 站长定案）：本站是桌面阅读场景，
-    // 那个键盘只会挡住公式。属性写在元素上，这样即使装配层没跑到配置，
-    // MathLive 自己也会按 manual 策略不弹。
-    mf.setAttribute('math-virtual-keyboard-policy', 'manual');
     try { mf.value = tex; } catch (e) { mf.textContent = tex; }
-
-    // ⚠️ 2026-11-06 站长实测「点三道杠所有 UI 消失」：编辑态是**新建** math-field，
-    // 而 configureMathField（隐藏虚拟键盘按钮 + 深色修正）只在 MathLive 载入时
-    // 对**当时已存在**的 math-field 跑过一次 ⇒ 新建的这个从未被配置 ⇒
-    // 虚拟键盘按钮还在，读者点到的三道杠其实是键盘开关，键盘铺满全屏。
-    // 这里显式调一次；装配层没暴露就跳过（不报错、不影响编辑本身）。
-    try { if (window.__configureMathField) window.__configureMathField(mf); } catch (e) {}
-
-    // 原公式先藏起来（**不删**：MCP 读面要它，见不变量 ①）
-    cell.anchor.style.display = 'none';
-    // 上一轮退出编辑时插的重绘副本也要藏起来，否则编辑态里「旧显示 + 编辑器」并排两份。
-    // 副本不删：它承载读者改过的内容，退出编辑时会被重绘覆盖（见 exitEdit）。
-    const painted = cell.wrap.querySelector('.fcell-painted');
-    if (painted) painted.style.display = 'none';
-    // math-field 与公式并排放在 body 里（body 收缩到内容宽，编辑时跟着变宽）
-    cell.body.appendChild(mf);
-    cell.editing = true;
-    cell.mf = mf;
-    cell.currentTex = () => {
-      try { return mf.value || ''; } catch (e) { return ''; }
-    };
-
-    // 编辑时改一个字：如果自动计算开着，值得重算（改了就是新公式）
-    mf.addEventListener('input', () => {
-      cell.lastComputedFor = null;      // 公式变了 ⇒ 允许重算
-      if (autoCompute) scheduleCompute(cell);
-    });
-
-    // 退出编辑：失焦且没在算 ⇒ 回到静态显示
-    mf.addEventListener('blur', () => {
-      // 用 setTimeout 让「点播放按钮」这类操作先跑完，别把单元格拆了
-      setTimeout(() => {
-        if (!cell.editing || destroyed) return;
-        if (cell.wrap.contains(document.activeElement)) return;   // 焦点还在格子里
-        exitEdit(cell);
-      }, 150);
-    });
-
+    if (!setState(cell, STATE_EDITING)) return;
+    // MathLive 在宿主宽度为 0 时会给 [part=menu-toggle] 写 inline display:none
+    // （笔记本面板默认 hidden 必命中）。每次进编辑都清一次，让三道杠跟着回来。
+    try { if (window.__refreshMathFieldChrome) window.__refreshMathFieldChrome(mf); } catch (e) {}
     try { mf.focus(); } catch (e) {}
-    if (typeof deps.onEditToggle === 'function') deps.onEditToggle(true);
   }
 
+  /** editing → display：写回 tex、重绘副本、切状态。**不删 math-field**。 */
   function exitEdit(cell) {
-    if (!cell.editing || destroyed) return;
-    const mf = cell.mf;
+    if (stateOf(cell) !== STATE_EDITING || destroyed) return;
     let tex = '';
-    try { tex = mf.value || ''; } catch (e) { tex = ''; }
-    if (tex.trim()) {
-      // 把改过的 LaTeX 记到容器上（下次编辑从改后的开始）
-      cell.wrap.setAttribute('data-fcell-tex', tex);
-      // ⚠️ 2026-11-06 站长实测「编辑过的公式点其他地方出来显示的还是之前的公式」：
-      // 原来只写了 data-fcell-tex（供**下次编辑**用），页面显示的仍是构建期 SSR
-      // 烘死的那份 KaTeX ⇒ 读者改完看到的还是旧公式，等于白改。
-      // 修法：退出编辑时用新 LaTeX **重渲染显示**。浏览器端没有 KaTeX，
-      // 用 MathLive 自带的静态渲染（convertLatexToMarkup）——它就在同一份产物里。
-      //
-      // ⚠️ 不变量①：**绝不动原 .katex 节点**（MCP 读面与「复制 LaTeX」都读它）。
-      // 所以不能写 anchor.innerHTML —— 改成在它**旁边**插一个重新渲染的兄弟节点，
-      // 然后把原 anchor 藏起来（display:none 是允许的，删/替换不允许）。
-      // 渲染器优先级（2026-11-06 站长定案：客户端 KaTeX 也行、且更轻）：
-      //   ① `window.katex`（pack-runtime 的 ensureKatex 拉 277 KB UMD，站点自带资产）
-      //   ② `MathLive.convertLatexToMarkup`（要在下过编辑器后才有）
-      // 两者都没有就保持旧显示、不报错。**渲染产物只是显示层**，原 anchor 节点一律不动。
-      const paint = (html) => {
-        let painted = cell.wrap.querySelector('.fcell-painted');
-        if (!painted) {
-          painted = document.createElement('span');
-          painted.className = 'fcell-painted';
-          cell.body.insertBefore(painted, cell.anchor);
-        }
-        painted.innerHTML = html;
-        // 进编辑时这份副本被 display:none 藏过（见 enterEdit），这里必须显式恢复，
-        // 否则「改第二次 → 退出」以后屏幕上什么都没有（副本藏着、原节点也藏着）。
-        painted.style.display = '';
-        cell.anchor.style.display = 'none';        // 藏旧显示，节点保留
-      };
-      try {
-        const isBlock = cell.wrap.classList.contains('fcell-block');
-        const k = globalThis.katex;
-        if (k && typeof k.renderToString === 'function') {
-          paint(k.renderToString(tex, { displayMode: !!isBlock, throwOnError: false }));
-        } else {
-          const ML = globalThis.MathLive;
-          if (ML && typeof ML.convertLatexToMarkup === 'function') {
-            paint(ML.convertLatexToMarkup(tex, { displayMode: !!isBlock }));
-          }
-        }
-      } catch (e) { /* 渲染失败就保持旧显示，不阻塞退出编辑 */ }
+    if (cell.mf) {
+      try { tex = cell.mf.value || ''; } catch (e) { tex = ''; }
     }
-    if (mf.parentNode) mf.parentNode.removeChild(mf);
-    // 有重绘副本时，原 anchor 继续隐藏（否则新旧两份同时出现）；
-    // 没重绘过（渲染失败/无 MathLive）才恢复显示原节点。
-    if (!cell.wrap.querySelector('.fcell-painted')) cell.anchor.style.display = '';
-    cell.editing = false;
-    cell.mf = null;
-    cell.currentTex = null;
-    if (typeof deps.onEditToggle === 'function') deps.onEditToggle(false);
+    if (tex.trim()) {
+      cell.wrap.setAttribute('data-fcell-tex', tex);
+      repaint(cell, tex);
+    }
+    setState(cell, STATE_DISPLAY);
+  }
+
+  /** 把新 LaTeX 渲进常驻副本；渲染器都不可用就留空 ⇒ CSS 显示原 SSR 公式。 */
+  function repaint(cell, tex) {
+    const isBlock = cell.wrap.classList.contains('fcell-block');
+    let html = '';
+    try {
+      const k = globalThis.katex;
+      if (k && typeof k.renderToString === 'function') {
+        html = k.renderToString(tex, { displayMode: !!isBlock, throwOnError: false });
+      } else {
+        const ML = globalThis.MathLive;
+        if (ML && typeof ML.convertLatexToMarkup === 'function') {
+          html = ML.convertLatexToMarkup(tex, { displayMode: !!isBlock });
+        }
+      }
+    } catch (e) { /* 渲染失败：副本留空，退回显示原公式，不阻塞退场 */ }
+    if (html) cell.painted.innerHTML = html;
   }
 
   function showCellError(cell, msg) {
@@ -382,14 +401,7 @@ export function createFormulaCells(deps = {}) {
 
   /**
    * 消费队列。**串行**跑（Octave 单线程，并发只会互相排队）。
-   *
-   * ⚠️ 2026-10-31 实测 bug：第一版用「一个定时器 + queueTimer 非空就 return」，
-   * 结果**第一批跑完就再也不排了** —— 定时器回调清空 queued 后不再看新成员，
-   * 之后加入的格子永远留在 queued 里。表现正是「SPA 换页后自动计算全卡在
-   * 计算中…（pending 13 但永远不变）」。
-   *
-   * 正确形状：一个**循环**，每轮取一批、算完再看队列里还有没有；
-   * 队列空了才退出。draining 只是防重入的闸，不是「已经安排过就别再来」。
+   * 正确形状是一个**循环**：每轮取一批、算完再看队列里还有没有，空了才退出。
    */
   let draining = false;
   function drain() {
@@ -405,7 +417,6 @@ export function createFormulaCells(deps = {}) {
         if (c.lastComputedFor === (c.wrap.getAttribute('data-fcell-tex') || '')) continue;
         await computeCell(c, { quiet: true });
       }
-      // 算完这一批再看有没有新加入的（自动计算开着时滚动会持续触发）
       step();
     };
     // 用微任务起步，让「同一帧内多次 schedule」先攒成一批
@@ -428,9 +439,7 @@ export function createFormulaCells(deps = {}) {
     autoCompute = !!on;
     if (!autoCompute) return;
     ensureObserver();
-    // 观察所有已建的格子
     for (const wrap of cells.keys()) if (io) io.observe(wrap);
-    // 立刻处理当前可见的
     for (const cell of cells.values()) {
       if (isVisible(cell.wrap)) scheduleCompute(cell);
     }
@@ -455,22 +464,18 @@ export function createFormulaCells(deps = {}) {
   /**
    * 清空所有单元格，断开所有观察与监听。
    *
-   * ⚠️ SPA 换页会把 `.article-content` 整块换掉，旧单元格节点随之消失。
-   * 但 `cells` 这个 Map 与 IntersectionObserver 还指着旧节点 —— 不清就是
-   * 内存泄漏 + 在已脱离文档的节点上跑计算。所以换页前必须 detach。
+   * ⚠️ 不再在拆除时 exitEdit 重绘（旧实现会白烧一次 KaTeX）：SPA 已把正文整块
+   * 换掉，重绘结果马上随 wrap 一起被丢弃。只做「清引用 + 把 anchor 放回原位」。
+   * 编辑态属性随 wrap 一起消失，不存在残留。
    */
   function detach() {
     if (io) { io.disconnect(); io = null; }
     for (const cell of cells.values()) {
-      if (cell.editing) exitEdit(cell);
-      // 把包装层拆掉，恢复原始 DOM 形态（anchor 放回父节点原位）。
-      // 层级是 wrap > body > anchor，所以 anchor 要先从 body 取出来。
       const wrap = cell.wrap;
       if (wrap?.parentNode) {
         const parent = wrap.parentNode;
         if (cell.anchor && cell.anchor.parentNode === cell.body) {
           cell.body.removeChild(cell.anchor);
-          cell.anchor.style.display = '';
           parent.insertBefore(cell.anchor, wrap);
         }
         parent.removeChild(wrap);
@@ -479,6 +484,10 @@ export function createFormulaCells(deps = {}) {
     cells.clear();
     queued.clear();
     if (queueTimer) { clearTimeout(queueTimer); queueTimer = null; }
+    // detach 不再逐格 exitEdit（SPA 已把正文换掉，重绘是白烧），但全局的
+    // 「正在编辑」标记要主动清 —— 它是装配层给 CSS/其它模块看的，留着会
+    // 让下一页以为还有格子在编辑（2026-11-06 CDP 实测：detach 后仍为 "1"）。
+    if (typeof deps.onEditToggle === 'function') deps.onEditToggle(false);
   }
 
   /** 彻底销毁（不再接受 attach）。 */
@@ -495,7 +504,14 @@ export function createFormulaCells(deps = {}) {
     setAutoCompute,
     refresh,
     get autoCompute() { return autoCompute; },
-    /** 诊断用：当前建了多少格、算过多少结果。 */
-    stats() { return { cells: cells.size, cached: resultCache.size }; },
+    /** 诊断用：格子数、缓存数、以及各状态各有几格（状态可数）。 */
+    stats() {
+      const states = {};
+      for (const cell of cells.values()) {
+        const s = stateOf(cell);
+        states[s] = (states[s] || 0) + 1;
+      }
+      return { cells: cells.size, cached: resultCache.size, states };
+    },
   };
 }

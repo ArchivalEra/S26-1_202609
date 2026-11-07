@@ -1688,16 +1688,20 @@ test('失败回喂：枚举仍留在返回值里，机器侧判据不受影响',
 //   · 没算过的空白结果框 —— 什么都不该给。
 // 上面任何一条泄漏进读面，都是把「工具状态」当「教材内容」喂给模型。
 
-/** 造一个 .fcell 结构（含按钮/body/katex/result）。 */
-function fcell({ tex = 'x', result = null, hidden = true, cls = '', block = false, resCls = '' } = {}) {
-  const wrap = el('span', '', { className: 'fcell' + (block ? ' fcell-block' : '') + (cls ? ' ' + cls : ''), attrs: { 'data-fcell-tex': tex } });
+/** 造一个 .fcell 结构（含按钮/body/三层显示节点/result）。
+ *  2026-11-06 重构后 body 里常驻三兄弟：重绘副本（空）、原 katex、math-field（懒建时才有）。
+ *  读面按 .fcell-body 的文本投影取内容，多出来的空副本与编辑器不该改变输出。 */
+function fcell({ tex = 'x', result = null, hidden = true, cls = '', block = false, resCls = '', painted = '', state = 'display' } = {}) {
+  const wrap = el('span', '', { className: 'fcell' + (block ? ' fcell-block' : '') + (cls ? ' ' + cls : ''), attrs: { 'data-fcell-tex': tex, 'data-fcell-state': state } });
   const play = el('button', '▶', { className: 'fcell-play' });
   const body = el('span', '', { className: 'fcell-body' });
+  const paintedEl = el('span', painted, { className: 'fcell-painted' });
   const katex = el('span', tex, { className: 'katex', attrs: { 'data-math-plain': tex, 'data-math-tex': tex } });
-  body.children = [katex];
+  body.children = [paintedEl, katex];
   const res = el('span', result == null ? '' : result, { className: 'fcell-result' + (resCls ? ' ' + resCls : ''), hidden });
   wrap.children = [play, body, res];
-  play.parentElement = wrap; body.parentElement = wrap; katex.parentElement = body; res.parentElement = wrap;
+  play.parentElement = wrap; body.parentElement = wrap; paintedEl.parentElement = body;
+  katex.parentElement = body; res.parentElement = wrap;
   return wrap;
 }
 
