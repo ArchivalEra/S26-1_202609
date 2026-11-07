@@ -76,3 +76,33 @@ test('构建脚本里浏览器侧的模块写盘用 .js', () => {
   assert.match(BUILD, /const out = f\.replace\(\/\\\.mjs\$\/, '\.js'\)/,
     'math 子集没有改名逻辑，拷过去还是 .mjs');
 });
+
+test('运行期动态 import 的 math 模块必须带 ?v= 内容哈希（2026-11-07 线上 404 之一）', () => {
+  // 2026-11-07 站长线上实报「公式解析失败：error loading dynamically imported
+  // module: …/assets/math/parser.js」。当时页面里 plugins 三件都有 ?v= 内容哈希，
+  // 唯独 math 两件（parser/to-octave）没有 —— 它们是仅有的无戳动态 import，
+  // 撞上 EdgeOne 的旧缓存副本时没有任何自愈手段（§0.218 缓存滞后那一类）。
+  // 判据：页面模板里对 math 模块的 import 必须带 ?v=__XXX_VER__ 占位符，
+  // 且占位符在 htmlWithVers 替换链里（兜底断言已在 build.mjs 内，这里防模板本身漏写）。
+  assert.match(BUILD, /import\(moduleRoot\(\) \+ 'assets\/math\/parser\.js\?v=__PARSER_VER__'\)/,
+    'parser.js 的 import 没走 moduleRoot() + ?v= —— 相对前缀会 404、无戳会吃缓存旧副本');
+  assert.match(BUILD, /import\(moduleRoot\(\) \+ 'assets\/math\/to-octave\.js\?v=__OCTAVE_VER__'\)/,
+    'to-octave.js 的 import 没走 moduleRoot() + ?v=');
+  // 两个占位符都要进替换链（只加占位符不加替换 = 又一次字面量泄漏）
+  const chain = BUILD.slice(BUILD.indexOf('const htmlWithVers = finalHtml'), BUILD.indexOf('const leakedVer'));
+  assert.match(chain, /split\('__PARSER_VER__'\)\.join\(parserVer\)/, '__PARSER_VER__ 没进替换链');
+  assert.match(chain, /split\('__OCTAVE_VER__'\)\.join\(octaveVer\)/, '__OCTAVE_VER__ 没进替换链');
+});
+
+test('运行期模块 import 必须用绝对正式根（moduleRoot），不许裸相对 assetRoot', () => {
+  // 相对前缀的坑：data-root 在「镜像入口 / site-root 探测失配 / SPA 竞态」下
+  // 可能仍是 './'，从 isui.ren 根解析出 /assets/math/parser.js ⇒ 404
+  // （线上报错 URL 正是这种不带 /repo/S26-1_202609/ 的形状）。
+  // 判据：页面模板里必须定义 moduleRoot()（canonical 优先），且 math 两件用它；
+  // capability-pack / formula-cells 等首屏 import 保持 assetRoot（它们在
+  // fixSiteRoot 之后才跑，且改动它们超出本次事故范围）。
+  assert.match(BUILD, /const moduleRoot = \(\) => \{/, '页面模板缺 moduleRoot() 定义');
+  assert.match(BUILD, /data-canonical-root/, 'moduleRoot 没读 data-canonical-root');
+  assert.match(BUILD, /return \(c && c !== '\/'\) \? c : assetRoot\(\)/,
+    'moduleRoot 没做「canonical 优先、缺失退回 data-root」的分流');
+});
