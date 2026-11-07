@@ -561,9 +561,15 @@ function configureMathField(mf) {
     var sr;
     try { sr = mf.shadowRoot; } catch (e) { return; }
     if (!sr) return;
-    if (sr.querySelector("style[data-pack-shadow]")) return;   // 已注入
-    var st = document.createElement("style");
-    st.setAttribute("data-pack-shadow", "1");
+    // 已注入 ⇒ **更新内容而不是跳过**（2026-11-07）：深色追加段依赖注入那一刻的
+    // 宿主 color 亮度；读者切主题后 configureMathField 会被再调（ensureEditor/
+    // refreshMathFieldChrome 路径），幂等跳过会让新主题的样式永远进不去。
+    // style 元素复用，直接改 textContent。
+    var st = sr.querySelector("style[data-pack-shadow]");
+    if (!st) {
+      st = document.createElement("style");
+      st.setAttribute("data-pack-shadow", "1");
+    }
     // 颜色用**具体值**而不是 var(--md-sys-color-*)：shadow 内部拿不到外部的
     // 自定义属性（它们不继承进 shadow DOM 的样式表）。
     var fg = getComputedStyle(mf).color || "#e0e0e6";
@@ -600,6 +606,35 @@ function configureMathField(mf) {
       // ④ 整个容器别吃默认的深色背景（我们自己的宿主已经给了底）
       ".ML__container { background: transparent !important; }",
     ].join("\n");
+    // ②b 深色模式：图标改白 + hover 底色换深色半透明（2026-11-07 站长实拍：
+    // 深色面板上 MathLive 的 hover 底色是 hsla(0,0%,70%,.3) 浅灰块 + 图标仍暗色
+    // ——底色刺眼、图标看不清）。
+    // ⚠️ 两个不可行的判据，都实测过：
+    //   · shadow 样式里写 html[data-theme=…] —— shadow 树的样式表只匹配 shadow 内
+    //     元素，html[…] 前缀命中不了任何东西（注入了、computed 不变）；
+    //   · 按宿主 color 亮度判 —— 宿主不一定继承主题色（探针直接挂 body 时
+    //     color 恒黑，亮度判据永远偏浅）。
+    // 可行的形状：**JS 读 html[data-theme]（light DOM，不受 shadow 边界限制），
+    // CSS 按结果命中 shadow 内元素**。切主题后调色盘 → refreshMathFieldChrome /
+    // ensureEditor 再调 configureMathField ⇒ inject 更新内容（见上），随主题换色。
+    var dark = document.documentElement.getAttribute("data-theme") === "dark";
+    if (dark) {
+      st.textContent += "\n" + [
+        // 白图标（非 hover 0.85，hover 到 1）
+        ".ML__menu-toggle {",
+        "  color: #ffffff !important;",
+        "  fill: #ffffff !important;",
+        "  opacity: 0.85 !important;",
+        "}",
+        ".ML__menu-toggle:hover { opacity: 1 !important; }",
+        // hover 底色：浅灰块换白色低透明（深底上是「提亮」而不是「发灰」）
+        ".ML__menu-toggle:hover {",
+        "  background: rgba(255, 255, 255, 0.12) !important;",
+        "  color: #ffffff !important;",
+        "  fill: #ffffff !important;",
+        "}",
+      ].join("\n");
+    }
     try { sr.appendChild(st); } catch (e) {}
   }
   // ⚠️ 自定义元素 upgrade 是异步的：新建的 math-field 在刚插入 DOM 时
