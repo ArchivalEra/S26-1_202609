@@ -217,7 +217,7 @@ export function createFormulaCells(deps = {}) {
     // 两条路径拿到的都是当前内容（exitEdit 退场前已把 tex 写回 data-fcell-tex）。
     let tex = '';
     if (stateOf(cell) === STATE_EDITING && cell.mf) {
-      try { tex = cell.mf.value || ''; } catch (e) { tex = ''; }
+      try { tex = cell.mf.value || ''; } catch { tex = ''; }   // math-field 取值失败按空串走兜底
     }
     if (!tex) tex = cell.wrap.getAttribute('data-fcell-tex') || '';
     if (!tex.trim()) return;
@@ -282,7 +282,7 @@ export function createFormulaCells(deps = {}) {
     mf.setAttribute('math-virtual-keyboard-policy', 'manual');
     cell.body.appendChild(mf);
     // 配置一次（注入 shadow 样式：藏虚拟键盘按钮 + 三道杠 display 覆盖 + 提亮）。
-    try { if (window.__configureMathField) window.__configureMathField(mf); } catch (e) {}
+    try { if (window.__configureMathField) window.__configureMathField(mf); } catch { /* 配置缺失不影响编辑本身 */ }
 
     mf.addEventListener('input', () => {
       cell.lastComputedFor = null;      // 公式变了 ⇒ 允许重算
@@ -342,12 +342,12 @@ export function createFormulaCells(deps = {}) {
 
     const mf = ensureMathField(cell);
     const tex = cell.wrap.getAttribute('data-fcell-tex') || '';
-    try { mf.value = tex; } catch (e) { mf.textContent = tex; }
+    try { mf.value = tex; } catch { mf.textContent = tex; }   // value 赋值失败退回 textContent
     if (!setState(cell, STATE_EDITING)) return;
     // MathLive 在宿主宽度为 0 时会给 [part=menu-toggle] 写 inline display:none
     // （笔记本面板默认 hidden 必命中）。每次进编辑都清一次，让三道杠跟着回来。
-    try { if (window.__refreshMathFieldChrome) window.__refreshMathFieldChrome(mf); } catch (e) {}
-    try { mf.focus(); } catch (e) {}
+    try { if (window.__refreshMathFieldChrome) window.__refreshMathFieldChrome(mf); } catch { /* 装配层没暴露就跳过 */ }
+    try { mf.focus(); } catch { /* 焦点失败不阻塞进入编辑态 */ }
   }
 
   /** editing → display：写回 tex、重绘副本、切状态。**不删 math-field**。 */
@@ -355,7 +355,7 @@ export function createFormulaCells(deps = {}) {
     if (stateOf(cell) !== STATE_EDITING || destroyed) return;
     let tex = '';
     if (cell.mf) {
-      try { tex = cell.mf.value || ''; } catch (e) { tex = ''; }
+      try { tex = cell.mf.value || ''; } catch { tex = ''; }   // math-field 取值失败按空串走兜底
     }
     if (tex.trim()) {
       cell.wrap.setAttribute('data-fcell-tex', tex);

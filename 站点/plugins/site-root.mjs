@@ -52,7 +52,7 @@ function detectSiteRoot() {
   if (!sp) return null;
   // pathname 解码后与 sitePath 对齐（构建期写的是未编码的仓库路径）
   let pathname;
-  try { pathname = decodeURIComponent(location.pathname); } catch (e) { pathname = location.pathname; }
+  try { pathname = decodeURIComponent(location.pathname); } catch { pathname = location.pathname; }  // 坏编码按原样对齐
   // 后缀对齐：sitePath 必须是 pathname 的尾部
   const idx = pathname.lastIndexOf(sp);
   if (idx >= 0 && idx + sp.length === pathname.length) return ensureSlash(pathname.slice(0, idx));

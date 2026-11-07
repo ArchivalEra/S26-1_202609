@@ -498,12 +498,12 @@ export function createPageView(doc, loc, winOverride) {
   const win = winOverride || (doc?.defaultView) || null;
 
   const all = (sel) => {
-    try { return Array.prototype.slice.call(doc.querySelectorAll(sel)); } catch (e) { return []; }
+    try { return Array.prototype.slice.call(doc.querySelectorAll(sel)); } catch { return []; }   // 坏选择器按空集
   };
   const first = (sel) => {
-    try { return doc.querySelector(sel); } catch (e) { return null; }
+    try { return doc.querySelector(sel); } catch { return null; }   // 坏选择器按未找到
   };
-  const byId = (id) => { try { return doc.getElementById(id); } catch (e) { return null; } };
+  const byId = (id) => { try { return doc.getElementById(id); } catch { return null; } };
 
   /** 当前页的小节清单（标题、层级、锚点）。 */
   function headings() {
@@ -699,7 +699,7 @@ export function createPageView(doc, loc, winOverride) {
       const data = JSON.parse(tag.textContent || '');
       if (!data || !Array.isArray(data.nodes)) return null;
       return data;
-    } catch (e) { return null; }
+    } catch { return null; }   // 块缺失/坏 JSON 按未找到
   }
 
   /**
@@ -720,7 +720,7 @@ export function createPageView(doc, loc, winOverride) {
     try {
       const data = JSON.parse(tag.textContent || '');
       return Array.isArray(data) ? data : null;
-    } catch (e) { return null; }
+    } catch { return null; }   // 块缺失/坏 JSON 按未找到
   }
 
   /**
@@ -1242,7 +1242,7 @@ export function createPageView(doc, loc, winOverride) {
         if (w.scrollTo) w.scrollTo({ top: y, behavior: 'smooth' });
         else if (w.scrollTo) w.scrollTo(0, y);
         return { ok: true, to, y };
-      } catch (e) { return { ok: false, reason: 'scroll_unavailable' }; }
+      } catch { return { ok: false, reason: 'scroll_unavailable' }; }
     }
 
     if (to === 'back') {
@@ -1550,12 +1550,12 @@ export function createPageView(doc, loc, winOverride) {
     let target = null;
 
     if (o.selector) {
-      try { target = doc.querySelector(String(o.selector)); } catch (e) { target = null; }
+      try { target = doc.querySelector(String(o.selector)); } catch { target = null; }   // 坏选择器按未找到
       if (!target) return Promise.resolve({ ...meta, ok: false, reason: 'selector_not_found', selector: o.selector });
       try {
         const r = target.getBoundingClientRect();
         rect = { x: r.left, y: r.top, w: r.width, h: r.height };
-      } catch (e) { return Promise.resolve({ ...meta, ok: false, reason: 'no_layout' }); }
+      } catch { return Promise.resolve({ ...meta, ok: false, reason: 'no_layout' }); }
     } else {
       const r = o.rect || {};
       rect = { x: Number(r.x) || 0, y: Number(r.y) || 0, w: Number(r.w) || 0, h: Number(r.h) || 0 };
@@ -1634,7 +1634,7 @@ export function createPageView(doc, loc, winOverride) {
         + 'transform:scale(' + scale + ');transform-origin:0 0;background:#fff">'
         + '<style>' + css + '</style>' + html + '</div>'
         + '</foreignObject></svg>';
-    } catch (e) { return null; }
+    } catch { return null; }   // SVG 序列化失败 ⇒ 截图降级路径接管
   }
 
   /**

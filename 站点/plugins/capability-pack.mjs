@@ -189,8 +189,8 @@ async function sha256Hex(buf) {
     if (!(globalThis.crypto && globalThis.crypto.subtle)) return null;
     const d = await globalThis.crypto.subtle.digest('SHA-256', buf);
     return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
-  } catch (e) {
-    return null;
+  } catch {
+    return null;                                   // 非安全上下文/算不了 ⇒ 跳过内容校验
   }
 }
 
@@ -239,7 +239,7 @@ export function createCapabilityPack(deps = {}) {
   function resolveRoot() {
     const r = deps.root;
     if (typeof r === 'function') {
-      try { return String(r() || ''); } catch (e) { return ''; }
+      try { return String(r() || ''); } catch { return ''; }   // root 探测失败按空根处理
     }
     return r != null ? String(r) : '';
   }
@@ -462,7 +462,7 @@ export function createCapabilityPack(deps = {}) {
       if (typeof fn !== 'function') return () => {};
       listeners.add(fn);
       // 立即给一次当前状态（异步，不阻塞订阅者）
-      pack.status().then((s) => { try { fn(s); } catch (e) {} });
+      pack.status().then((s) => { try { fn(s); } catch { /* 单个订阅者抛错不影响其余 */ } });
       return () => listeners.delete(fn);
     },
   };
@@ -497,7 +497,7 @@ export function createOpfsStore(dirName = 'capability-pack') {
           throw mkErr('OPFS_UNSUPPORTED', '这个浏览器没有 OPFS');
         }
         // 申请持久化：只是「申请」，浏览器可以拒绝；拒绝也不影响读写，只影响会不会被清。
-        try { if (navigator.storage.persist) await navigator.storage.persist(); } catch (e) {}
+        try { if (navigator.storage.persist) await navigator.storage.persist(); } catch { /* 浏览器可拒绝，拒绝只影响清理时机 */ }
         const root = await navigator.storage.getDirectory();
         return root.getDirectoryHandle(dirName, { create: true });
       })();
@@ -540,8 +540,8 @@ export function createOpfsStore(dirName = 'capability-pack') {
         const sha = await readSidecar(dir, name);
         if (sha) out.sha256 = sha;      // 有 sidecar 才带指纹，没有就只比大小
         return out;
-      } catch (e) {
-        return null;
+      } catch {
+        return null;                    // 条目读取失败 = 这件不在 ⇒ 派生为未下载
       }
     },
     /** 读整份字节（内容校验用）。只在没有 sidecar 时被调一次。 */
