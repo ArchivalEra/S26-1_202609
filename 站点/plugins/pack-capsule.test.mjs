@@ -42,14 +42,21 @@ function stripCssComments(src) {
   return src.replace(/\/\*[\s\S]*?\*\//g, '');
 }
 
-test('① 展开判据是「本页有可算公式」，不是「资产下载了」', () => {
-  const fn = PR.slice(PR.indexOf('function hasComputable()'), PR.indexOf('function refreshCapsule()'));
-  assert.ok(fn.length > 60, '找不到 hasComputable 函数体');
-  // 必须扫正文的 data-computable
-  assert.match(fn, /data-computable="1"/, 'hasComputable 没扫 data-computable —— 判据从哪来？');
+test('① 减号常驻（2026-11-07 站长定案）：refreshCapsule 恒写 "1"，判据不许是资产状态', () => {
+  // 2026-11-01 的旧判据「本页有 data-computable="1" 公式才展开」已废除：
+  // 笔记本不只是给本页公式代算，也是随手写公式的入口；页面没有可算公式时
+  // 把入口藏掉，读者要找时永远在翻页找哪页有公式。站长：「减号胶囊还是常驻吧」。
+  const fn = PR.slice(PR.indexOf('function refreshCapsule()'), PR.indexOf('function hasComputable()') === -1 ? PR.indexOf('/** 顶栏四个面板') : PR.indexOf('/**\n * 顶栏四个面板'));
+  assert.ok(fn.length > 40, '找不到 refreshCapsule 函数体');
+  assert.match(fn, /setAttribute\("data-has-calc", "1"\)/,
+    'refreshCapsule 没有恒写 "1" —— 减号又会被「本页有没有可算公式」收起来了');
+  assert.match(fn, /aria-hidden/, 'aria-hidden 没有同步（读屏会读到不可见控件或漏读可见控件）');
   // 反面：不许拿资产状态当代替（那是「下载了就展开」，判据错了）
   assert.ok(!/\bstate\.editor\b|\bstate\.engine\b|\.ready/.test(fn),
-    'hasComputable 里读到了资产状态 —— 那是「下载了就展开」，与「本页有没有可算公式」是两件事');
+    'refreshCapsule 里读到了资产状态 —— 那是「下载了就展开」，与常驻无关');
+  // 初始标记也是常驻：首屏就展开，不加载后跳一下
+  assert.match(BUILD, /id="pack-capsule" data-has-calc="1"/,
+    '胶囊初始标记还是 "0" —— 首屏收起、JS 跑完再跳开');
 });
 
 test('② SPA 换页钩子必须刷新胶囊（否则胶囊停在上一页的状态）', () => {

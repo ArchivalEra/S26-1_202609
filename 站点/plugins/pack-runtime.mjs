@@ -357,38 +357,37 @@ function runFormula(latex, outEl, btn) {
    能力入口胶囊（2026-11-01 站长定案）
    ════════════════════════════════════════════════════════════════
  *
- * 一枚胶囊两半：左 加号 资源包（恒在）、右 减号 笔记本（**本页有可算公式**时才在）。
+ * 一枚胶囊两半：左 加号 资源包、右 减号 计算笔记本，**两半常驻**。
  *
  * 三个事实决定了这个模块的形状：
  *
- * ① **「有没有可算公式」是页面的属性，不是胶囊的**。
- *    所以判据是扫正文的 data-computable="1"，而不是「读者装没装编辑器」。
- *    没下载计算内核时，可算公式照样存在（按钮照样该在）——点进去会提示去下载。
+ * ① **减号常驻**（2026-11-07 站长定案：「我觉得减号胶囊还是常驻吧」）。
+ *    2026-11-01 的旧判据「本页有 data-computable="1" 公式才展开」废除了——
+ *    笔记本不只是「给本页公式代算」，也是随手写公式的入口；页面没有可算
+ *    公式时把入口藏掉，读者反而找不到它（要找时永远在翻页找哪页有公式）。
+ *    判据换成恒 "1"。hasComputable() 保留作诊断（供 stats/调试查询）。
  *
  * ② **SPA 换页后正文整块换掉，胶囊 DOM 却常驻**（顶栏不被 SPA 替换）。
- *    所以每次换页都必须**重算** data-has-calc，否则上一页没公式、
- *    这一页有公式时胶囊永远不展开。这就是 refreshCapsule() 存在的原因，
- *    由 __packCellsReset 钩子调用（与单元格一起重接）。
+ *    refreshCapsule() 由 __packCellsReset 钩子调用，保持「胶囊与页面一致」
+ *    的职责不变——只是现在刷的值恒为常驻。
  *
  * ③ **两个面板互斥**。它们是同一枚胶囊的两半，开一个必须关另一个——
  *    否则右上角会同时挂两个弹窗，互相遮挡。
  */
 
-/** 本页有没有可算公式（纯读 DOM，不看资产状态）。 */
+/** 本页有没有可算公式（纯读 DOM，不看资产状态）。诊断/统计用。 */
 function hasComputable() {
   var body = document.querySelector(".article-content") || document.body;
   return !!body.querySelector('.katex[data-computable="1"]');
 }
 
-/** 把 data-has-calc 刷成当前页面的事实。换页后必须调一次。 */
+/** 把 data-has-calc 刷成当前事实。换页后必须调一次。减号常驻 ⇒ 恒 "1"。 */
 function refreshCapsule() {
   var cap = $("pack-capsule");
   if (!cap) return;
-  var has = hasComputable();
-  cap.setAttribute("data-has-calc", has ? "1" : "0");
-  // 右半收起时把 aria-hidden 也设上：不可见的控件不该被读屏读到。
+  cap.setAttribute("data-has-calc", "1");
   var minus = $("notebook-toggle");
-  if (minus) minus.setAttribute("aria-hidden", has ? "false" : "true");
+  if (minus) minus.setAttribute("aria-hidden", "false");
 }
 
 /**
