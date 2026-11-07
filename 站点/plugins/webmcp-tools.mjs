@@ -162,7 +162,7 @@ export function renderMarkdown(root, opts) {
   const ensureNl = (n) => {
     let tail = '';
     for (let i = out.length - 1; i >= 0 && tail.length < n; i--) tail = out[i] + tail;
-    const have = (tail.match(/\n/g) || []).length;
+    const have = (tail.match(/\n/g) || []).length;   // 计数场景：要全部匹配（exec 只给第一个）
     for (let i = have; i < n; i++) out.push('\n');
   };
   const trimTail = () => {
@@ -435,6 +435,10 @@ export function renderMarkdown(root, opts) {
         return '| ' + cells.join(' | ') + ' |';
       });
       if (lines.length) {
+        // 数列分隔符：原写法 `lines[0].match(/\|/g).length` 被 A4 机械替换成了
+        // `/\|/g.exec(...)` —— exec 带 g 也只返回**第一个**匹配，列数恒为 0，
+        // 分隔行塌成 `||`（2026-11-07 插件测试抓出）。这里要的是**全部匹配的
+        // 个数**，用 match(g)（GitRoll 的 RegExp.exec 建议不适用于计数场景）。
         const cols = (lines[0].match(/\|/g) || []).length - 1;
         lines.splice(1, 0, '|' + Array(cols).fill(' --- ').join('|') + '|');
         push(lines.join('\n') + '\n\n');
@@ -448,7 +452,7 @@ export function renderMarkdown(root, opts) {
       const lang = codeEl
         ? (codeEl.getAttribute && codeEl.getAttribute('class')) || codeEl.className || ''
         : '';
-      const m = String(lang).match(/language-([\w-]+)/);
+      const m = /language-([\w-]+)/.exec(String(lang));
       push('```' + (m ? m[1] : '') + '\n' + ((codeEl || node).textContent || '').replace(/\n$/, '') + '\n```\n\n');
       return;
     }

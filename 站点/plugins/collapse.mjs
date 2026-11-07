@@ -139,7 +139,7 @@ function stripTitleDecor(title) {
       open = m[1] === "+";
       continue;
     }
-    const a = cur.match(TRAILING_ID_RE);
+    const a = TRAILING_ID_RE.exec(cur);
     if (a) {
       cur = cur.slice(0, a.index).trim();
       id = a[1];
@@ -166,7 +166,7 @@ export function renderCollapse(source) {
     const line = lines[i];
 
     // 跟踪代码围栏：围栏内的 `:::` 一律不动
-    const f = line.match(FENCE_RE);
+    const f = FENCE_RE.exec(line);
     if (f) {
       const marker = f[1];
       if (!fence) {
@@ -188,7 +188,7 @@ export function renderCollapse(source) {
       continue;
     }
 
-    const open = line.match(OPEN_RE);
+    const open = OPEN_RE.exec(line);
     if (!open) {
       out.push(line);
       i++;

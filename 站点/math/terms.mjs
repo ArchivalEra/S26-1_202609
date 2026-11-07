@@ -46,7 +46,7 @@ export function compileDictionary(packs, deps) {
       forms.forEach((form, fi) => {
         if (typeof form !== 'string' || !form) return;
         // `/…/flags` 形式是正则族：交给 pattern 通道
-        const rx = form.match(/^\/(.+)\/([a-z]*)$/s);
+        const rx = /^\/(.+)\/([a-z]*)$/s.exec(form);
         if (rx) {
           try {
             const re = new RegExp(rx[1], rx[2]);

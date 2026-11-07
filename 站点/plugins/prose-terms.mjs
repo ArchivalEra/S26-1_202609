@@ -57,7 +57,7 @@ function parseSenses(text) {
   if (parts.length < 2) return null;
   const senses = [];
   for (const p of parts) {
-    const m = p.match(SENSE_RE);
+    const m = SENSE_RE.exec(p);
     if (!m) return null;
     senses.push({ ctx: m[1].trim(), text: m[2].trim() });
   }
@@ -90,7 +90,7 @@ export function parseGlossaryDict(source) {
   let fence = null;
   let inDict = false;
   for (const line of lines) {
-    const f = line.match(FENCE_RE);
+    const f = FENCE_RE.exec(line);
     if (f) {
       const marker = f[1];
       if (!fence) fence = { ch: marker[0], len: marker.length };
@@ -131,7 +131,7 @@ export function parseGlossaryMatch(source) {
   let inMatch = false;
   const list = (s) => String(s || "").split(/[、,，]/).map((x) => x.trim()).filter(Boolean);
   for (const line of lines) {
-    const f = line.match(FENCE_RE);
+    const f = FENCE_RE.exec(line);
     if (f) {
       const marker = f[1];
       if (!fence) fence = { ch: marker[0], len: marker.length };
@@ -175,7 +175,7 @@ function stripDictFences(lines, onTable = null) {
     if (asTable && onTable && entries.length) out.push(onTable(entries));
   };
   for (const line of lines) {
-    const f = line.match(FENCE_RE);
+    const f = FENCE_RE.exec(line);
     if (f) {
       const marker = f[1];
       if (!fence) fence = { ch: marker[0], len: marker.length };
@@ -188,7 +188,7 @@ function stripDictFences(lines, onTable = null) {
       continue;
     }
     if (!inDict) {
-      const open = line.match(DICT_OPEN_RE);
+      const open = DICT_OPEN_RE.exec(line);
       if (open) {
         inDict = true;
         asTable = open[1] === "table";
