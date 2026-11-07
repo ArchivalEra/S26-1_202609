@@ -1580,7 +1580,7 @@ export function createPageView(doc, loc, winOverride) {
       const img = new SvgImage();
       let settled = false;
       const done = (v) => { if (!settled) { settled = true; resolve(v); } };
-      const setT = w.setTimeout ? w.setTimeout : setTimeout;
+      const setT = w.setTimeout ?? setTimeout;
       const clrT = w.clearTimeout ? w.clearTimeout : clearTimeout;
       const timer = setT(() => done({ ...meta, ok: false, reason: 'region_timeout' }), 15000);
       img.onerror = () => { clrT(timer); done({ ...meta, ok: false, reason: 'region_render_failed', hint: 'SVG 渲染失败（可能是跨域字体/图片）' }); };

@@ -758,7 +758,7 @@ export function applyOps(doc, el, ops, maths) {
         node = mk(op.ordered ? 'ol' : 'ul');
         for (const item of op.items) {
           const li = mk('li');
-          const childOps = item?.ops ? item.ops : (Array.isArray(item) ? item : []);
+          const childOps = item?.ops ?? (Array.isArray(item) ? item : []);
           const depth = (item?.depth) || 0;
           if (depth > 0) li.style.marginLeft = (depth * 1.1) + 'em';
           for (const c of inlineNodes(childOps)) li.appendChild(c);

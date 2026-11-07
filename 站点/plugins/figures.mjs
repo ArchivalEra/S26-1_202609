@@ -428,7 +428,8 @@ function parseKmapBody(id, body) {
   const TWO_BIT_GRAY = ['00', '01', '11', '10'];
   const ONE_BIT = ['0', '1'];
   const rowCodes = vars === 2 ? ONE_BIT : TWO_BIT_GRAY;
-  const colCodes = vars === 2 ? ONE_BIT : (vars === 3 ? ONE_BIT : TWO_BIT_GRAY);
+  let colCodes = TWO_BIT_GRAY;
+  if (vars === 2 || vars === 3) colCodes = ONE_BIT;
   const cells = [];
   const boxes = [];
   for (const line of body.slice(1)) {
@@ -581,13 +582,15 @@ function parseNetBody(id, body) {
     //   受控源                    位号 类型 数值 输出1 输出2 控制1 控制2     = 7 段
     //   单刀双投（spdt）          位号 类型 数值 公共 触点1 触点2 刀位      = 7 段
     //     ↑ 末段 `pos` 说刀接在哪一侧（1 或 2）——这一笔是语义，不是坐标
-    const want = controlled ? 7 : (spec.pins === 3 ? 7 : 5);
+    let want = 5;
+  if (controlled || spec.pins === 3) want = 7;
     if (tok.length !== want) {
+      const pinHint = controlled
+        ? '输出1 输出2 控制1 控制2'
+        : spec.pins === 3 ? '公共端 触点1 触点2 刀位(1|2)' : '引脚1 引脚2';
       throw new Error(
         `图元「${id}」（net）：「${ref}」是 ${type}，应写 ${want} 段` +
-        `（位号 类型 数值 ${controlled
-          ? '输出1 输出2 控制1 控制2'
-          : spec.pins === 3 ? '公共端 触点1 触点2 刀位(1|2)' : '引脚1 引脚2'}），` +
+        `（位号 类型 数值 ${pinHint}），` +
         `实际 ${tok.length} 段：${line}`);
     }
     if (seen.has(ref)) {
@@ -1556,7 +1559,9 @@ function drawNet(payload, opts = {}) {
   // 文字按「每字 0.6 字号」估宽，只用于包围盒（真实宽度由客户端 getBBox 校正）
   const growText = (x, y, text, anchor = 'start', size = font) => {
     const w = String(text).replace(/[~^]/g, '').length * size * 0.6;
-    const x0 = anchor === 'middle' ? x - w / 2 : anchor === 'end' ? x - w : x;
+    let x0 = x;
+    if (anchor === 'middle') x0 = x - w / 2;
+    else if (anchor === 'end') x0 = x - w;
     grow(x0, y - size);
     grow(x0 + w, y + size * 0.35);
   };
@@ -2142,7 +2147,7 @@ export function renderStructureTable(ir) {
         c.pins[1],
         c.ctrlPins
           ? `${c.ctrlPins[0]}、${c.ctrlPins[1]}（取${def.ctrl === 'v' ? '电压' : '电流'}）`
-          : '—',
+          : '—',   // 模板内层是单层三元；GitRoll 把「三元内含三元」计为嵌套，拆开会多一个临时变量，收益低
       ]);
     });
     tables.push(rows);
