@@ -1,0 +1,17 @@
+{
+ "stale.title": "Prüfung auf veraltete Zusicherungen",
+ "stale.ok": "Prüfung auf veraltete Zusicherungen: OK (%(count)d Dokumente gescannt; zurückgezogene Namen: %(declared)s)",
+ "stale.scanned_docs": "gescannte Lebendzustand-Dokumente",
+ "stale.ledger_empty": "Register ist leer — leer ist kein Bestehen (Nullwert-Wächter): erst prüfen, ob measure() kaputt ist",
+ "stale.no_docs": "kein einziges Lebendzustand-Dokument gescannt — leere Eingabe ist kein Bestehen (Nullwert-Wächter)",
+ "stale.ledger_missing": "Faktenregister fehlt (%(name)s). Erst python3 zreflect/facts.py ausführen, um einmal zu messen.",
+ "stale.retired_rule_off": "R2 (zurückgezogene Namen): REFLECT_RETIRED ist nicht konfiguriert ⇒ diese Regel ist nicht aktiv (aktivieren: REFLECT_RETIRED=name1,name2)",
+ "stale.age_rule_off": "Messalter: REFLECT_STALE_DAYS ist nicht konfiguriert ⇒ diese Regel ist nicht aktiv (aktivieren: REFLECT_STALE_DAYS=Tage)",
+ "stale.retired_none": "nicht konfiguriert",
+ "stale.retired_count": "%(count)d",
+ "stale.sha_no_facts": "%(name)s:%(lineno)d sha-Zusicherung ohne Herkunft: das Register hat **überhaupt keinen Fakt vom Typ sha**; erst ins Register messen (mit Wiederholungsbefehl), dann zitieren",
+ "stale.sha_unsourced": "%(name)s:%(lineno)d sha-Zusicherung ohne Herkunft: `%(actual)s` steht nicht im Register — als [[key]]-Referenz umschreiben oder eine prüfbare Herkunft angeben (Lieferpaketname / Commit-SHA in Backticks). Achtung: das Wort \"history\" ist **keine** Herkunft (issue #25)",
+ "stale.measured_at_missing": "`%(key)s` hat ein fehlendes oder unparsbares measured_at — das Messalter-Kriterium ist nicht auswertbar (Unlesbares wird gesagt, nie geraten)",
+ "stale.too_old": "`%(key)s` wurde %(days)d Tage nicht gemessen (Schwelle %(threshold)d Tage) — neu messen und `--accept-changes` ausdrücklich übergeben",
+ "stale.retired_name": "%(name)s:%(lineno)d zurückgezogener Name `%(entry)s` erscheint im Lebendzustand — entweder ist er nicht zurückgezogen, oder diese Zeile trägt eine Historienmarke"
+}

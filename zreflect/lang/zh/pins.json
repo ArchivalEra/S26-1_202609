@@ -1,0 +1,18 @@
+{
+ "pins.title": "pin 闸门",
+ "pins.ok": "pin 闸门：OK（%(count)d 个 pin 全部一致）",
+ "pins.off": "未启用（%(name)s 不存在 ⇒ 明说未启用退 0，可插拔）",
+ "pins.explicit_spec_missing": "显式指定的规格 %(name)s 不存在（--spec / REFLECT_PINS）—— 先写规格（或撤掉指定）",
+ "pins.spec_broken": "规格 %(name)s 坏：%(error)s",
+ "pins.empty": "pins 为空（零值守卫：空断言面不是通过）",
+ "pins.pin_missing_field": "pin 缺字段 %(field)s: %(entry)r（why/name 必填的家族规矩）",
+ "pins.worktree_missing": "%(name)s: worktree %(path)s 不存在（指针在、树不在）",
+ "pins.head_unreadable": "%(name)s: worktree HEAD 读不到（不是 git 树？）",
+ "pins.stamp_unreadable": "%(name)s: stamp 读不到（未供给？）",
+ "pins.stamp_malformed": "%(name)s: stamp 形态坏（要 name/branch/commit/dirty）: %(actual)r",
+ "pins.commit_mismatch": "%(name)s: 派生副本 commit %(declared)s ≠ worktree HEAD %(actual)s（供给后指针 bump 了？）",
+ "pins.dirty": "%(name)s: 派生副本带本地改动（dirty=%(count)s）",
+ "pins.version_unreadable": "%(name)s: 版本命令读不到",
+ "pins.version_drift": "%(name)s: 版本漂移（期望 %(declared)s，实测 %(actual)s）",
+ "pins.unknown_kind": "%(name)s: 未知 kind %(field)r（tree | version）"
+}

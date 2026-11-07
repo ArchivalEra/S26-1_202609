@@ -1,0 +1,5 @@
+{
+ "i18n.module_banner": "i18n ist ein Modul (wird von jedem Tor und jedem Plattformmodul konsumiert); --selftest zeigt den Selbsttest.",
+ "i18n.value_masquerades_contract": "Paket %(lang)s: Wert `%(key)s` Zeile %(line)d tarnt sich als Maschinenzeile (%(value)r) — Maschinenverträge dürfen nicht übersetzt werden; formuliere diese Meldung neu",
+ "i18n_cover.filename_has_line_break": "ein Dateiname in der Scanfläche enthält einen Zeilenumbruch: %(file)s — sobald er in eine Meldung gerendert wird, kann er eine Maschinenzeile fälschen (dieselbe Tabelle wie machine.LINE_BREAKS)"
+}

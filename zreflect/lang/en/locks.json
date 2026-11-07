@@ -1,0 +1,13 @@
+{
+ "locks.title": "Locked-sources gate",
+ "locks.file_missing": "%(name)s: locked file/directory does not exist: %(path)s",
+ "locks.ok": "Locked-sources gate: OK (%(count)d sources consistent)",
+ "locks.empty": "locked list is empty (zero-value guard: an empty assertion surface is not a pass)",
+ "locks.sha_mismatch": "%(name)s: sha256 mismatch (declared %(declared)s… measured %(actual)s…) — upstream bytes drifted",
+ "locks.no_sha256": "%(name)s: file-form entry has no sha256 (that is not pinning)",
+ "locks.entry_missing_field": "locked entry missing field %(field)s: %(entry)r (an unexplained lock is a zombie)",
+ "locks.absent_optional": "%(name)s: absent on this machine (optional ⇒ stated, not a pass)",
+ "locks.off": "off (%(name)s does not exist ⇒ says so and exits 0; pluggable)",
+ "locks.explicit_spec_missing": "explicitly specified spec %(name)s does not exist (--spec) — write it or drop the flag",
+ "locks.spec_broken": "spec %(name)s is broken: %(error)s"
+}

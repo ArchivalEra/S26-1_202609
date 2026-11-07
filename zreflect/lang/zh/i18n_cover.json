@@ -1,0 +1,10 @@
+{
+ "i18n_cover.bare_text": "%(file)s:%(lineno)d 本体里有裸中文文本 %(text)r —— 用户可见的消息必须走 M(<字面量 code>, **params)；自证标签按 1C 必须是 id",
+ "i18n_cover.code_not_literal": "`M(...)` 的 code 必须是字符串字面量（%(file)s:%(lineno)d，实际是 %(kind)s）—— 变量 / 条件表达式 / 拼接出来的 code 让语言包的完备性无法被证明",
+ "i18n_cover.empty_scan": "扫描面为空 —— 没找到源码不是「零语言通过」（零值守卫）",
+ "i18n_cover.fixture_literal": "`%(file)s:%(lineno)d` 的自证夹具里有中文源码字面量（%(text)r）—— 夹具会进扫描面，必须用码点构造（`chr(CJK_LO)` / `_cj(n)`），或用英文导数",
+ "i18n_cover.ok": "语言覆盖闸门：OK（%(files)d 个文件本体零语言；语言包可选）",
+ "i18n_cover.parse_error": "%(file)s 解析不了：%(error)s —— 解析失败不许当通过",
+ "i18n_cover.scan_empty_dir": "扫描面 %(root)s 为空 —— 没找到源码不是「零语言通过」",
+ "i18n_cover.title": "语言覆盖闸门"
+}

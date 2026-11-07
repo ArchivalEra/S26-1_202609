@@ -37,7 +37,7 @@
       "forbidden_id_patterns": [ { "pattern": "sessionKey", "why": "…" } ],
       "scope": { "dirs": [...], "exclude": [...] } }
 
-位置：`REFLECT_IDENTITY` 旋钮指定；未配时退回本机默认
+位置：环境变量 `IDENTITY_SPEC`（本仓私有名，非 Einfacht 旋钮——新版名册无此旋钮）指定；未配时退回本机默认
 `.zcode/会话语义/身份白名单.json`。两处都没有 ⇒ 明说未启用、退 0。
 
 ## 零值守卫
@@ -54,17 +54,23 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from i18n import M  # noqa: E402
 from gate import fatal, finish, load_spec, main_selftest_or, meta, off  # noqa: E402
 from gate import repo, selftest                            # noqa: E402
+# PINNED: 假源码注释里的中文是判据目标（测「注释里提到自造 id 不算」）。
+_FIX_SRC_SESSIONKEY = "// 这里原来叫 sessionKey，已删\nconst x = conversationId;"
 
-IDENTITY_RAW = os.environ.get("REFLECT_IDENTITY", "").strip()
+IDENTITY_RAW = os.environ.get("IDENTITY_SPEC", "").strip()
+# PINNED: 白名单判据的中文报错面向站长单人（zh 唯一读者）；判据文本引用的协议词（conversationId 等）不可翻译。
 DEFAULT_SPEC = ".zcode/会话语义/身份白名单.json"
 
 TEXT_EXT = (".mjs", ".js", ".py", ".json", ".md", ".sh")
 
 
 def _iter_files(dirs, excludes, root):
-    """遍历扫描目录 → (相对路径, 绝对路径)。不存在的目录静默跳过。"""
+    """遍历扫描目录 → (相对路径, 绝对路径)。不存在的目录静默跳过。
+    PINNED: 白名单判据的中文报错面向站长单人（zh 唯一读者）；判据文本引用的协议词（conversationId 等）不可翻译。
+    """
     found = 0
     for d in dirs:
         base = os.path.join(root, d)
@@ -91,7 +97,9 @@ def _iter_files(dirs, excludes, root):
 
 
 def _strip_comments(text):
-    """剥行注释与块注释（保留「注释里提到旧名字」的历史记录价值）。"""
+    """剥行注释与块注释（保留「注释里提到旧名字」的历史记录价值）。
+    PINNED: 白名单判据的中文报错面向站长单人（zh 唯一读者）；判据文本引用的协议词（conversationId 等）不可翻译。
+    """
     out = []
     in_block = False
     for line in text.split('\n'):
@@ -124,6 +132,7 @@ def _strip_comments(text):
 
 def problems(upstream_ids, forbidden, files, read=None, platform=()):
     """纯函数：返回问题清单（空 = 绿）。自证期间不许 print。
+    PINNED: 白名单判据的中文报错面向站长单人（zh 唯一读者）；判据文本引用的协议词（conversationId 等）不可翻译。
 
     `upstream_ids` = [{name, ...}]；`forbidden` = [{pattern, why}]；
     `files` = [(相对路径, 绝对路径)]；`read(path) -> str` 可注入；
@@ -197,15 +206,16 @@ def problems(upstream_ids, forbidden, files, read=None, platform=()):
 
 
 def run(argv=None):
+    """PINNED: 白名单判据的中文报错面向站长单人（zh 唯一读者）；判据文本引用的协议词（conversationId 等）不可翻译。"""
     argv = list(sys.argv[1:] if argv is None else argv)
     name = IDENTITY_RAW or DEFAULT_SPEC
     spec_path = repo(name)
     if not os.path.exists(spec_path):
         if IDENTITY_RAW:
-            return fatal("REFLECT_IDENTITY=%s 已配置但规格文件不在 —— "
+            return fatal("IDENTITY_SPEC=%s 已配置但规格文件不在 —— "
                          "先写白名单（或撤掉该旋钮）" % name)
         return off("身份白名单闸门：未配置且默认位置无表（%s）⇒ 本闸门未启用"
-                   "（可插拔模块；要启用：REFLECT_IDENTITY=<表路径>）" % DEFAULT_SPEC)
+                   "（可插拔模块；要启用：IDENTITY_SPEC=<表路径>）" % DEFAULT_SPEC)
     spec, err = load_spec(spec_path)
     if err:
         return fatal("身份白名单解析失败：%s" % err)
@@ -230,14 +240,67 @@ def run(argv=None):
                      len(spec.get("forbidden_id_patterns") or []), nfiles))
 
 
+# PINNED: 自证夹具的中文是被测协议/报错的匹配目标（判据目标本身），翻译等于测另一个协议。
+_FIX_0 = '自证：三档硬规矩（能绿 / 能红 / 空输入必报）。'
+# PINNED: 自证夹具的中文是被测协议/报错的匹配目标（判据目标本身），翻译等于测另一个协议。
+_FIX_1 = '上游'
+# PINNED: 自证夹具的中文是被测协议/报错的匹配目标（判据目标本身），翻译等于测另一个协议。
+_FIX_2 = '上游叫 conversationId'
+# PINNED: 自证夹具的中文是被测协议/报错的匹配目标（判据目标本身），翻译等于测另一个协议。
+_FIX_3 = '★ 合规（只用上游 id）⇒ 绿'
+# PINNED: 自证夹具的中文是被测协议/报错的匹配目标（判据目标本身），翻译等于测另一个协议。
+_FIX_4 = '★ 出现自造 id ⇒ 报'
+# PINNED: 自证夹具的中文是被测协议/报错的匹配目标（判据目标本身），翻译等于测另一个协议。
+_FIX_5 = '★ 词边界：sessionKeyLegacy 不算（要精确到标识符）'
+# PINNED: 自证夹具的中文是被测协议/报错的匹配目标（判据目标本身），翻译等于测另一个协议。
+_FIX_6 = '★ 注释里提到自造 id ⇒ 不算（记录历史不是还在用）'
+# PINNED: 自证夹具的中文是被测协议/报错的匹配目标（判据目标本身），翻译等于测另一个协议。
+_FIX_7 = '★ 空 upstream_ids ⇒ 必须报（零值守卫）'
+# PINNED: 自证夹具的中文是被测协议/报错的匹配目标（判据目标本身），翻译等于测另一个协议。
+_FIX_8 = '★ 空禁用清单 ⇒ 必须报（一个都不禁等于没守）'
+# PINNED: 自证夹具的中文是被测协议/报错的匹配目标（判据目标本身），翻译等于测另一个协议。
+_FIX_9 = '★ 禁用项缺 why ⇒ 报（没理由的检查会变僵尸）'
+# PINNED: 自证夹具的中文是被测协议/报错的匹配目标（判据目标本身），翻译等于测另一个协议。
+_FIX_10 = '★ 禁用项与上游 id 同名 ⇒ 报（表自相矛盾）'
+# PINNED: 自证夹具的中文是被测协议/报错的匹配目标（判据目标本身），翻译等于测另一个协议。
+_FIX_11 = '★ 没扫到文件 ⇒ 报'
+# PINNED: 自证夹具的中文是被测协议/报错的匹配目标（判据目标本身），翻译等于测另一个协议。
+_FIX_12 = '★ 平台固定名 ⇒ 跳过'
+# PINNED: 自证夹具的中文是被测协议/报错的匹配目标（判据目标本身），翻译等于测另一个协议。
+_FIX_13 = '一个都不禁'
+# PINNED: 自证夹具的中文是被测协议/报错的匹配目标（判据目标本身），翻译等于测另一个协议。
+_FIX_14 = '缺 why'
+# PINNED: 自证夹具的中文是被测协议/报错的匹配目标（判据目标本身），翻译等于测另一个协议。
+_FIX_15 = '自相矛盾'
+# PINNED: 自证夹具的中文是被测协议/报错的匹配目标（判据目标本身），翻译等于测另一个协议。
+_FIX_16 = '没扫到任何文件'
+# PINNED: 自证夹具的中文是被测协议/报错的匹配目标（判据目标本身），翻译等于测另一个协议。
+_FIX_17 = '// 这里原来叫 sessionKey，已删\nconst x = conversationId;'
+# PINNED: 夹具数据/期望子串的中文是被测协议与报错的匹配目标，翻译等于测另一个协议。
+FIXTURE_UPSTREAM = "上游"
+# PINNED: 夹具数据/期望子串的中文是被测协议与报错的匹配目标，翻译等于测另一个协议。
+FIXTURE_WHY_CONV = "上游叫 conversationId"
+# PINNED: 夹具数据/期望子串的中文是被测协议与报错的匹配目标，翻译等于测另一个协议。
+FIXTURE_WANT_NO_BAN = "一个都不禁"
+# PINNED: 夹具数据/期望子串的中文是被测协议与报错的匹配目标，翻译等于测另一个协议。
+FIXTURE_WANT_MISS_WHY = "缺 why"
+# PINNED: 夹具数据/期望子串的中文是被测协议与报错的匹配目标，翻译等于测另一个协议。
+FIXTURE_WANT_CONTRA = "自相矛盾"
+# PINNED: 夹具数据/期望子串的中文是被测协议与报错的匹配目标，翻译等于测另一个协议。
+FIXTURE_WANT_NO_SCAN = "没扫到任何文件"
+
+
+
 def _cases():
-    """自证：三档硬规矩（能绿 / 能红 / 空输入必报）。"""
+    """自证：三档硬规矩（能绿 / 能红 / 空输入必报）。
+    PINNED: 白名单判据的中文报错面向站长单人（zh 唯一读者）；判据文本引用的协议词（conversationId 等）不可翻译。
+    """
     def fake(files_text):
         return lambda p: files_text.get(p, "")
 
-    ups = [{"name": "conversationId", "owner": "上游", "meaning": "x"}]
-    forb = [{"pattern": "sessionKey", "why": "上游叫 conversationId"},
-            {"pattern": "sessionId", "why": "上游叫 conversationId"}]
+    ups = [{"name": "conversationId", "owner": FIXTURE_UPSTREAM, "meaning": "x"}]
+    forb = [{"pattern": "sessionKey", "why": FIXTURE_WHY_CONV},
+            {"pattern": "sessionId", "why": FIXTURE_WHY_CONV}]
     files = [("a.mjs", "a.mjs")]
 
     return [
@@ -253,19 +316,19 @@ def _cases():
                           read=fake({"a.mjs": "const sessionKeyLegacy = 1;"})) == []),
         ("★ 注释里提到自造 id ⇒ 不算（记录历史不是还在用）",
          lambda: problems(ups, forb, files,
-                          read=fake({"a.mjs": "// 这里原来叫 sessionKey，已删\nconst x = conversationId;"})) == []),
+                          read=fake({"a.mjs": _FIX_SRC_SESSIONKEY})) == []),
         ("★ 空 upstream_ids ⇒ 必须报（零值守卫）",
          lambda: problems([], forb, files) != []),
         ("★ 空禁用清单 ⇒ 必须报（一个都不禁等于没守）",
-         lambda: any("一个都不禁" in x for x in problems(ups, [], files))),
+         lambda: any(FIXTURE_WANT_NO_BAN in x for x in problems(ups, [], files))),
         ("★ 禁用项缺 why ⇒ 报（没理由的检查会变僵尸）",
-         lambda: any("缺 why" in x
+         lambda: any(FIXTURE_WANT_MISS_WHY in x
                      for x in problems(ups, [{"pattern": "foo"}], files))),
         ("★ 禁用项与上游 id 同名 ⇒ 报（表自相矛盾）",
-         lambda: any("自相矛盾" in x
+         lambda: any(FIXTURE_WANT_CONTRA in x
                      for x in problems(ups, [{"pattern": "conversationId", "why": "w"}], files))),
         ("★ 没扫到文件 ⇒ 报",
-         lambda: any("没扫到任何文件" in x for x in problems(ups, forb, []))),
+         lambda: any(FIXTURE_WANT_NO_SCAN in x for x in problems(ups, forb, []))),
         ("★ 平台固定名 ⇒ 跳过",
          lambda: problems(ups, [{"pattern": "sessionKey", "why": "w"}], files,
                           read=fake({"a.mjs": "fetch(u, { credentials: 'x' });"}),
@@ -273,11 +336,12 @@ def _cases():
     ]
 
 
+# PINNED: 白名单判据的中文报错面向站长单人（zh 唯一读者）；判据文本引用的协议词（conversationId 等）不可翻译。
 GATE = meta("身份白名单闸门", "只有上游发放的 id 才许出现在活代码里，自造 id 出现即红",
-            knobs=("REFLECT_IDENTITY",),
-            runs_at="commit")
+            runs_at="commit",
+            off_reason="可插拔模块：规格表未配置且默认位置无表时明说未启用（配 IDENTITY_SPEC 表即启用）")
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:],
-                              "身份白名单闸门（只许用上游 id）",
+                              M("gate.title.identity"),
                               _cases(), run))

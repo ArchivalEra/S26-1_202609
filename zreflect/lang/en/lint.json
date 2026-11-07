@@ -1,0 +1,12 @@
+{
+ "gate.title.lint": "static machine check",
+ "lint.config_broken": "static machine check cannot run (criteria file `%(path)s`): %(detail)s — that is a config accident, not 'the code has problems'",
+ "lint.config_missing": "criteria file missing: `%(path)s` — never fall back to ruff defaults (that is a different criteria set)",
+ "lint.finding": "%(text)s",
+ "lint.no_output": "ruff exited %(return_code)s with no located finding — 'the tool broke' must be distinguishable from 'no problems' (%(detail)s)",
+ "lint.off": "static machine check: %(module)s not installed ⇒ explicitly off (external tool, not a dependency of this repo)",
+ "lint.off_config": "static machine check: this repo has no `%(path)s` ⇒ explicitly off (this criteria set was not chosen)",
+ "lint.ok": "static machine check clean (criteria: `%(config)s`)",
+ "lint.title": "Static machine check (ruff)",
+ "lint.tool_broken": "ruff cannot run: %(error)r"
+}

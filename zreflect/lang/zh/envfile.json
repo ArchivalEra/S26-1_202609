@@ -1,0 +1,15 @@
+{
+ "envfile.title": "env 文件闸门",
+ "envfile.unknown_knob": "记号 `%(knob)s` 出现在 zreflect/*.py 里但不在旋钮登记表（zreflect/knobs.py）—— 要么是 typo（会被所有程序静默忽略），要么是幻影旋钮（文档承诺了、代码不读，配了静默无效）。登记才算数",
+ "envfile.unregistered_knob": "旋钮名 `%(key)s` 不在登记表（zreflect/knobs.py）—— 打错一位会被所有程序静默忽略，值永远到不了钩子",
+ "envfile.empty_value": "`%(key)s` 的值是空的 —— 空值会让钩子的 [ -f ] 守卫静默跳过（空不是通过）",
+ "envfile.file_missing": "旋钮 `%(key)s`（%(entry)s）指向的文件不存在：%(target)s —— 钩子的 [ -f ] 守卫会静默跳过（路径相对仓库根）",
+ "envfile.dir_missing": "旋钮 `%(key)s`（%(entry)s）指向的目录不存在：%(target)s —— 钩子的 [ -f ] 守卫会静默跳过（路径相对仓库根）",
+ "envfile.syntax_broken": "%(name)s 过不了 sh -n（语法坏）⇒ 钩子要到提交时刻才响亮地死，且报错指向不明",
+ "envfile.syntax_tool_broken": "sh -n 跑不了（sh 不在？）—— 语法检查这个仪器本身坏了，先修检查器，不许静默跳过",
+ "envfile.no_effective_export": "%(name)s 里没有任何生效的 export（空文件或只剩注释） —— 看起来配了、其实什么都没加载（「部署了 ≠ 在跑」家族）",
+ "envfile.off": "env 文件闸门：%(name)s 不存在（钩子目录与仓库根都没有） ⇒ 本闸门未启用（可插拔模块；钩子回落纯环境变量 + 默认名。要启用：cp reflect-hooks/Einfacht.env.example reflect-hooks/%(name)s）。注：名册自洽性（幻影旋钮）不随本闸门关闭 —— 见 registry.problems() / knobs.py",
+ "envfile.unreadable": "%(path)s 读不了：%(error)s",
+ "envfile.scan_empty": "在 %(path)s 里没发现任何 REFLECT_* 记号 —— 对账扫描失败（zreflect/ 不在？），本闸门的仪器坏了",
+ "envfile.ok": "env 文件闸门：OK（%(path)s：%(count)d 条生效 export，名字全在登记表、文件旋钮指向都在）"
+}

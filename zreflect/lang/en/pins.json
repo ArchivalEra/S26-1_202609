@@ -1,0 +1,18 @@
+{
+ "pins.title": "pin gate",
+ "pins.ok": "pin gate: OK (%(count)d pins all consistent)",
+ "pins.off": "off (%(name)s does not exist ⇒ says so and exits 0; pluggable)",
+ "pins.explicit_spec_missing": "explicitly specified spec %(name)s does not exist (--spec / REFLECT_PINS) — write the spec or drop the flag",
+ "pins.spec_broken": "spec %(name)s is broken: %(error)s",
+ "pins.empty": "pins is empty (zero-value guard: an empty assertion surface is not a pass)",
+ "pins.pin_missing_field": "pin missing field %(field)s: %(entry)r (why/name are mandatory per family rule)",
+ "pins.worktree_missing": "%(name)s: worktree %(path)s does not exist (the pointer is there, the tree is not)",
+ "pins.head_unreadable": "%(name)s: worktree HEAD unreadable (not a git tree?)",
+ "pins.stamp_unreadable": "%(name)s: stamp unreadable (not provisioned?)",
+ "pins.stamp_malformed": "%(name)s: malformed stamp (expected name/branch/commit/dirty): %(actual)r",
+ "pins.commit_mismatch": "%(name)s: derived copy commit %(declared)s ≠ worktree HEAD %(actual)s (pointer bumped after provisioning?)",
+ "pins.dirty": "%(name)s: derived copy has local modifications (dirty=%(count)s)",
+ "pins.version_unreadable": "%(name)s: version command unreadable",
+ "pins.version_drift": "%(name)s: version drift (expected %(declared)s, measured %(actual)s)",
+ "pins.unknown_kind": "%(name)s: unknown kind %(field)r (tree | version)"
+}

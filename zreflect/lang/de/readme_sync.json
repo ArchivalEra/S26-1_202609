@@ -1,0 +1,15 @@
+{
+ "readme.title": "Dreisprachiges-README-Tor",
+ "readme.ok_push": "Dreisprachiges-README-Tor: OK (die Push-Änderungsmenge enthält alle %(count)d READMEs)",
+ "readme.ok_single": "Dreisprachiges-README-Tor: OK (%(name)s existiert und ist nicht leer; die Umschalter-Quervernetzung greift nicht)",
+ "readme.ok_structure": "Dreisprachiges-README-Tor: OK (alle %(count)d READMEs existieren, sind nicht leer und verweisen korrekt aufeinander)",
+ "readme.names_empty_structure": "REFLECT_READMES ist leer — die 'README-Gruppe' an einer leeren Liste zu beurteilen ist leeres Gerede (Nullwert-Wächter)",
+ "readme.names_empty_push": "REFLECT_READMES ist leer — 'alle drei in derselben Charge' hat kein Subjekt zum Beurteilen (Nullwert-Wächter)",
+ "readme.changed_empty": "die Änderungsmenge dieses Push ist leer — eine leere Eingabe ist kein Bestehen (Nullwert-Wächter): 'jeder Push muss alle READMEs aktualisieren' kann über einem Haufen Nichts nicht gelten",
+ "readme.file_missing": "fehlendes README: %(name)s — die drei Sprachen sind drei Kopien derselben Zusicherung; fehlt eine, zerfällt die Zusicherung",
+ "readme.file_empty": "%(name)s existiert, ist aber leer — eine leere Datei ist keine Sprache",
+ "readme.switcher_incomplete": "%(name)s enthält keinen Verweis auf %(expected)s — der Sprachumschalter muss auf jede Sprache zeigen, sonst kommt ein Leser von dieser Kopie nicht zur anderen",
+ "readme.not_in_push": "%(name)s ist nicht unter den von diesem Push geänderten Dateien ⇒ READMEs müssen **in derselben Charge** aktualisiert werden (die Strenge ist Absicht: fehlt eine, sind die anderen zwei ab diesem Moment veraltet)",
+ "readme.changed_file_missing": "die Liste der geänderten Dateien existiert nicht: %(name)s — eine fehlende Liste darf nicht als Bestehen zählen (Nullwert-Wächter)",
+ "readme.switcher_not_applicable": "Dreisprachiges-README-Tor: REFLECT_READMES hat nur einen Eintrag (%(name)s) ⇒ die Umschalter-Quervernetzung greift nicht (bei einem Eintrag gilt 'muss auf jede Sprache zeigen' trivial, und Selbstverweis ist eine entartete Anforderung); die Existenz- / Nichtleer-Regeln gelten weiter"
+}

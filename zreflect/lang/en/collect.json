@@ -1,0 +1,3 @@
+{
+ "collect.regex_missing_group": "parse_prev_values: the row regex has no named group %(name)r — collection relies on named groups; positional groups silently pick the wrong value when line order changes"
+}

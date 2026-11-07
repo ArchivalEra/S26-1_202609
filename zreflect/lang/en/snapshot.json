@@ -1,0 +1,10 @@
+{
+ "gate.title.snapshot": "module-snapshot gate (a cross-module import of a mutable global is a stale copy)",
+ "snapshot.title": "Module-snapshot gate",
+ "snapshot.ok": "Snapshot gate: OK (%(files)d files; no cross-module copies of mutable globals)",
+ "snapshot.empty_scan": "the scan surface is empty — empty is not a pass (zero-value guard)",
+ "snapshot.scan_empty_dir": "scan surface %(root)s is an empty directory — an empty input is not 'no snapshot risk'",
+ "snapshot.mutable_copy": "%(file)s does `from %(source)s import %(imported)s`, which is a **copy by value**: %(source)s reassigns it, but the copy froze at import time (use `import %(source)s` and read `%(source)s.%(imported)s` as an attribute)",
+ "knobs.sem.reflect_snapshot_root": "source dir this gate scans (cross-module snapshot check). Empty ⇒ says out loud it is off",
+ "snapshot.derived_copy": "%(file)s computes `%(derived)s = …` at module level from %(source)s.%(imported)s — that expression is evaluated once at import time and never follows later changes to %(source)s.%(imported)s (compute it inside a function, or read %(source)s.%(imported)s each time)"
+}

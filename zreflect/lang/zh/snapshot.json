@@ -1,0 +1,10 @@
+{
+ "gate.title.snapshot": "模块级快照闸门（跨模块导入的可变全局 = 陈旧副本）",
+ "snapshot.title": "模块级快照闸门",
+ "snapshot.ok": "快照闸门：OK（%(files)d 个文件，没有跨模块拷贝可变全局）",
+ "snapshot.empty_scan": "扫描面为空 —— 空不是通过（零值守卫）",
+ "snapshot.scan_empty_dir": "扫描面 %(root)s 是空目录 —— 空输入不是「没有快照风险」",
+ "snapshot.mutable_copy": "%(file)s 里 `from %(source)s import %(imported)s` 是**值拷贝**：%(source)s 会改它，副本却停在 import 那一刻（改成 `import %(source)s` + `%(source)s.%(imported)s` 每次读属性）",
+ "knobs.sem.reflect_snapshot_root": "本闸门扫描的源码目录（跨模块快照检查）。空 = 明说未启用",
+ "snapshot.derived_copy": "%(file)s 顶层 `%(derived)s = …` 的值来自 %(source)s.%(imported)s —— 那个表达式在 import 时求值一次，之后 %(source)s.%(imported)s 变了它也不变（改成函数内求值，或每次读 %(source)s.%(imported)s）"
+}

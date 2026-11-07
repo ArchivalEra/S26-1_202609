@@ -1,0 +1,4 @@
+{
+ "ledger.shape_incomplete": "fact() shape contract (issue #5/#6): `%(name)s` and `%(name)s_expect` must be given together (only one = a half assertion; a half assertion is harder to spot than a missing one)",
+ "ledger.unreadable_gate": "ledger unreadable (`%(name)s`): %(error)r — a corrupt file is not 'no ledger'; fix it before judging"
+}

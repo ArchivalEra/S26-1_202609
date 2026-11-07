@@ -1,0 +1,10 @@
+{
+ "retractions.title": "Retraction-resurfacing check",
+ "retractions.ok": "Retraction-resurfacing check: OK (%(count)d retractions, %(documents)d documents scanned)",
+ "retractions.missing_key": "`retractions.json` has no `retractions` key — a broken structure is not the same as 'no problems'",
+ "retractions.no_docs": "not a single living-state document was scanned — an empty input is not a pass (zero-value guard)",
+ "retractions.entry_missing_field": "retraction entry is missing `%(field)s`: %(entry)r",
+ "retractions.resurfaced": "%(name)s:%(line)d carries a retracted assertion \"%(text)s\" (%(entry)s): either delete it or add the correction marker",
+ "retractions.file_missing": "missing %(name)s",
+ "retractions.scanned_docs": "living-state documents to scan"
+}

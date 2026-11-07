@@ -85,9 +85,17 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gate import fatal, finish, load_spec, main_selftest_or, meta, off  # noqa: E402
-from gate import repo                            # noqa: E402
-from runner import quote, run_cmd                          # noqa: E402
+from gate import (  # noqa: E402
+    fatal,
+    finish,
+    load_spec,
+    main_selftest_or,
+    meta,
+    off,
+    repo,  # noqa: E402
+)
+from i18n import M  # noqa: E402
+from runner import quote, run_cmd  # noqa: E402
 
 WORLD_RAW = os.environ.get("REFLECT_WORLD", "").strip()
 LINE_OVERRIDE = os.environ.get("REFLECT_WORLD_LINE", "").strip()
@@ -105,7 +113,8 @@ def current_branch():
         r = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             capture_output=True, text=True, timeout=5,
-            cwd=repo())
+            cwd=repo(),
+                           encoding="utf-8", errors="replace")
     except (OSError, subprocess.TimeoutExpired):
         return ""
     return r.stdout.strip() if r.returncode == 0 else ""
@@ -135,95 +144,97 @@ def resolve_line(spec, branch, override=None):
     return None, None
 
 
-def spec_problems(spec, branch, override):
-    """纯函数：规格形状 + 分支对账问题（空 = 合法）。
-    自证期间不许 print。"""
+def _line_problems(lines):
+    """每条线（line）的形状：必须是对象且字段齐。"""
     out = []
-    if not isinstance(spec, dict):
-        return ["world 声明不是对象 —— 形状坏（需要 "
-                "{lines, active, stamps}）"]
-    lines = spec.get("lines")
-    if not isinstance(lines, dict) or not lines:
-        return ["world 清单为空或不是对象 —— 空清单不是"
-                "通过（零值守卫）：清单要有理由才存在"]
-    active = str(spec.get("active") or "").strip()
-    if not active:
-        out.append("缺 active（必填：哪条线算当前是人的"
-                   "决定，但决定必须写下来 —— 不写 = "
-                   "每个人都猜）")
-    elif active not in lines:
-        out.append("active=`%s` 不在清单里（已知线：%s）"
-                   % (active, ", ".join(sorted(lines))))
     for name in sorted(lines):
         ln = lines[name]
         if not isinstance(ln, dict):
-            out.append("线 `%s` 不是对象：%r" % (name, ln))
+            out.append(M("world.line_not_object", line_name=name, line=ln))
             continue
         for f in LINE_FIELDS:
             if not str(ln.get(f) or "").strip():
-                out.append("线 `%s` 缺字段 `%s`（必填四件"
-                           "套：%s）" % (name, f,
-                                          ", ".join(LINE_FIELDS)))
-    if override and override not in lines:
-        out.append("REFLECT_WORLD_LINE=%s 不在清单里 —— "
-                   "覆盖指向不存在的线（要么写对，要么"
-                   "撤掉该旋钮）" % override)
-    # 分支对账：分支是线却 ≠ active ⇒ 红（换线没跑
-    # 换线脚本 —— 事故 1/2 的形状）。覆盖在场时是
-    # CI 的明确选择，不替人猜。
+                out.append(M("world.line_missing_field", line_name=name,
+                             field=f, fields=", ".join(LINE_FIELDS)))
+    return out
+
+
+def _active_problems(active, lines):
+    """`active` 必须在场且是已知的线。"""
+    if not active:
+        return [M("world.active_missing")]
+    if active not in lines:
+        return [M("world.active_unknown", active=active,
+                  lines=", ".join(sorted(lines)))]
+    return []
+
+
+def _branch_problems(branch, active, lines, override):
+    """分支对账：分支是线却 ≠ active ⇒ 红（换线没跑换线脚本 —— 事故 1/2 的
+    形状）。覆盖在场时是 CI 的明确选择，不替人猜。"""
     if (branch and branch in lines and active
             and branch != active and not override):
-        out.append("当前分支 `%s` 是清单里的线，但 active "
-                   "声明的是 `%s` —— 换线没跑换线脚本"
-                   "（或 active 忘了改）：闸门此刻验证的"
-                   "世界属于另一条线" % (branch, active))
-    return out
+        return [M("world.branch_mismatch", branch=branch, active=active)]
+    return []
+
+
+def spec_problems(spec, branch, override):
+    """纯函数：规格形状 + 分支对账问题（空 = 合法）。
+    自证期间不许 print。
+
+    四组判据各是一个具名 helper（容器形状 / 线形状 / active / 分支对账）：
+    它们互不依赖，拼在一起只是让调用点看起来短。
+    """
+    if not isinstance(spec, dict):
+        return [M("world.spec_not_object")]
+    lines = spec.get("lines")
+    if not isinstance(lines, dict) or not lines:
+        return [M("world.lines_empty")]
+    active = str(spec.get("active") or "").strip()
+    out = _active_problems(active, lines) + _line_problems(lines)
+    if override and override not in lines:
+        out.append(M("world.override_unknown", line_name=override))
+    return out + _branch_problems(branch, active, lines, override)
+
+
+def _one_stamp_problem(name, st, run):
+    """一个印章的判定。返回问题清单（空 = 通过）。"""
+    if not isinstance(st, dict):
+        return [M("world.stamp_not_object", name=name, entry=st)]
+    value = str(st.get("value") or "").strip()
+    cmd = str(st.get("cmd") or "").strip()
+    if not value:
+        return [M("world.stamp_missing_value", name=name)]
+    if not cmd:
+        return [M("world.stamp_missing_cmd", name=name)]
+    rc, stdout = run(cmd)
+    if rc is None:
+        return [M("world.stamp_timeout", name=name, command=cmd)]
+    if rc != 0:
+        return [M("world.stamp_command_failed", name=name,
+                  return_code=rc, command=cmd)]
+    got = stdout.strip()
+    if got != value:
+        return [M("world.stamp_mismatch", name=name,
+                  actual=quote(got), expected=quote(value))]
+    return []
 
 
 def stamp_problems(spec, runner=None):
     """印章对账（纯副作用只经 runner）：每个印章的 cmd
     逐字复跑，stdout 必须等于声明的 value —— 裸值契约
-    与判据直接嫁接复跑闸门（`run_cmd` / `_q`）。"""
-    out = []
+    与判据直接嫁接复跑闸门（`run_cmd` / `_q`）。
+
+    单印章的判定是一个具名 helper：五个 `continue` 各是一种不同的失败
+    （形状 / 缺值 / 缺命令 / 超时 / 退出码 / 值不符），挤在循环里时
+    读者要数 continue 才知道哪个都覆盖了。
+    """
     stamps = spec.get("stamps") if isinstance(spec, dict) else None
     if not isinstance(stamps, dict) or not stamps:
-        return ["印章清单为空或不是对象 —— 没有印章的 "
-                "world 声明守不住换线（零值守卫）：换线"
-                "三步必须有证人"]
+        return [M("world.stamps_empty")]
     run = runner or run_cmd
-    for name in sorted(stamps):
-        st = stamps[name]
-        if not isinstance(st, dict):
-            out.append("印章 `%s` 不是对象：%r" % (name, st))
-            continue
-        value = str(st.get("value") or "").strip()
-        cmd = str(st.get("cmd") or "").strip()
-        if not value:
-            out.append("印章 `%s` 缺 value（必填：换线脚本"
-                       "写下的一次实测采样）" % name)
-            continue
-        if not cmd:
-            out.append("印章 `%s` 缺 cmd（必填：对账的复跑"
-                       "命令 —— 没 cmd 的印章就是散文）" % name)
-            continue
-        rc, stdout = run(cmd)
-        if rc is None:
-            out.append("印章 `%s` 对账**超时**：`%s` —— "
-                       "挂在 pre-commit 里的命令不该永远"
-                       "等不到" % (name, cmd))
-            continue
-        if rc != 0:
-            out.append("印章 `%s` 对账命令报错（rc=%s）："
-                       "`%s` —— 对账方式本身死了"
-                       % (name, rc, cmd))
-            continue
-        got = stdout.strip()
-        if got != value:
-            out.append("印章 `%s` 对账不符：环境=%s vs 声明=%s"
-                       " —— 声明与环境不一致（换线后环境没"
-                       "跟上，或环境被别的线污染）；修法是"
-                       "重跑换线脚本" % (name, quote(got), quote(value)))
-    return out
+    return [p for name in sorted(stamps)
+            for p in _one_stamp_problem(name, stamps[name], run)]
 
 
 def _spec_path():
@@ -240,31 +251,26 @@ def run(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     p = _spec_path()
     if p is None:
-        return off("world 闸门：未配置（REFLECT_WORLD 未配且默认 "
-                   "world.json 不在）⇒ 本闸门未启用（可插拔模块；"
-                   "单线仓库不受益也不受损 —— 一个世界 = 现状"
-                   "行为。要启用：cp zreflect/world.json.example "
-                   "world.json）")
+        return off(M("world.off"))
     if not os.path.exists(p):
-        return fatal("REFLECT_WORLD 已配置但声明文件不在 —— "
-                     "先写声明（或撤掉该旋钮）")
+        return fatal(M("world.knob_file_missing"))
     spec, err = load_spec(p)
     if err:
-        return fatal(err)
+        return fatal(M("world.spec_broken", name=p, error=err))
     if not isinstance(spec, dict):
-        return fatal("world 声明 %s 形状坏：需要 {lines, active, stamps} 对象" % p)
+        return fatal(M("world.spec_shape_bad", name=p))
     branch = current_branch()
     probs = spec_problems(spec, branch, LINE_OVERRIDE)
     probs += stamp_problems(spec)
     line, world = resolve_line(spec, branch, LINE_OVERRIDE)
-    return finish("world 闸门", probs,
-                  "world 闸门：OK（线 `%s`：容器 `%s`、站点 `%s`，"
-                  "%d 枚印章对账一致）"
-                  % (line, world.get("container"), world.get("site"),
-                     len(spec.get("stamps") or {})))
+    return finish(M("world.title"), probs,
+                  M("world.ok", line_name=line,
+                    container=world.get("container"), site=world.get("site"),
+                    count=len(spec.get("stamps") or {})))
 
 
-def _cases():
+def _cases_fixture():
+    """夹具（原 `_cases` 的前置段原样搬入）。"""
     def line(site, art):
         return {"site": site, "artifacts": art,
                 "container": "o113",
@@ -292,77 +298,108 @@ def _cases():
         return (spec_problems(spec, branch, "") == []
                 and stamp_problems(spec, runner) == [])
 
+    return {'line': line, 'good': good, 'fake': fake, 'match': match, 'all_green': all_green}
+
+
+def _cases_resolve(fx):
+    """见 `_cases()`：本组 7 条。"""
+    good, match, all_green = fx["good"], fx["match"], fx["all_green"]
     return [
-        # ① 正常不报
-        ("合法清单 + 分支=active + 印章全符 ⇒ 不报",
-         lambda: all_green(good, "wasm64-NEXT", match)),
-        ("解析：分支是线 ⇒ 返回分支的世界（统一 interface）",
-         lambda: resolve_line(good, "wasm64-NEXT", "")
-         == ("wasm64-NEXT", good["lines"]["wasm64-NEXT"])),
-        ("解析：覆盖 > 分支（CI 特殊跑法）",
-         lambda: resolve_line(good, "wasm64-NEXT",
-                               "IllegalPerformance")[0]
-         == "IllegalPerformance"),
-        ("解析：分支不是线 ⇒ 回落 active（人的决定）",
-         lambda: resolve_line(good, "feature/x", "")[0]
-         == "wasm64-NEXT"),
-        # ② 该报的必须报
-        ("★ 清单空 ⇒ 必须报（零值守卫）",
-         lambda: spec_problems({"lines": {}, "active": "x",
-                                 "stamps": {}}, "", "") != []),
-        ("★ 缺 active ⇒ 必须报（人的决定必须写下来）",
-         lambda: any("缺 active" in x for x in spec_problems(
-             {"lines": good["lines"], "stamps": {}}, "", ""))),
-        ("★ active 不在清单 ⇒ 必须报",
-         lambda: any("不在清单里" in x for x in spec_problems(
-             {"lines": good["lines"], "active": "ghost",
-              "stamps": {}}, "", ""))),
-        ("★ 线缺字段 ⇒ 必须报（四件套）",
-         lambda: any("缺字段 `container`" in x for x in
-                     spec_problems(
-                         {"lines": {"L": {"site": "s",
-                                          "artifacts": "a",
-                                          "fork_pin_ref": "r"}},
-                          "active": "L", "stamps": {}}, "", ""))),
-        ("★ 覆盖指向不存在的线 ⇒ 必须报（dangling 覆盖）",
-         lambda: any("不在清单里" in x for x in spec_problems(
-             good, "", "ghost"))),
-        ("★ 分支是线却 ≠ active ⇒ 必须报（事故 1/2 形状："
-         "换线没跑换线脚本）",
-         lambda: any("换线没跑换线脚本" in x for x in
-                     spec_problems(good, "IllegalPerformance", ""))),
-        ("★ 覆盖在场 ⇒ 分支≠active 不报（CI 的明确选择）",
-         lambda: spec_problems(good, "IllegalPerformance",
-                                "IllegalPerformance") == []),
-        ("★ 印章对账不符 ⇒ 必须报（事故 3 形状：环境被"
-         "别的线污染）",
-         lambda: any("对账不符" in x for x in stamp_problems(
-             good, fake({"docker stamp": "img-2",
-                         "site sha": "site-sha"})))),
-        ("★ 印章命令 rc≠0 ⇒ 必须报（对账方式本身死了）",
-         lambda: any("命令报错" in x for x in stamp_problems(
-             good, fake({}, rc=1)))),
-        ("★ 印章对账超时 ⇒ 必须报（挂在 pre-commit 里"
-         "永远等不到）",
-         lambda: any("超时" in x for x in stamp_problems(
-             good, fake({}, rc=None)))),
-        ("★ 印章缺 cmd ⇒ 必须报（没 cmd 的印章就是散文）",
-         lambda: any("缺 cmd" in x for x in stamp_problems(
-             {"stamps": {"s": {"value": "v"}}}))),
-        ("★ 印章清单空 ⇒ 必须报（没有印章守不住换线）",
-         lambda: stamp_problems({"stamps": {}}) != []),
-        # ③ 空输入必须报
-        ("★ 声明是 None ⇒ 必须报（零值守卫）",
-         lambda: spec_problems(None, "", "") != []),
-        ("★ 声明是 {} ⇒ 必须报",
-         lambda: spec_problems({}, "", "") != []),
+    # ① 正常不报
+    ("world.ok",
+     lambda: all_green(good, "wasm64-NEXT", match)),
+    ("world.resolve_line_by_branch",
+     lambda: resolve_line(good, "wasm64-NEXT", "")
+     == ("wasm64-NEXT", good["lines"]["wasm64-NEXT"])),
+    ("world.resolve_line_override_wins",
+     lambda: resolve_line(good, "wasm64-NEXT",
+                           "IllegalPerformance")[0]
+     == "IllegalPerformance"),
+    ("world.resolve_line_falls_back_to_active",
+     lambda: resolve_line(good, "feature/x", "")[0]
+     == "wasm64-NEXT"),
+    ("★ world.override_unknown",
+     lambda: [p.code for p in spec_problems(good, "", "ghost")]
+     == ["world.override_unknown"]),
+    ("★ world.branch_mismatch",
+     lambda: [p.code for p in spec_problems(
+         good, "IllegalPerformance", "")] == ["world.branch_mismatch"]),
+    ("world.branch_mismatch_override_present",
+     lambda: spec_problems(good, "IllegalPerformance",
+                            "IllegalPerformance") == []),
     ]
 
 
+def _cases_stamps(fx):
+    """见 `_cases()`：本组 5 条。"""
+    good, fake = fx["good"], fx["fake"]
+    return [
+    ("★ world.stamp_mismatch",
+     lambda: [p.code for p in stamp_problems(
+         good, fake({"docker stamp": "img-2",
+                     "site sha": "site-sha"}))] == ["world.stamp_mismatch"]),
+    ("★ world.stamp_command_failed",
+     lambda: [p.code for p in stamp_problems(
+         good, fake({}, rc=1))] == ["world.stamp_command_failed"] * 2),
+    ("★ world.stamp_timeout",
+     lambda: [p.code for p in stamp_problems(
+         good, fake({}, rc=None))] == ["world.stamp_timeout"] * 2),
+    ("★ world.stamp_missing_cmd",
+     lambda: [p.code for p in stamp_problems(
+         {"stamps": {"s": {"value": "v"}}})] == ["world.stamp_missing_cmd"]),
+    ("★ world.stamps_empty",
+     lambda: [p.code for p in stamp_problems({"stamps": {}})]
+     == ["world.stamps_empty"]),
+    ]
+
+
+def _cases_shape(fx):
+    """见 `_cases()`：本组 6 条。"""
+    good = fx["good"]
+    return [
+    # ② 该报的必须报
+    ("★ world.lines_empty",
+     lambda: [p.code for p in spec_problems(
+         {"lines": {}, "active": "x", "stamps": {}}, "", "")]
+     == ["world.lines_empty"]),
+    ("★ world.active_missing",
+     lambda: [p.code for p in spec_problems(
+         {"lines": good["lines"], "stamps": {}}, "", "")]
+     == ["world.active_missing"]),
+    ("★ world.active_unknown",
+     lambda: [p.code for p in spec_problems(
+         {"lines": good["lines"], "active": "ghost",
+          "stamps": {}}, "", "")] == ["world.active_unknown"]),
+    ("★ world.line_missing_field",
+     lambda: [p.code for p in spec_problems(
+         {"lines": {"L": {"site": "s",
+                          "artifacts": "a",
+                          "fork_pin_ref": "r"}},
+          "active": "L", "stamps": {}}, "", "")]
+     == ["world.line_missing_field"]),
+    # ③ 空输入必须报
+    ("★ world.spec_not_object",
+     lambda: [p.code for p in spec_problems(None, "", "")]
+     == ["world.spec_not_object"]),
+    ("★ world.lines_empty_declared",
+     lambda: [p.code for p in spec_problems({}, "", "")]
+     == ["world.lines_empty"]),
+    ]
+
+
+def _cases():
+    """拼装 3 组夹具断言。**只拼装** —— 判据在各分组函数里。"""
+    fx = _cases_fixture()
+    return (
+    _cases_resolve(fx)
+    + _cases_stamps(fx)
+    + _cases_shape(fx)
+    )
+
+
 GATE = meta("world 闸门", "声明式验证对象：多线仓库共享验证环境的世界对账",
-            knobs=("REFLECT_WORLD", "REFLECT_WORLD_LINE"))
+            knobs=("REFLECT_WORLD", "REFLECT_WORLD_LINE"),
+            off_reason="单线仓库不需要它：规格未配 ⇒ 明说未启用")
 
 if __name__ == "__main__":
-    sys.exit(main_selftest_or(sys.argv[1:],
-                              "world 闸门（声明式验证对象：多线仓库的"
-                              "世界对账）", _cases(), run))
+    sys.exit(main_selftest_or(sys.argv[1:], "check_world", _cases(), run))

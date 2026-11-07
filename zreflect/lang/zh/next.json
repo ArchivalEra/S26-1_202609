@@ -1,0 +1,13 @@
+{
+ "next.commits_count": "未推送提交：%(count)d 个",
+ "next.commits_more": "…还有 %(count)d 个",
+ "next.commits_none": "未推送提交：0 个（都已发布）",
+ "next.commits_unreadable": "未推送提交：读不到（git 不可用或不在仓库里）",
+ "next.open_question": "悬案 `%(name)s` 未结案 —— 先读它，别重新提出已结案的问题",
+ "next.tree_dirty": "工作区不干净 —— 先决定提交还是放弃",
+ "next.tree_state": "工作区：%(changed)d 个已改、%(untracked)d 个未跟踪",
+ "next.tree_unreadable": "工作区：读不到",
+ "next.section_header": "接着上一轮（每次会话现算，不落盘）：",
+ "next.pending_header": "**下一步**：",
+ "next.pending_none": "无记录 —— 若你认为应该有，那是悬案的缺口，不是「没事了」"
+}

@@ -1,0 +1,18 @@
+{
+ "invariants.title": "Invarianten-Tor",
+ "invariants.empty": "die Invariantenliste ist leer — eine leere Liste ist kein Bestehen (Nullwert-Wächter): eine Liste existiert nur mit Gründen",
+ "invariants.not_object": "Prüfeintrag ist kein Objekt: %(entry)r",
+ "invariants.missing_path": "Prüfeintrag fehlt path (Pflicht): %(entry)r",
+ "invariants.missing_why": "`%(path)s` fehlt why (Pflicht: eine Prüfung ohne Grund traut sich niemand zu löschen, und sie wird zum Zombie)",
+ "invariants.no_criteria": "`%(path)s` hat keine Kriterien (mindestens eines von must_contain / must_not_contain angeben)",
+ "invariants.not_string_list": "`%(path)s`: must_contain / must_not_contain müssen String-Arrays sein",
+ "invariants.fragment_not_string": "`%(path)s`: Kriterienfragmente müssen Strings sein",
+ "invariants.unreadable": "`%(path)s` ist nicht lesbar (existiert die Datei? Pfade sind relativ zur Repo-Wurzel) — wenn unlesbar, sagen; nie still bestehen",
+ "invariants.drift_missing": "%(marker)s: `%(path)s` fehlt ein Pflichtfragment %(fragment)r (%(why)s)",
+ "invariants.drift_forbidden": "%(marker)s: `%(path)s` enthält ein verbotenes Fragment %(fragment)r (%(why)s)",
+ "invariants.off": "Invarianten-Tor: REFLECT_INVARIANTS nicht konfiguriert ⇒ dieses Tor ist aus (steckbares Modul; zum Aktivieren: REFLECT_INVARIANTS=invariants.json, spec = {\"checks\": [{path, must_contain?, must_not_contain?, why}]})",
+ "invariants.spec_missing": "REFLECT_INVARIANTS=%(name)s ist gesetzt, aber die Spec-Datei fehlt — Spec schreiben (oder den Knopf entfernen)",
+ "invariants.spec_broken": "Spec %(name)s ist kaputt: %(error)s",
+ "invariants.bad_shape": "Spec-Datei %(path)s hat falsche Form: erwartet {\"checks\": [...]}",
+ "invariants.ok": "Invarianten-Tor: OK (%(count)d Invarianten)"
+}

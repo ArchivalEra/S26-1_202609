@@ -1,0 +1,12 @@
+{
+ "gate.title.lint": "静态机器检查",
+ "lint.config_broken": "静态机器检查跑不起来（判据文件 `%(path)s`）：%(detail)s —— 这是配置事故，不是「代码有问题」",
+ "lint.config_missing": "判据文件缺失：`%(path)s` —— 不许回落 ruff 默认（那是另一套判据）",
+ "lint.finding": "%(text)s",
+ "lint.no_output": "ruff 退出码 %(return_code)s 却没有任何定位行 —— 「工具坏了」与「没有问题」必须可区分（%(detail)s）",
+ "lint.off": "静态机器检查：没装 %(module)s ⇒ 明说未启用（外部工具，不是本仓依赖）",
+ "lint.off_config": "静态机器检查：本仓没有 `%(path)s` ⇒ 明说未启用（没选这套判据）",
+ "lint.ok": "静态机器检查全绿（判据：`%(config)s`）",
+ "lint.title": "静态机器检查（ruff）",
+ "lint.tool_broken": "ruff 跑不起来：%(error)r"
+}

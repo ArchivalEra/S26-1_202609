@@ -1,0 +1,13 @@
+{
+ "gate.title.hookgate": "钩子入口",
+ "hookgate.blocks_stale": "机器块不新鲜，拒推：%(detail)s",
+ "hookgate.missing_root": "缺少仓库根（第二个参数必须是绝对路径）",
+ "hookgate.not_a_suite_repo": "'%(repo)s' 里没有 zreflect/ —— 不是套件落地的仓库，或 GATE_REPO 指错了",
+ "hookgate.push_nothing_to_check": "没有携带内容的分支推送（tag/删除）⇒ 三语判据无事可查（明说，不假装查过）",
+ "hookgate.push_readmes_not_together": "%(ref)s 这批推送没把三语 README **同批**更新（CI 跑同一条判据；--no-verify 只躲得过本地）。名单可配：REFLECT_READMES。",
+ "hookgate.push_readmes_ok": "三语 README 同批：查过 %(count)d 个分支",
+ "hookgate.ref_has_nothing": "%(ref)s 没有要发布的新内容 ⇒ 三语判据对其无事可查（明说，不假装查过）",
+ "hookgate.repo_missing": "仓库根 '%(repo)s' 不存在（第二个参数必须是绝对路径）",
+ "hookgate.unknown_phase": "未知相位 '%(phase)s'（只认 commit / push）",
+ "hookgate.usage": "用法: python3 reflect-hooks/gate.py <commit|push> <仓库根>"
+}

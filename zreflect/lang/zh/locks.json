@@ -1,0 +1,13 @@
+{
+ "locks.title": "锁定源闸门",
+ "locks.file_missing": "%(name)s: 锁定的文件/目录不存在：%(path)s",
+ "locks.ok": "锁定源闸门：OK（%(count)d 个锁定源全部一致）",
+ "locks.empty": "locked 清单为空（零值守卫：空断言面不是通过）",
+ "locks.sha_mismatch": "%(name)s: sha256 不符（清单 %(declared)s… 实测 %(actual)s…）⇒ 上游字节漂了",
+ "locks.no_sha256": "%(name)s: 文件形态的锁定条目没有 sha256（那不叫钉版）",
+ "locks.entry_missing_field": "锁定条目缺字段 %(field)s: %(entry)r（没有理由的锁定是僵尸）",
+ "locks.absent_optional": "%(name)s: 本机缺席（optional ⇒ 明说，不是通过）",
+ "locks.off": "未启用（%(name)s 不存在 ⇒ 明说未启用退 0，可插拔）",
+ "locks.explicit_spec_missing": "显式指定的规格 %(name)s 不存在（--spec）—— 先写规格（或撤掉指定）",
+ "locks.spec_broken": "规格 %(name)s 坏：%(error)s"
+}

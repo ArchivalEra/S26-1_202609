@@ -1,0 +1,16 @@
+{
+ "guard.refuse_dropped": "本次会从台账里**掉掉 %(count)d 条事实**（输入不在？）：%(keys)s",
+ "guard.refuse_dropped_advice": "台账不写。要么把输入准备好，要么显式 --allow-drop（并把掉掉的键记进 HISTORY）。",
+ "guard.note_allow_drop": "⚠ --allow-drop：本次掉掉 %(count)d 条：%(keys)s",
+ "guard.refuse_changed": "本次重测会**改掉 %(count)d 条事实的值**（未经接受的改口）：",
+ "guard.changed_row": "%(key)-24s %(before)s → %(after)s",
+ "guard.accepted_boundary": "已按 --accept-changes 接受 %(accepted)d 条：%(keys)s —— 其余仍拒绝。",
+ "guard.refuse_changed_advice": "台账不写。逐条确认这些变化**是实测出来的**（不是输入不在/量错了）之后，再显式 --accept-changes（或 --accept-changes=k1,k2 逐条放行）。",
+ "guard.empty_ledger": "一条事实都没量到。空台账不是通过（零值守卫）。",
+ "guard.write_target_gitignored": "台账目标 %(path)s 被 .gitignore 覆盖 —— 写进去等于没写（版本控制看不见，钩子读的是另一份）；撤销该 ignore 规则，或显式设 REFLECT_FACTS 指向被跟踪的位置",
+ "guard.write_target_no_git": "（非 git 仓库或 git 不可用：跳过 gitignore 检查）",
+ "guard.write_target_env_carrier": "仓里有 Einfacht.env 但本次进程未加载它（REFLECT_FACTS 用了代码默认值）—— 手工跑请先 source，否则写盘目标可能与钩子语境不同（issue #20 ②）",
+ "guard.write_target_env_carrier_after": "%(prefix)s；仓里有 Einfacht.env 但本次进程未加载它（REFLECT_FACTS 用了代码默认值）—— 手工跑请先 source，否则写盘目标可能与钩子语境不同（issue #20 ②）",
+ "guard.module_banner": "guard 是模块（被 facts.measure 调用）；不单独跑。--selftest 看自证。",
+ "guard.note_accept_changes": "破坏性改口已按 --accept-changes 接受 %(count)d 条（值已更新）："
+}

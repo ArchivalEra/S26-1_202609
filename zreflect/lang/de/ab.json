@@ -1,0 +1,13 @@
+{
+ "ab.title": "A/B-Tor",
+ "ab.ok": "A/B-Tor: OK (%(count)d Paare, keine Störvariablen)",
+ "ab.off": "aus (%(name)s existiert nicht ⇒ sagt es und endet mit 0; steckbar)",
+ "ab.explicit_spec_missing": "explizit angegebene Spezifikation %(name)s existiert nicht (--spec / REFLECT_AB) — Spezifikation schreiben oder Flag weglassen",
+ "ab.spec_broken": "Spezifikation %(name)s ist kaputt: %(error)s",
+ "ab.empty": "pairs ist leer (Nullwert-Wächter: eine leere Zusicherungsfläche gilt nicht als bestanden)",
+ "ab.pair_missing_field": "pair fehlt Feld %(field)s: %(entry)r (why ist Pflicht — ein unbegründeter Vergleich, den niemand zu löschen wagt)",
+ "ab.confound": "%(name)s: Störvariable — %(key)s Schlüssel %(field)r: A=%(value_a)r B=%(value_b)r (Nicht-allow-Achse weicht ab ⇒ A/B ist hinfällig)",
+ "ab.artifact_unreadable": "%(name)s: Artefakt nicht lesbar (%(error_a)s / %(error_b)s) ⇒ diesmal nicht geprüft",
+ "ab.not_a_dict": "%(name)s: key=%(key)r ist in mindestens einem der beiden Artefakte kein dict",
+ "ab.root_label": "(Wurzel)"
+}

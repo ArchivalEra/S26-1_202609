@@ -1,0 +1,10 @@
+{
+ "retractions.title": "翻案重现检测",
+ "retractions.ok": "翻案重现检测：OK（%(count)d 条翻案，扫了 %(documents)d 份文档）",
+ "retractions.missing_key": "`retractions.json` 缺 `retractions` 键 —— 结构不对 ≠ 没有问题",
+ "retractions.no_docs": "一份活状态文档都没扫到 —— 空输入不是通过（零值守卫）",
+ "retractions.entry_missing_field": "翻案条目缺 `%(field)s`：%(entry)r",
+ "retractions.resurfaced": "%(name)s:%(line)d 出现已被推翻的断言「%(text)s」（%(entry)s）：要么删掉，要么带更正标记",
+ "retractions.file_missing": "缺 %(name)s",
+ "retractions.scanned_docs": "被扫描的活状态文档"
+}

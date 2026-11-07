@@ -28,6 +28,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # 习题册题数：标题行「### 选 4、8、9、11、16」这类合并题号按**题号个数**展开
 # （第六章的注释解释了为什么：原书同一道折算题的重复排印，本页按题号保留）。
+# PINNED: 命令串里的中文是磁盘路径/统计目标（数据，不是用户消息）。
 PROBLEMS_CMD = (
     "python3 -c \"import re,glob;print(sum(len(re.findall(r'[0-9]+',s)) "
     "for f in glob.glob('课程总览/电路原理/作业/习题册第*.md') "
@@ -41,6 +42,7 @@ PROBLEMS_CMD = (
 # ——该包 2026-10-12 随「五包体系」入库，此后 13 天里台账一直少记它（179 实为 4 包，
 # 补上电子技术是 213）。硬编码包名 = 加包就静默漏记，改用 glob 自动发现：
 # 包注册表 `站点/符号环境.mjs` 增包时，这条命令自动跟上，不必手改清单。
+# PINNED: 命令串里的中文是磁盘路径/统计目标（数据，不是用户消息）。
 GLOSSARY_CMD = (
     "awk '/^:::glossary-dict/{f=1;next} /^:::/{f=0} f&&/^sym-/{n++} END{print n}' "
     "站点/符号包/通用.md 课程总览/*/教材解析/符号入门.md"
@@ -48,10 +50,12 @@ GLOSSARY_CMD = (
 # 符号包个数：SYMBOL_PACKS 注册表本身的条数（单一产地——加包即自动 +1）。
 # 2026-10-26 入账动机：STATE/handoff 曾手抄「三个符号包」，实际五个——包数是
 # 会变的口径，手抄必腐烂；入了台账就能用 [[symbol_packs]] 引用。
+# PINNED: 命令串里的中文是磁盘路径/统计目标（数据，不是用户消息）。
 SYMBOL_PACKS_CMD = "grep -cE \"^  '[^']+': '[^']+.md',$\" 站点/符号环境.mjs"
 # lab 回归测试项数：与 check_lab_integrity 的回归同一套三件（chaoxing/判据/bridge）。
 # 2026-10-26 入账动机：handoff 基线多次手抄「lab 15/15」「75/75」「69/69」并存——
 # 每次口径变就多一个过期数字。入账后正文写键名。
+# PINNED: 命令串里的中文是磁盘路径/统计目标（数据，不是用户消息）。
 LAB_TESTS_CMD = (
     "cd .zcode/学习通API && node --test chaoxing.test.mjs 判据.test.mjs bridge.test.mjs 2>&1 | awk "
     "'NF==3 && $3 ~ /^[0-9]+$/ && ($2==\"tests\"||$2==\"fail\"||$2==\"cancelled\") {v[$2]=$3} "
@@ -64,9 +68,11 @@ LAB_TESTS_CMD = (
 # 站点页数：待渲染清单的条数（与钩子的 check_build_targets 同一份清单）。
 # 2026-10-15：清单从 站点/build.mjs 搬到 站点/页面清单.mjs（build 与 MCP 读层共用同一份），
 # 复跑命令随之改指新家——坏 cmd 印在活状态文档里就是每行都绿着的假断言。
+# PINNED: 命令串里的中文是磁盘路径/统计目标（数据，不是用户消息）。
 SITEPAGES_CMD = (
     "sed -n '/^export const TARGET_FILES = \\[/,/^\\];/p' 站点/页面清单.mjs | grep -c \"^  '\""
 )
+# PINNED: 命令串里的中文是磁盘路径/统计目标（数据，不是用户消息）。
 HOOKTESTS_CMD = (
     "python3 .githooks/test-update-readme.py 2>&1 | grep -oE 'Ran [0-9]+ tests' | awk '{print $2}'"
 )
@@ -84,6 +90,7 @@ HOOKTESTS_CMD = (
 # 台账量的是子集，等于每次引用都在低估覆盖面。改与 npm test 同口径（递归）。
 # 2026-10-26：`plugins/assistant/` 整体移出仓库（助手协议栈归 node 侧，真相源在
 # `.zcode/学习通API/protocol/`），计数随之回落；递归口径不变，将来加子目录仍自动覆盖。
+# PINNED: 命令串里的中文是磁盘路径/统计目标（数据，不是用户消息）。
 PLUGIN_TESTS_CMD = (
     "cd 站点 && node --test plugins/ 2>&1 | awk "
     "'NF==3 && $3 ~ /^[0-9]+$/ && ($2==\"tests\"||$2==\"fail\"||$2==\"cancelled\") "
@@ -98,7 +105,9 @@ PLUGIN_TESTS_CMD = (
 # handoff 体量（2026-10-20 站长定案精简时入账）：handoff 是「下个会话只读这一份
 # 就能接着干」的进度手记，越长越读不完。两条事实把它变成可测量的：
 # 行数超阈值、节数超阈值，都该触发一次归档精简。
+# PINNED: 命令串里的中文是磁盘路径/统计目标（数据，不是用户消息）。
 HANDOFF_LINES_CMD = "wc -l < .zcode/handoff.md"
+# PINNED: 命令串里的中文是磁盘路径/统计目标（数据，不是用户消息）。
 HANDOFF_SECTIONS_CMD = "grep -c '^### 0\\.' .zcode/handoff.md"
 
 # 符号覆盖（2026-11-05 站长定案「构建期能跟公式一样直接 CI 来测试每个是否能冒泡
@@ -109,10 +118,12 @@ HANDOFF_SECTIONS_CMD = "grep -c '^### 0\\.' .zcode/handoff.md"
 #   uncovered = 「该冒泡却没冒」的符号数（未解析令牌 / 裸 span / 链接目标缺失），
 #               >0 时 build.mjs 自己就 exit 1，CI 走不到部署。
 # dist 是构建产物（gitignore），复跑前提 = 已构建——与 plugin_tests 同一前提。
+# PINNED: CMD 里的中文是**磁盘路径**（站点/dist/…），是数据不是消息。
 SYMBOLS_BUBBLED_CMD = (
     "python3 -c \"import json;"
     "print(json.load(open('站点/dist/symbol-coverage.json'))['symbols_bubbled'])\""
 )
+# PINNED: 命令串里的中文是磁盘路径/统计目标（数据，不是用户消息）。
 SYMBOLS_UNCOVERED_CMD = (
     "python3 -c \"import json;"
     "print(json.load(open('站点/dist/symbol-coverage.json'))['symbols_uncovered'])\""
@@ -123,6 +134,8 @@ SYMBOLS_UNCOVERED_CMD = (
 HOOKTESTS_WITNESS = (
     "grep -c 'def test_' .githooks/test-update-readme.py"
 )
+# PINNED: TABLE 的 NOTE 列中文会渲染进 STATE.md 机器块（zh 唯一读者站长），
+# 值本身是 cmd 的 stdout；翻译 NOTE 等于改活状态文档的可见语言。
 TABLE = [
     ("courses", "ls -d 课程总览/*/ | wc -l", "课程总览/", "课程门数"),
     ("notes", "find 课程总览 -path '*/课堂笔记/*.md' ! -name 'index.md' | wc -l",
@@ -168,17 +181,22 @@ TABLE = [
 
 
 def _sh(cmd):
-    """跑一条度量命令，返回 stdout（strip）。失败 ⇒ 抛（读不到就明说，不编 0）。"""
+    """跑一条度量命令，返回 stdout（strip）。失败 ⇒ 抛（读不到就明说，不编 0）。
+    PINNED: FATAL 文案与 TABLE 注记的中文面向站长单人（量测失败即停，无第二读者）；NOTE 列的中文会渲染进 STATE.md 机器块（zh 唯一读者）。
+    """
     p = subprocess.run(["bash", "-o", "pipefail", "-c", cmd], cwd=REPO,
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
     if p.returncode != 0:
-        raise SystemExit("FATAL: 量测命令失败（rc=%s）：%s\n%s"
-                         % (p.returncode, cmd, p.stderr.strip()))
+        print("FATAL: 量测命令失败（rc=%s）：%s\n%s"
+              % (p.returncode, cmd, p.stderr.strip()), file=sys.stderr)
+        raise SystemExit(2)
     return p.stdout.strip()
 
 
 def measure():
-    """量一遍全部事实。值 = 复跑命令的 stdout —— 两者同源，不可能漂。"""
+    """量一遍全部事实。值 = 复跑命令的 stdout —— 两者同源，不可能漂。
+    PINNED: FATAL 文案的中文是给站长的即时排障信息；measure 数据层无语言包受众（失败即停），翻译不产生第二读者。
+    """
     facts = {}
     for row in TABLE:
         key, cmd, source, note, *extra = row
@@ -186,11 +204,13 @@ def measure():
         try:
             value = int(out)
         except ValueError:
-            raise SystemExit("FATAL: `%s` 的度量命令输出不是整数：%r（cmd=%s）"
-                             % (key, out, cmd))
+            print("FATAL: `%s` 的度量命令输出不是整数：%r（cmd=%s）"
+                  % (key, out, cmd), file=sys.stderr)
+            raise SystemExit(2)
         facts[key] = fact(value, cmd, source, note, **(extra[0] if extra else {}))
     return facts
 
 
+# PINNED: 命令串/NOTE 的中文是磁盘路径、统计目标与 STATE 机器块的 zh 渲染（数据，不是用户消息）。
 MODULE = module_meta("本仓数据层", "量课程/资料/习题/配图/词条/站点/测试计数（只读持久盘，值=复跑命令）",
                      selftest=False)

@@ -1,0 +1,23 @@
+{
+ "world.title": "Welt-Tor",
+ "world.ok": "Welt-Tor: OK (Linie `%(line_name)s`: Container `%(container)s`, Site `%(site)s`, %(count)d Stempel abgeglichen)",
+ "world.off": "Welt-Tor: nicht konfiguriert (REFLECT_WORLD nicht gesetzt und Standard world.json fehlt) ⇒ dieses Tor ist aus (steckbares Modul; ein Ein-Linien-Repo gewinnt nichts und verliert nichts — eine Welt = aktuelles Verhalten. Zum Aktivieren: cp zreflect/world.json.example world.json)",
+ "world.knob_file_missing": "REFLECT_WORLD ist gesetzt, aber die Deklarationsdatei fehlt — zuerst die Deklaration schreiben (oder den Knopf entfernen)",
+ "world.spec_broken": "Welt-Deklaration %(name)s ist unlesbar / kein gültiges JSON: %(error)s",
+ "world.spec_shape_bad": "Welt-Deklaration %(name)s hat falsche Form: ein Objekt {lines, active, stamps} ist Pflicht",
+ "world.spec_not_object": "Welt-Deklaration ist kein Objekt — falsche Form (ein Objekt {lines, active, stamps} ist Pflicht)",
+ "world.lines_empty": "Welt-Linienliste ist leer oder kein Objekt — eine leere Liste ist kein Bestehen (Nullwert-Wächter): eine Liste existiert nur mit Grund",
+ "world.active_missing": "active fehlt (Pflicht: welche Linie als aktuell gilt, ist eine menschliche Entscheidung, aber die Entscheidung muss aufgeschrieben sein — nicht aufschreiben = alle raten)",
+ "world.active_unknown": "active=`%(active)s` ist nicht in der Liste (bekannte Linien: %(lines)s)",
+ "world.line_not_object": "Linie `%(line_name)s` ist kein Objekt: %(line)r",
+ "world.line_missing_field": "Linie `%(line_name)s` fehlt Feld `%(field)s` (die vier Pflichtfelder: %(fields)s)",
+ "world.override_unknown": "REFLECT_WORLD_LINE=%(line_name)s ist nicht in der Liste — die Überschreibung zeigt auf eine nicht existierende Linie (richtig schreiben oder den Knopf entfernen)",
+ "world.branch_mismatch": "aktueller Branch `%(branch)s` ist eine Linie in der Liste, aber active deklariert `%(active)s` — das Umschalt-Skript lief nicht (oder active wurde nicht aktualisiert): die Welt, die dieses Tor gerade prüft, gehört zu einer anderen Linie",
+ "world.stamps_empty": "Stempel-Liste ist leer oder kein Objekt — eine Welt-Deklaration ohne Stempel hält keinen Linienwechsel zusammen (Nullwert-Wächter): die drei Umschalt-Schritte brauchen einen Zeugen",
+ "world.stamp_not_object": "Stempel `%(name)s` ist kein Objekt: %(entry)r",
+ "world.stamp_missing_value": "Stempel `%(name)s` fehlt value (Pflicht: eine vom Umschalt-Skript geschriebene Messprobe)",
+ "world.stamp_missing_cmd": "Stempel `%(name)s` fehlt cmd (Pflicht: der Wiederholungsbefehl, der ihn abgleicht — ein Stempel ohne cmd ist Prosa)",
+ "world.stamp_timeout": "Stempel `%(name)s`: Abgleich **Zeitüberschreitung**: `%(command)s` — ein in pre-commit verdrahteter Befehl darf nicht ewig warten",
+ "world.stamp_command_failed": "Stempel `%(name)s`: Abgleichsbefehl fehlgeschlagen (rc=%(return_code)s): `%(command)s` — die Abgleichsmethode selbst ist tot",
+ "world.stamp_mismatch": "Stempel `%(name)s` weicht ab: Umgebung=%(actual)s vs deklariert=%(expected)s — Deklaration und Umgebung stimmen nicht überein (die Umgebung folgte dem Umschalten nicht, oder sie ist von einer anderen Linie kontaminiert); Reparatur: Umschalt-Skript neu ausführen"
+}

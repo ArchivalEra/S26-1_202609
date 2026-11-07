@@ -1,0 +1,18 @@
+{
+ "instruments.title": "Messinstrument-Lebenszyklus-Tor",
+ "instruments.ok": "Messinstrument-Lebenszyklus-Tor: OK (%(modes)s)",
+ "instruments.off": "Messinstrument-Lebenszyklus-Tor: weder %(days_knob)s noch %(instruments_knob)s ist konfiguriert ⇒ dieses Tor ist aus (steckbares Modul; zum Aktivieren: %(days_knob)s=days schaltet Konstantwert-Erkennung ein; %(instruments_knob)s=instruments.json registriert widerlegte Messmethoden)",
+ "instruments.days_unparseable": "%(days_knob)s=%(value)r lässt sich nicht als Tageszahl parsen — Konfiguration korrigieren (oder den Knopf entfernen)",
+ "instruments.ledger_missing": "Register fehlt: %(path)s — zuerst facts.py ausführen",
+ "instruments.registry_missing": "REFLECT_INSTRUMENTS=%(name)s ist gesetzt, aber die Verzeichnisdatei fehlt — zuerst registrieren (oder den Knopf entfernen)",
+ "instruments.spec_broken": "Messmethoden-Verzeichnis %(name)s ist kaputt: %(error)s",
+ "instruments.ledger_empty": "Register ist leer — leer ist kein Bestehen (Nullwert-Wächter): zuerst prüfen, ob measure() kaputt ist",
+ "instruments.first_seen_unparseable": "`%(key)s` hat ein nicht parsbares first_seen (%(first_seen)r) — die Konstantwert-Regel ist nicht auswertbar (wenn unlesbar, sag es; nicht raten)",
+ "instruments.constant_return": "`%(key)s` hat sich seit %(first_seen)s nicht geändert (%(days).0f Tage, Konstant-Schwelle %(threshold).0f Tage) — von Hand bestätigen: misst diese cmd, oder gibt sie ewig dieselbe Zahl zurück? (Prüfung auf stille Messinstrument-Drift, issue #6 ①)",
+ "instruments.entry_malformed": "Messmethoden-Eintrag hat eine falsche Form (text und why sind beide Pflicht): %(entry)r",
+ "instruments.falsified_method": "die cmd von `%(key)s` enthält ein **widerlegtes Messmethoden**-Fragment %(text)r (%(why)s; korrekte Methode in %(fixed_in)s) — eine schlechte Messmethode darf nicht im Register bleiben",
+ "instruments.fixed_in_unregistered": "nicht registriert",
+ "instruments.part_days": "Konstantwert-Erkennung, %(threshold).0f-Tage-Schwelle",
+ "instruments.part_methods": "Messmethoden-Verzeichnis %(name)s (%(count)d Einträge)",
+ "instruments.part_none": "leeres Verzeichnis"
+}

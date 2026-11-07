@@ -1,0 +1,5 @@
+{
+ "hookenv.case_failed": "%(label)s (expected '%(expected)s', measured '%(actual)s')",
+ "hookenv.mktemp_failed": "mktemp failed (could not create a temp directory)",
+ "hookenv.summary": "einfacht-env plugin selftest: %(passed)s PASS / %(failed)s fail"
+}

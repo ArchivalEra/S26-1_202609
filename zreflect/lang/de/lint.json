@@ -1,0 +1,12 @@
+{
+ "gate.title.lint": "statische Maschinenprüfung",
+ "lint.config_broken": "statische Maschinenprüfung läuft nicht (Kriteriendatei `%(path)s`): %(detail)s — das ist ein Konfigurationsunfall, nicht „der Code hat Probleme“",
+ "lint.config_missing": "Kriteriendatei fehlt: `%(path)s` — nie auf ruff-Standard zurückfallen (das ist ein anderes Kriterienset)",
+ "lint.finding": "%(text)s",
+ "lint.no_output": "ruff endete mit %(return_code)s ohne eine einzige Fundstelle — „Werkzeug kaputt“ muss von „keine Probleme“ unterscheidbar sein (%(detail)s)",
+ "lint.off": "statische Maschinenprüfung: %(module)s nicht installiert ⇒ ausdrücklich aus (externes Werkzeug, keine Abhängigkeit dieses Repos)",
+ "lint.off_config": "statische Maschinenprüfung: dieses Repo hat keine `%(path)s` ⇒ ausdrücklich aus (dieses Kriterienset wurde nicht gewählt)",
+ "lint.ok": "statische Maschinenprüfung sauber (Kriterien: `%(config)s`)",
+ "lint.title": "Statische Maschinenprüfung (ruff)",
+ "lint.tool_broken": "ruff läuft nicht: %(error)r"
+}

@@ -1,0 +1,15 @@
+{
+ "readme.title": "Trilingual README gate",
+ "readme.ok_push": "Trilingual README gate: OK (the push change set contains all %(count)d READMEs)",
+ "readme.ok_single": "Trilingual README gate: OK (%(name)s exists and is non-empty; the switcher cross-link rule does not apply)",
+ "readme.ok_structure": "Trilingual README gate: OK (all %(count)d READMEs exist, are non-empty, and cross-link correctly)",
+ "readme.names_empty_structure": "REFLECT_READMES is empty — judging the 'README group' on an empty list is empty talk (zero-value guard)",
+ "readme.names_empty_push": "REFLECT_READMES is empty — 'all three in the same batch' has no subject to judge (zero-value guard)",
+ "readme.changed_empty": "the change set of this push is empty — an empty input is not a pass (zero-value guard): 'every push must update all READMEs' cannot hold over a pile of nothing",
+ "readme.file_missing": "missing README: %(name)s — the three languages are three copies of one assertion; drop one and the assertion falls apart",
+ "readme.file_empty": "%(name)s exists but is empty — an empty file is not a language",
+ "readme.switcher_incomplete": "%(name)s has no reference to %(expected)s — the language switcher must point at every language, otherwise a reader cannot get from this copy to the other one",
+ "readme.not_in_push": "%(name)s is not among the files changed by this push ⇒ READMEs must be updated **in the same batch** (the strictness is intentional: miss one and the other two go stale from this moment on)",
+ "readme.changed_file_missing": "the changed-files list does not exist: %(name)s — a missing list must not count as a pass (zero-value guard)",
+ "readme.switcher_not_applicable": "Trilingual README gate: REFLECT_READMES has only one entry (%(name)s) ⇒ the switcher cross-link rule does not apply (with a single entry 'must point at every language' holds trivially, and self-reference is a degenerate requirement); the existence / non-empty rules still apply"
+}

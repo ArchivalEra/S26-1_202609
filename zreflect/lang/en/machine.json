@@ -1,0 +1,4 @@
+{
+ "gate.title.machine": "machine-row protocol",
+ "machine.no_cli": "this module is a pure-function library and has no CLI. Selftest: python3 zreflect/machine.py --selftest"
+}

@@ -1,0 +1,16 @@
+{
+ "guard.refuse_dropped": "this re-measure would **drop %(count)d facts** (input missing?): %(keys)s",
+ "guard.refuse_dropped_advice": "ledger not written. Either prepare the input, or pass --allow-drop explicitly (and record the dropped keys in HISTORY).",
+ "guard.note_allow_drop": "⚠ --allow-drop: dropping %(count)d: %(keys)s",
+ "guard.refuse_changed": "this re-measure would **change %(count)d fact values** (unaccepted changes):",
+ "guard.changed_row": "%(key)-24s %(before)s → %(after)s",
+ "guard.accepted_boundary": "accepted %(accepted)d via --accept-changes: %(keys)s — the rest still refused.",
+ "guard.refuse_changed_advice": "ledger not written. Confirm each change is **measured, not guessed** (not missing input / not a broken instrument), then pass --accept-changes (or --accept-changes=k1,k2 per key).",
+ "guard.empty_ledger": "no facts measured at all. An empty ledger is not a pass (zero-value guard).",
+ "guard.write_target_gitignored": "ledger target %(path)s is covered by .gitignore — writing there is writing nowhere (version control cannot see it; the hooks read a different ledger); drop that ignore rule, or set REFLECT_FACTS to a tracked location",
+ "guard.write_target_no_git": "(not a git repo or git unavailable: skipping the gitignore check)",
+ "guard.write_target_env_carrier": "this repo has Einfacht.env but this process did not load it (REFLECT_FACTS used the code default) — source it first when running by hand, otherwise the write target may differ from the hooks' context (issue #20 ②)",
+ "guard.write_target_env_carrier_after": "%(prefix)s; this repo has Einfacht.env but this process did not load it (REFLECT_FACTS used the code default) — source it first when running by hand, otherwise the write target may differ from the hooks' context (issue #20 ②)",
+ "guard.module_banner": "guard is a module (called by facts.measure); it does not run standalone. --selftest shows its selftest.",
+ "guard.note_accept_changes": "accepted %(count)d changes via --accept-changes (values updated):"
+}

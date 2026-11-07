@@ -1,0 +1,18 @@
+{
+ "invariants.title": "不变量闸门",
+ "invariants.empty": "不变量清单为空 —— 空清单不是通过（零值守卫）：清单要有理由才存在",
+ "invariants.not_object": "检查项不是对象：%(entry)r",
+ "invariants.missing_path": "检查项缺 path（必填）：%(entry)r",
+ "invariants.missing_why": "`%(path)s` 缺 why（必填：没有理由的检查项没人敢删，会变成僵尸）",
+ "invariants.no_criteria": "`%(path)s` 没有任何判据（must_contain / must_not_contain 至少给一个）",
+ "invariants.not_string_list": "`%(path)s` 的 must_contain / must_not_contain 必须是字符串数组",
+ "invariants.fragment_not_string": "`%(path)s` 的判据片段必须是字符串",
+ "invariants.unreadable": "`%(path)s` 读不到（文件在吗？路径相对仓库根）—— 读不到就明说，不许静默通过",
+ "invariants.drift_missing": "%(marker)s: `%(path)s` 缺少应有片段 %(fragment)r（%(why)s）",
+ "invariants.drift_forbidden": "%(marker)s: `%(path)s` 出现被禁片段 %(fragment)r（%(why)s）",
+ "invariants.off": "不变量闸门：REFLECT_INVARIANTS 未配置 ⇒ 本闸门未启用（可插拔模块；要启用：REFLECT_INVARIANTS=invariants.json，规格 = {\"checks\": [{path, must_contain?, must_not_contain?, why}]}）",
+ "invariants.spec_missing": "REFLECT_INVARIANTS=%(name)s 已配置但规格文件不在 —— 先写规格（或撤掉该旋钮）",
+ "invariants.spec_broken": "规格 %(name)s 读不了 / 不是合法 JSON：%(error)s",
+ "invariants.bad_shape": "规格文件 %(path)s 形状坏：需要 {\"checks\": [...]}",
+ "invariants.ok": "不变量闸门：OK（%(count)d 条不变量）"
+}

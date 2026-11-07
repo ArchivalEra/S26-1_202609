@@ -1,0 +1,17 @@
+{
+ "stale.title": "陈旧断言检测",
+ "stale.ok": "陈旧断言检测：OK（扫了 %(count)d 份文档；退役名 %(declared)s）",
+ "stale.scanned_docs": "被扫描的活状态文档",
+ "stale.ledger_empty": "台账为空 —— 空不是通过（零值守卫）：先查 measure() 是不是坏了",
+ "stale.no_docs": "一份活状态文档都没扫到 —— 空输入不是通过（零值守卫）",
+ "stale.ledger_missing": "缺事实台账（%(name)s）。先跑 python3 zreflect/facts.py 量一遍。",
+ "stale.retired_rule_off": "R2（退役名）：REFLECT_RETIRED 未配置 ⇒ 本条规则未启用（要启用：REFLECT_RETIRED=名1,名2）",
+ "stale.age_rule_off": "测龄：REFLECT_STALE_DAYS 未配置 ⇒ 本条规则未启用（要启用：REFLECT_STALE_DAYS=天）",
+ "stale.retired_none": "未配置",
+ "stale.retired_count": "%(count)d 个",
+ "stale.sha_no_facts": "%(name)s:%(lineno)d sha 断言无出处：台账里**没有任何 sha 类事实**，先把它量进台账（带复跑命令），再引用",
+ "stale.sha_unsourced": "%(name)s:%(lineno)d sha 断言无出处：`%(actual)s` 不在台账里 —— 改写成 [[键名]] 引用，或给出可核出处（交付包名 / 反引号 commit sha）。注意：「历史」二字**不构成出处**（issue #25）",
+ "stale.measured_at_missing": "`%(key)s` 的 measured_at 缺失或不可解析 —— 测龄判据无法评估（读不到就明说，不许猜）",
+ "stale.too_old": "`%(key)s` 已 %(days)d 天没测（阈值 %(threshold)d 天）—— 重测并显式 `--accept-changes`",
+ "stale.retired_name": "%(name)s:%(lineno)d 退役名 `%(entry)s` 出现在活状态里 —— 要么它没退役，要么这行带上历史标记"
+}
