@@ -546,6 +546,10 @@ for (const f of ['to-octave.mjs', 'parser.mjs', 'lexer.mjs', 'commands.mjs']) {
     .replace(/from "\.\/([A-Za-z0-9_-]+)\.mjs"/g, 'from "./$1.js"');
   fs.writeFileSync(path.join(mathDistDir, out), src);
 }
+// 版本戳（内容哈希）：写盘后才能算，供页面模板里 math 模块的动态 import 用
+// （2026-11-07 线上实报的 404 之一就是无戳的 parser.js 撞上 EdgeOne 缓存旧副本）。
+const parserVer = assetVersion('assets/math/parser.js');
+const octaveVer = assetVersion('assets/math/to-octave.js');
 
 // SW 已根除（2026-10-23 用户定案：长任务要「永远新鲜的页面」，SW 的 SWR/预缓存
 // 与它正面冲突——页面先出旧缓存、后台静默更新、下次才生效，模型跳十几次页会拿到
@@ -2569,6 +2573,19 @@ for (const relPath of TARGET_FILES) {
         // 调用（模块 URL 反正只加载一次，版本戳不变）；OCT_BASE 与 parser 的
         // import 改成在函数里现取。
         const assetRoot = () => document.documentElement.getAttribute('data-root') || './';
+        // ⚠️ 2026-11-07 站长线上实报「公式解析失败：error loading dynamically
+        // imported module: https://isui.ren/assets/math/parser.js」——URL **不带**
+        // /repo/S26-1_202609/ 前缀且 404（带前缀的那条实测 200）。
+        // 数学模块的动态 import 只在「点 ▶ 计算」那一刻才跑，晚于首屏；
+        // 若那一刻 data-root 仍是构建期的相对值（site-root 探测被跳过/失配，
+        // 或 SPA 换页竞态），相对解析就落在域名根 ⇒ 404。
+        // 资产是按「正式根 + 仓库相对路径」部署的，所以这类**运行期动态 import**
+        // 一律优先 canonical（构建期写死的绝对前缀，页面在哪个入口打开都成立）；
+        // canonical 缺失（老页面/裸构建）才退回 data-root。
+        const moduleRoot = () => {
+          const c = document.documentElement.getAttribute('data-canonical-root');
+          return (c && c !== '/') ? c : assetRoot();
+        };
         const mod = await import(assetRoot() + 'assets/plugins/capability-pack.js?v=__PACK_VER__');
         // Static-Contract 客户端：只在用户真的点了「下载计算内核」时才 import，
         // 首屏零开销。releaseLoader 把「从哪个 release 取哪个 entry」交给纯逻辑层，
@@ -2715,8 +2732,11 @@ for (const relPath of TARGET_FILES) {
 
           let code;
           try {
-            const { parse } = await import(assetRoot() + 'assets/math/parser.js');
-            const { translate } = await import(assetRoot() + 'assets/math/to-octave.js');
+            // ⚠️ moduleRoot() + ?v=（2026-11-07）：绝对正式根 + 内容哈希。
+            // 裸 assetRoot()+…js 两个坑各踩过一次：相对前缀在镜像入口下落域名根
+            // 404（线上实报）；无戳则 EdgeOne 缓存旧副本（handoff §0.218 同类）。
+            const { parse } = await import(moduleRoot() + 'assets/math/parser.js?v=__PARSER_VER__');
+            const { translate } = await import(moduleRoot() + 'assets/math/to-octave.js?v=__OCTAVE_VER__');
             const t = translate(parse(src).expr.root);
             if (!t.ok) return { ok: false, error: t.reason };
             code = t.code;
@@ -2868,7 +2888,9 @@ for (const relPath of TARGET_FILES) {
   const htmlWithVers = finalHtml
     .split('__PACK_VER__').join(packVer)
     .split('__CELLS_VER__').join(cellsVer)
-    .split('__STATIC_RELEASE_VER__').join(staticReleaseVer);
+    .split('__STATIC_RELEASE_VER__').join(staticReleaseVer)
+    .split('__PARSER_VER__').join(parserVer)
+    .split('__OCTAVE_VER__').join(octaveVer);
   // 构建期兜底：任何版本占位符残留都是 bug（上一条断言的就是这个形状，
   // 但它是人工约定的；这里硬拦，免得下次再加第三个占位符时又漏一个）。
   const leakedVer = /__[A-Z]+_VER__/.exec(htmlWithVers);
