@@ -458,7 +458,7 @@ export function opsToText(ops) {
     if (o.kind === 'heading' || o.kind === 'para') return o.ops.map(one).join('');
     if (o.kind === 'list') return o.items.map((it) => {
       // 2026-10-22：items 是 {ops, depth}；兼容旧的纯 op 数组形态
-      const arr = it?.ops ? it.ops : (Array.isArray(it) ? it : []);
+      const arr = it?.ops ?? (Array.isArray(it) ? it : []);
       return arr.map(one).join('');
     }).join(' | ');
     if (o.kind === 'codeblock') return '```' + o.lang + '\n' + o.text + '\n```';

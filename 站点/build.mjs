@@ -64,7 +64,10 @@ const DIST_DIR = path.join(SITE_DIR, 'dist');
 // 不传（默认 /）= 部署在域名根（GitHub Pages 用户页场景），行为不变。
 const argvCanonical = process.argv.includes('--canonical-root')
   ? process.argv[process.argv.indexOf('--canonical-root') + 1] : null;
-const CANONICAL_ROOT = argvCanonical ? (argvCanonical.endsWith('/') ? argvCanonical : argvCanonical + '/') : '/';
+let CANONICAL_ROOT = '/';
+if (argvCanonical) {
+  CANONICAL_ROOT = argvCanonical.endsWith('/') ? argvCanonical : argvCanonical + '/';
+}
 
 // 学习助手激活材料（2026-10-27 单向锁模型，设计见 .zcode/设计-加解密模块-20261026.md）：
 //   <html data-assistant-key> = K_page，32 字节随机数的 base64url
@@ -1349,7 +1352,10 @@ for (const relPath of TARGET_FILES) {
   // 符号排除（2026-10-12）：页面级显式收窄「宽覆盖包」的自动取词——撞车场合
   // （选项标号、单位、人名缩写、绝缘等级）用 frontmatter 指定禁包，手写令牌照常。
   // 两个键分别管正文（符号排除）与公式（符号排除公式）；都写 = 完全禁自动取词。
-  const asIdList = (v) => (Array.isArray(v) ? v : v ? [v] : []).map((s) => String(s).trim()).filter(Boolean);
+  const asIdList = (v) => {
+  const arr = Array.isArray(v) ? v : v ? [v] : [];
+  return arr.map((s) => String(s).trim()).filter(Boolean);
+};
   const symbolExclusions = {
     noProse: asIdList(frontmatter['符号排除']),
     noTex: asIdList(frontmatter['符号排除公式']),

@@ -42,7 +42,8 @@ export function compileDictionary(packs, deps) {
     (pack.entries || []).forEach((entry, idx) => {
       // 只声明形式、没有释义的词条不参与取词（`bubble: false`）
       if (entry.bubble === false) return;
-      const forms = Array.isArray(entry.tex) ? entry.tex : (entry.tex ? [entry.tex] : []);
+      const toFormList = (tex) => (Array.isArray(tex) ? tex : tex ? [tex] : []);
+  const forms = toFormList(entry.tex);
       forms.forEach((form, fi) => {
         if (typeof form !== 'string' || !form) return;
         // `/…/flags` 形式是正则族：交给 pattern 通道

@@ -140,7 +140,11 @@ export function irToTex(node, opts = {}) {
   }
 }
 
-const fracCommand = (style) => (style === 'display' ? 'dfrac' : style === 'text' ? 'tfrac' : 'frac');
+const fracCommand = (style) => {
+  if (style === 'display') return 'dfrac';
+  if (style === 'text') return 'tfrac';
+  return 'frac';
+};
 
 /**
  * 方言变换：把 IR 编出的 TeX 调成目标引擎能吃的写法。

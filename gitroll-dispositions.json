@@ -271,6 +271,112 @@
       ],
       "decision": "wontfix",
       "why": "C 档（2026-11-07 定）：katex.mjs 是 vendored KaTeX 源码拷贝（1540 处）、vendor.mjs 是 bundled marked+yaml（38 处）、mathlive-browser.min.js 是上游压缩产物、dist/** 是构建产物、工具/*/vendor 是第三方打包。改了会在下次上游同步/构建时被覆盖，制造本地私版。"
+    },
+    {
+      "rule": "Handle this exception or don't catch it at all.",
+      "severity": "MINOR",
+      "owner": "self",
+      "files": [
+        "站点/plugins/*",
+        "站点/build.mjs",
+        "工具/mcp-端点/lib/*"
+      ],
+      "decision": "fixed",
+      "why": "A1 批 ×59：无绑定 catch {} + 行内意图注释。无一处改 throw——全部是刻意降级。"
+    },
+    {
+      "rule": "Prefer using an optional chain expression instead, as it's more concise and easier to read.",
+      "severity": "MAJOR",
+      "owner": "self",
+      "files": [
+        "站点/plugins/*",
+        "站点/build.mjs",
+        "工具/mcp-端点/lib/*"
+      ],
+      "decision": "fixed",
+      "why": "A2 批 ×44 机械替换；12 处方法存在性检查改显式 typeof（?. 会吞 TypeError 语义）。"
+    },
+    {
+      "rule": "Use the \"RegExp.exec()\" method instead.",
+      "severity": "MAJOR",
+      "owner": "self",
+      "files": [
+        "站点/plugins/*",
+        "站点/build.mjs",
+        "站点/math/terms.mjs"
+      ],
+      "decision": "fixed",
+      "why": "A4 批 ×21。**3 处计数场景回退**（表格分隔行列数/换行计数/引号计数——exec 带 g 只返回第一个匹配，count 语义必须 match(/g)）。规则不适用于计数场景。"
+    },
+    {
+      "rule": "Use 'String#startsWith' / 'String#endsWith' / 'Object.hasOwn()' instead…",
+      "severity": "MAJOR",
+      "owner": "self",
+      "files": [
+        "站点/plugins/*",
+        "工具/mcp-端点/lib/切块.mjs"
+      ],
+      "decision": "fixed",
+      "why": "A5 批 ×14。endsWith('\n') 与 length>0 && s[len-1] 空串语义逐例核对相同。"
+    },
+    {
+      "rule": "Unnecessary escape character",
+      "severity": "MAJOR",
+      "owner": "self",
+      "files": [
+        "站点/math/to-octave.mjs",
+        "站点/build.mjs"
+      ],
+      "decision": "fixed",
+      "why": "A6 批 ×12（字符类内不必要转义去掉、- 挪末尾；Octave 横幅 [.]{3}[.]?）。新旧正则对 22 个输入逐字符等价核对。"
+    },
+    {
+      "rule": "Use concise character class / for-of / opposite operator / Remove duplicates / Extract the assignment",
+      "severity": "MINOR",
+      "owner": "self",
+      "files": [
+        "站点/math/*",
+        "站点/plugins/*"
+      ],
+      "decision": "fixed",
+      "why": "A8 批 ×10。opposite (!==) 那条被 A1/A2 剥 !!() 顺带消掉。"
+    },
+    {
+      "rule": "Remove the declaration of the unused… / Remove this useless assignment… / Either use this collection's contents or remove the collection.",
+      "severity": "MINOR",
+      "owner": "self",
+      "files": [
+        "站点/plugins/webmcp-tools.mjs",
+        "站点/build.mjs",
+        "站点/math/parser.mjs",
+        "站点/math/terms.mjs",
+        "工具/扫可算候选.mjs"
+      ],
+      "decision": "fixed",
+      "why": "A7 批 ×12 + 死集合 ×2（bound Map 只写不读；mathPlainOf 桥接在 2026-10-30 后只剩写）。误报 2 条：symbolCoveragePages / glossHref 实有读取。figures kmap 2/3 网格 bug 第一轮已修（真分叉 + 尺寸断言）。"
+    },
+    {
+      "rule": "Extract this nested ternary operation into an independent statement.",
+      "severity": "MAJOR",
+      "owner": "self",
+      "files": [
+        "站点/build.mjs",
+        "站点/math/render.mjs",
+        "站点/math/terms.mjs",
+        "站点/plugins/*"
+      ],
+      "decision": "fixed",
+      "why": "A3 批 ×9 拆 if/let（CANONICAL_ROOT/fracCommand/asIdList/toFormList/colCodes/want/x0/pinHint/setT→??）。其余 17 处保留：模板串内单层三元（figures 2148）、或者拆开会引入临时变量而可读性不升（webmcp 读面分支），逐处注记。"
+    },
+    {
+      "rule": "Cognitive Complexity above threshold / nested template literals / identical to another / …",
+      "severity": "CRITICAL",
+      "owner": "self",
+      "files": [
+        "站点/plugins/webmcp-tools.mjs 等"
+      ],
+      "decision": "deferred",
+      "why": "B 档留待下一轮：拆函数动调用面（webmcp-tools 是助手读面核心），必须配读面 spot check 单独一批做；本轮先清 A 档全量。"
     }
   ],
   "_scan_round2": {

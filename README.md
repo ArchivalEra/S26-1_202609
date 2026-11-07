@@ -36,7 +36,7 @@
 | 电路原理 | 212 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/index.md) |
 
 共 **7** 门课程、**345** 份资料。
-<!-- 仓库内容摘要（不含 README）：b57ffd193e601a39903044bc0ec0e83bc02bcfa83199da96d9f40bb3aa2a1073 -->
+<!-- 仓库内容摘要（不含 README）：38c5c7c255f030877733d2e0868d76b8dddcd424fac00b819bbe62f371651792 -->
 
 <!-- AUTO-CATALOG:END -->
 
