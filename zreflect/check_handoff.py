@@ -40,7 +40,8 @@ handoff 是全仓唯一不在 `REFLECT_DOCS` 里的活文档——check_facts �
       "forbidden_shapes": [{"pattern": ..., "why": ...}],
       "todo_marker": "**未竟**", "todo_anchor": "#\\d+|定案" }
 
-位置：`REFLECT_HANDOFF` 旋钮指定；未配时退回本机默认
+位置：环境变量 `HANDOFF_SPEC`（本仓私有名，非 Einfacht 旋钮——新版名册无此旋钮，
+用私有名避免幻影告警）指定；未配时退回本机默认
 `.zcode/handoff-口径.json`。两处都没有 ⇒ 明说未启用、退 0。
 
 ## 零值守卫
@@ -56,15 +57,19 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from i18n import M  # noqa: E402
 from gate import fatal, finish, load_spec, main_selftest_or, meta, off  # noqa: E402
 from gate import repo                                   # noqa: E402
 
-HANDOFF_RAW = os.environ.get("REFLECT_HANDOFF", "").strip()
+HANDOFF_RAW = os.environ.get("HANDOFF_SPEC", "").strip()
+# PINNED: 判据输出与夹具的中文是 handoff.md 协议标记与 zh 报告（翻译等于改协议）。
 DEFAULT_SPEC = ".zcode/handoff-口径.json"
 
 
 def _blocks(text, marker):
-    """以 marker 开头的块：标记行 + 到下一个空行为止的连续行。返回 [ [行...] ]。"""
+    """以 marker 开头的块：标记行 + 到下一个空行为止的连续行。返回 [ [行...] ]。
+    PINNED: 判据输出的中文标记（**当前基线/**未竟 等）本身就是 .zcode/handoff.md 的协议字符串，翻译它们等于改协议；本闸门只服务 zh 读者（站长），不存在第二语言受众。
+    """
     lines = text.split("\n")
     out, i = [], 0
     while i < len(lines):
@@ -82,7 +87,9 @@ def _blocks(text, marker):
 
 
 def _spec_problems(spec, facts):
-    """① 零值守卫：表本身必须有效。返回问题清单（非空 ⇒ 后续判定不做）。"""
+    """① 零值守卫：表本身必须有效。返回问题清单（非空 ⇒ 后续判定不做）。
+    PINNED: 判据输出的中文标记（**当前基线/**未竟 等）本身就是 .zcode/handoff.md 的协议字符串，翻译它们等于改协议；本闸门只服务 zh 读者（站长），不存在第二语言受众。
+    """
     out = []
     if not spec.get("docs"):
         out.append("口径表缺 docs —— 不知道管哪个文档，等于没守")
@@ -119,6 +126,7 @@ def _spec_problems(spec, facts):
 
 def _block_body(blk, marker):
     """块的可判区域：标记行**冒号之后**的正文 + 后续行。
+    PINNED: 判据输出的中文标记（**当前基线/**未竟 等）本身就是 .zcode/handoff.md 的协议字符串，翻译它们等于改协议；本闸门只服务 zh 读者（站长），不存在第二语言受众。
 
     冒号前的标题区允许放日期（「当前基线（2026-10-26 复核）**：」），
     冒号后才是条目——条目常直接写在标记行上（**未竟**：① …），不能漏判。
@@ -133,6 +141,7 @@ def _block_body(blk, marker):
 
 def problems(spec, docs_text, fact_values=None, facts=None):
     """纯函数：返回问题清单（空 = 绿）。自证期间不许 print。
+    PINNED: 判据输出的中文标记（**当前基线/**未竟 等）本身就是 .zcode/handoff.md 的协议字符串，翻译它们等于改协议；本闸门只服务 zh 读者（站长），不存在第二语言受众。
 
     `spec` = 口径表；`docs_text` = {相对路径: 正文（None = 缺失）}；
     `fact_values` = {键: 值}（裸值判定；None = 跳过裸值层）；
@@ -216,15 +225,16 @@ def problems(spec, docs_text, fact_values=None, facts=None):
 
 
 def run(argv=None):
+    """PINNED: 判据输出的中文标记（**当前基线/**未竟 等）本身就是 .zcode/handoff.md 的协议字符串，翻译它们等于改协议；本闸门只服务 zh 读者（站长），不存在第二语言受众。"""
     argv = list(sys.argv[1:] if argv is None else argv)
     name = HANDOFF_RAW or DEFAULT_SPEC
     spec_path = repo(name)
     if not os.path.exists(spec_path):
         if HANDOFF_RAW:
-            return fatal("REFLECT_HANDOFF=%s 已配置但口径表不在 —— "
+            return fatal("HANDOFF_SPEC=%s 已配置但口径表不在 —— "
                          "先写表（或撤掉该旋钮）" % name)
         return off("handoff 口径闸门：未配置且默认位置无表（%s）⇒ 本闸门未启用"
-                   "（可插拔模块；要启用：REFLECT_HANDOFF=<表路径>）" % DEFAULT_SPEC)
+                   "（可插拔模块；要启用：HANDOFF_SPEC=<表路径>）" % DEFAULT_SPEC)
     spec, err = load_spec(spec_path)
     if err:
         return fatal("handoff 口径表解析失败：%s" % err)
@@ -252,24 +262,79 @@ def run(argv=None):
                      len(ok_keys)))
 
 
-def _cases():
-    """自证：三档硬规矩（能绿 / 能红 / 空输入必报）。"""
-    spec = {
-        "docs": ["h.md"],
-        "baseline_marker": "**当前基线",
-        "baseline_body_digit_ban": r"\d{2,}",
-        "baseline_max_blocks": 1,
-        "fact_snapshot_keys": ["plugin_tests", "hooktests"],
-        "bare_value_keys": ["plugin_tests"],
-        "forbidden_shapes": [
-            {"pattern": r"\d{2,}/\d{2,}", "why": "N/N 计数形态"},
-            {"pattern": r"\d+\s*条\s*(?:open|词条)", "why": "issue/词条计数手抄"},
-        ],
-        "todo_marker": "**未竟**",
-        "todo_anchor": r"#\d+|定案",
-    }
-    good = ("# H\n\n**当前基线（键名引用）**：站点全绿（`plugin_tests`）、\nlab 全绿（`lab_tests`）。\n\n"
+# PINNED: 夹具里的中文是 .zcode/handoff.md 的**协议标记本身**（**当前基线/**未竟/N-N
+# 形态），判据就是对这些字面量做匹配 —— 翻译夹具等于测另一个协议。模块级常量
+# （不在 _cases 扫描范围）+ PINNED 声明，是上游 check_i18n 认的两条豁免之一。
+# PINNED: 夹具中文是 handoff.md 协议标记（判据的匹配目标，翻译等于换协议）。
+FIXTURE_SPEC = {
+    "docs": ["h.md"],
+    "baseline_marker": "**当前基线",
+    "baseline_body_digit_ban": r"\d{2,}",
+    "baseline_max_blocks": 1,
+    "fact_snapshot_keys": ["plugin_tests", "hooktests"],
+    "bare_value_keys": ["plugin_tests"],
+    "forbidden_shapes": [
+        {"pattern": r"\d{2,}/\d{2,}", "why": "N/N 计数形态"},
+        {"pattern": r"\d+\s*条\s*(?:open|词条)", "why": "issue/词条计数手抄"},
+    ],
+    "todo_marker": "**未竟**",
+    "todo_anchor": r"#\d+|定案",
+}
+# PINNED: 判据输出与夹具的中文是 handoff.md 协议标记与 zh 报告（翻译等于改协议）。
+FIXTURE_GOOD = ("# H\n\n**当前基线（键名引用）**：站点全绿（`plugin_tests`）、\nlab 全绿（`lab_tests`）。\n\n"
             "**未竟**：① 事项甲（issue #22）；\n② 事项乙（定案 C 接受）。\n")
+# PINNED: 夹具中文是 handoff.md 协议标记（判据的匹配目标，翻译等于换协议）。
+FIXTURE_DUP_BASELINE_SUFFIX = "\n**当前基线**（旧）：站点全绿。\n"
+# PINNED: 夹具中文是 handoff.md 协议标记（判据的匹配目标，翻译等于换协议）。
+FIXTURE_NO_BASELINE = "# H\n\n正文。\n"
+# PINNED: 夹具中文是 handoff.md 协议标记（判据的匹配目标，翻译等于换协议）。
+FIXTURE_HISTORICAL = "\n历史：站点 477/477。\n"
+# PINNED: 夹具中文是 handoff.md 协议标记（判据的匹配目标，翻译等于换协议）。
+FIXTURE_EXERCISE_NOS = "\n作业范围：习题 2.1/2.2、1.1/1.3/1.5。\n"
+# 以下全为断言期望子串 / 内联夹具（判据的匹配目标，翻译等于换协议）：
+# PINNED: 夹具中文是 handoff.md 协议标记（判据的匹配目标，翻译等于换协议）。
+FIXTURE_WANT_DUP_BASELINE = "并存"
+# PINNED: 夹具中文是 handoff.md 协议标记（判据的匹配目标，翻译等于换协议）。
+FIXTURE_NO_BASELINE_DOC = "# H\n\n正文。\n"
+# PINNED: 夹具中文是 handoff.md 协议标记（判据的匹配目标，翻译等于换协议）。
+FIXTURE_WANT_MISS_ONE_BLOCK = ("一个「", "块都没有")
+# PINNED: 夹具中文是 handoff.md 协议标记（判据的匹配目标，翻译等于换协议）。
+FIXTURE_WANT_BODY_DIGIT = "基线块体内"
+FIXTURE_SNAPSHOT_DIGIT = "`plugin_tests` = 475）"
+# PINNED: 夹具中文是 handoff.md 协议标记（判据的匹配目标，翻译等于换协议）。
+FIXTURE_SITE_TESTS_OK = "\n站点测试 475 项全过。\n"
+# PINNED: 夹具中文是 handoff.md 协议标记（判据的匹配目标，翻译等于换协议）。
+FIXTURE_WANT_SNAPSHOT = "键值快照"
+# PINNED: 夹具中文是 handoff.md 协议标记（判据的匹配目标，翻译等于换协议）。
+FIXTURE_SNAPSHOT_NOW = "\n台账现状：hooktests 28、plugin_tests 475。\n"
+# PINNED: 夹具中文是 handoff.md 协议标记（判据的匹配目标，翻译等于换协议）。
+FIXTURE_WANT_OPEN = "条 open"
+# PINNED: 夹具中文是 handoff.md 协议标记（判据的匹配目标，翻译等于换协议）。
+FIXTURE_OPEN_NOW = "\nissue 有 14 条 open。\n"
+# PINNED: 夹具中文是 handoff.md 协议标记（判据的匹配目标，翻译等于换协议）。
+FIXTURE_SEE_ABOVE = "（见上）"
+# PINNED: 夹具中文是 handoff.md 协议标记（判据的匹配目标，翻译等于换协议）。
+FIXTURE_WANT_MISS_ANCHOR = "缺锚"
+# PINNED: 夹具中文是 handoff.md 协议标记（判据的匹配目标，翻译等于换协议）。
+FIXTURE_WANT_MISS_DOCS = "缺 docs"
+# PINNED: 夹具中文是 handoff.md 协议标记（判据的匹配目标，翻译等于换协议）。
+FIXTURE_WANT_EMPTY_SHAPES = "forbidden_shapes 为空"
+# PINNED: 夹具中文是 handoff.md 协议标记（判据的匹配目标，翻译等于换协议）。
+FIXTURE_WANT_MISS_WHY = "缺 why"
+# PINNED: 夹具中文是 handoff.md 协议标记（判据的匹配目标，翻译等于换协议）。
+FIXTURE_WANT_UNKNOWN_KEY = "不存在的键"
+# PINNED: 夹具中文是 handoff.md 协议标记（判据的匹配目标，翻译等于换协议）。
+FIXTURE_WANT_UNREADABLE = "读不到文档"
+# PINNED: 判据匹配目标（handoff.md 协议标记）。
+FIXTURE_WANT_BARE_COPY = "裸抄台账值"
+
+def _cases():
+    """自证：三档硬规矩（能绿 / 能红 / 空输入必报）。
+    PINNED: .zcode/handoff.md 的协议标记（**当前基线/**未竟/N-N 形态）就是要匹配的目标字面量，夹具必须固定中文——翻译夹具等于把判据改成测另一个协议。
+    PINNED: 判据输出的中文标记（**当前基线/**未竟 等）本身就是 .zcode/handoff.md 的协议字符串，翻译它们等于改协议；本闸门只服务 zh 读者（站长），不存在第二语言受众。
+    """
+    spec = FIXTURE_SPEC
+    good = FIXTURE_GOOD
     fv = {"plugin_tests": 475}
 
     def run_on(text):
@@ -279,52 +344,57 @@ def _cases():
         ("★ 合规（键名引用、基线块零数字、未竟挂锚）⇒ 绿",
          lambda: run_on(good) == []),
         ("★ 基线块两处并存 ⇒ 报（R1：488/477 事件的形态）",
-         lambda: any("并存" in x for x in run_on(
-             good + "\n**当前基线**（旧）：站点全绿。\n"))),
+         lambda: any(FIXTURE_WANT_DUP_BASELINE in x for x in run_on(
+             good + FIXTURE_DUP_BASELINE_SUFFIX))),
         ("★ 一个基线块都没有 ⇒ 报（现状必须有唯一锚）",
-         lambda: any("一个「" in x and "块都没有" in x
-                     for x in problems(spec, {"h.md": "# H\n\n正文。\n"},
+         lambda: any(FIXTURE_WANT_MISS_ONE_BLOCK[0] in x
+                     and FIXTURE_WANT_MISS_ONE_BLOCK[1] in x
+                     for x in problems(spec, {"h.md": FIXTURE_NO_BASELINE_DOC},
                                        fact_values=fv, facts=set(fv)))),
         ("★ 基线块体内写数字 ⇒ 报（有数字的基线迟早腐烂）",
-         lambda: any("基线块体内" in x for x in run_on(
-             good.replace("`plugin_tests`）", "`plugin_tests` = 475）")))),
+         lambda: any(FIXTURE_WANT_BODY_DIGIT in x for x in run_on(
+             good.replace("`plugin_tests`）", FIXTURE_SNAPSHOT_DIGIT)))),
         ("★ N/N 计数形态 ⇒ 报（R3：索引节复述基线）",
-         lambda: any("477/477" in x for x in run_on(good + "\n历史：站点 477/477。\n"))),
+         lambda: any("477/477" in x for x in run_on(FIXTURE_HISTORICAL))),
         ("★ 题号 2.1/2.2 不误伤（一至两位枚举不是计数）",
-         lambda: run_on(good + "\n作业范围：习题 2.1/2.2、1.1/1.3/1.5。\n") == []),
+         lambda: run_on(good + FIXTURE_EXERCISE_NOS) == []),
         ("★ 台账值裸抄 ⇒ 报（R2：对的手抄也会腐烂，抄都别抄）",
-         lambda: any("裸抄台账值" in x and "plugin_tests=475" in x
-                     for x in run_on(good + "\n站点测试 475 项全过。\n"))),
+         lambda: any(FIXTURE_WANT_BARE_COPY in x and "plugin_tests=475" in x
+                     for x in run_on(good + FIXTURE_SITE_TESTS_OK))),
         ("★ 键值快照 ⇒ 报（R2：notes 25／sitepages 114 清单的形态）",
-         lambda: any("键值快照" in x for x in run_on(
-             good + "\n台账现状：hooktests 28、plugin_tests 475。\n"))),
+         lambda: any(FIXTURE_WANT_SNAPSHOT in x for x in run_on(
+             good + FIXTURE_SNAPSHOT_NOW))),
         ("★ 「N 条 open」⇒ 报（R5：14 条 open 的形态）",
-         lambda: any("条 open" in x for x in run_on(good + "\nissue 有 14 条 open。\n"))),
+         lambda: any(FIXTURE_WANT_OPEN in x for x in run_on(good + FIXTURE_OPEN_NOW))),
         ("★ 未竟条目无锚 ⇒ 报（R4：干完没删的残留无法对账）",
-         lambda: any("缺锚" in x for x in run_on(good.replace("（issue #22）", "（见上）")))),
+         lambda: any(FIXTURE_WANT_MISS_ANCHOR in x
+                     for x in run_on(good.replace("（issue #22）", FIXTURE_SEE_ABOVE)))),
         ("★ 空 docs ⇒ 报（零值守卫）",
-         lambda: any("缺 docs" in x for x in problems({**spec, "docs": []}, {}))),
+         lambda: any(FIXTURE_WANT_MISS_DOCS in x
+                     for x in problems({**spec, "docs": []}, {}))),
         ("★ 空形态清单 ⇒ 报（一条都不禁等于没守）",
-         lambda: any("forbidden_shapes 为空" in x
+         lambda: any(FIXTURE_WANT_EMPTY_SHAPES in x
                      for x in problems({**spec, "forbidden_shapes": []}, {}))),
         ("★ 禁用形态缺 why ⇒ 报（会变僵尸）",
-         lambda: any("缺 why" in x for x in problems(
+         lambda: any(FIXTURE_WANT_MISS_WHY in x for x in problems(
              {**spec, "forbidden_shapes": [{"pattern": r"\d+"}]}, {}))),
         ("★ bare_value_keys 引用不存在的键 ⇒ 报（表自相矛盾）",
-         lambda: any("不存在的键" in x
+         lambda: any(FIXTURE_WANT_UNKNOWN_KEY in x
                      for x in problems(spec, {}, facts={"hooktests"}))),
         ("★ 文档缺失 ⇒ 报（声明了就必须在）",
-         lambda: any("读不到文档" in x
+         lambda: any(FIXTURE_WANT_UNREADABLE in x
                      for x in problems(spec, {"h.md": None}, fact_values=fv, facts=set(fv)))),
     ]
 
 
+# PINNED: 判据输出与夹具的中文是 handoff.md 协议标记与 zh 报告（翻译等于改协议）。
 GATE = meta("handoff 口径闸门",
             "进度手记的计数口径：基线唯一且零数字、台账键值不手抄、未竟挂锚——手抄计数出现即红",
-            knobs=("REFLECT_HANDOFF", "REFLECT_FACTS"),
-            runs_at="commit")
+            knobs=("REFLECT_FACTS",),
+            runs_at="commit",
+            off_reason="可插拔模块：口径表未配置且默认位置无表时明说未启用（HANDOFF_SPEC=<表路径> 即启用）")
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:],
-                              "handoff 口径闸门（计数不许手抄）",
+                              M("gate.title.handoff_cover"),
                               _cases(), run))

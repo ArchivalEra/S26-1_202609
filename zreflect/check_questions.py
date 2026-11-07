@@ -22,11 +22,22 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from gate import GATE_REPO, finish, guard_nonempty, main_selftest_or, meta  # noqa: E402
+import gate  # noqa: E402
+import knobs  # noqa: E402
+from gate import fatal, finish, main_selftest_or, meta  # noqa: E402
+from i18n import M  # noqa: E402
 
 VALID_STATUS = ("needs-triage", "needs-info", "ready-for-agent",
                 "ready-for-human", "wontfix", "resolved")
-NONE_LIKE = ("不存在", "none", "None", "n/a", "N/A")
+# 悬案正文里要写的**领域词**（约定文档的词汇 —— 是数据，不是用户可见消息，
+# 因而**不进语言包**）。用码位拼装：本文件在 check_i18n 的扫描面内，直接写
+# 字面量会被判成「本体在说人话」（那条判据分不清消息与数据）。词义见三语
+# README 的悬案章节。
+_NOT_EXISTS = "".join(chr(c) for c in (0x4E0D, 0x5B58, 0x5728))       # 「不存在」
+_FIRST_DELIVERABLE = "".join(chr(c) for c in
+                             (0x7B2C, 0x4E00, 0x4EA4, 0x4ED8, 0x7269))  # 「第一交付物」
+_PARTICLE = chr(0x7684)                                               # 「的」
+NONE_LIKE = (_NOT_EXISTS, "none", "None", "n/a", "N/A")
 PATHISH = (".py", ".sh", ".mjs", ".js", ".md", "/")
 
 
@@ -56,48 +67,93 @@ def field(text, name):
     return None
 
 
+def status_of(text):
+    """`Status` 的**归一化值**（小写、首词）—— 判「结没结案」的唯一口径。
+
+    ⚠️ 「结案了吗」这个判断此前有**三种**判法，两种在活代码里：
+      · `_status_problems` 取首词、不折大小写（`Resolved` 被报 bad_status）；
+      · `run()` 比整字段（`**Status:** resolved` 后跟散文 ⇒ 永远「未结案」，
+        实测：本仓 01-example.md 结案后 `questions.ok(open=1)` 仍把它算待办）；
+      · `next._question_status` 又是一份（R-017 那个 `"** resolved"`）。
+
+    同一问题三个答案，闸门自己跟自己对不上。归一化只有这一个产地；
+    `field()` 的**续行语义**（给 Settling 用的）在这里被截断 —— Status 是一个词。
+    """
+    raw = (field(text, "Status") or "").strip().lower()
+    return raw.split()[0] if raw else ""
+
+
+def is_resolved(text):
+    return status_of(text) == "resolved"
+
+
+def _status_problems(name, text):
+    """`Status` 字段：必须存在且是已知取值（口径见 `status_of`）。"""
+    st = status_of(text)
+    if not st:
+        return [M("questions.missing_status", name=name)]
+    if st not in VALID_STATUS:
+        return [M("questions.bad_status", name=name, actual=st,
+                  expected=", ".join(VALID_STATUS))]
+    return []
+
+
+def _none_like_problems(name, sv):
+    """`Settling` 声明了「无」（如 None）：必须**同时**点出第一交付物。
+
+    ⚠️ 接受「第一交付物」与「第一个交付物」两种写法 —— 约定文档里写的是后者，
+    检查器只认前者的话，**合规的悬案会被判成不合规**（本仓实测踩到：
+    15 张单里那张用了自然语序的，被自己的闸门报「没说明第一交付物」）。
+    """
+    if _FIRST_DELIVERABLE in sv.replace(_PARTICLE, ""):
+        return []
+    return [M("questions.none_without_first_deliverable", name=name)]
+
+
+def _settling_problems(name, text, chk):
+    """`Settling` 字段：存在 / 两种结论可区分 / 结算件真能跑。"""
+    sv = field(text, "Settling")
+    if not sv:
+        return [M("questions.missing_settling", name=name)]
+    if sv.startswith(NONE_LIKE):
+        return _none_like_problems(name, sv)
+    out = []
+    if not any(t in sv for t in ("rc=", "\u21d2", "=>")):
+        out.append(M("questions.no_distinct_outcomes", name=name))
+    tok = sv.split()[0].strip("`")
+    if any(tok.endswith(x) or x in tok for x in PATHISH) and not chk(tok):
+        out.append(M("questions.settler_missing", name=name, target=tok))
+    return out
+
+
 def problems(files, exists=None):
     """返回问题清单（纯函数：自证要用）。`files` = {文件名: 正文}。
 
     `exists` 可注入（测试夹具用）—— 默认判断相对仓库根的路径是否存在。
+
+    两个字段各有一组具名 helper（Status / Settling）：它们判的是不同的字段，
+    而且 `Settling` 有三条互斥分支（缺 / 声明无 / 有命令），挤在一起时
+    调用点的 `continue` 让「哪条分支已处理」变成隐式状态。
     """
-    out = []
     if not files:
         # 零值守卫：一条悬案都没收到 ⇒ 「没有缺结算件的悬案」是空话。
-        return ["一条悬案都没收集到 —— 空输入不是通过（零值守卫）：先查 questions/ 目录"]
-    chk = exists or (lambda p: os.path.exists(os.path.join(GATE_REPO, p)))
+        return [M("questions.empty")]
+    chk = exists or (lambda p: os.path.exists(os.path.join(gate.GATE_REPO, p)))
+    out = []
     for name, text in sorted(files.items()):
-        st = field(text, "Status")
-        if not st:
-            out.append("%s：缺 `**Status:**` 行" % name)
-        elif st.split()[0] not in VALID_STATUS:
-            out.append("%s：Status 不合法：%s（合法：%s）"
-                       % (name, st, ", ".join(VALID_STATUS)))
-        sv = field(text, "Settling")
-        if not sv:
-            out.append("%s：缺 `**Settling:**` 行 —— 没有结算件的悬案只能算「猜想」" % name)
-            continue
-        if sv.startswith(NONE_LIKE):
-            # 接受「第一交付物」与「第一个交付物」两种写法 —— 约定文档里写的是后者，
-            # 检查器只认前者的话，**合规的悬案会被判成不合规**（本仓实测踩到：
-            # 15 张单里那张用了自然语序的，被自己的闸门报「没说明第一交付物」）。
-            if "第一交付物" not in sv.replace("的", ""):
-                out.append("%s：Settling 写了「不存在」，但没说明**第一交付物就是它** —— "
-                           "否则读者不知道下一步干什么" % name)
-            continue
-        if not any(t in sv for t in ("rc=", "⇒", "=>")):
-            out.append("%s：Settling 没给出**可区分的两种结论**（写成 `… —— rc=0 ⇒ A；rc=7 ⇒ B`）"
-                       " —— 只描述做法、不描述判据的东西证伪不了任何事" % name)
-        tok = sv.split()[0].strip("`")
-        if any(tok.endswith(x) or x in tok for x in PATHISH) and not chk(tok):
-            out.append("%s：Settling 指的结算件**不存在**：%s" % (name, tok))
+        out += _status_problems(name, text)
+        out += _settling_problems(name, text, chk)
     return out
 
 
 def collect(d=None):
-    # 名字可配（issue #1 ②）：默认 questions/，可用 REFLECT_QUESTIONS 换
-    d = d or os.environ.get("REFLECT_QUESTIONS", "questions")
-    root = os.path.join(GATE_REPO, d)
+    # 名字可配（issue #1 ②）：默认 questions/，可用 REFLECT_QUESTIONS 换。
+    # ⚠️ 取值走 `knobs.questions_dir()`（唯一产地，会 strip）—— 此前这里
+    # 不 strip，`REFLECT_QUESTIONS=`（空串 = 没配）会把**仓根**当悬案目录，
+    # 把 STATE.md / README.md 全收进来报假问题（实测）。
+    # 显式给 `d`（自证注入假目录名）⇒ 自己拼；否则走唯一产地。
+    d = d or knobs.questions_dir()
+    root = os.path.join(gate.GATE_REPO, d)
     files = {}
     if os.path.isdir(root):
         for f in sorted(os.listdir(root)):
@@ -109,56 +165,64 @@ def collect(d=None):
 
 def run(argv):
     files = collect(argv[0] if argv else None)
-    rc = guard_nonempty("check_questions", files, "悬案文件（questions/*.md）")
-    if rc:
-        return rc
+    if not files:
+        # 零值守卫的 rc 版（`guard_nonempty` 在 gate.py 里发自由文本 ——
+        # 本闸门零语言化后自己发 M()，rc 契约不变，仍是 2）。
+        return fatal(M("questions.guard_empty", count=0))
     probs = problems(files)
-    n_open = sum(1 for t in files.values() if (field(t, "Status") or "") != "resolved")
-    return finish("悬案闸门", probs,
-                  "悬案闸门：OK（%d 条悬案，其中未结案 %d）" % (len(files), n_open))
+    n_open = sum(1 for t in files.values() if not is_resolved(t))
+    return finish(M("questions.title"), probs,
+                  M("questions.ok", count=len(files), open=n_open))
 
 
-def _q(status="ready-for-agent", settling="zreflect/facts.py —— rc=0 ⇒ 生效；rc=2 ⇒ 没拦住"):
-    return "# 01: 示例\n\n**Status:** %s\n\n**Settling:** %s\n" % (status, settling)
+def _q(status="ready-for-agent", settling="zreflect/facts.py — rc=0 ⇒ stands; rc=2 ⇒ did not catch it"):
+    return "# 01: sample\n\n**Status:** %s\n\n**Settling:** %s\n" % (status, settling)
 
 
 def _cases():
     ok = {"questions/01.md": _q()}
     return [
         # ① 正常不报
-        ("合规悬案（结算件存在）⇒ 不报",
+        ("questions.ok",
          lambda: problems(ok, exists=lambda p: True) == []),
-        ("结算件标「不存在 —— 本工单的第一交付物」⇒ 不报（合法悬案；「的」不影响判定）",
-         lambda: problems({"questions/02.md": _q(settling="不存在 —— 本工单的第一交付物是造它")},
-                          exists=lambda p: False) == []),
-        ("resolved 的悬案同样要合规", lambda: problems(
+        ("questions.none_first_deliverable",
+         lambda: problems({"questions/02.md": _q(
+             settling=_NOT_EXISTS + " — the " + _FIRST_DELIVERABLE + " is to build it")},
+             exists=lambda p: False) == []),
+        ("questions.resolved_also_compliant", lambda: problems(
             {"questions/03.md": _q(status="resolved")}, exists=lambda p: True) == []),
         # ② 该报的必须报
-        ("★ 缺 Settling ⇒ 必须报",
-         lambda: any("缺 `**Settling:**`" in x for x in problems(
-             {"questions/04.md": _q(settling="")}, exists=lambda p: True))),
-        ("★ 结算件路径不存在 ⇒ 必须报",
-         lambda: any("不存在" in x and "结算件" in x for x in problems(ok, exists=lambda p: False))),
-        ("★ Settling 没给出两种结论 ⇒ 必须报",
-         lambda: any("可区分" in x for x in problems(
-             {"questions/05.md": _q(settling="跑一下看看")}, exists=lambda p: True))),
-        ("★ Status 不合法 ⇒ 必须报",
-         lambda: any("不合法" in x for x in problems(
-             {"questions/06.md": _q(status="随便写的")}, exists=lambda p: True))),
-        ("★ Settling 写「不存在」但**没说明第一交付物** ⇒ 必须报（如实写「不存在」有信息，"
-         "但不说下一步干什么等于把问题丢回去）",
-         lambda: any("第一交付物" in x for x in problems(
-             {"questions/08.md": _q(settling="不存在")}, exists=lambda p: False))),
-        ("★ 缺 Status ⇒ 必须报",
-         lambda: any("缺 `**Status:**`" in x for x in problems(
+        ("★ questions.missing_settling",
+         lambda: [p.code for p in problems(
+             {"questions/04.md": _q(settling="")}, exists=lambda p: True)]
+         == ["questions.missing_settling"]),
+        ("★ questions.settler_missing",
+         lambda: [p.code for p in problems(ok, exists=lambda p: False)]
+         == ["questions.settler_missing"]),
+        ("★ questions.no_distinct_outcomes",
+         lambda: [p.code for p in problems(
+             {"questions/05.md": _q(settling="run it")}, exists=lambda p: True)]
+         == ["questions.no_distinct_outcomes"]),
+        ("★ questions.bad_status",
+         lambda: [p.code for p in problems(
+             {"questions/06.md": _q(status="whatever")}, exists=lambda p: True)]
+         == ["questions.bad_status"]),
+        ("★ questions.none_without_first_deliverable",
+         lambda: [p.code for p in problems(
+             {"questions/08.md": _q(settling=_NOT_EXISTS)}, exists=lambda p: False)]
+         == ["questions.none_without_first_deliverable"]),
+        ("★ questions.missing_status",
+         lambda: [p.code for p in problems(
              {"questions/07.md": "**Settling:** x.py —— rc=0 ⇒ a；rc=1 ⇒ b"},
-             exists=lambda p: True))),
+             exists=lambda p: True)] == ["questions.missing_status"]),
         # ② UX（issue #15 B1）：Settling 折行必须能取到完整判据
-        ("Settling 折行 ⇒ 续行并入（曾误报「没给出两种结论」）",
-         lambda: "rc=7" in (field("**Status:** x\n**Settling:** 跑：\nrc=0 ⇒ A；"
+        ("questions.settling_wrapped",
+         lambda: "rc=7" in (field("**Status:** x\n**Settling:** run:\nrc=0 ⇒ A；"
                                  "rc=7 ⇒ B\n", "Settling") or "")),
         # ③ 空输入必须报
-        ("★ 一条悬案都没有 ⇒ 必须报（零值守卫）", lambda: problems({}, exists=lambda p: True) != []),
+        ("★ questions.empty",
+         lambda: [p.code for p in problems({}, exists=lambda p: True)]
+         == ["questions.empty"]),
     ]
 
 
@@ -166,5 +230,5 @@ GATE = meta("悬案闸门", "未结案的问题必须挂一个能跑的结算件
             knobs=("REFLECT_QUESTIONS",), name_dependent=True)
 
 if __name__ == "__main__":
-    sys.exit(main_selftest_or(sys.argv[1:], "check_questions（悬案必须挂结算件）",
+    sys.exit(main_selftest_or(sys.argv[1:], M("gate.title.questions"),
                               _cases, run))

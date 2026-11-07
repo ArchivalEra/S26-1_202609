@@ -1,0 +1,23 @@
+{
+ "world.title": "world 闸门",
+ "world.ok": "world 闸门：OK（线 `%(line_name)s`：容器 `%(container)s`、站点 `%(site)s`，%(count)d 枚印章对账一致）",
+ "world.off": "world 闸门：未配置（REFLECT_WORLD 未配且默认 world.json 不在）⇒ 本闸门未启用（可插拔模块；单线仓库不受益也不受损 —— 一个世界 = 现状行为。要启用：cp zreflect/world.json.example world.json）",
+ "world.knob_file_missing": "REFLECT_WORLD 已配置但声明文件不在 —— 先写声明（或撤掉该旋钮）",
+ "world.spec_broken": "world 声明 %(name)s 读不了 / 不是合法 JSON：%(error)s",
+ "world.spec_shape_bad": "world 声明 %(name)s 形状坏：需要 {lines, active, stamps} 对象",
+ "world.spec_not_object": "world 声明不是对象 —— 形状坏（需要 {lines, active, stamps}）",
+ "world.lines_empty": "world 清单为空或不是对象 —— 空清单不是通过（零值守卫）：清单要有理由才存在",
+ "world.active_missing": "缺 active（必填：哪条线算当前是人的决定，但决定必须写下来 —— 不写 = 每个人都猜）",
+ "world.active_unknown": "active=`%(active)s` 不在清单里（已知线：%(lines)s）",
+ "world.line_not_object": "线 `%(line_name)s` 不是对象：%(line)r",
+ "world.line_missing_field": "线 `%(line_name)s` 缺字段 `%(field)s`（必填四件套：%(fields)s）",
+ "world.override_unknown": "REFLECT_WORLD_LINE=%(line_name)s 不在清单里 —— 覆盖指向不存在的线（要么写对，要么撤掉该旋钮）",
+ "world.branch_mismatch": "当前分支 `%(branch)s` 是清单里的线，但 active 声明的是 `%(active)s` —— 换线没跑换线脚本（或 active 忘了改）：闸门此刻验证的世界属于另一条线",
+ "world.stamps_empty": "印章清单为空或不是对象 —— 没有印章的 world 声明守不住换线（零值守卫）：换线三步必须有证人",
+ "world.stamp_not_object": "印章 `%(name)s` 不是对象：%(entry)r",
+ "world.stamp_missing_value": "印章 `%(name)s` 缺 value（必填：换线脚本写下的一次实测采样）",
+ "world.stamp_missing_cmd": "印章 `%(name)s` 缺 cmd（必填：对账的复跑命令 —— 没 cmd 的印章就是散文）",
+ "world.stamp_timeout": "印章 `%(name)s` 对账**超时**：`%(command)s` —— 挂在 pre-commit 里的命令不该永远等不到",
+ "world.stamp_command_failed": "印章 `%(name)s` 对账命令报错（rc=%(return_code)s）：`%(command)s` —— 对账方式本身死了",
+ "world.stamp_mismatch": "印章 `%(name)s` 对账不符：环境=%(actual)s vs 声明=%(expected)s —— 声明与环境不一致（换线后环境没跟上，或环境被别的线污染）；修法是重跑换线脚本"
+}

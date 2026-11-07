@@ -1,0 +1,5 @@
+{
+ "hookenv.case_failed": "%(label)s (erwartet '%(expected)s', gemessen '%(actual)s')",
+ "hookenv.mktemp_failed": "mktemp fehlgeschlagen (temporäres Verzeichnis nicht erstellbar)",
+ "hookenv.summary": "einfacht-env Plugin-Selbsttest: %(passed)s PASS / %(failed)s fail"
+}

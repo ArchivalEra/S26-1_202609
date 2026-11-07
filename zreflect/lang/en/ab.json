@@ -1,0 +1,13 @@
+{
+ "ab.title": "A/B gate",
+ "ab.ok": "A/B gate: OK (%(count)d pairs, no confounding variables)",
+ "ab.off": "off (%(name)s does not exist ⇒ says so and exits 0; pluggable)",
+ "ab.explicit_spec_missing": "explicitly specified spec %(name)s does not exist (--spec / REFLECT_AB) — write the spec or drop the flag",
+ "ab.spec_broken": "spec %(name)s is broken: %(error)s",
+ "ab.empty": "pairs is empty (zero-value guard: an empty assertion surface is not a pass)",
+ "ab.pair_missing_field": "pair missing field %(field)s: %(entry)r (why is mandatory — an unexplained comparison nobody dares to delete)",
+ "ab.confound": "%(name)s: confounding variable — %(key)s key %(field)r: A=%(value_a)r B=%(value_b)r (non-allow axis differs ⇒ A/B is void)",
+ "ab.artifact_unreadable": "%(name)s: artifact unreadable (%(error_a)s / %(error_b)s) ⇒ not checked this run",
+ "ab.not_a_dict": "%(name)s: key=%(key)r is not a dict in at least one of the two artifacts",
+ "ab.root_label": "(root)"
+}

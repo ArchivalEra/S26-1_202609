@@ -1,0 +1,23 @@
+{
+ "world.title": "world gate",
+ "world.ok": "world gate: OK (line `%(line_name)s`: container `%(container)s`, site `%(site)s`, %(count)d stamps reconciled)",
+ "world.off": "world gate: not configured (REFLECT_WORLD unset and the default world.json is absent) ⇒ this gate is off (pluggable module; a single-line repo neither gains nor loses — one world = current behaviour. To enable: cp zreflect/world.json.example world.json)",
+ "world.knob_file_missing": "REFLECT_WORLD is set but the declaration file is absent — write the declaration first (or drop the knob)",
+ "world.spec_broken": "world declaration %(name)s is unreadable / not valid JSON: %(error)s",
+ "world.spec_shape_bad": "world declaration %(name)s has a bad shape: an object {lines, active, stamps} is required",
+ "world.spec_not_object": "world declaration is not an object — bad shape (an object {lines, active, stamps} is required)",
+ "world.lines_empty": "world line list is empty or not an object — an empty list is not a pass (zero-value guard): a list must exist for a reason",
+ "world.active_missing": "missing active (required: which line counts as current is a human decision, but the decision must be written down — not writing it = everyone guesses)",
+ "world.active_unknown": "active=`%(active)s` is not in the list (known lines: %(lines)s)",
+ "world.line_not_object": "line `%(line_name)s` is not an object: %(line)r",
+ "world.line_missing_field": "line `%(line_name)s` is missing field `%(field)s` (the required four: %(fields)s)",
+ "world.override_unknown": "REFLECT_WORLD_LINE=%(line_name)s is not in the list — the override points at a line that does not exist (write it correctly or drop the knob)",
+ "world.branch_mismatch": "current branch `%(branch)s` is a line in the list, but active declares `%(active)s` — the switch script did not run (or active was not updated): the world this gate is validating right now belongs to another line",
+ "world.stamps_empty": "stamp list is empty or not an object — a world declaration without stamps cannot hold a line switch together (zero-value guard): the three switching steps need a witness",
+ "world.stamp_not_object": "stamp `%(name)s` is not an object: %(entry)r",
+ "world.stamp_missing_value": "stamp `%(name)s` is missing value (required: one measured sample written by the switch script)",
+ "world.stamp_missing_cmd": "stamp `%(name)s` is missing cmd (required: the replay command that reconciles it — a stamp without cmd is prose)",
+ "world.stamp_timeout": "stamp `%(name)s` reconciliation **timed out**: `%(command)s` — a command wired into pre-commit must not wait forever",
+ "world.stamp_command_failed": "stamp `%(name)s` reconciliation command failed (rc=%(return_code)s): `%(command)s` — the reconciliation method itself is dead",
+ "world.stamp_mismatch": "stamp `%(name)s` mismatch: environment=%(actual)s vs declared=%(expected)s — declaration and environment disagree (the environment did not follow the switch, or it is polluted by another line); fix by re-running the switch script"
+}

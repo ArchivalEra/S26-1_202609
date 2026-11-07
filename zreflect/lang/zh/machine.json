@@ -1,0 +1,4 @@
+{
+ "gate.title.machine": "机器行协议",
+ "machine.no_cli": "本模块是纯函数库，没有 CLI。自证：python3 zreflect/machine.py --selftest"
+}

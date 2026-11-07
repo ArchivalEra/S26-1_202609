@@ -1,0 +1,10 @@
+{
+ "gate.title.snapshot": "Modul-Snapshot-Tor (modulübergreifender Import eines veränderlichen Globals ist eine veraltete Kopie)",
+ "snapshot.title": "Modul-Snapshot-Tor",
+ "snapshot.ok": "Snapshot-Tor: OK (%(files)d Dateien; keine modulübergreifenden Kopien veränderlicher Globals)",
+ "snapshot.empty_scan": "die Scanfläche ist leer — leer ist kein Bestehen (Nullwert-Wächter)",
+ "snapshot.scan_empty_dir": "Scanfläche %(root)s ist ein leeres Verzeichnis — eine leere Eingabe ist nicht 'kein Snapshot-Risiko'",
+ "snapshot.mutable_copy": "%(file)s macht `from %(source)s import %(imported)s` — eine **Wertkopie**: %(source)s weist es neu zu, die Kopie blieb aber beim Import stehen (nutze `import %(source)s` und lies `%(source)s.%(imported)s` als Attribut)",
+ "knobs.sem.reflect_snapshot_root": "Quellverzeichnis, das dieses Tor scannt (modulübergreifende Snapshot-Prüfung). Leer ⇒ sagt laut, dass es aus ist",
+ "snapshot.derived_copy": "%(file)s berechnet `%(derived)s = …` auf Modulebene aus %(source)s.%(imported)s — dieser Ausdruck wird beim Import einmal ausgewertet und folgt späteren Änderungen von %(source)s.%(imported)s nicht (in einer Funktion berechnen oder %(source)s.%(imported)s jedes Mal lesen)"
+}

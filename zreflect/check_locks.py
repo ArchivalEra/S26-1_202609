@@ -36,28 +36,27 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from gate import fatal, finish, load_spec, main_selftest_or, meta, off  # noqa: E402
-from gate import repo                                     # noqa: E402
+import gate  # noqa: E402
+import knobs  # noqa: E402
+import machine  # noqa: E402
+from gate import (  # noqa: E402
+    fatal,
+    finish,
+    load_spec,
+    main_selftest_or,
+    meta,
+    off,
+    repo,  # noqa: E402
+)
+from i18n import M  # noqa: E402
 
-DEFAULT_SPEC = "upstream-lock.json"
+# 从旋钮登记表派生（唯一产地）—— 手写字面量会与它漂（本仓最贵的一类债）。
+DEFAULT_SPEC = knobs.REGISTRY["REFLECT_LOCKS"][1]
 
 
 def resolve_spec(argv, knob=""):
-    """规格名解析：--spec 显式 > `REFLECT_LOCKS` 旋钮 > 默认名。
-    返回 (规格名, 是否显式指定)。
-
-    显式指定而文件不在 ⇒ 调用方必须 FATAL（配置了却不存在的规格是
-    「部署了 ≠ 在跑」家族）；默认名不在 ⇒ 未启用退 0。
-    （issue #15 C2：无 git 上游的供给件是常见形状，下游此前各自 fork 加
-    这个旋钮 —— 上游化后下游补丁可删。）
-    """
-    for i, a in enumerate(argv):
-        if a == "--spec":
-            return argv[i + 1], True
-    k = (knob or "").strip()
-    if k:
-        return k, True
-    return DEFAULT_SPEC, False
+    """见 `gate.resolve_spec`：实现只有一处，这里只绑定本闸门的默认名。"""
+    return gate.resolve_spec(argv, knob, DEFAULT_SPEC)
 
 
 def _sha(path):
@@ -68,68 +67,80 @@ def _sha(path):
     return h.hexdigest()
 
 
+REQUIRED_FIELDS = ("name", "url", "file")
+
+
+def _entry_missing_fields(entry):
+    """缺字段的问题清单。**任一缺失 ⇒ 这条不可检查**（不能拿 None 去 hasher）。"""
+    return [M("locks.entry_missing_field", field=f, entry=entry)
+            for f in REQUIRED_FIELDS if not entry.get(f)]
+
+
+def _check_one(entry, hasher, root):
+    """检查一条锁定项。返回 `(问题清单, 跳过清单)`。"""
+    missing = _entry_missing_fields(entry)
+    if missing:
+        return missing, []
+    path = gate.repo_path(entry["file"], root)
+    if not os.path.exists(path):
+        if entry.get("optional"):
+            return [], [M("locks.absent_optional", name=entry["name"])]
+        return [M("locks.file_missing", name=entry["name"], path=path)], []
+    want = entry.get("sha256")
+    if not want:
+        if (entry.get("form") or "file") == "dir":
+            return [], []                     # 目录形态：只查存在
+        return [M("locks.no_sha256", name=entry["name"])], []
+    got = hasher(path)
+    if got != want:
+        return [M("locks.sha_mismatch", name=entry["name"],
+                  declared=want[:12], actual=got[:12])], []
+    return [], []
+
+
 def check(spec, hasher=_sha, root=None):
     """纯逻辑（自证注入 hasher）。返回 (problems, skips)。
 
     `root` = 相对 file 路径的锚（默认被检查仓库根；自证传夹具目录）。
+
+    单条检查是一个具名 helper（`_check_one`）：此前它的 `problems[-1].code`
+    回看上一轮追加的条目来判断「这条缺字段」—— 那既脆（别人在中间追加一条
+    就失效）又把复杂度推到 12。现在缺字段是**返回值**，不是上下文。
     """
     root = repo() if root is None else root
-    problems, skips = [], []
     locked = spec.get("locked") or spec.get("sources") or []
     if not locked:
-        problems.append("locked 清单为空（零值守卫：空断言面不是通过）")
-        return problems, skips
-    for s in locked:
-        for f in ("name", "url", "file"):
-            if not s.get(f):
-                problems.append("锁定条目缺字段 %s: %r（没有理由的锁定是僵尸）" % (f, s))
-        if problems and problems[-1].startswith("锁定条目缺字段"):
-            continue
-        path = s["file"]
-        if not os.path.isabs(path):
-            path = os.path.join(root, path)
-        if not os.path.exists(path):
-            if s.get("optional"):
-                skips.append("%s: 本机缺席（optional ⇒ 明说，不是通过）" % s["name"])
-            else:
-                problems.append("%s: 锁定的文件/目录不存在：%s" % (s["name"], path))
-            continue
-        want = s.get("sha256")
-        if not want:
-            if (s.get("form") or "file") == "dir":
-                continue                      # 目录形态：只查存在
-            problems.append("%s: 文件形态的锁定条目没有 sha256（那不叫钉版）" % s["name"])
-            continue
-        got = hasher(path)
-        if got != want:
-            problems.append("%s: sha256 不符（清单 %s… 实测 %s…）⇒ 上游字节漂了"
-                            % (s["name"], want[:12], got[:12]))
+        return [M("locks.empty")], []
+    problems, skips = [], []
+    for entry in locked:
+        probs, sk = _check_one(entry, hasher, root)
+        problems += probs
+        skips += sk
     return problems, skips
 
 
 def main(argv):
     spec_path, explicit = resolve_spec(argv, os.environ.get("REFLECT_LOCKS", ""))
-    path = spec_path if os.path.isabs(spec_path) else repo(spec_path)
+    path = gate.repo_path(spec_path)
     if not os.path.isfile(path):
         if explicit:
-            return fatal("显式指定的规格 %s 不存在（--spec）—— 先写规格（或撤掉指定）"
-                         % spec_path)
-        return off("未启用（%s 不存在 ⇒ 明说未启用退 0，可插拔）" % spec_path)
+            return fatal(M("locks.explicit_spec_missing", name=spec_path))
+        return off(M("locks.off", name=spec_path))
     spec, err = load_spec(path)
     if err:
-        return fatal("规格 %s 坏：%s" % (spec_path, err))
+        return fatal(M("locks.spec_broken", name=spec_path, error=err))
     problems, skips = check(spec)
     for x in skips:
-        print("SKIP: %s" % x, file=sys.stderr)
-    return finish("锁定源闸门", problems,
-                  "锁定源闸门：OK（%d 个锁定源全部一致）"
-                  % len(spec.get("locked") or spec.get("sources") or []))
+        print(machine().emit("skip", str(x)), file=sys.stderr)
+    return finish(M("locks.title"), problems,
+                  M("locks.ok", count=len(spec.get("locked")
+                                         or spec.get("sources") or [])))
 
 
 def _cases():
-    import atexit                                        # noqa: PLC0415
-    import shutil                                        # noqa: PLC0415
-    import tempfile                                      # noqa: PLC0415
+    import atexit  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
     d = tempfile.mkdtemp()
     atexit.register(shutil.rmtree, d, True)
     payload = b"UPSTREAM-FIXTURE"
@@ -151,27 +162,29 @@ def _cases():
     no_sha = {"locked": [{"name": "glpk", "version": "5.0", "url": "u", "file": g}]}
     empty = {"locked": []}
     return [
-        ("规格名解析：--spec > 默认名（显式带回 True）",
+        ("locks.resolve_spec",
          lambda: resolve_spec(["--spec", "x.json"], "K.json") == ("x.json", True)
          and resolve_spec([], "K.json") == ("K.json", True)
          and resolve_spec([]) == ("upstream-lock.json", False)),
         # ① 正常不报
-        ("锁定一致/目录形态/optional 缺席 ⇒ 不报",
+        ("locks.ok",
          lambda: check(spec, root=d)[0] == [] and check(spec, root=d)[1] != []),
         # ② 该报的必须报
-        ("★ sha256 不符 ⇒ 必须报（字节漂了）",
-         lambda: any("sha256 不符" in x for x in check(bad_hash, root=d)[0])),
-        ("★ 锁定文件缺席（非 optional）⇒ 必须报",
-         lambda: any("不存在" in x for x in check(missing, root=d)[0])),
-        ("★ 文件形态没有 sha256 ⇒ 必须报（那不叫钉版）",
-         lambda: any("没有 sha256" in x for x in check(no_sha, root=d)[0])),
+        ("★ locks.sha_mismatch",
+         lambda: [p.code for p in check(bad_hash, root=d)[0]] == ["locks.sha_mismatch"]),
+        ("★ locks.file_missing",
+         lambda: [p.code for p in check(missing, root=d)[0]] == ["locks.file_missing"]),
+        ("★ locks.no_sha256",
+         lambda: [p.code for p in check(no_sha, root=d)[0]] == ["locks.no_sha256"]),
         # ③ 空输入必须报
-        ("★ locked 为空 ⇒ 必须报（零值守卫）", lambda: check(empty, root=d)[0] != []),
+        ("★ locks.empty",
+         lambda: [p.code for p in check(empty, root=d)[0]] == ["locks.empty"]),
     ]
 
 
 GATE = meta("锁定源闸门", "锁定源清单（URL + 文件 + sha256 的内容指纹）",
-            knobs=("REFLECT_LOCKS",))
+            knobs=("REFLECT_LOCKS",),
+            off_reason="不钉上游字节的仓不需要它：规格未配 ⇒ 明说未启用")
 
 if __name__ == "__main__":
-    sys.exit(main_selftest_or(sys.argv[1:], "check_locks（锁定源清单）", _cases, main))
+    sys.exit(main_selftest_or(sys.argv[1:], M("gate.title.locks"), _cases, main))

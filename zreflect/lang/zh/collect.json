@@ -1,0 +1,3 @@
+{
+ "collect.regex_missing_group": "parse_prev_values：行正则里没有命名分组 %(name)r —— 回收靠命名分组，别用位置分组（换行序 = 静默拿错值）"
+}

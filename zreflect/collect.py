@@ -47,7 +47,13 @@
 """
 import re
 
-from gate import module_meta, repo                                    # noqa: F401  (re-export 便利)
+from gate import (  # noqa: F401  (re-export 便利)
+    fatal_exit,
+    machine,  # noqa: E402
+    module_meta,
+    repo,
+)
+from i18n import M  # noqa: E402
 
 
 def unavailable(what, why):
@@ -79,13 +85,69 @@ def parse_prev_values(doc_text, row_pattern, group_names):
         for name in group_names:
             try:
                 rec[name] = m.group(name)
-            except IndexError as error:
+            except IndexError:
                 # 未命名分组 = 配置错，必须响，不许静默拿错值。
-                raise SystemExit(
-                    "FATAL: parse_prev_values：行正则里没有命名分组 %r —— "
-                    "回收靠命名分组，别用位置分组（换行序 = 静默拿错值）" % name) from error
+                fatal_exit(M("collect.regex_missing_group", name=name))
         out[key] = rec
     return out
 
 
-MODULE = module_meta("采集器契约", "measure() 的四条原则 + 帮手（无独立自证）", selftest=False)
+# `selftest=False` 的真实含义：**没有 `--selftest` 入口**（本模块是纯契约 +
+# 两个帮手，塞一个 CLI 入口会与「被 facts.measure 调用」的角色打架）。
+# **这不等于没有自证**：`parse_prev_values`（命名分组回收 / 缺组必须响）与
+# `unavailable`（读不到 = ok False，不许编 0）都有实质断言，住在
+# `registry._cases()`。此前描述写「无独立自证」，与事实不符（第 25 轮对齐）。
+MODULE = module_meta(
+    "采集器契约",
+    "measure() 的四条原则 + 帮手（无 --selftest 入口；"
+    "自证在本模块 `_cases`）",
+    selftest=True)
+
+
+# ── 自证（此前寄宿在 registry._cases）────────────────────────────────────────
+#
+# 判据属于**被测模块**：`parse_prev_values` / `unavailable` 住在这里，
+# 它们的自证也该住在这里。搬回来之后 `selftest=True` 是诚实的声明。
+
+def _cases():
+    def parse_ok():
+        got = parse_prev_values("| a | 1 |\n| b | 2 |\n",
+                                r"\| (?P<key>\w+) \| (?P<val>\d+) \|",
+                                ("val",))
+        return got == {"a": {"val": "1"}, "b": {"val": "2"}}
+
+    def missing_group_shouts():
+        try:
+            parse_prev_values("| a | 1 |\n",
+                              r"\| (?P<key>\w+) \| (?P<val>\d+) \|",
+                              ("nope",))
+            return False                # 没响 = 这条红
+        except SystemExit:
+            return True
+
+    def unavailable_shape():
+        got = unavailable("x", "y")
+        return got.get("ok") is False and "why" in got
+
+    return [
+        ("★ collect.parse_prev_values", parse_ok),
+        ("★ collect.missing_group_shouts", missing_group_shouts),
+        ("collect.unavailable_shape", unavailable_shape),
+    ]
+
+
+def _selftest():
+    import sys  # noqa: PLC0415
+
+    from gate import main_selftest_or  # noqa: PLC0415
+    from i18n import M  # noqa: PLC0415
+    return main_selftest_or(sys.argv[1:], M("gate.title.collect"),
+                            _cases, lambda a: 0)
+
+
+if __name__ == "__main__":
+    import os  # noqa: PLC0415
+    import sys  # noqa: PLC0415
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import collect as _mod  # noqa: PLC0415
+    sys.exit(_mod._selftest())

@@ -1,0 +1,18 @@
+{
+ "instruments.title": "Instrument lifecycle gate",
+ "instruments.ok": "Instrument lifecycle gate: OK (%(modes)s)",
+ "instruments.off": "Instrument lifecycle gate: neither %(days_knob)s nor %(instruments_knob)s is configured ⇒ this gate is off (pluggable module; to enable: %(days_knob)s=days turns on constant-value detection; %(instruments_knob)s=instruments.json registers falsified methods)",
+ "instruments.days_unparseable": "%(days_knob)s=%(value)r cannot be parsed as a number of days — fix the config (or drop the knob)",
+ "instruments.ledger_missing": "ledger is missing: %(path)s — run facts.py first",
+ "instruments.registry_missing": "REFLECT_INSTRUMENTS=%(name)s is set but the registry file is absent — register first (or drop the knob)",
+ "instruments.spec_broken": "method registry %(name)s is broken: %(error)s",
+ "instruments.ledger_empty": "ledger is empty — empty is not a pass (zero-value guard): first check whether measure() is broken",
+ "instruments.first_seen_unparseable": "`%(key)s` has an unparseable first_seen (%(first_seen)r) — the constant-value rule cannot be evaluated (if it cannot be read, say so; do not guess)",
+ "instruments.constant_return": "`%(key)s` has not changed since %(first_seen)s (%(days).0f days, constant threshold %(threshold).0f days) — confirm by hand: is this cmd measuring, or returning the same number forever? (instrument-silent-drift check, issue #6 ①)",
+ "instruments.entry_malformed": "method registry entry has a malformed shape (text and why are both required): %(entry)r",
+ "instruments.falsified_method": "`%(key)s`'s cmd contains a **falsified method** fragment %(text)r (%(why)s; correct method in %(fixed_in)s) — a bad method must not stay in the ledger",
+ "instruments.fixed_in_unregistered": "unregistered",
+ "instruments.part_days": "constant-value detection, %(threshold).0f-day threshold",
+ "instruments.part_methods": "method registry %(name)s (%(count)d entries)",
+ "instruments.part_none": "empty registry"
+}

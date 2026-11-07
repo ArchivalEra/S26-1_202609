@@ -1,0 +1,12 @@
+{
+ "questions.title": "Fragenregister-Tor",
+ "questions.empty": "keine Fragen gesammelt — leere Eingabe ist kein Bestehen (Nullwert-Wächter): erst das Verzeichnis questions/ prüfen",
+ "questions.missing_status": "%(name)s: `**Status:**`-Zeile fehlt",
+ "questions.bad_status": "%(name)s: ungültiger Status: %(actual)s (gültig: %(expected)s)",
+ "questions.missing_settling": "%(name)s: `**Settling:**`-Zeile fehlt — eine Frage ohne ausführbaren Settler ist nur eine Vermutung",
+ "questions.none_without_first_deliverable": "%(name)s: Settling sagt \"existiert nicht\", sagt aber nicht, dass **es das erste Lieferergebnis ist** — sonst kennt der Leser den nächsten Schritt nicht",
+ "questions.no_distinct_outcomes": "%(name)s: Settling gibt keine **zwei unterscheidbaren Ergebnisse** an (schreiben als `… — rc=0 ⇒ A; rc=7 ⇒ B`) — nur das Verfahren zu beschreiben beweist nichts",
+ "questions.settler_missing": "%(name)s: der Settler, auf den Settling zeigt, **existiert nicht**: %(target)s",
+ "questions.guard_empty": "Fragendateien (%(count)d an der Zahl) sind leer",
+ "questions.ok": "Fragenregister-Tor: OK (%(count)d Fragen, %(open)d noch offen)"
+}

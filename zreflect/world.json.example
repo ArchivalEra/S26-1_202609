@@ -1,0 +1,32 @@
+{
+  "_comment": "world.json —— 声明式验证对象（reflection world，issue #13）。多线仓库（若干条独立维护的产线共享同一套闸门与同一个验证环境）用本文件把「当前验证的是哪个世界」写成数据。引擎（check_world.py）只读本文件、不构建、不碰容器之外的东西。本仓未启用（没有 world.json，REFLECT_WORLD 未配 ⇒ 闸门明说未启用、退 0）—— 本文件只是形状样板。",
+  "lines": {
+    "wasm64-NEXT": {
+      "site": "/srv/next-base/site",
+      "artifacts": "/srv/next-base/w64-artifacts",
+      "container": "o113",
+      "fork_pin_ref": "upstream/octave"
+    },
+    "IllegalPerformance": {
+      "site": "/srv/ip/site",
+      "artifacts": "/srv/ip/w64-artifacts",
+      "container": "o113",
+      "fork_pin_ref": "upstream/octave"
+    }
+  },
+  "active": "wasm64-NEXT",
+  "stamps": {
+    "container": {
+      "value": "sha256:一次实测采样",
+      "cmd": "docker inspect --format '{{.Image}}' o113"
+    },
+    "site": {
+      "value": "sha256:一次实测采样",
+      "cmd": "find /srv/next-base/site -type f | sort | xargs sha256sum | sha256sum"
+    },
+    "scripts": {
+      "value": "sha256:一次实测采样",
+      "cmd": "sha256sum relink.sh link-web.sh | sha256sum"
+    }
+  }
+}

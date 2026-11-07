@@ -1,0 +1,18 @@
+{
+ "instruments.title": "仪器生命周期闸门",
+ "instruments.ok": "仪器生命周期闸门：OK（%(modes)s）",
+ "instruments.off": "仪器生命周期闸门：%(days_knob)s 与 %(instruments_knob)s 均未配置 ⇒ 本闸门未启用（可插拔模块；要启用：%(days_knob)s=天 开恒常检测；%(instruments_knob)s=instruments.json 登记被证伪量法）",
+ "instruments.days_unparseable": "%(days_knob)s=%(value)r 不可解析成天数 —— 修配置（或撤掉该旋钮）",
+ "instruments.ledger_missing": "台账不在：%(path)s —— 先跑 facts.py",
+ "instruments.registry_missing": "REFLECT_INSTRUMENTS=%(name)s 已配置但登记位不在 —— 先登记（或撤掉该旋钮）",
+ "instruments.spec_broken": "量法登记位 %(name)s 坏：%(error)s",
+ "instruments.ledger_empty": "台账为空 —— 空不是通过（零值守卫）：先查 measure() 是不是坏了",
+ "instruments.first_seen_unparseable": "`%(key)s` 的 first_seen 不可解析（%(first_seen)r）—— 恒常判据无法评估（读不到就明说，不许猜）",
+ "instruments.constant_return": "`%(key)s` 的值自 %(first_seen)s 起没变过（%(days).0f 天，恒常阈值 %(threshold).0f 天） —— 人工确认：这条 cmd 是在量，还是恒返回同一个数？（仪器静默失真检查，issue #6 ①）",
+ "instruments.entry_malformed": "量法登记条目形状残缺（text 与 why 必须都给）：%(entry)r",
+ "instruments.falsified_method": "`%(key)s` 的 cmd 含**被证伪的量法**片段 %(text)r（%(why)s；正确量法见 %(fixed_in)s）—— 坏量法不许留在台账里",
+ "instruments.fixed_in_unregistered": "未登记",
+ "instruments.part_days": "恒常检测 %(threshold).0f 天阈值",
+ "instruments.part_methods": "量法登记 %(name)s（%(count)d 条）",
+ "instruments.part_none": "空登记"
+}

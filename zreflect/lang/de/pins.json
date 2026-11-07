@@ -1,0 +1,18 @@
+{
+ "pins.title": "Pin-Tor",
+ "pins.ok": "Pin-Tor: OK (%(count)d Pins alle konsistent)",
+ "pins.off": "aus (%(name)s existiert nicht ⇒ sagt es und endet mit 0; steckbar)",
+ "pins.explicit_spec_missing": "explizit angegebene Spec %(name)s existiert nicht (--spec / REFLECT_PINS) — Spec schreiben oder Flag entfernen",
+ "pins.spec_broken": "Spec %(name)s ist kaputt: %(error)s",
+ "pins.empty": "pins ist leer (Nullwert-Wächter: eine leere Zusicherungsfläche ist kein Bestehen)",
+ "pins.pin_missing_field": "Pin fehlt Feld %(field)s: %(entry)r (why/name sind Pflicht laut Familienregel)",
+ "pins.worktree_missing": "%(name)s: Arbeitsbaum %(path)s existiert nicht (der Zeiger ist da, der Baum nicht)",
+ "pins.head_unreadable": "%(name)s: Arbeitsbaum-HEAD unlesbar (kein Git-Baum?)",
+ "pins.stamp_unreadable": "%(name)s: Stempel unlesbar (nicht provisioniert?)",
+ "pins.stamp_malformed": "%(name)s: Stempel fehlgeformt (erwartet name/branch/commit/dirty): %(actual)r",
+ "pins.commit_mismatch": "%(name)s: abgeleitete Kopie Commit %(declared)s ≠ Arbeitsbaum-HEAD %(actual)s (Zeiger nach der Provisionierung weitergeschoben?)",
+ "pins.dirty": "%(name)s: abgeleitete Kopie hat lokale Änderungen (dirty=%(count)s)",
+ "pins.version_unreadable": "%(name)s: Versionsbefehl unlesbar",
+ "pins.version_drift": "%(name)s: Versions-Drift (erwartet %(declared)s, gemessen %(actual)s)",
+ "pins.unknown_kind": "%(name)s: unbekannte Art %(field)r (tree | version)"
+}

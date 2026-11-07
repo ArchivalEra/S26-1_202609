@@ -31,15 +31,16 @@ from __future__ import annotations
 
 import os
 
-from gate import GATE_REPO
+import gate
+from i18n import M
 from ledger import changed_keys, dropped_keys, short_value
 
 
 def _gitignored(path):
     """路径是否被 .gitignore 覆盖；非 git 仓库 / git 不在 ⇒ None（无法判断，不猜）。"""
-    import subprocess                                    # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
     try:
-        r = subprocess.run(["git", "-C", GATE_REPO, "check-ignore", "-q", path],
+        r = subprocess.run(["git", "-C", gate.GATE_REPO, "check-ignore", "-q", path],
                            capture_output=True)
     except OSError:
         return None
@@ -69,20 +70,19 @@ def write_target_problems(path, knob_set, ignored=None, carrier_exists=None):
     fatal = warn = None
     ig = _gitignored(path) if ignored is None else ignored
     if ig is True:
-        fatal = ("台账目标 %s 被 .gitignore 覆盖 —— 写进去等于没写"
-                 "（版本控制看不见，钩子读的是另一份）；撤销该 ignore 规则，"
-                 "或显式设 REFLECT_FACTS 指向被跟踪的位置" % path)
+        fatal = M("guard.write_target_gitignored", path=path)
     elif ig is None:
-        warn = "（非 git 仓库或 git 不可用：跳过 gitignore 检查）"
+        warn = M("guard.write_target_no_git")
     if carrier_exists is None:
         carrier_exists = any(os.path.exists(os.path.join(d, "Einfacht.env"))
-                             for d in (os.path.join(GATE_REPO, "reflect-hooks"),
-                                       GATE_REPO))
+                             for d in (os.path.join(gate.GATE_REPO, "reflect-hooks"),
+                                       gate.GATE_REPO))
     if carrier_exists and not knob_set and ig is not True:
-        warn = ((warn + "；" if warn else "")
-                + "仓里有 Einfacht.env 但本次进程未加载它（REFLECT_FACTS 用了"
-                  "代码默认值）—— 手工跑请先 source，否则写盘目标可能与钩子"
-                  "语境不同（issue #20 ②）")
+        # 两条 warn 可能并列（前一条是「非 git 目录」）—— 拼装归语言包：
+        # 有前缀走 `_after`（模板里带分隔符），没有走裸句。
+        warn = (M("guard.write_target_env_carrier")
+                if warn is None else
+                M("guard.write_target_env_carrier_after", prefix=warn))
     return fatal, warn
 from gate import module_meta
 
@@ -111,132 +111,186 @@ def filter_accepted(changed, accepted):
     return [c for c in (changed or []) if c[0] not in accepted]
 
 
-def decide(old_facts, new_facts, accepted=False, allow_drop=False):
-    """重测写盘的**决策**（纯函数：自证要用，不许 print）。"""
-    problems, notes = [], {"err": [], "out": []}
-
-    # 守卫一：掉条（键没了）
+def _drop_verdict(old_facts, new_facts, allow_drop, notes):
+    """守卫一：掉条（键没了）。返回 `(拒绝问题清单, 是否已拒绝)`。"""
     dropped = dropped_keys(old_facts, new_facts)
-    if dropped and not allow_drop:
-        problems.append("本次会从台账里**掉掉 %d 条事实**（输入不在？）：%s"
-                        % (len(dropped), ", ".join(dropped)))
-        problems.append("台账不写。要么把输入准备好，要么显式 --allow-drop"
-                        "（并把掉掉的键记进 HISTORY）。")
-        return "refuse", problems, notes
-    if dropped:
-        notes["err"].append("⚠ --allow-drop：本次掉掉 %d 条：%s"
-                            % (len(dropped), ", ".join(dropped)))
+    if not dropped:
+        return [], False
+    if not allow_drop:
+        return [M("guard.refuse_dropped", count=len(dropped),
+                  keys=", ".join(dropped)),
+                M("guard.refuse_dropped_advice")], True
+    notes["err"].append(M("guard.note_allow_drop", count=len(dropped),
+                          keys=", ".join(dropped)))
+    return [], False
 
-    # 守卫二：改口（值换了）
+
+def _change_verdict(old_facts, new_facts, accepted, notes):
+    """守卫二：改口（值换了）。返回 `(拒绝问题清单, 是否已拒绝)`。"""
     changed = changed_keys(old_facts, new_facts)
     remaining = filter_accepted(changed, accepted)
     if remaining:
-        problems.append("本次重测会**改掉 %d 条事实的值**（未经接受的改口）："
-                        % len(remaining))
-        for k, o, n in remaining:
-            problems.append("%-24s %s → %s" % (k, short_value(o), short_value(n)))
+        problems = [M("guard.refuse_changed", count=len(remaining))]
+        problems += [M("guard.changed_row", key=k, before=short_value(o),
+                       after=short_value(n)) for k, o, n in remaining]
         if accepted:
-            problems.append("已按 --accept-changes 接受 %d 条：%s —— 其余仍拒绝。"
-                            % (len(changed) - len(remaining),
-                               ", ".join(sorted(accepted))))
-        problems.append("台账不写。逐条确认这些变化**是实测出来的**（不是输入不在"
-                        "/量错了）之后，再显式 --accept-changes"
-                        "（或 --accept-changes=k1,k2 逐条放行）。")
-        return "refuse", problems, notes
+            problems.append(M("guard.accepted_boundary",
+                              accepted=len(changed) - len(remaining),
+                              keys=", ".join(sorted(accepted))))
+        problems.append(M("guard.refuse_changed_advice"))
+        return problems, True
     if changed:
-        notes["out"].append("⚠ --accept-changes：本次接受 %d 条改口：" % len(changed))
-        for k, o, n in changed:
-            notes["out"].append("%-24s %s → %s" % (k, short_value(o), short_value(n)))
+        notes["out"].append(M("guard.note_accept_changes", count=len(changed)))
+        notes["out"] += [M("guard.changed_row", key=k, before=short_value(o),
+                           after=short_value(n)) for k, o, n in changed]
+    return [], False
 
+
+def decide(old_facts, new_facts, accepted=False, allow_drop=False):
+    """重测写盘的**决策**（纯函数：自证要用，不许 print）。
+
+    两道守卫各是一个具名 helper：它们判的是**不同**的破坏（键消失 vs 值换了），
+    拒绝消息也完全不同（一个给 `--allow-drop` 的建议、一个给
+    `--accept-changes` 的）。挤在一个函数里时，两条 `return "refuse"` 与
+    它们的 notes 副作用交错，读者要记「哪些 notes 已经写过」。
+    """
+    notes = {"err": [], "out": []}
+    problems, refused = _drop_verdict(old_facts, new_facts, allow_drop, notes)
+    if refused:
+        return "refuse", problems, notes
+    problems, refused = _change_verdict(old_facts, new_facts, accepted, notes)
+    if refused:
+        return "refuse", problems, notes
     # 零值守卫：一条都没量到 ⇒ 不是「没有改口」，是什么都没量。
     if not new_facts:
-        problems.append("一条事实都没量到。空台账不是通过（零值守卫）。")
-        return "refuse", problems, notes
+        return "refuse", [M("guard.empty_ledger")], notes
     return "write", problems, notes
 
 
-def _cases():
+def _cases_fixture():
+    """夹具（原 `_cases` 的前置段原样搬入）。"""
     old = {"a": {"value": 1}, "b": {"value": 2}}
     same = {"a": {"value": 1}, "b": {"value": 2}}
     new_val = {"a": {"value": 1}, "b": {"value": 9}}
     dropped = {"a": {"value": 1}}          # b 掉了
+    return {'old': old, 'same': same, 'new_val': new_val, 'dropped': dropped}
+
+
+def _cases_decide(fx):
+    """见 `_cases()`：本组 10 条。"""
+    old, same, new_val, dropped = (fx["old"], fx["same"], fx["new_val"], fx["dropped"])
     return [
-        # ① 正常不报
-        ("无掉条无改口 ⇒ write、无 problems、无 notes",
-         lambda: decide(old, same) == ("write", [], {"err": [], "out": []})),
-        ("新增键不算改口 ⇒ write（那是新增，不该被拦）",
-         lambda: decide(old, dict(same, c={"value": 3}))[0] == "write"),
-        ("只改 cmd 不算改口（复跑方式的描述，改它是正常维护）",
-         lambda: decide({"a": {"value": 1, "cmd": "旧"}},
-                        {"a": {"value": 1, "cmd": "新"}})[0] == "write"),
-        # ② 该报的必须报
-        ("★ 掉条且未放行 ⇒ refuse，点名掉掉的键",
-         lambda: (lambda v, p, n: v == "refuse" and any("b" in x for x in p)
-                  )(*decide(old, dropped))),
-        ("★ 掉条 + --allow-drop ⇒ write，且明说掉了什么（放行不许静默）",
-         lambda: (lambda v, p, n: v == "write" and any("allow-drop" in x and "b" in x
-                                                       for x in n["err"])
-                  )(*decide(old, dropped, allow_drop=True))),
-        ("★ 改口未接受 ⇒ refuse，带旧值→新值",
-         lambda: (lambda v, p, n: v == "refuse" and any("2" in x and "9" in x
-                                                        for x in p)
-                  )(*decide(old, new_val))),
-        ("★ 改口逐条接受：列出的放行 ⇒ write 且明说接受了什么",
-         lambda: (lambda v, p, n: v == "write" and any("accept-changes" in x
-                                                        for x in n["out"])
-                  )(*decide(old, new_val, accepted={"b"}))),
-        ("★ 改口逐条接受：未列出的必须仍拒（该报的必须报）",
-         lambda: decide(old, new_val, accepted={"zzz"})[0] == "refuse"),
-        ("★ 逐条接受时拒绝信息要点名已接受与仍拒绝的边界",
-         lambda: any("其余仍拒绝" in x for x in decide(
-             old, {"a": {"value": 8}, "b": {"value": 9}},
-             accepted={"a"})[1])),
-        ("★ 裸旗全收 ⇒ write", lambda: decide(old, new_val, accepted=None)[0] == "write"),
-        # 接线解析（issue #3 ① 的解析语义搬进守卫的自证面）
-        ("解析：--accept-changes 裸旗 ⇒ None（全收）",
-         lambda: accepted_keys(["--accept-changes"]) is None),
-        ("解析：=k1,k2 ⇒ 键集",
-         lambda: accepted_keys(["--accept-changes=a,b"]) == {"a", "b"}),
-        ("解析：没传旗 ⇒ False（全拒，同旧行为）",
-         lambda: accepted_keys([]) is False),
-        ("解析：=空串 ⇒ 空集（一个都不收）",
-         lambda: accepted_keys(["--accept-changes="]) == set()),
-        # ② 盲写守卫（issue #20 ②）
-        ("目标不被 gitignore 覆盖、无载体 ⇒ 无 warn 无 fatal",
-         lambda: write_target_problems("/x/FACTS.json", knob_set=True,
-                                       ignored=False, carrier_exists=False)
-         == (None, None)),
-        ("★ 目标被 gitignore 覆盖 ⇒ FATAL（写进去等于没写）",
-         lambda: write_target_problems("/x/FACTS.json", knob_set=True,
-                                       ignored=True)[0] is not None),
-        ("★ 仓里有 Einfacht.env 而本次未设旋钮 ⇒ warn（两个产地分叉）",
-         lambda: "Einfacht.env" in (write_target_problems(
-             "/x/FACTS.json", knob_set=False, ignored=False,
-             carrier_exists=True)[1] or "")),
-        ("非 git 目录（无法判断）⇒ 放行但明说",
-         lambda: write_target_problems("/x/F.json", knob_set=True,
-                                       ignored=None)[1] is not None),
-        # ③ 空输入必须报
-        ("★ 新事实为空 ⇒ refuse（零值守卫：空不是通过）",
-         lambda: decide(old, {})[0] == "refuse"),
-        ("★ 空接受集 ⇒ 一条都不收（空输入不是通过）",
-         lambda: decide(old, new_val, accepted=set())[0] == "refuse"),
+    # ① 正常不报
+    ("guard.decide_clean",
+     lambda: decide(old, same) == ("write", [], {"err": [], "out": []})),
+    ("guard.decide_added_key_not_a_change",
+     lambda: decide(old, dict(same, c={"value": 3}))[0] == "write"),
+    ("guard.decide_cmd_only_not_a_change",
+     lambda: decide({"a": {"value": 1, "cmd": "old"}},
+                    {"a": {"value": 1, "cmd": "new"}})[0] == "write"),
+    # ② 该报的必须报
+    ("★ guard.refuse_dropped",
+     lambda: (lambda v, p, n: v == "refuse"
+              and p[0].code == "guard.refuse_dropped"
+              and "b" in p[0].params["keys"])(*decide(old, dropped))),
+    ("★ guard.note_allow_drop",
+     lambda: (lambda v, p, n: v == "write"
+              and n["err"][0].code == "guard.note_allow_drop"
+              and n["err"][0].params["keys"] == "b"
+              )(*decide(old, dropped, allow_drop=True))),
+    ("★ guard.changed_row",
+     lambda: (lambda v, p, n: v == "refuse"
+              and any(x.code == "guard.changed_row"
+                      and x.params["before"] == "2"
+                      and x.params["after"] == "9" for x in p)
+              )(*decide(old, new_val))),
+    ("★ guard.note_accept_changes",
+     lambda: (lambda v, p, n: v == "write"
+              and any(x.code == "guard.note_accept_changes" for x in n["out"])
+              )(*decide(old, new_val, accepted={"b"}))),
+    ("★ guard.accept_changes_per_key",
+     lambda: decide(old, new_val, accepted={"zzz"})[0] == "refuse"),
+    ("★ guard.accepted_boundary",
+     lambda: any(x.code == "guard.accepted_boundary" for x in decide(
+         old, {"a": {"value": 8}, "b": {"value": 9}},
+         accepted={"a"})[1])),
+    ("★ guard.accept_changes_bare_flag",
+     lambda: decide(old, new_val, accepted=None)[0] == "write"),
     ]
+
+
+def _cases_keys(fx):
+    """见 `_cases()`：本组 6 条。"""
+    old, new_val = fx["old"], fx["new_val"]
+    return [
+    # 接线解析（issue #3 ① 的解析语义搬进守卫的自证面）
+    ("guard.accepted_keys_bare",
+     lambda: accepted_keys(["--accept-changes"]) is None),
+    ("guard.accepted_keys_list",
+     lambda: accepted_keys(["--accept-changes=a,b"]) == {"a", "b"}),
+    ("guard.accepted_keys_absent",
+     lambda: accepted_keys([]) is False),
+    ("guard.accepted_keys_empty_set",
+     lambda: accepted_keys(["--accept-changes="]) == set()),
+    # ③ 空输入必须报
+    ("★ guard.empty_ledger",
+     lambda: decide(old, {})[0] == "refuse"),
+    ("★ guard.accepted_keys_empty_set_refuses",
+     lambda: decide(old, new_val, accepted=set())[0] == "refuse"),
+    ]
+
+
+def _cases_write(fx):
+    """见 `_cases()`：本组 5 条。"""
+    return [
+    # ② 盲写守卫（issue #20 ②）
+    ("guard.write_target_clean",
+     lambda: write_target_problems("/x/FACTS.json", knob_set=True,
+                                   ignored=False, carrier_exists=False)
+     == (None, None)),
+    ("★ guard.write_target_gitignored",
+     lambda: write_target_problems("/x/FACTS.json", knob_set=True,
+                                   ignored=True)[0] is not None),
+    ("★ guard.write_target_env_carrier",
+     lambda: getattr(write_target_problems(
+         "/x/FACTS.json", knob_set=False, ignored=False,
+         carrier_exists=True)[1], "code", None)
+     == "guard.write_target_env_carrier"),
+    ("guard.write_target_no_git",
+     lambda: getattr(write_target_problems(
+         "/x/F.json", knob_set=True, ignored=None)[1],
+         "code", None) == "guard.write_target_no_git"),
+    ("guard.write_target_env_carrier_after",
+     # 两条 warn 并列时前一条不许丢（拼接归语言包）
+     lambda: getattr(write_target_problems(
+         "/x/F.json", knob_set=False, ignored=None,
+         carrier_exists=True)[1], "code", None)
+     == "guard.write_target_env_carrier_after"),
+    ]
+
+
+def _cases():
+    """拼装 3 组夹具断言。**只拼装** —— 判据在各分组函数里。"""
+    fx = _cases_fixture()
+    return (
+    _cases_decide(fx)
+    + _cases_keys(fx)
+    + _cases_write(fx)
+    )
 
 
 MODULE = module_meta("台账写盘守卫", "掉条 / 改口 / 逐条接受（决策与执行分离）", selftest=True)
 
 
 if __name__ == "__main__":
-    import os                                            # noqa: PLC0415
-    import sys                                           # noqa: PLC0415
+    import os  # noqa: PLC0415
+    import sys  # noqa: PLC0415
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from gate import module_meta, main_selftest_or                    # noqa: PLC0415
+    from gate import main_selftest_or, module_meta  # noqa: PLC0415
 
     def _run(argv):
-        print("guard 是模块（被 facts.measure 调用）；不单独跑。--selftest 看自证。",
-              file=sys.stderr)
+        print(M("guard.module_banner"), file=sys.stderr)
         return 2
     sys.exit(main_selftest_or(sys.argv[1:],
-                              "guard（台账写盘守卫：掉条 / 改口 / 逐条接受的接线）",
+                              M("gate.title.guard"),
                               _cases, _run))

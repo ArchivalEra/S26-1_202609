@@ -1,0 +1,4 @@
+{
+ "gate.title.machine": "Maschinenzeilen-Protokoll",
+ "machine.no_cli": "dieses Modul ist eine reine Funktionsbibliothek ohne CLI. Selbsttest: python3 zreflect/machine.py --selftest"
+}

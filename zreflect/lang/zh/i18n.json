@@ -1,0 +1,5 @@
+{
+ "i18n.module_banner": "i18n 是模块（被各闸门与平台模块消费）；--selftest 看自证。",
+ "i18n.value_masquerades_contract": "语言包 %(lang)s 的值 `%(key)s` 第 %(line)d 行伪装成了机器行（%(value)r）—— 机器契约不许被翻译，请改写这条文案",
+ "i18n_cover.filename_has_line_break": "扫描面里的文件名含分行符：%(file)s —— 它一旦被渲染进消息就能伪造机器行（与 machine.LINE_BREAKS 同一张表）"
+}

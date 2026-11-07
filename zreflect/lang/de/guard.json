@@ -1,0 +1,16 @@
+{
+ "guard.refuse_dropped": "diese erneute Messung würde **%(count)d Fakten verlieren** (Eingabe fehlt?): %(keys)s",
+ "guard.refuse_dropped_advice": "Register nicht geschrieben. Entweder die Eingabe vorbereiten, oder explizit --allow-drop übergeben (und die verlorenen Schlüssel in HISTORY festhalten).",
+ "guard.note_allow_drop": "⚠ --allow-drop: %(count)d werden verworfen: %(keys)s",
+ "guard.refuse_changed": "diese erneute Messung würde **%(count)d Faktwerte ändern** (nicht angenommene Änderungen):",
+ "guard.changed_row": "%(key)-24s %(before)s → %(after)s",
+ "guard.accepted_boundary": "%(accepted)d per --accept-changes angenommen: %(keys)s — der Rest bleibt abgelehnt.",
+ "guard.refuse_changed_advice": "Register nicht geschrieben. Erst jede Änderung einzeln bestätigen, dass sie **gemessen, nicht geraten** ist (keine fehlende Eingabe / kein kaputtes Messinstrument), dann --accept-changes übergeben (oder --accept-changes=k1,k2 pro Schlüssel).",
+ "guard.empty_ledger": "kein einziger Fakt gemessen. Ein leeres Register ist kein Bestehen (Nullwert-Wächter).",
+ "guard.write_target_gitignored": "Registerziel %(path)s ist von .gitignore erfasst — dorthin schreiben heißt nirgendwohin schreiben (Versionskontrolle sieht es nicht; die Hooks lesen ein anderes Register); diese ignore-Regel entfernen, oder REFLECT_FACTS auf einen verfolgten Ort setzen",
+ "guard.write_target_no_git": "(kein git-Repo oder git nicht verfügbar: gitignore-Prüfung übersprungen)",
+ "guard.write_target_env_carrier": "dieses Repo hat den Träger Einfacht.env, aber dieser Prozess hat ihn nicht geladen (REFLECT_FACTS nutzte den Code-Default) — beim manuellen Lauf zuerst sourcen, sonst kann das Schreibziel vom Kontext der Hooks abweichen (issue #20 ②)",
+ "guard.write_target_env_carrier_after": "%(prefix)s; dieses Repo hat den Träger Einfacht.env, aber dieser Prozess hat ihn nicht geladen (REFLECT_FACTS nutzte den Code-Default) — beim manuellen Lauf zuerst sourcen, sonst kann das Schreibziel vom Kontext der Hooks abweichen (issue #20 ②)",
+ "guard.module_banner": "guard ist ein Modul (wird von facts.measure aufgerufen); läuft nicht eigenständig. --selftest zeigt den Selbsttest.",
+ "guard.note_accept_changes": "%(count)d Änderungen per --accept-changes angenommen (Werte aktualisiert):"
+}

@@ -1,0 +1,15 @@
+{
+ "envfile.title": "Env-file gate",
+ "envfile.unknown_knob": "token `%(knob)s` appears in zreflect/*.py but is not in the knob registry (zreflect/knobs.py) — either a typo (silently ignored by every program) or a phantom knob (documented, never read, configured with no effect). Only registration counts",
+ "envfile.unregistered_knob": "knob name `%(key)s` is not in the registry (zreflect/knobs.py) — one letter off is silently ignored by every program; the value never reaches the hooks",
+ "envfile.empty_value": "`%(key)s` has an empty value — an empty value makes the hook's [ -f ] guard silently skip (empty is not a pass)",
+ "envfile.file_missing": "knob `%(key)s` (%(entry)s) points at a missing file: %(target)s — the hook's [ -f ] guard will silently skip (path is relative to the repo root)",
+ "envfile.dir_missing": "knob `%(key)s` (%(entry)s) points at a missing directory: %(target)s — the hook's [ -f ] guard will silently skip (path is relative to the repo root)",
+ "envfile.syntax_broken": "%(name)s fails sh -n (broken syntax) — the hook only dies loudly at commit time, with a misleading message",
+ "envfile.syntax_tool_broken": "sh -n cannot run (no sh?) — the syntax-check instrument itself is broken; fix the checker, do not skip silently",
+ "envfile.no_effective_export": "%(name)s contains no effective export (empty file or comments only) — it looks configured but loads nothing (the \"deployed is not running\" family)",
+ "envfile.off": "Env-file gate: %(name)s does not exist (neither the hooks directory nor the repo root) — gate off (pluggable module; hooks fall back to plain environment variables plus default names. To enable: cp reflect-hooks/Einfacht.env.example reflect-hooks/%(name)s). Note: registry self-consistency (phantom knobs) does not switch off with this gate — see registry.problems() / knobs.py",
+ "envfile.unreadable": "%(path)s cannot be read: %(error)s",
+ "envfile.scan_empty": "no REFLECT_* tokens found in %(path)s — the reconciliation scan failed (no zreflect/?); this gate's instrument is broken",
+ "envfile.ok": "Env-file gate: OK (%(path)s: %(count)d effective exports, all names registered, all file knobs resolve)"
+}

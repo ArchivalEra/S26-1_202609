@@ -1,0 +1,10 @@
+{
+ "i18n_cover.bare_text": "%(file)s:%(lineno)d bare natural-language text in the core %(text)r — user-facing messages must go through M(<literal code>, **params); selftest labels must be ids per decision 1C",
+ "i18n_cover.code_not_literal": "the code passed to `M(...)` must be a string literal (%(file)s:%(lineno)d, got %(kind)s) — a variable / conditional / concatenated code makes pack completeness unprovable",
+ "i18n_cover.empty_scan": "scan surface is empty — finding no source is not a language-free pass (zero-value guard)",
+ "i18n_cover.fixture_literal": "`%(file)s:%(lineno)d` has a Chinese literal in a self-test fixture (%(text)r) — fixtures land in the scan surface; build them from codepoints (`chr(CJK_LO)` / `_cj(n)`) or use English-only samples",
+ "i18n_cover.ok": "Language coverage gate: OK (%(files)d files have a language-free core; language packs optional)",
+ "i18n_cover.parse_error": "%(file)s cannot be parsed: %(error)s — a parse failure must not count as a pass",
+ "i18n_cover.scan_empty_dir": "scan surface %(root)s is empty — finding no source is not a language-free pass",
+ "i18n_cover.title": "Language coverage gate"
+}

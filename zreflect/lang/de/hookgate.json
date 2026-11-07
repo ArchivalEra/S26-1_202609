@@ -1,0 +1,13 @@
+{
+ "gate.title.hookgate": "Hook-Einstieg",
+ "hookgate.blocks_stale": "Maschinenblöcke sind veraltet, Ablehnung: %(detail)s",
+ "hookgate.missing_root": "Repo-Wurzel fehlt (das zweite Argument muss ein absoluter Pfad sein)",
+ "hookgate.not_a_suite_repo": "'%(repo)s' hat kein zreflect/ — dort wurde die Suite nicht installiert, oder GATE_REPO zeigt falsch",
+ "hookgate.push_nothing_to_check": "kein Branch trägt neuen Inhalt (Tag/Löschung) ⇒ das README-Kriterium hat hier nichts zu prüfen (laut gesagt, nicht vorgetäuscht)",
+ "hookgate.push_readmes_not_together": "%(ref)s: dieser Push hat die drei READMEs nicht **gemeinsam** aktualisiert (CI prüft dasselbe; --no-verify umgeht es nur lokal). Liste konfigurierbar: REFLECT_READMES.",
+ "hookgate.push_readmes_ok": "drei READMEs gemeinsam: %(count)d Branch(es) geprüft",
+ "hookgate.ref_has_nothing": "%(ref)s trägt keinen neuen Inhalt ⇒ das README-Kriterium hat dafür nichts zu prüfen (laut gesagt)",
+ "hookgate.repo_missing": "Repo-Wurzel '%(repo)s' existiert nicht (das zweite Argument muss ein absoluter Pfad sein)",
+ "hookgate.unknown_phase": "unbekannte Phase '%(phase)s' (nur commit / push)",
+ "hookgate.usage": "Aufruf: python3 reflect-hooks/gate.py <commit|push> <Repo-Wurzel>"
+}

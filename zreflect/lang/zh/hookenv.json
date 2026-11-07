@@ -1,0 +1,5 @@
+{
+ "hookenv.case_failed": "%(label)s（期望「%(expected)s」实测「%(actual)s」）",
+ "hookenv.mktemp_failed": "mktemp 失败（临时目录建不出来）",
+ "hookenv.summary": "einfacht-env 插件自证：%(passed)s PASS / %(failed)s fail"
+}

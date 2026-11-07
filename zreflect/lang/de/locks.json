@@ -1,0 +1,13 @@
+{
+ "locks.title": "Tor für gesperrte Quellen",
+ "locks.file_missing": "%(name)s: gesperrte Datei/Verzeichnis existiert nicht: %(path)s",
+ "locks.ok": "Tor für gesperrte Quellen: OK (%(count)d Quellen konsistent)",
+ "locks.empty": "Sperrliste ist leer (Nullwert-Wächter: eine leere Zusicherungsfläche ist kein Bestehen)",
+ "locks.sha_mismatch": "%(name)s: sha256 weicht ab (deklariert %(declared)s… gemessen %(actual)s…) — Upstream-Bytes drifteten",
+ "locks.no_sha256": "%(name)s: Datei-Eintrag hat kein sha256 (das ist kein Pinnen)",
+ "locks.entry_missing_field": "Sperreintrag fehlt Feld %(field)s: %(entry)r (eine unbegründete Sperre ist ein Zombie)",
+ "locks.absent_optional": "%(name)s: auf dieser Maschine nicht vorhanden (optional ⇒ wird gesagt, kein Bestehen)",
+ "locks.off": "aus (%(name)s existiert nicht ⇒ sagt es und endet mit 0; steckbar)",
+ "locks.explicit_spec_missing": "explizit angegebene Spec %(name)s existiert nicht (--spec) — schreiben oder Flag entfernen",
+ "locks.spec_broken": "Spec %(name)s ist kaputt: %(error)s"
+}

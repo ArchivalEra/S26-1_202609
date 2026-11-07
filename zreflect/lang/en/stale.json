@@ -1,0 +1,17 @@
+{
+ "stale.title": "Stale-assertion check",
+ "stale.ok": "Stale-assertion check: OK (scanned %(count)d documents; retired names: %(declared)s)",
+ "stale.scanned_docs": "living-state documents scanned",
+ "stale.ledger_empty": "ledger is empty — empty is not a pass (zero-value guard): first check whether measure() is broken",
+ "stale.no_docs": "not a single living-state document was scanned — empty input is not a pass (zero-value guard)",
+ "stale.ledger_missing": "facts ledger missing (%(name)s). Run python3 zreflect/facts.py first to measure once.",
+ "stale.retired_rule_off": "R2 (retired names): REFLECT_RETIRED is not configured ⇒ this rule is not enabled (to enable: REFLECT_RETIRED=name1,name2)",
+ "stale.age_rule_off": "staleness age: REFLECT_STALE_DAYS is not configured ⇒ this rule is not enabled (to enable: REFLECT_STALE_DAYS=days)",
+ "stale.retired_none": "not configured",
+ "stale.retired_count": "%(count)d",
+ "stale.sha_no_facts": "%(name)s:%(lineno)d sha assertion has no source: the ledger has **no sha-type fact at all**; measure it into the ledger first (with a replay command), then cite it",
+ "stale.sha_unsourced": "%(name)s:%(lineno)d sha assertion has no source: `%(actual)s` is not in the ledger — rewrite it as a [[key]] reference, or give a verifiable source (delivery package name / backticked commit sha). Note: the word \"history\" is **not** a source (issue #25)",
+ "stale.measured_at_missing": "`%(key)s` has a missing or unparsable measured_at — the staleness criterion cannot be evaluated (unreadable is stated, never guessed)",
+ "stale.too_old": "`%(key)s` has not been measured for %(days)d days (threshold %(threshold)d days) — re-measure and pass `--accept-changes` explicitly",
+ "stale.retired_name": "%(name)s:%(lineno)d retired name `%(entry)s` appears in living state — either it is not retired, or this line carries a history marker"
+}

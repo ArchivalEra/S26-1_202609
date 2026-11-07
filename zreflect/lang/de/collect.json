@@ -1,0 +1,3 @@
+{
+ "collect.regex_missing_group": "parse_prev_values: die Zeilen-Regex hat keine benannte Gruppe %(name)r — die Erfassung stützt sich auf benannte Gruppen; positionelle Gruppen greifen still den falschen Wert, wenn sich die Zeilenreihenfolge ändert"
+}

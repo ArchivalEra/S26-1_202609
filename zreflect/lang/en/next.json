@@ -1,0 +1,13 @@
+{
+ "next.commits_count": "unpushed commits: %(count)d",
+ "next.commits_more": "…and %(count)d more",
+ "next.commits_none": "unpushed commits: 0 (all published)",
+ "next.commits_unreadable": "unpushed commits: unreadable (git unavailable or not a repo)",
+ "next.open_question": "open question `%(name)s` is unsettled — read it first; do not re-raise settled ones",
+ "next.tree_dirty": "working tree is dirty — decide to commit or discard first",
+ "next.tree_state": "working tree: %(changed)d modified, %(untracked)d untracked",
+ "next.tree_unreadable": "working tree: unreadable",
+ "next.section_header": "Carry-over from last turn (computed per session, nothing on disk):",
+ "next.pending_header": "**Next up**:",
+ "next.pending_none": "no record — if you think there should be one, that is a gap in questions/, not 'all clear'"
+}

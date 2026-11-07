@@ -1,0 +1,18 @@
+{
+ "invariants.title": "Invariants gate",
+ "invariants.empty": "the invariants list is empty — an empty list is not a pass (zero-value guard): a list exists only with reasons",
+ "invariants.not_object": "check item is not an object: %(entry)r",
+ "invariants.missing_path": "check item is missing path (required): %(entry)r",
+ "invariants.missing_why": "`%(path)s` is missing why (required: a check without a reason nobody dares to delete, and it becomes a zombie)",
+ "invariants.no_criteria": "`%(path)s` has no criteria (give at least one of must_contain / must_not_contain)",
+ "invariants.not_string_list": "`%(path)s` must_contain / must_not_contain must be arrays of strings",
+ "invariants.fragment_not_string": "`%(path)s` criteria fragments must be strings",
+ "invariants.unreadable": "`%(path)s` cannot be read (does the file exist? paths are relative to the repo root) — say so when unreadable, never pass silently",
+ "invariants.drift_missing": "%(marker)s: `%(path)s` is missing a required fragment %(fragment)r (%(why)s)",
+ "invariants.drift_forbidden": "%(marker)s: `%(path)s` contains a forbidden fragment %(fragment)r (%(why)s)",
+ "invariants.off": "Invariants gate: REFLECT_INVARIANTS not configured ⇒ this gate is off (pluggable module; to enable: REFLECT_INVARIANTS=invariants.json, spec = {\"checks\": [{path, must_contain?, must_not_contain?, why}]})",
+ "invariants.spec_missing": "REFLECT_INVARIANTS=%(name)s is configured but the spec file is missing — write the spec (or drop the knob)",
+ "invariants.spec_broken": "spec %(name)s is broken: %(error)s",
+ "invariants.bad_shape": "spec file %(path)s has a bad shape: expected {\"checks\": [...]}",
+ "invariants.ok": "Invariants gate: OK (%(count)d invariants)"
+}

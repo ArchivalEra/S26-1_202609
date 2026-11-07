@@ -1,0 +1,13 @@
+{
+ "ab.title": "A/B 闸门",
+ "ab.ok": "A/B 闸门：OK（%(count)d 组对比无混淆变量）",
+ "ab.off": "未启用（%(name)s 不存在 ⇒ 明说未启用退 0，可插拔）",
+ "ab.explicit_spec_missing": "显式指定的规格 %(name)s 不存在（--spec / REFLECT_AB）—— 先写规格（或撤掉指定）",
+ "ab.spec_broken": "规格 %(name)s 坏：%(error)s",
+ "ab.empty": "pairs 为空（零值守卫：空断言面不是通过）",
+ "ab.pair_missing_field": "pair 缺字段 %(field)s: %(entry)r（why 必填——没理由的对比没人敢删）",
+ "ab.confound": "%(name)s: 混淆变量——%(key)s 键 %(field)r: A=%(value_a)r B=%(value_b)r（非 allow 轴不一致 ⇒ A/B 作废）",
+ "ab.artifact_unreadable": "%(name)s: 工件读不到（%(error_a)s / %(error_b)s）⇒ 本次未核对",
+ "ab.not_a_dict": "%(name)s: key=%(key)r 在两件中至少一件不是 dict",
+ "ab.root_label": "（根）"
+}

@@ -1,0 +1,12 @@
+{
+ "questions.title": "悬案闸门",
+ "questions.empty": "一条悬案都没收集到 —— 空输入不是通过（零值守卫）：先查 questions/ 目录",
+ "questions.missing_status": "%(name)s：缺 `**Status:**` 行",
+ "questions.bad_status": "%(name)s：Status 不合法：%(actual)s（合法：%(expected)s）",
+ "questions.missing_settling": "%(name)s：缺 `**Settling:**` 行 —— 没有结算件的悬案只能算「猜想」",
+ "questions.none_without_first_deliverable": "%(name)s：Settling 写了「不存在」，但没说明**第一交付物就是它** —— 否则读者不知道下一步干什么",
+ "questions.no_distinct_outcomes": "%(name)s：Settling 没给出**可区分的两种结论**（写成 `… —— rc=0 ⇒ A；rc=7 ⇒ B`） —— 只描述做法、不描述判据的东西证伪不了任何事",
+ "questions.settler_missing": "%(name)s：Settling 指的结算件**不存在**：%(target)s",
+ "questions.guard_empty": "悬案文件（%(count)d 个）为空",
+ "questions.ok": "悬案闸门：OK（%(count)d 条悬案，其中未结案 %(open)d）"
+}

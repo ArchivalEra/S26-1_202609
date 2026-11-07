@@ -1,0 +1,10 @@
+{
+ "retractions.title": "Prüfung auf wieder auftauchende Widerrufe",
+ "retractions.ok": "Prüfung auf wieder auftauchende Widerrufe: OK (%(count)d Widerrufe, %(documents)d Dokumente gescannt)",
+ "retractions.missing_key": "`retractions.json` hat keinen `retractions`-Schlüssel — eine kaputte Struktur ist nicht dasselbe wie 'keine Probleme'",
+ "retractions.no_docs": "kein einziges Lebendzustand-Dokument gescannt — leere Eingabe ist kein Bestehen (Nullwert-Wächter)",
+ "retractions.entry_missing_field": "Widerruf-Eintrag fehlt `%(field)s`: %(entry)r",
+ "retractions.resurfaced": "%(name)s:%(line)d trägt eine widerrufene Zusicherung \"%(text)s\" (%(entry)s): entweder löschen oder die Korrekturmarke ergänzen",
+ "retractions.file_missing": "fehlende %(name)s",
+ "retractions.scanned_docs": "zu scannende Lebendzustand-Dokumente"
+}

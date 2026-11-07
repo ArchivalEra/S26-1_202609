@@ -1,0 +1,12 @@
+{
+ "questions.title": "Question ledger gate",
+ "questions.empty": "no questions collected — empty input is not a pass (zero-value guard): check the questions/ directory first",
+ "questions.missing_status": "%(name)s: missing `**Status:**` line",
+ "questions.bad_status": "%(name)s: invalid Status: %(actual)s (valid: %(expected)s)",
+ "questions.missing_settling": "%(name)s: missing `**Settling:**` line — a question without an executable settler is only a guess",
+ "questions.none_without_first_deliverable": "%(name)s: Settling says \"does not exist\" but does not state that **it is the first deliverable** — otherwise the reader does not know the next step",
+ "questions.no_distinct_outcomes": "%(name)s: Settling gives no **two distinguishable outcomes** (write `… — rc=0 ⇒ A; rc=7 ⇒ B`) — describing only the procedure proves nothing",
+ "questions.settler_missing": "%(name)s: the settler Settling points at **does not exist**: %(target)s",
+ "questions.guard_empty": "question files (%(count)d of them) are empty",
+ "questions.ok": "Question ledger gate: OK (%(count)d questions, %(open)d still open)"
+}

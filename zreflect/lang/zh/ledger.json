@@ -1,0 +1,4 @@
+{
+ "ledger.shape_incomplete": "fact() 形状契约（issue #5/#6）：`%(name)s` 与 `%(name)s_expect` 必须同时给（只给一个 = 残缺断言，断言残缺比静默缺失好抓）",
+ "ledger.unreadable_gate": "台账读不了（`%(name)s`）：%(error)r —— 坏文件不是「没有台账」，先修好它再看判据"
+}

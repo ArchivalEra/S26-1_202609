@@ -1,0 +1,4 @@
+{
+ "ledger.shape_incomplete": "fact()-Formkontrakt (issue #5/#6): `%(name)s` und `%(name)s_expect` müssen zusammen gegeben werden (nur eines = halbe Zusicherung; eine halbe Zusicherung ist schwerer zu erkennen als eine fehlende)",
+ "ledger.unreadable_gate": "Register nicht lesbar (`%(name)s`): %(error)r — eine kaputte Datei ist kein „kein Register“; erst reparieren, dann urteilen"
+}

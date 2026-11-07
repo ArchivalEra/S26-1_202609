@@ -60,15 +60,18 @@ try:
     from gate import module_meta
 except ImportError:
     def module_meta(name, summary, selftest=False):
-        """`gate.module_meta` 的最小等价物（无 Einfacht 时的退化）。"""
+        """`gate.module_meta` 的最小等价物（无 Einfacht 时的退化）。
+        PINNED: 信箱脚本的中文输出面向站长单人（Octave-UI fork 的既有形态），跨仓分发保持同一语言。
+        """
         class _Meta(object):
             __slots__ = ("name", "summary", "selftest")
             def __init__(self, n, s, st):
                 self.name, self.summary, self.selftest = n, s, st
         return _Meta(name, summary, selftest)
-    print("note: 本仓无 zreflect/gate.py（非 Einfacht 仓）—— mail-read 以自包含模式运行",
+    print("note: gate.py absent (non-Einfacht repo) -- running mail-read standalone",
           file=sys.stderr)
 
+# PINNED: 信箱脚本的中文输出面向站长单人（Octave-UI fork 的既有形态），跨仓分发保持同一语言。
 MODULE = module_meta("mail 读信入口",
                      "读 = 打印 + 自动归档 read/（纯工具，不进断言面）", selftest=True)
 
@@ -78,7 +81,9 @@ READ = os.path.join(MAIL, "read")
 
 
 def unread():
-    """未读区（mail/ 直下）的信，按编号序。read/ 里的 = 已读，不列。"""
+    """未读区（mail/ 直下）的信，按编号序。read/ 里的 = 已读，不列。
+    PINNED: 信箱脚本的中文输出面向站长单人（Octave-UI fork 的既有形态），跨仓分发保持同一语言。
+    """
     try:
         names = sorted(os.listdir(MAIL))
     except OSError:
@@ -87,7 +92,9 @@ def unread():
 
 
 def _match(query):
-    """把用户输入（030 / 030-host… / 完整名）匹配到未读信文件名。"""
+    """把用户输入（030 / 030-host… / 完整名）匹配到未读信文件名。
+    PINNED: 信箱脚本的中文输出面向站长单人（Octave-UI fork 的既有形态），跨仓分发保持同一语言。
+    """
     if query in unread():
         return query
     hits = [n for n in unread() if n.startswith(query) or query in n]
@@ -96,6 +103,7 @@ def _match(query):
 
 def _archive(name):
     """读过了 ⇒ git mv 进 read/（未跟踪文件退普通 rename）。返回是否成功。
+    PINNED: 信箱脚本的中文输出面向站长单人（Octave-UI fork 的既有形态），跨仓分发保持同一语言。
 
     ⚠️ 同名冲突拒覆盖（试验场实测 bug#1，2026-10-18）：read/ 已有同名信时，
     git mv 本身会拒，但 rename 兜底会**静默覆盖** ⇒ 旧信丢失（违反"内容不可消失"）。
@@ -110,7 +118,7 @@ def _archive(name):
         return False
     r = subprocess.run(["git", "-C", HERE, "mv", os.path.join("mail", name),
                         os.path.join("mail", "read", name)],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
     if r.returncode == 0:
         return True
     src = os.path.join(MAIL, name)
@@ -121,6 +129,7 @@ def _archive(name):
 
 
 def cmd_list():
+    """PINNED: 信箱脚本的中文输出面向站长单人（Octave-UI fork 的既有形态），跨仓分发保持同一语言。"""
     names = unread()
     if not names:
         print("未读区：空（mail/read/ 里的是已读存档）")
@@ -139,6 +148,7 @@ def cmd_list():
 
 
 def cmd_read(query, keep=False):
+    """PINNED: 信箱脚本的中文输出面向站长单人（Octave-UI fork 的既有形态），跨仓分发保持同一语言。"""
     name = _match(query)
     if not name:
         print("FATAL: 未读区里没有（或不止一封）匹配 %r 的信 —— 先跑无参数列清单" % query,
@@ -179,14 +189,15 @@ def main(argv):
 
 # ── 自证（纯函数档：列/匹配/归档的判据；不碰真 mail/）─────────────────────────
 def _selftest():
+    """PINNED: 信箱脚本的中文输出面向站长单人（Octave-UI fork 的既有形态），跨仓分发保持同一语言。"""
     import tempfile, shutil                                     # noqa: E401
     global HERE, MAIL, READ
     t = tempfile.mkdtemp()
     os.makedirs(os.path.join(t, "mail"))
     saved = (HERE, MAIL, READ)
     HERE, MAIL, READ = t, os.path.join(t, "mail"), os.path.join(t, "mail", "read")
-    open(os.path.join(MAIL, "001-a.md"), "w").write("# 001 · x\n")
-    open(os.path.join(MAIL, "002-b.md"), "w").write("# 002 · y\n")
+    open(os.path.join(MAIL, "001-a.md"), "w", encoding="utf-8").write("# 001 · x\n")
+    open(os.path.join(MAIL, "002-b.md"), "w", encoding="utf-8").write("# 002 · y\n")
     cases = [
         ("列清单：未读区 2 封", lambda: len(unread()) == 2),
         ("匹配：完整名", lambda: _match("001-a.md") == "001-a.md"),
@@ -203,7 +214,7 @@ def _selftest():
         ("★ 同名冲突拒覆盖（试验场 bug#1）：read/ 已有同名 ⇒ _archive 拒 + 新信留未读区",
          lambda: (
              # 再投一封同名 001-a，归档必须拒
-             open(os.path.join(MAIL, "001-a.md"), "w").write("# 001 · 冲突版\n"),
+             open(os.path.join(MAIL, "001-a.md"), "w", encoding="utf-8").write("# 001 · 冲突版\n"),
              not _archive("001-a.md"),
              # 旧信（read/ 里的）内容未被覆盖
              open(os.path.join(READ, "001-a.md"), encoding="utf-8").read() == "# 001 · x\n",

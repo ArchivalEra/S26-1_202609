@@ -1,0 +1,5 @@
+{
+ "i18n.module_banner": "i18n is a module (consumed by every gate and platform module); --selftest shows its selftest.",
+ "i18n.value_masquerades_contract": "pack %(lang)s: value `%(key)s` line %(line)d masquerades as a machine row (%(value)r) — machine contracts must not be translated; reword this message",
+ "i18n_cover.filename_has_line_break": "a file name in the scan surface contains a line break: %(file)s — once rendered into a message it can forge a machine row (same table as machine.LINE_BREAKS)"
+}

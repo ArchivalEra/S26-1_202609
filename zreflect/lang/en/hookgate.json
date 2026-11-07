@@ -1,0 +1,13 @@
+{
+ "gate.title.hookgate": "hook entry",
+ "hookgate.blocks_stale": "machine blocks are stale, refusing: %(detail)s",
+ "hookgate.missing_root": "missing repo root (the second argument must be an absolute path)",
+ "hookgate.not_a_suite_repo": "'%(repo)s' has no zreflect/ — this is not a repo the suite was installed into, or GATE_REPO points at the wrong place",
+ "hookgate.push_nothing_to_check": "no branch carries new content (tag/deletion) ⇒ the README criterion has nothing to check here (said out loud, not pretending it checked)",
+ "hookgate.push_readmes_not_together": "%(ref)s: this push did not update the three READMEs **together** (CI runs the same criterion; --no-verify only bypasses it locally). Roster configurable: REFLECT_READMES.",
+ "hookgate.push_readmes_ok": "three READMEs together: checked %(count)d branch(es)",
+ "hookgate.ref_has_nothing": "%(ref)s carries no new content ⇒ the README criterion has nothing to check for it (said out loud)",
+ "hookgate.repo_missing": "repo root '%(repo)s' does not exist (the second argument must be an absolute path)",
+ "hookgate.unknown_phase": "unknown phase '%(phase)s' (only commit / push)",
+ "hookgate.usage": "usage: python3 reflect-hooks/gate.py <commit|push> <repo root>"
+}

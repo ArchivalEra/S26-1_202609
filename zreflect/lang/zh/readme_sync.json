@@ -1,0 +1,15 @@
+{
+ "readme.title": "三语 README 闸门",
+ "readme.ok_push": "三语 README 闸门：OK（推送改动集含全部 %(count)d 份 README）",
+ "readme.ok_single": "三语 README 闸门：OK（%(name)s 存在且非空；切换器互链判据不适用）",
+ "readme.ok_structure": "三语 README 闸门：OK（%(count)d 份 README 都在、非空、切换器互链完好）",
+ "readme.names_empty_structure": "REFLECT_READMES 是空的 —— 拿空清单判「README 组」是空话（零值守卫）",
+ "readme.names_empty_push": "REFLECT_READMES 是空的 —— 「三语同批」没有判据对象（零值守卫）",
+ "readme.changed_empty": "本次推送的改动集是空的 —— 空输入不是通过（零值守卫）：「每次推送必须更新全部 README」无法在一堆空上成立",
+ "readme.file_missing": "缺 README：%(name)s —— 三语是同一条断言的三份拷贝，缺一份 = 断言散了架",
+ "readme.file_empty": "%(name)s 存在但为空 —— 空文件不是一门语言",
+ "readme.switcher_incomplete": "%(name)s 里没有对 %(expected)s 的引用 —— 语言切换器必须指全全部语言，否则读者从这一份走不到另一份",
+ "readme.not_in_push": "%(name)s 不在这次要推送的改动文件里 ⇒ README 必须**同批**更新（苛刻是有意的：缺一份 = 另两份从这一刻起过期）",
+ "readme.changed_file_missing": "改动清单文件不存在：%(name)s —— 找不到清单不许算通过（零值守卫）",
+ "readme.switcher_not_applicable": "三语 README 闸门：REFLECT_READMES 只有一份（%(name)s）⇒ 切换器互链判据不适用（单条目时「必须指全全部语言」自动成立，自引用是退化要求）；存在 / 非空判据照常"
+}

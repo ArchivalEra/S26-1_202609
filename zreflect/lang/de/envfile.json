@@ -1,0 +1,15 @@
+{
+ "envfile.title": "env-Datei-Tor",
+ "envfile.unknown_knob": "Token `%(knob)s` erscheint in zreflect/*.py, steht aber nicht im Knopf-Register (zreflect/knobs.py) — entweder ein Tippfehler (von jedem Programm still ignoriert) oder ein Phantom-Knopf (dokumentiert, nie gelesen, konfiguriert ohne Wirkung). Nur Registrierung zählt",
+ "envfile.unregistered_knob": "Knopfname `%(key)s` steht nicht im Register (zreflect/knobs.py) — ein Buchstabe daneben wird von jedem Programm still ignoriert; der Wert erreicht die Hooks nie",
+ "envfile.empty_value": "`%(key)s` hat einen leeren Wert — ein leerer Wert lässt den [ -f ]-Wächter des Hooks stillschweigend überspringen (leer ist kein Bestehen)",
+ "envfile.file_missing": "Knopf `%(key)s` (%(entry)s) zeigt auf eine fehlende Datei: %(target)s — der [ -f ]-Wächter des Hooks überspringt stillschweigend (Pfad ist relativ zur Repo-Wurzel)",
+ "envfile.dir_missing": "Knopf `%(key)s` (%(entry)s) zeigt auf ein fehlendes Verzeichnis: %(target)s — der [ -f ]-Wächter des Hooks überspringt stillschweigend (Pfad ist relativ zur Repo-Wurzel)",
+ "envfile.syntax_broken": "%(name)s besteht sh -n nicht (kaputte Syntax) — der Hook stirbt erst zum Commit-Zeitpunkt laut, mit irreführender Meldung",
+ "envfile.syntax_tool_broken": "sh -n kann nicht laufen (kein sh?) — das Syntaxprüf-Instrument selbst ist kaputt; repariere den Prüfer, überspringe nicht still",
+ "envfile.no_effective_export": "%(name)s enthält kein wirksames export (leere Datei oder nur Kommentare) — es sieht konfiguriert aus, lädt aber nichts (die Familie \"bereitgestellt ist nicht laufend\")",
+ "envfile.off": "env-Datei-Tor: %(name)s existiert nicht (weder das Hook-Verzeichnis noch die Repo-Wurzel) — Tor aus (pluggables Modul; Hooks fallen auf reine Umgebungsvariablen plus Standardnamen zurück. Zum Aktivieren: cp reflect-hooks/Einfacht.env.example reflect-hooks/%(name)s). Hinweis: Register-Selbstkonsistenz (Phantom-Knöpfe) schaltet sich mit diesem Tor nicht ab — siehe registry.problems() / knobs.py",
+ "envfile.unreadable": "%(path)s ist nicht lesbar: %(error)s",
+ "envfile.scan_empty": "keine REFLECT_* Token in %(path)s gefunden — der Abgleichs-Scan ist fehlgeschlagen (kein zreflect/?); das Instrument dieses Tors ist kaputt",
+ "envfile.ok": "env-Datei-Tor: OK (%(path)s: %(count)d wirksame exports, alle Namen registriert, alle Datei-Knöpfe auflösbar)"
+}
