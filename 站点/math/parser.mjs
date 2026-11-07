@@ -60,7 +60,10 @@ export function parse(src, opts = {}) {
   const problems = [...lexProblems, ...checkEnvironments(tokens)];
 
   let nextId = 0;
-  const newId = () => `n${(nextId += 1)}`;
+  const newId = () => {
+    nextId += 1;
+    return `n${nextId}`;
+  };
 
   /** 读一个「原子」：一个字符、一个命令、或一个花括号组。 */
   let pos = 0;

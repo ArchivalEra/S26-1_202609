@@ -328,7 +328,7 @@ function parseWaveBody(id, body) {
     const cw = /^cellw=(\d+(?:\.\d+)?)$/.exec(opt);
     if (cw) {
       cellw = Number(cw[1]);
-      if (!(cellw > 0)) throw new Error(`图元「${id}」（wave）：cellw 必须是正数`);
+      if (cellw <= 0) throw new Error(`图元「${id}」（wave）：cellw 必须是正数`);
       continue;
     }
     throw new Error(
@@ -698,7 +698,7 @@ function parsePlotBody(id, body) {
   }
   const rowCount = Number(head[1]);
   const slots = Number(head[2]);
-  if (!(rowCount >= 1) || !(slots >= 2)) {
+  if (rowCount < 1 || slots < 2) {
     throw new Error(`图元「${id}」（plot）：行数与格数都要 ≥1（得到 ${rowCount} 行 /${slots} 格）`);
   }
   const rows = Array.from({ length: rowCount }, () => ({
@@ -711,7 +711,7 @@ function parsePlotBody(id, body) {
     const y = /^yrange[\t ]+(-?[\d.]+)[\t ]+(-?[\d.]+)$/.exec(line);
     if (y) {
       const lo = Number(y[1]); const hi = Number(y[2]);
-      if (!(hi > lo)) throw new Error(`图元「${id}」（plot）：yrange 上界要大于下界`);
+      if (hi <= lo) throw new Error(`图元「${id}」（plot）：yrange 上界要大于下界`);
       yrange = [lo, hi];
       continue;
     }

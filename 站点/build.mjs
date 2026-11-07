@@ -2699,7 +2699,7 @@ for (const relPath of TARGET_FILES) {
               // 免得把读者的输出也吃掉）。
               print: (t) => {
                 var str = String(t);
-                if (/^Starting GNU Octave interpreter\.\.\.?\s*$/.test(str)) return;
+                if (/^Starting GNU Octave interpreter[.]{3}[.]?\s*$/.test(str)) return;
                 out.lines.push(str);
               },
               // stderr 必须收下来（2026-10-31 站长实测报「Octave 返回 rc=2」，

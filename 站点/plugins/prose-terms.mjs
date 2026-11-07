@@ -303,7 +303,7 @@ export function autoWrapTerms(source, dict = {}) {
             const before = offset > 0 ? seg[offset - 1] : "";
             const rest = seg.slice(offset + form.length).replace(/^[\s\u3000]+/, "");
             const after = rest[0] || "";
-            if (before && /[A-Za-z0-9_]/.test(before)) return whole;
+            if (before && /\w/.test(before)) return whole;   // ASCII 字母数字下划线（\w 与原字符类等价）
             if (after && SKIP_AFTER.includes(after)) return whole;
             return `[${form}]{#${idOf.get(form)}}`;
           });
