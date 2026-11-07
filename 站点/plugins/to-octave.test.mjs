@@ -57,11 +57,48 @@ for (const [tex, want] of COMPUTES) {
 const REFUSES = [
   ['U=IR', /没有数值/],
   ['U_{ab}', /没有数值/],
-  ['\\sum_{k=1}^{3}k', /求和/],
+  // 2026-11-07 起 \sum/\prod 带「变量=起点 + 终点 + 求和体」时**可算**
+  // （展开成 sum/prod(arrayfun(...))）；仍然拒绝的是残缺形状与积分：
+  ['\\sum_{k=1}^{100}', /缺要求和的那一项/],
+  ['\\sum_{k}^{10} k', /变量 = 起点/],
   ['\\begin{cases} 1 & x>0 \\\\ 0 & x\\le 0 \\end{cases}', /分段|cases|不认识/],
   ['\\cdots', /省略号|不认识/],
   ['x \\to 0', /没有数值|箭头/],
 ];
+
+/** 2026-11-07 新增：bigop 展开（站长要求求和/连乘可算）。 */
+const BIGOPS = [
+  ['\\sum_{k=1}^{100} k', 'sum(arrayfun(@(k) k, 1:100))'],
+  ['\\sum_{k=1}^{100} k^2', 'sum(arrayfun(@(k) (k)^(2), 1:100))'],
+  ['\\prod_{i=1}^{4} \\frac{i+1}{i}', 'prod(arrayfun(@(i) (i+1)/(i), 1:4))'],
+  ['\\sum_{i=1}^{5} \\sin(i)', 'sum(arrayfun(@(i) sin(i), 1:5))'],
+  ['\\sum_{k=1}^{100} \\frac{1}{k(k+1)}', 'sum(arrayfun(@(k) (1)/(k (k+1)), 1:100))'],
+];
+
+for (const [tex, want] of BIGOPS) {
+  test(`bigop：${tex} → ${want}`, () => {
+    const r = tr(tex);
+    assert.equal(r.ok, true, `求和/连乘应当展开成 arrayfun，实际拒绝：${r.reason || ''}`);
+    assert.equal(r.code, want);
+  });
+}
+
+test('bigop：body 里带括号的循环变量也放行（group 必须透传 loopVars）', () => {
+  // 回归：`(i+1)` 是 group，emit 的 group 分支丢了 loopVars ⇒ 循环变量被判
+  // 「未定义变量」（2026-11-07 实测 \prod_{i=1}^{4} (i+1) 就这么炸的）。
+  const r = tr('\\prod_{i=1}^{4} (i+1)');
+  assert.equal(r.ok, true, `body 里的循环变量应放行：${r.reason || ''}`);
+  assert.equal(r.code, 'prod(arrayfun(@(i) (i+1), 1:4))');
+});
+
+test('bigop：body 是函数名时切片带参数（sin 吃到 (i)），且不重复消费', () => {
+  // 两个连环坑（2026-11-07 实测 \sum_{i=1}^{5} \sin(i)）：
+  // ① body 切片只含 sin 一项 ⇒ 函数吞不到参数，(i) 落回外层判未定义；
+  // ② 消费只 +1 ⇒ 循环回到 body 第二项，(i) 再走一遍无 loopVars 的路径。
+  const r = tr('\\sum_{i=1}^{5} \\sin(i)');
+  assert.equal(r.ok, true, `函数型 body 应整体切片：${r.reason || ''}`);
+  assert.equal(r.code, 'sum(arrayfun(@(i) sin(i), 1:5))');
+});
 
 for (const [tex, pat] of REFUSES) {
   test(`不可算：${tex} 必须明说原因`, () => {

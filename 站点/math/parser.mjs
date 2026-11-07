@@ -416,7 +416,8 @@ export function parse(src, opts = {}) {
         || t.value === 'vdots' || t.value === 'ddots') {
         return node('ellipsis', 'operator', { tex: `\\${t.value}`, glyph }, start, t.end);
       }
-      if (t.value === 'int' || t.value === 'oint' || t.value === 'sum') {
+      if (t.value === 'int' || t.value === 'oint' || t.value === 'sum'
+        || t.value === 'prod' || t.value === 'coprod') {
         return node('bigop', 'operator', { tex: `\\${t.value}`, glyph }, start, t.end);
       }
       return node('sym', role, { tex: `\\${t.value}`, glyph }, start, t.end);
