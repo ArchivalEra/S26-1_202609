@@ -43,7 +43,7 @@ export function createSourcePacks(opts) {
   /** 课程 → 生效的包链（`通用+电路原理` → ['通用','电路原理']）。 */
   function chainOf(course) {
     const env = COURSE_ENV[course];
-    const spec = env && env['符号'];
+    const spec = env?.['符号'];
     if (!spec) return null;
     return spec.split('+').map((s) => s.trim()).filter(Boolean);
   }

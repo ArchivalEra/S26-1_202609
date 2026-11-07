@@ -79,7 +79,7 @@ export function createReadCore(deps) {
         let secId = hit.anchor || '';
         try {
           const { src, idx } = cutIndexOf(relPath);
-          const hs = headingsOf(relPath, (data.docs[hit.id] && data.docs[hit.id].headings) || []);
+          const hs = headingsOf(relPath, data.docs[hit.id]?.headings || []);
           if (!secId) secId = (hs[0] && hs[0].a) || '';
           if (secId) {
             const r = planExcerpt({ source: src, index: idx, sectionId: secId, headings: hs, grams: qgrams, budget });

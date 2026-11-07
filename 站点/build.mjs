@@ -344,7 +344,7 @@ function renderOneMath(src, mode, relPath, env, hits, o = {}) {
       t = translateToOctave(doc.expr.root);
     } catch (e) {
       throw new Error(
-        `[build] 公式标了 {:calc} 但转译器抛错（${relPath}）：${(e && e.message) || e}\n`
+        `[build] 公式标了 {:calc} 但转译器抛错（${relPath}）：${e?.message || e}\n`
         + `  公式：${src.slice(0, 120)}`);
     }
     if (!t.ok || !t.code) {
@@ -1311,7 +1311,7 @@ for (const relPath of TARGET_FILES) {
   // = 本页零符号行为（围栏照剥）。
   const envVars = {
     ...(COURSE_ENV[here] || {}),
-    ...((BUILD_PHASES.find((ph) => (ph.pages || []).includes(relPath)) || {}).env || {}),
+    ...BUILD_PHASES.find((ph) => ph.pages?.includes(relPath))?.env || {},
   };
   const envPackName = envVars['符号'] || null;
   // 多包叠加（v2，2026-10-11）：值可以是 `通用+电路原理`——按 `+` 拆开、**后者覆盖前者**。
@@ -1770,7 +1770,7 @@ for (const relPath of TARGET_FILES) {
     // 所以那边直接对**已经填好的 caption** 取（见模板处的 figureIndexMath）。
     const fillMath = (s) => s.replace(
       /@@MATH_INLINE_(\d+)@@/g,
-      (_, id) => (mathBlocks[parseInt(id)] || {}).html || '');
+      (_, id) => mathBlocks[parseInt(id)]?.html || '');
     htmlContent = htmlContent.replace(
       /<figure class="fig"[\s\S]*?<\/figure>/g, fillMath);
   }
@@ -2526,7 +2526,7 @@ for (const relPath of TARGET_FILES) {
   <!-- 图元索引烘焙（2026-10-28）：本页所有图的 IR 汇总。
        三个消费者读同一份——页面交互、site_figure 工具、构建期提到的静态结构表。
        与 sym-glossary-json / nav-structure-json 同一个范式：构建期烘、客户端不发请求。 -->
-  <script type="application/json" id="figure-index-json">${JSON.stringify(buildFigureIndex(pageFigures)).replace(/<\//g, '<\\/').replace(/@@MATH_INLINE_(\d+)@@/g, (_, i) => (mathBlocks[parseInt(i)] || {}).html || '')}</script>
+  <script type="application/json" id="figure-index-json">${JSON.stringify(buildFigureIndex(pageFigures)).replace(/<\//g, '<\\/').replace(/@@MATH_INLINE_(\d+)@@/g, (_, i) => mathBlocks[parseInt(i)]?.html || '')}</script>
   <!-- 侧栏形状烘焙（阶段一）：nav-structure.mjs（buildNavModel）产出的归一化树 + 判定结果。
        site_index / site_navigate / drawer-sync 三个消费者都读这一份，不再爬侧栏 DOM。 -->
   <script type="application/json" id="nav-structure-json">${JSON.stringify(navJsonPayload).replace(/<\//g, '<\\/')}</script>

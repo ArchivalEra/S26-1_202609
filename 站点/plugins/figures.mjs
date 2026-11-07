@@ -2111,7 +2111,7 @@ export function renderStructureTable(ir) {
       rows.push([r.label + (extra.length ? `（${extra.join('，')}）` : ''), r.levels, String(r.slots)]);
     });
     // 参考线与时间轴是**读图依据**，AI 也要能读到，否则它只能数电平串自己推
-    if (ir.payload.guides && ir.payload.guides.length) {
+    if (ir.payload.guides?.length) {
       rows.push(['参考线', ir.payload.guides.join('、'), '格边界']);
     }
   } else if (ir.kind === 'kmap') {

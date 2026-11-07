@@ -295,7 +295,7 @@ export function renderMarkdown(root, opts) {
         ? '$$' + formula + '$$' + (shown ? ' = ' + shown : '')
         : '$' + formula + '$' + (shown ? ' = ' + shown : '');
     }
-    if (hasClass(node, 'katex') || hasClass(node, 'ML__latex') || (node.getAttribute && node.getAttribute('data-math-plain'))) return katexText(node);
+    if (hasClass(node, 'katex') || hasClass(node, 'ML__latex') || node.getAttribute?.('data-math-plain')) return katexText(node);
     // KaTeX 的**内部**节点：外层 .katex 已经整体处理过，这里再遇到就是重复
     //（实测正文里出现孤立的 `$...$` 行与 BBBHHH——都是 katex-html 副本被二次读取）
     if (hasClass(node, 'katex-html') || hasClass(node, 'katex-mathml')) return '';
@@ -307,7 +307,7 @@ export function renderMarkdown(root, opts) {
       return k ? katexText(k) : (node.textContent || '');
     }
     if (tag === 'A' && withLinks) {
-      const t = linkTarget(node.getAttribute && node.getAttribute('href'));
+      const t = linkTarget(node.getAttribute?.('href'));
       const label = walkInlineAll(node).trim();
       if (!t || !label) return label;
       // 外链加 ⧉ 前缀：模型据此知道 site_navigate 处理不了
@@ -372,7 +372,7 @@ export function renderMarkdown(root, opts) {
       return;
     }
 
-    if (hasClass(node, 'katex') || hasClass(node, 'ML__latex') || (node.getAttribute && node.getAttribute('data-math-plain'))) { push(katexText(node)); return; }
+    if (hasClass(node, 'katex') || hasClass(node, 'ML__latex') || node.getAttribute?.('data-math-plain')) { push(katexText(node)); return; }
     if (hasClass(node, 'katex-html') || hasClass(node, 'katex-mathml')) return;
     if (tag === 'A') { push(walkInline(node)); return; }
 
@@ -546,7 +546,7 @@ export function createPageView(doc, loc, winOverride) {
     } catch (e) { /* 无计算样式 */ }
     if (!Number.isFinite(hue) && rootEl) {
       try {
-        const inline = rootEl.style && rootEl.style.getPropertyValue
+        const inline = typeof rootEl.style?.getPropertyValue === 'function'
           ? rootEl.style.getPropertyValue('--hue') : '';
         if (inline) hue = parseInt(inline, 10);
         if (!Number.isFinite(hue) && rootEl.getAttribute) {
@@ -1238,7 +1238,7 @@ export function createPageView(doc, loc, winOverride) {
 
     if (to === 'top' || to === 'bottom') {
       try {
-        const y = to === 'top' ? 0 : ((doc.documentElement && doc.documentElement.scrollHeight) || 0);
+        const y = to === 'top' ? 0 : (doc.documentElement?.scrollHeight || 0);
         if (w.scrollTo) w.scrollTo({ top: y, behavior: 'smooth' });
         else if (w.scrollTo) w.scrollTo(0, y);
         return { ok: true, to, y };
@@ -1433,7 +1433,7 @@ export function createPageView(doc, loc, winOverride) {
     }
     if (opt.hue !== undefined && opt.hue !== null) {
       const hue = Math.max(0, Math.min(360, parseInt(opt.hue, 10) || 0));
-      if (rootEl?.style && rootEl.style.setProperty) {
+      if (typeof rootEl?.style?.setProperty === 'function') {
         rootEl.style.setProperty('--hue', String(hue));
         rootEl.style.setProperty('--primary-h', String(hue));
       }
@@ -1734,7 +1734,7 @@ export function createPageView(doc, loc, winOverride) {
 
     // JSON 节点 → site_index 输出形态：组节点带 indexHref（若有）作 path，叶子带 href。
     const toNode = (n) => {
-      const isGroup = !!(n.children && n.children.length);
+      const isGroup = !!n.children?.length;
       const node = { name: n.label, depth: n.depth };
       if (isGroup) {
         if (n.indexHref) node.path = n.indexHref;
@@ -1867,7 +1867,7 @@ export function createPageView(doc, loc, winOverride) {
       out.push({
         index: out.length,
         src, abs, ext: ext.toLowerCase(),
-        alt: (el.getAttribute && el.getAttribute('alt')) || '',
+        alt: el.getAttribute?.('alt') || '',
         natural: el.naturalWidth ? { w: el.naturalWidth, h: el.naturalHeight } : undefined,
         box: box || undefined,
         // 学习通能直接收的格式；webp/jxl/avif/gif 都要先转

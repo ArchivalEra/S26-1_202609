@@ -791,7 +791,7 @@ export function applyOps(doc, el, ops, maths) {
         }
         thead.appendChild(trh);
         node.appendChild(thead);
-        if (op.rows && op.rows.length) {
+        if (op.rows?.length) {
           const tbody = mk('tbody');
           for (const row of op.rows) {
             const tr = mk('tr');

@@ -165,7 +165,7 @@ function descendantPaths(node) {
  */
 export function indexHrefOf(node, htmlRelPathFn) {
   const htmlOf = htmlRelPathFn || htmlPathOf;
-  if (!node || !node.children || !node.children.length) return null;
+  if (!node?.children?.length) return null;
   if (!node.path || !/index\.md$/.test(node.path)) return null;
   if (descendantPaths(node).includes(node.path)) return null;
   return htmlOf(node.path);
@@ -192,7 +192,7 @@ export function buildNavModel(structure, relPath, htmlRelPathFn) {
     // 无 path 的组节点（第01章/第02章/仓库规约）也要有稳定 id：用父键 + label 拼一个
     // 不可能与任何真实 html 路径相撞的值（带 `#` 前缀）。
     const id = href || `${parentKey}#${raw.label || 'node' + (synthetic++)}`;
-    const children = raw.children && raw.children.length
+    const children = raw.children?.length
       ? normalize(raw.children, depth + 1, id)
       : null;
     const node = { id, label: raw.label, path: md, href, depth, indexHref: null, children };

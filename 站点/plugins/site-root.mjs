@@ -48,7 +48,7 @@
  * 返回以 / 开头、以 / 结尾的绝对路径；无法探测时返回 null。
  */
 function detectSiteRoot() {
-  const sp = (document.body && document.body.getAttribute('data-site-path')) || '';
+  const sp = document.body?.getAttribute('data-site-path') || '';
   if (!sp) return null;
   // pathname 解码后与 sitePath 对齐（构建期写的是未编码的仓库路径）
   let pathname;
