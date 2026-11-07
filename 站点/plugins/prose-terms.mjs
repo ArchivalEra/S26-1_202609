@@ -94,7 +94,7 @@ export function parseGlossaryDict(source) {
     if (f) {
       const marker = f[1];
       if (!fence) fence = { ch: marker[0], len: marker.length };
-      else if (marker[0] === fence.ch && marker.length >= fence.len) fence = null;
+      else if (marker.startsWith(fence.ch) && marker.length >= fence.len) fence = null;
       continue;
     }
     if (fence) continue;
@@ -179,7 +179,7 @@ function stripDictFences(lines, onTable = null) {
     if (f) {
       const marker = f[1];
       if (!fence) fence = { ch: marker[0], len: marker.length };
-      else if (marker[0] === fence.ch && marker.length >= fence.len) fence = null;
+      else if (marker.startsWith(fence.ch) && marker.length >= fence.len) fence = null;
       out.push(line);
       continue;
     }
@@ -258,7 +258,7 @@ export function applySymbolExclusions(dict = {}, exclusions = {}, onWarn = null)
   const proseDict = { ...dict };
   const texDict = { ...dict };
   for (const id of noProse) {
-    if (!Object.prototype.hasOwnProperty.call(dict, id)) {
+    if (!Object.hasOwn(dict, id)) {
       warn(`符号排除指向本页环境里没有的词条 ${id}`);
       continue;
     }
@@ -266,7 +266,7 @@ export function applySymbolExclusions(dict = {}, exclusions = {}, onWarn = null)
     if (e?.prose && e.prose.length) proseDict[id] = { ...e, prose: [] };
   }
   for (const id of noTex) {
-    if (!Object.prototype.hasOwnProperty.call(dict, id)) {
+    if (!Object.hasOwn(dict, id)) {
       warn(`符号排除公式指向本页环境里没有的词条 ${id}`);
       continue;
     }
@@ -339,7 +339,7 @@ export function renderGlossary(source, opts = {}) {
       if (!e || e.bubble === false) return { miss: `包「${pack}」没有词条 ${term}` };
       return { key: `${pack}:${term}`, entry: e, href: `${p.hrefBase}#${term}` };
     }
-    if (pins && Object.prototype.hasOwnProperty.call(pins, term)) {
+    if (pins && Object.hasOwn(pins, term)) {
       const packName = pins[term];
       const p = packs?.[packName];
       const e = p?.dict[term];
@@ -348,7 +348,7 @@ export function renderGlossary(source, opts = {}) {
       }
       return { key: `${packName}:${term}`, entry: e, href: `${p.hrefBase}#${term}` };
     }
-    if (Object.prototype.hasOwnProperty.call(tokens, term)) {
+    if (Object.hasOwn(tokens, term)) {
       const e = tokens[term];
       if (e.bubble === false) {
         return { miss: `词条 ${term} 只声明了形式、没有气泡内容（补词典行才会生效）` };

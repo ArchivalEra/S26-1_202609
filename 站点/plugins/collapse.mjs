@@ -172,7 +172,7 @@ export function renderCollapse(source) {
       if (!fence) {
         fence = { ch: marker[0], len: marker.length };
       } else if (
-        marker[0] === fence.ch &&
+        marker.startsWith(fence.ch) &&
         marker.length >= fence.len &&
         new RegExp(`^[\\t ]{0,3}${fence.ch}{${fence.len},}[\\t ]*$`).test(line)
       ) {

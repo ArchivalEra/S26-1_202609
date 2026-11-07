@@ -88,7 +88,7 @@ export function buildCutIndex(source) {
   // 若直接用它当切点，就会切在行内——违反「切点恒在行首」。这里按实际情况处理：
   // 源以 `\n` 结尾 ⇒ length 本身即行首；否则回退到**最后一行的行首**（保证合法），
   // 并额外记下 trueEnd 供调用方知道「最后一行不可切」。
-  const endsWithNewline = source.length > 0 && source[source.length - 1] === '\n';
+  const endsWithNewline = source.endsWith('\n');  // 空串不以 \n 结尾，语义同
   const lastCutOffset = endsWithNewline ? source.length : (lineStarts[lineStarts.length - 1] || 0);
   cuts.push({ offset: lastCutOffset, openStack: stack.slice() });
 
