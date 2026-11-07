@@ -196,7 +196,7 @@ export function createFormulaCells(deps = {}) {
     // 不会像旧实现那样因为「显示层换成副本」而丢监听（2026-11-06 实弹）。
     body.addEventListener('click', (ev) => {
       if (!canEdit()) return;                 // 不能编辑时保持原来的点击行为（符号气泡等）
-      if (ev.target.closest && ev.target.closest(SYMBOL_SELECTOR)) return;   // 符号气泡优先
+      if (typeof ev.target.closest === 'function' && ev.target.closest(SYMBOL_SELECTOR)) return;   // 符号气泡优先
       ev.preventDefault();
       ev.stopPropagation();
       enterEdit(cell);
@@ -275,7 +275,7 @@ export function createFormulaCells(deps = {}) {
 
   /** 懒建并复用 math-field（不在退出时删除，省掉每次自定义元素 upgrade）。 */
   function ensureMathField(cell) {
-    if (cell.mf && cell.mf.isConnected) return cell.mf;
+    if (cell.mf?.isConnected) return cell.mf;
     const mf = document.createElement('math-field');
     mf.className = 'fcell-mathfield';
     // 虚拟键盘**全站不要**（2026-11-01 站长定案）：本站是桌面阅读场景。
@@ -327,7 +327,7 @@ export function createFormulaCells(deps = {}) {
       cell.pendingEditor = false;
       // 允许装配层返回 void（老式调用）：那就退回查自定义元素。
       if (ready === undefined) {
-        ready = !!(window.customElements && window.customElements.get('math-field'));
+        ready = !!window.customElements?.get('math-field');
       }
       if (destroyed || stateOf(cell) === STATE_EDITING) return;
       if (!ready) {
@@ -335,7 +335,7 @@ export function createFormulaCells(deps = {}) {
         return;
       }
     }
-    if (!(window.customElements && window.customElements.get('math-field'))) {
+    if (!window.customElements?.get('math-field')) {
       showCellError(cell, 'MathLive 还没载入（编辑器资产未就绪）');
       return;
     }
@@ -446,7 +446,7 @@ export function createFormulaCells(deps = {}) {
   }
 
   function isVisible(el) {
-    if (!el || !el.getBoundingClientRect) return false;
+    if (!el || typeof el.getBoundingClientRect !== 'function') return false;
     const r = el.getBoundingClientRect();
     return r.bottom > -200 && r.top < (window.innerHeight + 200) && r.width > 0;
   }

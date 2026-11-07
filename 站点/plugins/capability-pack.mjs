@@ -154,8 +154,8 @@ export const ASSETS = {
 
 /** 三态：由两件资产的存在**派生**（不是存出来的）。 */
 export function deriveMode(s) {
-  const editor = !!(s?.editor && s.editor.ready);
-  const engine = !!(s?.engine && s.engine.ready);
+  const editor = !!(s?.editor?.ready);
+  const engine = !!(s?.engine?.ready);
   if (editor && engine) return 'computable';
   if (editor) return 'editable';
   return 'readonly';
@@ -186,7 +186,7 @@ export function deriveMode(s) {
  */
 async function sha256Hex(buf) {
   try {
-    if (!(globalThis.crypto && globalThis.crypto.subtle)) return null;
+    if (!globalThis.crypto?.subtle) return null;
     const d = await globalThis.crypto.subtle.digest('SHA-256', buf);
     return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
   } catch {
@@ -493,7 +493,7 @@ export function createOpfsStore(dirName = 'capability-pack') {
   async function getDir() {
     if (!dirPromise) {
       dirPromise = (async () => {
-        if (!navigator.storage || !navigator.storage.getDirectory) {
+        if (!navigator.storage?.getDirectory) {
           throw mkErr('OPFS_UNSUPPORTED', '这个浏览器没有 OPFS');
         }
         // 申请持久化：只是「申请」，浏览器可以拒绝；拒绝也不影响读写，只影响会不会被清。

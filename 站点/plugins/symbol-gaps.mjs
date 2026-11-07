@@ -110,7 +110,7 @@ export function measureFormulaShapes(html) {
     let expr;
     try {
       const r = parse(tex);
-      if (r.problems && r.problems.some((p) => p.severity === 'error')) { parseErrors += 1; continue; }
+      if (r.problems?.some((p) => p.severity === 'error')) { parseErrors += 1; continue; }
       expr = r.expr;
     } catch {
       parseErrors += 1;

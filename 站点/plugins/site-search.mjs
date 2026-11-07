@@ -95,7 +95,7 @@ export function verifyPhrase(postingsList) {
   if (!postingsList || !postingsList.length) return [];
   let anchor = 0;
   for (let k = 1; k < postingsList.length; k++) {
-    if (!postingsList[k] || !postingsList[k].length) return [];
+    if (!postingsList[k]?.length) return [];
     if (postingsList[k].length < postingsList[anchor].length) anchor = k;
   }
   if (!postingsList[anchor].length) return [];
@@ -116,7 +116,7 @@ export function verifyPhrase(postingsList) {
 
 /** 位置 → 所属小节（headings 按 s 升序，s 是标题在正文中的偏移）。 */
 export function sectionForPosition(headings, position) {
-  if (!headings || !headings.length) return null;
+  if (!headings?.length) return null;
   let found = null;
   for (const heading of headings) {
     if (heading.s <= position) found = heading;
@@ -353,7 +353,7 @@ export function extractSearchDoc(html, options) {
     // 公式容器：整块跳过（排版产物是噪声），但它的 data-math-plain 单独收录
     const isMathBox = parsed.className.split(/\s+/).indexOf('katex') >= 0
       || parsed.className.split(/\s+/).indexOf('ML__latex') >= 0;
-    const mathPlain = isMathBox ? (parsed.attrs && parsed.attrs['data-math-plain']) : null;
+    const mathPlain = isMathBox ? parsed.attrs?.['data-math-plain'] : null;
     // 注意：正文是按 `chunks` 累加的，不是单个 text 变量
     if (mathPlain) chunks.push(` ${mathPlain} `);
     const isSkip = SKIP_TAGS.has(parsed.name) || isMathBox;

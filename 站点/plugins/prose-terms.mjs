@@ -252,7 +252,7 @@ const SKIP_AFTER = "图表级相极端样附";
  */
 
 export function applySymbolExclusions(dict = {}, exclusions = {}, onWarn = null) {
-  const warn = (m) => onWarn && onWarn(m);
+  const warn = (m) => onWarn?.(m);
   const noProse = exclusions.noProse || [];
   const noTex = exclusions.noTex || [];
   const proseDict = { ...dict };
@@ -329,11 +329,11 @@ export function renderGlossary(source, opts = {}) {
     onHit = null,
   } = opts;
   const tokens = tokenDict || dict;
-  const warn = (msg) => onWarn && onWarn(msg);
+  const warn = (msg) => onWarn?.(msg);
   // 解析一个令牌：返回 {key, entry, href} 或 {miss}。**只查被锚定的地方，零回退**。
   const resolveTerm = (pack, term) => {
     if (pack !== undefined) {
-      const p = packs && packs[pack];
+      const p = packs?.[pack];
       if (!p) return { miss: `令牌指向未注册的符号包「${pack}」` };
       const e = p.dict[term];
       if (!e || e.bubble === false) return { miss: `包「${pack}」没有词条 ${term}` };
@@ -341,8 +341,8 @@ export function renderGlossary(source, opts = {}) {
     }
     if (pins && Object.prototype.hasOwnProperty.call(pins, term)) {
       const packName = pins[term];
-      const p = packs && packs[packName];
-      const e = p && p.dict[term];
+      const p = packs?.[packName];
+      const e = p?.dict[term];
       if (!e || e.bubble === false) {
         return { miss: `符号强制指向的包「${packName}」没有词条 ${term}` };
       }
