@@ -59,6 +59,9 @@ function isOperatorGlyph(glyph) {
   return /^[×·⋅÷±\-\+\=<>（）()\[\]|/,;:]$/.test(glyph || '');
 }
 
+/** 关系符（bigop 起点里出现即报错：循环范围确定不了）。 */
+const REL_GLYPHS = /[=≈≠≤≥<>]/;
+
 /**
  * 若节点是 `标签 = 表达式` 的形状，返回**右边**那部分；否则返回 null。
  *
@@ -155,7 +158,7 @@ export function translate(node) {
   const rhsNode = stripAssignment(node);
   const target = rhsNode || node;
 
-  const r = emit(target);
+  const r = emit(target, null);
   if (!r.ok) return r;
   const out = String(r.code).trim();
 
@@ -207,7 +210,11 @@ export function translate(node) {
   //
   // ⚠️ **`] [` 不能拦**：两个矩阵挨着是 Octave 里合法的**矩阵乘法**
   // （`[1 2;3 4][5;6]` 完全能跑）。只认「圆括号后接东西」那种形态。
-  if (/\)\s*[\[(]/.test(out) || /\)\s*[A-Za-z_]/.test(out)) {
+  // ⚠️ bigop 展开引入了 `@(k) body` 匿名函数——`) k` 是**函数体**，不是并置。
+  // 判据前先把 `@(var) ` 头剥掉（匿名函数只在我们自己的产物里出现，剥的是
+  // 自己发射的形状，不碰读者的原文）。
+  const outNoAnon = out.replace(/@\([A-Za-z]\)\s*/g, '');
+  if (/\)\s*[\[(]/.test(outNoAnon) || /\)\s*[A-Za-z_]/.test(outNoAnon)) {
     return fail('公式里有两个并排的量（例如题号加矩阵），Octave 里没法当成一个表达式求值');
   }
 
@@ -228,10 +235,99 @@ export function translate(node) {
  * 规则本身是**同一件事**：一串 token 里，函数名吞掉紧随的操作数。
  * 所以抽成一个函数，外层 group 与内层参数都必须调它。
  */
-function emitSequence(items) {
+function emitSequence(items, loopVars) {
   const parts = [];
   for (let i = 0; i < items.length; i += 1) {
     const it = items[i];
+    // ⚠️ **bigop（\sum/\prod/\coprod）**：2026-11-07 站长要求「这种公式也可算」。
+    //
+    // IR 形状：`\sum_{k=1}^{100} k` ⇒ `script(base=bigop \sum, sub=`k=1`, sup=`100`)`
+    // 在前，**求和体是 script 之后的同级 item**（`k` 或 `k^2`——body 自己也可以
+    // 是 script，所以不能只在 script 分支里找）。
+    //
+    // 展开成 Octave 的内联数组求和/连积：
+    //   \sum_{k=a}^{b} f(k)  ⇒  sum(arrayfun(@(k) f(k), a:b))
+    //   \prod_{i=a}^{b} f(i) ⇒  prod(arrayfun(@(i) f(i), a:b))
+    // arrayfun 的匿名函数参数**遮蔽**外部同名变量（Octave 实测：外层 k=7 时
+    // `sum(arrayfun(@(k) k^2, 1:5))` = 55），所以循环变量名可以放心用。
+    //
+    // 边界（不猜）：sub 必须是 `var = a` 形状（var 一个符号、a 无关系符）；
+    // sup 必须存在（缺上界的求和没有终点，展开不了）；body 缺（script 是最后一项）
+    // 也明确报错。int/oint 积分不在此列（数值积分是另一套语义，继续报暂不支持）。
+    if (it?.kind === 'script' && it.base?.kind === 'bigop') {
+      const op = String(it.base.tex || '');
+      if (op === '\\int' || op === '\\oint') {
+        return fail('积分（\\int）要数值积分，暂不支持');
+      }
+      // 下标：`k = a`（var 一个符号；a 是不含关系符的任意表达式）
+      const subItems = (it.sub?.items || []).filter((x) => x.kind !== 'space');
+      const eqIdx = subItems.findIndex((x) => x.kind === 'op' && (x.glyph || x.tex) === '=');
+      if (eqIdx !== 1 || subItems.length !== 3 || subItems[0].kind !== 'sym') {
+        return fail('求和/连乘的下标要写成「变量 = 起点」的形状（如 k=1）');
+      }
+      const varName = subItems[0].glyph || subItems[0].tex;
+      if (!/^[A-Za-z]$/.test(varName)) {
+        return fail(`求和变量「${varName}」不是单个字母，展开成循环没法命名`);
+      }
+      const loNode = subItems[2];
+      // 起点表达式里不许再有关系符（`k=1` 之外出现 `=`/`<` 都是没抄完整的题）
+      const loHasRel = (loNode.kind === 'group' ? (loNode.items || []) : [loNode])
+        .some((x) => x.kind === 'op' && REL_GLYPHS.test(x.glyph || x.tex || ''));
+      if (loHasRel) return fail('求和的起点里出现了关系符，没法确定循环范围');
+      const lo = emit(loNode, loopVars);
+      if (!lo.ok) return lo;
+      if (!it.sup) return fail('求和/连乘缺上界（^终点），展开成循环没法确定范围');
+      const hi = emit(it.sup, loopVars);
+      if (!hi.ok) return hi;
+      if (i + 1 >= items.length) {
+        return fail('求和/连乘后面没有表达式（缺要求和的那一项）');
+      }
+      const inner = new Set(loopVars || []);
+      inner.add(varName);
+      // ⚠️ body 要**按「紧跟的那一项（含它的参数/括号）」切片**交给 emitSequence：
+      //   · body 是函数名（`\sum \sin(i)`）⇒ 函数吞参逻辑在 emitSequence 里，
+      //     但它只吞**同一个数组里**的后续 item —— 所以切片必须把 `sin` 与
+      //     它的参数 `(i)` 一起带上，否则 sin 吃不到参数、循环变量被晾在外面。
+      //   · body 是括号（`\sum (i+1)`）⇒ 顶层括号在 IR 里是**打平的 fence**
+      //     （items 里是 role=fence 的 op '('…')'），切片要吞到配平。
+      //   · body 是普通项（`k`、`k^2`、`\frac…`）⇒ 切片就是那一个 item。
+      // 数学惯例：求和体是「紧跟的那一项」，`+` 之后的项不属于求和（纸上同款）。
+      const first = items[i + 1];
+      let bodyLen = 1;
+      const glyphOf = (x) => x?.glyph || x?.tex || '';
+      if (first?.kind === 'sym' && first.isFunctionName) {
+        const maybeOpen = items[i + 2];
+        if (maybeOpen && maybeOpen.kind === 'op'
+            && (maybeOpen.glyph === '(' || maybeOpen.glyph === '[')) {
+          let depth = 0;
+          for (let j = i + 2; j < items.length; j += 1) {
+            const g = glyphOf(items[j]);
+            if (g === '(' || g === '[') depth += 1;
+            else if (g === ')' || g === ']') { depth -= 1; if (depth === 0) { bodyLen = j - i; break; } }
+          }
+        } else {
+          bodyLen = 2;                          // `\sin x` 形态：函数名 + 一个操作数
+        }
+      } else if (first?.kind === 'op' && first.role === 'fence' && first.glyph === '(') {
+        // `\sum (i+1)`：括号打平形态，吞到配平的 ')'
+        let depth = 0;
+        for (let j = i + 1; j < items.length; j += 1) {
+          const g = glyphOf(items[j]);
+          if (g === '(' || g === '[') depth += 1;
+          else if (g === ')' || g === ']') { depth -= 1; if (depth === 0) { bodyLen = j - i; break; } }
+        }
+      }
+      const body = emitSequence(items.slice(i + 1, i + 1 + bodyLen), inner);
+      if (!body.ok) return body;
+      const fn = op === '\\prod' || op === '\\coprod' ? 'prod' : 'sum';
+      parts.push(`${fn}(arrayfun(@(${varName}) ${body.code}, ${lo.code}:${hi.code}))`);
+      // ⚠️ 消费了 bigop 本体 **加整个 body 切片**：body 是函数名时切片可能有多项
+      // （sin + 它的参数）。只 +1 会让循环回到 body 的第二个 item，把 `(i)` 重新
+      // 走一遍函数吞参 —— 循环变量在那一层拿不到，被判「未定义变量」
+      // （2026-11-07 实测 \sum_{i=1}^{5} \sin(i) 就是这么炸的）。
+      i += bodyLen;
+      continue;
+    }
     const isFn = it?.kind === 'sym' && it.isFunctionName;
     if (isFn) {
       const fn = emit(it);
@@ -254,7 +350,7 @@ function emitSequence(items) {
         }
         if (end < 0) return fail('函数调用的括号没有闭合');
         const inner = items.slice(i + 2, end);
-        const arg = emitSequence(inner);        // ← 递归，同一套逻辑
+        const arg = emitSequence(inner, loopVars);        // ← 递归，同一套逻辑
         if (!arg.ok) return arg;
         parts.push(`${fn.code}(${arg.code})`);
         i = end;                                // 整个调用块已消费
@@ -276,7 +372,7 @@ function emitSequence(items) {
         const envName = String(next.env || next.name || '').replace(/\*$/, '');
         if (fn.code === 'det' && (envName === 'vmatrix' || envName === 'Vmatrix')) {
           // 直接内联矩阵本体，外层这一个 det 就是语义上的那个
-          const bare = emitEnvBare(next);
+          const bare = emitEnvBare(next, loopVars);
           if (!bare.ok) return bare;
           parts.push(`det(${bare.code})`);
           i += 1;
@@ -285,7 +381,7 @@ function emitSequence(items) {
       }
 
       if (next) {
-        const arg = emit(next);
+        const arg = emit(next, loopVars);
         if (!arg.ok) return arg;
         parts.push(`${fn.code}(${arg.code})`);
         i += 1;
@@ -294,7 +390,7 @@ function emitSequence(items) {
       }
       continue;
     }
-    const r = emit(it);
+    const r = emit(it, loopVars);
     if (!r.ok) return r;
     parts.push(r.code);
   }
@@ -312,7 +408,7 @@ function emitSequence(items) {
  */
 const JUXTAPOSED_RE = /\)\s*[\[(]/;
 
-function emit(n) {
+function emit(n, loopVars) {
   if (!n || typeof n !== 'object') return fail('空节点');
 
   switch (n.kind) {
@@ -321,13 +417,15 @@ function emit(n) {
       // 函数应用的整套判据都在 emitSequence 里（内外层必须**同一套**逻辑——
       // 2026-11-01 实测：第一版把内层参数逐项 emit，于是 `\sin(\cos(0))` 的
       // 内层 `cos` 不走函数应用，输出 `sin(cos (0))`，多一个空格、语义也偏）。
-      return emitSequence(n.items || []);
+      // ⚠️ loopVars 必须透传（2026-11-07）：bigop 求和体里的 `(i+1)` 是 group，
+      // 丢了 loopVars 循环变量就被判「未定义变量」。
+      return emitSequence(n.items || [], loopVars);
 
     case 'num':
       return { ok: true, code: String(n.literal ?? n.glyph ?? n.value ?? '') };
 
     case 'sym':
-      return emitSym(n);
+      return emitSym(n, loopVars);
 
     case 'op': {
       const g = n.glyph || n.tex || '';
@@ -353,7 +451,7 @@ function emit(n) {
     }
 
     case 'frac': {
-      const a = emit(n.num), b = emit(n.den);
+      const a = emit(n.num, loopVars), b = emit(n.den, loopVars);
       if (!a.ok) return a; if (!b.ok) return b;
       return { ok: true, code: `(${a.code})/(${b.code})` };
     }
@@ -361,22 +459,29 @@ function emit(n) {
     case 'root': {
       // \sqrt{x} → sqrt(x)；n 次根暂不支持（Octave 里要写成 x^(1/n)，
       // 但 IR 的 index 语义要逐个核对，先不做）
-      const body = emit(n.body || n.base);
+      const body = emit(n.body || n.base, loopVars);
       if (!body.ok) return body;
       return { ok: true, code: `sqrt(${body.code})` };
     }
 
     case 'script': {
       // 上下标：`x^{2}` → `x^2`，`x_{1}` → `x(1)`（下标在 Octave 里是索引）
-      const base = emit(n.base);
+      // ⚠️ 先看基是不是 bigop（\sum_{k=1}^{100} k 的 IR 形状：script(base=bigop,
+      // sub=`k=1`, sup=`100`)，求和体是 script **后面**的同级 item —— 那要由
+      // emitSequence 处理（见 emitBigop），单个 script 节点自己没有 body。
+      // 这里只拦「body 不在场」的误入：交给 emitBigop 判错误信息更有针对性。
+      if (n.base && n.base.kind === 'bigop') {
+        return fail('求和/连乘的范围或求和体不完整（缺后面的表达式）');
+      }
+      const base = emit(n.base, loopVars);
       if (!base.ok) return base;
       if (n.sup) {
-        const s = emit(n.sup);
+        const s = emit(n.sup, loopVars);
         if (!s.ok) return s;
         return { ok: true, code: `(${base.code})^(${s.code})` };
       }
       if (n.sub) {
-        const s = emit(n.sub);
+        const s = emit(n.sub, loopVars);
         if (!s.ok) return s;
         // 纯数字下标 → 索引；非数字下标 → 变量名的一部分（如 U_{ab}）
         if (/^[0-9]+$/.test(s.code)) return { ok: true, code: `${base.code}(${s.code})` };
@@ -386,7 +491,7 @@ function emit(n) {
     }
 
     case 'env':
-      return emitEnv(n);
+      return emitEnv(n, loopVars);
 
     case 'accent': {
       // 上划线 = 逻辑取反，在 Octave 里是 ~
@@ -403,14 +508,16 @@ function emit(n) {
       return { ok: true, code: ' ' };
 
     case 'bigop':
-      return fail('求和/连乘（\\sum、\\prod）要展开成循环，暂不支持');
+      // 走不到这里：\sum/\prod 带上下标时由 emitSequence 的 bigop 分支处理
+      // （script(base=bigop)）；不带上下标的裸 \sum 到这一支，说明公式没写完。
+      return fail('求和/连乘（\\sum、\\prod）要写成带上下标的完整形状（如 \\sum_{k=1}^{n} a_k）');
 
     case 'ellipsis':
       return fail('省略号（\\cdots 等）不是可计算的表达式');
 
     case 'fence': {
       // 括号本身透明：`(a+b)` 的分组语义已由 group 承担
-      const body = emit(n.body);
+      const body = emit(n.body, loopVars);
       return body.ok ? body : body;
     }
 
@@ -453,7 +560,7 @@ function emit(n) {
   }
 }
 
-function emitSym(n) {
+function emitSym(n, loopVars) {
   const tex = n.tex || '';
   const glyph = n.glyph || '';
 
@@ -480,6 +587,10 @@ function emitSym(n) {
   if (GREEK_LETTERS.has(bare)) {
     return fail(`符号「${n.tex || bare}」没有数值，Octave 里是未定义变量。要算就把它的值写进去`);
   }
+
+  // ⚠️ bigop 展开的循环变量（`@(k) …` 里的 k）**有**数值：arrayfun 逐个代入。
+  // 放行判定在「未定义变量」判死之前（2026-11-07 sum/prod 展开的配套改动）。
+  if (loopVars && loopVars.has(glyph)) return { ok: true, code: glyph };
 
   // 普通字母：**这是"算不了"的主要来源**——U、I、R 在 Octave 里是未定义变量
   if (/^[A-Za-z]$/.test(glyph)) {
@@ -511,7 +622,7 @@ function emitSym(n) {
  * 与 emitEnv 共用同一套单元格拼接规则（见 emitEnv 里的长注释：单元格内
  * 「相邻操作数才补空格，运算符两侧不补」——否则 `-1` 会被读成「减 1」）。
  */
-function emitEnvBare(n) {
+function emitEnvBare(n, loopVars) {
   const rows = n.rows || [];
   if (!rows.length) return fail('空矩阵');
   const parts = [];
@@ -522,7 +633,7 @@ function emitEnvBare(n) {
       let cellCode = '';
       let prevWasOperand = false;
       for (const node of nodes) {
-        const r = emit(node);
+        const r = emit(node, loopVars);
         if (!r.ok) return r;
         const isOperand = node.kind === 'num' || node.kind === 'sym' || node.kind === 'env'
           || node.kind === 'root' || node.kind === 'frac' || node.kind === 'script';
@@ -537,7 +648,7 @@ function emitEnvBare(n) {
   return { ok: true, code: `[${parts.join('; ')}]` };
 }
 
-function emitEnv(n) {
+function emitEnv(n, loopVars) {
   const name = (n.env || n.name || '').replace(/\*$/, '');
   // ⚠️ 竖线包起来的**不是矩阵，是行列式**（2026-10-31 站长指出：
   //    `\begin{vmatrix}2&-1&1\\…\end{vmatrix}` 输出"矩阵中的数字本身"是错的）。
@@ -568,7 +679,7 @@ function emitEnv(n) {
         let cellCode = '';
         let prevWasOperand = false;
         for (const node of nodes) {
-          const r = emit(node);
+          const r = emit(node, loopVars);
           if (!r.ok) return r;
           const isOperand = node.kind === 'num' || node.kind === 'sym' || node.kind === 'env'
             || node.kind === 'root' || node.kind === 'frac' || node.kind === 'script';

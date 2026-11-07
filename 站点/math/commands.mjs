@@ -48,7 +48,7 @@ export const SYMBOLS = {
   longrightarrow: '⟶', longleftarrow: '⟵',
   uparrow: '↑', downarrow: '↓',
   partial: '∂', nabla: '∇', infty: '∞',
-  int: '∫', oint: '∮', sum: '∑',
+  int: '∫', oint: '∮', sum: '∑', prod: '∏', coprod: '∐',
   in: '∈', notin: '∉', ni: '∋',
   oplus: '⊕', odot: '⊙',
   circ: '∘', angle: '∠', triangle: '△', parallel: '∥', mid: '∣',
