@@ -268,11 +268,8 @@ function ensureEditor() {
       }
       setDiag("mathlive", "已就绪");
       // MathLive 就绪后，把所有已存在的 math-field 都配置一遍
-      // （关虚拟键盘 + 修深色下那两个内置按钮）。见 configureMathField 的注释。
-      try {
-        var mfs = document.querySelectorAll("math-field");
-        for (var i = 0; i < mfs.length; i += 1) configureMathField(mfs[i]);
-      } catch (e) {}
+      // （关虚拟键盘 + 三道杠 display 覆盖 + 修深色图标）。见 configureMathField 的注释。
+      configureAllMathFields();
       // 不再 bindFormulaClicks —— 编辑入口只有单元格那一条（见下方注释块）。
       // MathLive 就绪后单元格的 canEdit() 才会返回真；那时读者点公式才会进编辑态。
       return true;
@@ -451,6 +448,12 @@ function openPanel(which) {
   // 只有 .palette-popover.open 才 flex（这个坑 2026-10-31 吃过一次）。
   pop.classList.add("open");
   if (btn) btn.setAttribute("aria-expanded", "true");
+  // ⚠️ 面板打开时 nb-tex 才第一次有宽度。MathLive 在 hidden 面板里首渲染
+  // （offsetWidth=0）时已经给三道杠写了 inline display:none，且不会自动恢复
+  // —— 这就是「三道杠在全站迷失」的真因。打开面板必须清一次并重算。
+  if (which === "notebook") {
+    try { refreshMathFieldChrome($("nb-tex")); } catch (e) {}
+  }
 }
 
 /**
@@ -574,11 +577,16 @@ function configureMathField(mf) {
       ".ML__virtual-keyboard-toggle, .ML__virtual-keyboard-toggle.is-visible {",
       "  display: none !important;",
       "}",
-      // ② 三道杠（菜单按钮）：**必须留着**。
-      // 2026-11-06 上一轮我把它当成罪魁直接 display:none —— 站长随即报「那个按钮也不见了」。
-      // 实测：菜单本身只有 156×384（26 个编辑项：插入矩阵/上下标/颜色…），压不到 UI；
-      // 铺满全屏的是①的虚拟键盘。所以这里改为「留着、并提亮图标」。
-      ".ML__menu-toggle, .ML__menu-toggle > span {",
+      // ② 三道杠（菜单按钮）：**必须留着，且要压住 MathLive 自己写的 inline 隐藏**。
+      // 2026-11-06 站长报「三道杠在全站迷失」。真因不是我们上一轮的 CSS，而是
+      // MathLive 自己在渲染函数里写 [part=menu-toggle].style.display="none"：
+      // 条件是宿主 offsetWidth<50 —— 笔记本 nb-tex 在默认 hidden 的面板里首渲染
+      // 宽度为 0，必命中；面板打开时站点侧又没有任何钩子让它重算恢复。
+      // 作者样式的 !important 能压过非 important 的 inline style，所以这里
+      // 显式给 display:flex（只写 color/opacity 压不住 inline display:none）。
+      // 同时 refreshMathFieldChrome() 会清掉那个 inline 值，让上下游状态一致。
+      ".ML__menu-toggle {",
+      "  display: flex !important;",
       "  color: " + fg + " !important;",
       "  fill: " + fg + " !important;",
       "  opacity: 0.75 !important;",
@@ -595,21 +603,49 @@ function configureMathField(mf) {
     ].join("\n");
     try { sr.appendChild(st); } catch (e) {}
   }
-  // ⚠️ 2026-11-06 站长实测「点三道杠所有 UI 消失」：真因是注入**从来没生效**。
-  // 进编辑态时新建的 math-field 的 shadowRoot 在这一刻还是 null
-  // （自定义元素 upgrade 是异步的），原实现只试 inject() + 一次 160ms 的 setTimeout，
-  // 两把都扑空 ⇒ 「隐藏虚拟键盘按钮」那条 CSS 从未落地 ⇒ 读者点到的三道杠
-  // 其实是虚拟键盘开关 ⇒ 键盘铺满全屏、周边 UI 全被盖住。
-  // 改成 rAF + 指数退避重试，最多 ~2s；拿到 shadowRoot 就注入并停。
-  let tries = 0;
+  // ⚠️ 自定义元素 upgrade 是异步的：新建的 math-field 在刚插入 DOM 时
+  // shadowRoot 可能还是 null。用 rAF 逐帧等，最多 ~2s（120 帧）；拿到就注入并停。
+  // 旧实现写「rAF + 指数退避 ~2s」却用 setTimeout 跑 20 次 ≈5.8s，且拿不到就
+  // 永久放弃 —— 注释与代码不符、失败无声，这里改成一致且有限。
+  let frames = 0;
   const tryInject = () => {
-    tries += 1;
     let sr = null;
     try { sr = mf.shadowRoot; } catch (e) { sr = null; }
-    if (sr) { inject(); return; }
-    if (tries < 20) setTimeout(tryInject, Math.min(40 * tries, 400));
+    if (sr) { inject(); refreshMathFieldChrome(mf); return; }
+    frames += 1;
+    if (frames < 120 && typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(tryInject);
+    } else if (frames < 120) {
+      setTimeout(tryInject, 16);
+    } else {
+      setDiag("mathlive", "失败：math-field 的 shadowRoot 超时未就绪");
+    }
   };
   tryInject();
+}
+
+/**
+ * 清掉 MathLive 自己给 [part=menu-toggle] 写的 inline display:none，
+ * 并让 MathLive 重算一次内部按钮布局。
+ *
+ * 为什么必须主动清：MathLive 0.111.1 的渲染函数在宿主 offsetWidth<50 时
+ * 写 style.display="none"，而笔记本面板默认 hidden ⇒ 首渲染宽度 0 ⇒ 必命中。
+ * 面板打开后 MathLive 未必重渲染（ResizeObserver 首回调被 resizeObserverStarted
+ * 跳过），于是按钮永远不在。注入的 CSS 已经用 !important 兜住显示，这里再
+ * 把 inline 值清掉、触发一次重渲染，让上游内部状态也回到「按钮可见」。
+ *
+ * 调用于：① shadowRoot 就绪（configureMathField）、② 笔记本面板打开
+ * （openPanel）、③ 页内单元格每次进编辑态（formula-cells.mjs）。
+ */
+function refreshMathFieldChrome(mf) {
+  if (!mf) return;
+  try {
+    var sr = mf.shadowRoot;
+    var btn = sr && sr.querySelector("[part=menu-toggle]");
+    if (btn && btn.style && btn.style.display === "none") btn.style.removeProperty("display");
+  } catch (e) {}
+  // 触发 MathLive 的 resizeObserver → 重渲染（Y()/_t 会按新宽度重算按钮显隐）。
+  try { if (typeof mf.dispatchEvent === "function") mf.dispatchEvent(new Event("resize")); } catch (e) {}
 }
 
 // ⚠️ 这里**不能写 export**（2026-11-06 实弹）：本文件是 PACK_RUNTIME_JS
@@ -879,13 +915,20 @@ function ensureCells() {
       }
       return window.__packCompute(tex);
     },
-    // 能不能编辑 = 编辑器资产就位 **且** 读者打开了「允许编辑和计算」开关
+    // 能不能编辑 = 读者打开了「允许编辑和计算」开关 **且** 编辑器资产已下载。
+    // ⚠️ 这里**不许**再查 customElements.get('math-field')：脚本是懒加载的，
+    // 页面刚开时它必然还没注册，粗门控会把首次点击挡在 enterEdit 之前，
+    // onNeedEditor 根本没机会跑（2026-11-06 站长「编辑仍然无法使用」的一环）。
+    // 脚本是否真的就绪由 enterEdit 里 await onNeedEditor() 精确判。
     canEdit: function () {
-      return !!(prefs.allowEdit && state.editor && state.editor.ready && window.customElements
-        && window.customElements.get("math-field"));
+      return !!(prefs.allowEdit && state.editor && state.editor.ready);
     },
-    // 首次要编辑时确保 MathLive 已载入（懒加载只发生一次）
-    onNeedEditor: function () { try { ensureEditor(); } catch (e) {} },
+    // 首次要编辑时确保 MathLive 已载入（懒加载只发生一次）。
+    // ⚠️ **必须返回 Promise**：formula-cells 的 enterEdit 是 async，靠这个
+    // Promise resolve 才知道编辑器就绪、才能切到 editing 态。旧实现同步调用后
+    // 立刻同步检查 customElements ⇒ 首次点击必假、直接 return 且不重试，
+    // 那就是站长看到的「编辑仍然无法使用」（右键菜单却能弹，MathLive 其实已就绪）。
+    onNeedEditor: function () { return ensureEditor(); },
     onEditToggle: function (on) {
       document.body.setAttribute("data-fcell-editing", on ? "1" : "0");
     },
@@ -1005,9 +1048,10 @@ window.__panelToggle = {
   close: function (which) { closePanel(which); },
 };
 
-// 供同页其它模块（formula-cells）在**新建** math-field 后调用：
+// 供同页其它模块（formula-cells）在懒建/复用 math-field 时调用：
 // 那条路不经过本文件的 ensureEditor，所以必须显式暴露。
 window.__configureMathField = configureMathField;
+window.__refreshMathFieldChrome = refreshMathFieldChrome;
 
 window.__packRuntime = {
   status: function () { return pack ? pack.status() : Promise.resolve(state); },

@@ -2427,7 +2427,8 @@ body.search-open {
        </span>
        <span class="fcell-result">= 2</span>
      </span>
-   点公式本体 → 在 body 里并排插 <math-field>，原 katex 只 display:none（不删）。
+   点公式本体 → 进编辑态；三层显示节点（原 katex / 重绘副本 / math-field）
+   常驻 DOM，谁可见由 wrap[data-fcell-state] 派生（见下方「编辑态」段）。
 
    ⚠️ 为什么必须是**两层**（2026-11-01 站长两次纠正，两个要求互相冲突）：
      · 「计算按钮统一左上角」⇒ 按钮要锚在**满宽**的容器上，否则它跟着居中
@@ -2533,9 +2534,29 @@ body.search-open {
 }
 .fcell-result[hidden] { display: none; }
 
-/* 编辑态：MathLive 接管公式本体那块 */
+/* ── 编辑态：一个属性派生三层显示（2026-11-06 重构，站长定案）──────
+ *
+ * 旧实现有 6 处分头写的内联 style.display，它们会互相漂移：改完退出后
+ * 「重绘副本藏着没恢复」「监听挂在被藏起来的原节点上」都是这么来的。
+ * 现在 wrap[data-fcell-state] 是唯一真相（见 formula-cells.mjs 的 setState），
+ * 源码里**不许再出现 style.display =**。三层节点常驻 DOM、不增删：
+ *
+ *   .fcell-painted       重绘副本；空壳 ⇒ 还没改过，显示原 SSR 公式
+ *   .katex               构建期原公式（MCP 读面，永不删/替换/改 innerHTML）
+ *   math-field           MathLive 编辑器（懒建、复用不删）
+ *
+ * display（默认）：math-field 藏；副本非空时藏原公式（相邻兄弟选择器，
+ *   不依赖 :has()）；副本为空时副本自己藏、显示原公式。
+ * editing：math-field 显示；副本与原公式都藏。
+ */
+.fcell[data-fcell-state="editing"] > .fcell-body > .fcell-mathfield { display: inline-block; }
+.fcell[data-fcell-state="display"] > .fcell-body > .fcell-mathfield { display: none; }
+.fcell[data-fcell-state="editing"] > .fcell-body > .fcell-painted,
+.fcell[data-fcell-state="editing"] > .fcell-body > .katex { display: none; }
+.fcell .fcell-painted:empty { display: none; }
+.fcell .fcell-painted:not(:empty) + .katex { display: none; }
+
 .fcell-mathfield {
-  display: inline-block;
   min-width: 6rem;
   padding: 0.1rem 0.3rem;
   border: 1px solid var(--md-sys-color-primary);
@@ -2548,6 +2569,7 @@ body.search-open {
   --selection-color: var(--md-sys-color-on-surface);
   color-scheme: light;
 }
+.fcell-painted { display: inline; }
 
 /* 诊断块（2026-11-01 站长定案：正常态一个字都不显示）。
    只在有部件坏掉时才有内容；全绿时 innerHTML 为空，靠 :empty 整块收起。 */
