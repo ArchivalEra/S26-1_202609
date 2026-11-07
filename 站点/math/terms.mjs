@@ -203,7 +203,6 @@ export function bindTerms(expr, resolver) {
   // 为什么要自底向上：`R_m` 的整枚 script 与其中的 `R` 都可能命中，
   // 若先绑外层再进内层，「哪个赢」就取决于遍历顺序而不是语义。
   // 自底向上 + 遮蔽，结果是「最外层能完整匹配的那个赢」。
-  const bound = new Map();   // nodeId → {pack, entry, rule}
   // 同一段源文本只绑一次：`R_{L}` 里 script 与其 sub 的 group 覆盖同一个 span，
   // 自底向上会先绑内层、再绑外层，产生两条重复命中（实测 decisions 里同一段出现两次）。
   const boundBySpan = new Map();
@@ -269,7 +268,6 @@ export function bindTerms(expr, resolver) {
     }
 
     node.term = { pack: d.pack, entry: d.entry };
-    bound.set(node.id, d);
 
     // **外层命中要撤回子树的既有命中**。
     // 自底向上遍历时，`R_m` 里的 `m` 会先被单独命中（如果词典里有 `m`），
@@ -279,7 +277,6 @@ export function bindTerms(expr, resolver) {
     forEachChild(node, (child) => collectBound(child, revoked));
     for (const old of revoked) {
       old.term = null;
-      bound.delete(old.id);
       for (let i = decisions.length - 1; i >= 0; i -= 1) {
         if (decisions[i].node === old.id) decisions.splice(i, 1);
       }

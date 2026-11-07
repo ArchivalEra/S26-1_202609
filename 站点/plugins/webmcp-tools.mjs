@@ -152,27 +152,12 @@ export function renderMarkdown(root, opts) {
   const out = [];
 
   const push = (s) => { if (s) out.push(s); };
-  const endsWith = (ch) => {
-    for (let i = out.length - 1; i >= 0; i--) {
-      if (!out[i]) continue;
-      return out[i].slice(-1) === ch;
-    }
-    return false;
-  };
   const ensureNl = (n) => {
     let tail = '';
     for (let i = out.length - 1; i >= 0 && tail.length < n; i--) tail = out[i] + tail;
     const have = (tail.match(/\n/g) || []).length;   // 计数场景：要全部匹配（exec 只给第一个）
     for (let i = have; i < n; i++) out.push('\n');
   };
-  const trimTail = () => {
-    for (let i = out.length - 1; i >= 0; i--) {
-      if (!out[i]) continue;
-      out[i] = out[i].replace(/[ \t]+$/, '');
-      return;
-    }
-  };
-
   /** KaTeX：优先用 annotation 里的 LaTeX 源（模型读公式最准），退化到可见文本。
    *
    *  ⚠️ 2026-10-19 两个真缺陷（实测页面读出 BBBHHH 与 \htmlData{...}）：
