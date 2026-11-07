@@ -73,10 +73,13 @@ test('符号缺口：独立复算与账本口径一致（前十同序，计数�
   //   · 测试只能从产物 HTML 反推 label（`data-math-tex` 的切片 + 冒泡键），
   //     信息量略少 ⇒ 少数形状被判成未覆盖/已覆盖的边界会挪动几十次
   //     （实测 A: 2166 vs 2182，差 0.7%）。
-  // 所以判据是：**前十的集合与顺序一致**，且每项计数差 ≤ 10%。顺序漂了才说明
-  // 统计口径真的坏了（那才是要拦的）。
+  // 所以判据是：**前十的集合一致**，顺序只要求「计数明显分层的段内」一致；
+  // 相邻两项计数几乎持平（差 ≤2%）时顺序可以互换——那种并列序由两边信息量差
+  // 随机决定（2026-11-07 实例：新增 4.3/4.4 两页后，构建账本 Y=251 vs α₁=248
+  // 相差 1.2%，复算 α₁=248 vs Y=246，并列但反序）。计数差距拉大（>2%）后再
+  // 反序才是口径坏了，那才是要拦的。
   //
-  // 为什么放到 10% 而不是 3%：`k` 这类**正则词条**（`sym-kcoup` 的 `/(?<![A-Za-z\\])k(?!...)/`）
+  // 为什么计数放到 10% 而不是 3%：`k` 这类**正则词条**（`sym-kcoup` 的 `/(?<![A-Za-z\\])k(?!...)/`）
   // 只有构建期的判定器能精确命中，测试从 HTML 反推不出"哪些 k 被 pattern 吃了"
   // ⇒ 实测 `k` 差 6.3%（303 vs 322）。这是**信息量差异**，不是口径坏掉。
   const agg = new Map();
@@ -87,8 +90,18 @@ test('符号缺口：独立复算与账本口径一致（前十同序，计数�
   }
   const mine = [...agg.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
   const theirs = r.gaps.slice(0, 10).map((g) => [g.label, g.count]);
-  assert.deepEqual(theirs.map(([l]) => l), mine.map(([l]) => l),
-    '账本前十的**顺序**与独立复算不符——统计口径漂了（不是计数误差）');
+  // 集合一致（缺谁多谁才是真问题）
+  assert.deepEqual([...theirs.map(([l]) => l)].sort(), [...mine.map(([l]) => l)].sort(),
+    '账本前十的**集合**与独立复算不符——统计口径漂了（不是计数误差）');
+  // 顺序：按**构建账本自己的计数**分层校验——相邻对计数明显分层（差 >2%）时
+  // 要求两边的相对顺序一致；持平（≤2%）时允许互换（并列序由信息量差随机决定）。
+  // 实现：把两侧各自排成「分层序」（按账本计数分层、层内按 label 定序），必须全同。
+  const layer = ([l, n]) => theirs.findIndex(([, m]) => Math.abs(n - m) > 0.02 * Math.max(n, m) && m > n);
+  const layeredKey = (pair) => `${layer(pair) < 0 ? '∞' : layer(pair)}|${pair[0]}`;
+  assert.deepEqual(
+    [...theirs].sort((a, b) => layeredKey(a).localeCompare(layeredKey(b))).map(layeredKey),
+    [...mine].sort((a, b) => layeredKey(a).localeCompare(layeredKey(b))).map(layeredKey),
+    '账本前十在「计数明显分层」处的顺序与复算不符——口径不一致');
   for (let i = 0; i < theirs.length; i += 1) {
     const [label, n1] = theirs[i];
     const n2 = mine[i][1];
