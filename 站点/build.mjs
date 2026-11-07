@@ -2192,7 +2192,7 @@ for (const relPath of TARGET_FILES) {
                一边+一边-那种胶囊」，那是一个控件被斜线分成两块，不是两颗按钮
                挨着放。所以用一个 div.pack-capsule 包住两个 button，
                斜线画在容器上（::after），两半各自可点亮。 -->
-          <div class="pack-capsule" id="pack-capsule" data-has-calc="0">
+          <div class="pack-capsule" id="pack-capsule" data-has-calc="1">
             <button class="m3-icon-btn pack-cap-plus" id="pack-toggle" aria-label="资源包" title="下载编辑器与计算内核" aria-expanded="false">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
                 <line x1="12" y1="5" x2="12" y2="19"/>
