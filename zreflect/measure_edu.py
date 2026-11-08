@@ -178,6 +178,24 @@ TABLE = [
     ("symbols_uncovered", SYMBOLS_UNCOVERED_CMD, "站点/dist/symbol-coverage.json",
      "该冒泡却没冒的符号数（未解析令牌/裸 span/链接目标缺失；>0 构建即红）"),
 ]
+# 解析纪律闸（2026-11-08 收进 PRINCIPLES 机制）：反人类解析词/题面图/完成边界
+# 三判据的 node --test 闸。值 = "ok"（pass==tests 且 fail==0）——**原则档事实**
+# （kind="principle"），按 rc 判不按裸值判，与数值事实同表、共用 check_facts_replay
+# 的复跑路径。`kind` 是 ledger.fact 的贵参数位（TABLE 第五列透传）。
+# PINNED: 命令串里的中文是磁盘路径与 stderr 排障文案（数据，不是用户消息）。
+DISCIPLINE_CMD = (
+    "cd 站点 && node --test plugins/solution-discipline.test.mjs 2>&1 | awk "
+    "'NF==3 && $3 ~ /^[0-9]+$/ && ($2==\"tests\"||$2==\"pass\"||$2==\"fail\") {v[$2]=$3} "
+    "END {t=v[\"tests\"]; p=v[\"pass\"]; fl=v[\"fail\"]+0; "
+    "if (t==\"\") {print \"discipline：没读到 tests 汇总行\" > \"/dev/stderr\"; exit 1} "
+    "if (p!=t || fl>0) {print \"discipline：red tests=\" t \" pass=\" p \" fail=\" fl > \"/dev/stderr\"; exit 1} "
+    "print \"ok\"}'"
+)
+# PINNED: 行内容的中文是磁盘路径与 STATE 机器块的 zh 渲染（NOTE 列 zh 唯一读者站长，翻译等于改活状态文档可见语言）。
+_DISCIPLINE_ROW = ("discipline", DISCIPLINE_CMD, "站点/plugins/solution-discipline.test.mjs",
+                   "解析纪律闸全绿 ⇒ ok（反人类词 0 / 题面引用图号必见图 / 完成边界 ≤150 字且已解析已验证在场）",
+                   {"kind": "principle"})
+TABLE.append(_DISCIPLINE_ROW)
 
 
 def _sh(cmd):
@@ -201,13 +219,19 @@ def measure():
     for row in TABLE:
         key, cmd, source, note, *extra = row
         out = _sh(cmd)
+        extra_kw = extra[0] if extra else {}
+        if extra_kw.get("kind") == "principle":
+            # 原则档：按 rc 判（doc.facts_of_rules 同款形状），值是
+            # 判定命令的表态（"ok"），不走整数口径。
+            facts[key] = fact(out, cmd, source, note, **extra_kw)
+            continue
         try:
             value = int(out)
         except ValueError:
             print("FATAL: `%s` 的度量命令输出不是整数：%r（cmd=%s）"
                   % (key, out, cmd), file=sys.stderr)
             raise SystemExit(2)
-        facts[key] = fact(value, cmd, source, note, **(extra[0] if extra else {}))
+        facts[key] = fact(value, cmd, source, note, **extra_kw)
     return facts
 
 

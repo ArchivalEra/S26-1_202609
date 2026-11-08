@@ -577,6 +577,7 @@
 !/站点/plugins/site-root.test.mjs
 !/站点/plugins/site-search.mjs
 !/站点/plugins/site-search.test.mjs
+!/站点/plugins/solution-discipline.test.mjs
 !/站点/plugins/solution-selfcontained.test.mjs
 !/站点/plugins/spa-perpage-json.test.mjs
 !/站点/plugins/spa-router.mjs
@@ -618,6 +619,7 @@
 !/docs/icon.svg
 !/FACTS.json
 !/gates-selftest.sh
+!/PRINCIPLES.md
 !/.githooks/check-markdown.py
 !/.githooks/extract-transcript.py
 !/.githooks/flip-photo.py
