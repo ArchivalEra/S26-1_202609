@@ -122,8 +122,8 @@ class ReadmeHookTest(unittest.TestCase):
         self.git('push')
 
     def test_handoff_freshness_enforced(self):
-        """改动 课程/ 或 站点/ 而未更新 .zcode/handoff.md 的提交必须被拒。"""
-        handoff = self.write('.zcode/handoff.md', '# Handoff\n\n维护约定：每实施完一步回来更新。\n')
+        """改动 课程/ 或 站点/ 而未更新 .kimi-code/handoff.md 的提交必须被拒。"""
+        handoff = self.write('.kimi-code/handoff.md', '# Handoff\n\n维护约定：每实施完一步回来更新。\n')
         self.stage()
         self.git('commit', '-m', '建立 handoff')
         stale = time.time() - 3600

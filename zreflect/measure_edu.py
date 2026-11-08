@@ -57,7 +57,7 @@ SYMBOL_PACKS_CMD = "grep -cE \"^  '[^']+': '[^']+.md',$\" 站点/符号环境.mj
 # 每次口径变就多一个过期数字。入账后正文写键名。
 # PINNED: 命令串里的中文是磁盘路径/统计目标（数据，不是用户消息）。
 LAB_TESTS_CMD = (
-    "cd .zcode/学习通API && node --test chaoxing.test.mjs 判据.test.mjs bridge.test.mjs 2>&1 | awk "
+    "cd .kimi-code/学习通API && node --test chaoxing.test.mjs 判据.test.mjs bridge.test.mjs 2>&1 | awk "
     "'NF==3 && $3 ~ /^[0-9]+$/ && ($2==\"tests\"||$2==\"fail\"||$2==\"cancelled\") {v[$2]=$3} "
     "END {t=v[\"tests\"]; f=v[\"fail\"]+0; c=v[\"cancelled\"]+0; "
     "if (t==\"\") {print \"lab_tests：没读到 tests 汇总行\" > \"/dev/stderr\"; exit 1} "
@@ -89,7 +89,7 @@ HOOKTESTS_CMD = (
 # 测试文件。而项目自己的 `npm test` 声明的是 `node --test plugins/`（递归）——
 # 台账量的是子集，等于每次引用都在低估覆盖面。改与 npm test 同口径（递归）。
 # 2026-10-26：`plugins/assistant/` 整体移出仓库（助手协议栈归 node 侧，真相源在
-# `.zcode/学习通API/protocol/`），计数随之回落；递归口径不变，将来加子目录仍自动覆盖。
+# `.kimi-code/学习通API/protocol/`），计数随之回落；递归口径不变，将来加子目录仍自动覆盖。
 # PINNED: 命令串里的中文是磁盘路径/统计目标（数据，不是用户消息）。
 PLUGIN_TESTS_CMD = (
     "cd 站点 && node --test plugins/ 2>&1 | awk "
@@ -106,9 +106,9 @@ PLUGIN_TESTS_CMD = (
 # 就能接着干」的进度手记，越长越读不完。两条事实把它变成可测量的：
 # 行数超阈值、节数超阈值，都该触发一次归档精简。
 # PINNED: 命令串里的中文是磁盘路径/统计目标（数据，不是用户消息）。
-HANDOFF_LINES_CMD = "wc -l < .zcode/handoff.md"
+HANDOFF_LINES_CMD = "wc -l < .kimi-code/handoff.md"
 # PINNED: 命令串里的中文是磁盘路径/统计目标（数据，不是用户消息）。
-HANDOFF_SECTIONS_CMD = "grep -c '^### 0\\.' .zcode/handoff.md"
+HANDOFF_SECTIONS_CMD = "grep -c '^### 0\\.' .kimi-code/handoff.md"
 
 # 符号覆盖（2026-11-05 站长定案「构建期能跟公式一样直接 CI 来测试每个是否能冒泡
 # 并且能统计」）：build.mjs 量**最终产物**写进 dist/symbol-coverage.json，台账只读
@@ -152,7 +152,7 @@ TABLE = [
      "全部符号包的词条合计（通用 + 电机学 / 电路原理 / 工程数学 / 电子技术）"),
     ("symbol_packs", SYMBOL_PACKS_CMD, "站点/符号环境.mjs",
      "符号包个数（SYMBOL_PACKS 注册表条数；正文引用它，别手抄「三包/五包」——会随加包腐烂）"),
-    ("lab_tests", LAB_TESTS_CMD, ".zcode/学习通API/",
+    ("lab_tests", LAB_TESTS_CMD, ".kimi-code/学习通API/",
      "lab 回归测试项数（canonical 三件；与 lab 闸同一套文件，改名单两边一起红）"),
     ("sitepages", SITEPAGES_CMD, "站点/build.mjs", "站点页数（TARGET_FILES 条数）"),
     ("md_files", "git ls-files '*.md' | wc -l", "repo", "受管 Markdown 篇数"),
@@ -167,9 +167,9 @@ TABLE = [
     ("plugin_tests", PLUGIN_TESTS_CMD, "站点/plugins/",
      "站点插件测试项数（fail+cancelled>0 ⇒ 复跑非零退出）"),
     # handoff 体量：见 HANDOFF_LINES_CMD 处的注释。「读不完」本身就是要量的事实。
-    ("handoff_lines", HANDOFF_LINES_CMD, ".zcode/handoff.md",
+    ("handoff_lines", HANDOFF_LINES_CMD, ".kimi-code/handoff.md",
      "进度手记总行数（超 ~1500 行该归档精简）"),
-    ("handoff_sections", HANDOFF_SECTIONS_CMD, ".zcode/handoff.md",
+    ("handoff_sections", HANDOFF_SECTIONS_CMD, ".kimi-code/handoff.md",
      "进度手记节数（### 0.x 条目数）"),
     # 符号覆盖：见 SYMBOLS_BUBBLED_CMD 处的注释。uncovered 常态是 0（闸门管着），
     # 它一旦非 0 说明有人绕过构建硬拦改了内容——台账把它记成可见的事实。

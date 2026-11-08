@@ -567,13 +567,13 @@ def check_index_sync(files, base):
 
 
 BUILD_SCRIPT = '站点/build.mjs'
-HANDOFF_PATH = '.zcode/handoff.md'
+HANDOFF_PATH = '.kimi-code/handoff.md'
 # 「实施一步」的工作区：这两处有改动，就要求自更新 handoff 同步更新过
 WORK_AREAS = ('课程总览/', '站点/')
 
 
 def check_handoff_freshness(files, base):
-    """改动 课程/ 或 站点/ 的提交，`.zcode/handoff.md` 必须比上一次提交更新。
+    """改动 课程/ 或 站点/ 的提交，`.kimi-code/handoff.md` 必须比上一次提交更新。
 
     自更新 handoff 是抗上下文压缩的唯一载体，此前只靠「维护约定」——此处改为强制：
     handoff 的修改时间不早于 HEAD 的提交时间，才算「实施完一步回来更新过」。
@@ -591,10 +591,10 @@ def check_handoff_freshness(files, base):
     head_time = int(git('log', '-1', '--format=%ct').decode().strip() or '0')
     if handoff.stat().st_mtime < head_time:
         raise ValueError(
-            '本次提交改动了 课程/ 或 站点/，但 .zcode/handoff.md 未更新——'
+            '本次提交改动了 课程/ 或 站点/，但 .kimi-code/handoff.md 未更新——'
             '按维护约定「实施完一步就回来更新」：改 §1 当前状态 / §6 下一步 / §7 速查，'
             '把新踩的坑追加进 §8 坑清单。'
-            '（确认本次改动无需更新 handoff 时：touch .zcode/handoff.md）')
+            '（确认本次改动无需更新 handoff 时：touch .kimi-code/handoff.md）')
 # 待渲染清单。**2026-10-15 起搬到独立模块** `站点/页面清单.mjs`（构建期与 MCP 读层共用同一份，
 # 避免读层 import build.mjs 触发整站重建、或抄一份清单制造第二个真相源）。
 # 清单仍是显式枚举，漏填不会报错、只会静默不上线，故在此校验它与仓库实况一致。

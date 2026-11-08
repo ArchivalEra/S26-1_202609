@@ -31,7 +31,27 @@
 #    钩子即便被带 --selftest 调用，basename 也对不上）——
 if [ "${1:-}" = "--selftest" ] && [ "$(basename -- "$0")" = "einfacht-env.sh" ]; then
   _bad=0
-  _t=$(mktemp -d) || { echo "FATAL: mktemp 失败"; exit 2; }
+  # 文案走语言包：本文件**必须**是 shell（被钩子 `source` 以导出变量），
+  # 但输出是用户可见文本 ⇒ 经 `M()` 取。`_say <code> key=value…`。
+  _PY="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)/zreflect"
+  _say() {
+    _code="$1"; shift
+    python3 -c "
+import sys
+sys.path.insert(0, sys.argv[1])
+from gate import activate_or_fatal
+activate_or_fatal()
+from i18n import M
+code = sys.argv[2]
+params = {}
+for a in sys.argv[3:]:
+    if '=' in a:
+        k, v = a.split('=', 1)
+        params[k] = v
+print(M(code, **params))
+" "$_PY" "$_code" "$@"
+  }
+  _t=$(mktemp -d) || { echo "FATAL: $(_say hookenv.mktemp_failed)" >&2; exit 2; }
   mkdir -p "$_t/h"
   cp "$(dirname -- "$0")/einfacht-env.sh" "$_t/h/"
   # 假钩子：与真钩子同款的两行（带守卫的 source）后报出 REFLECT_DOC
@@ -42,35 +62,41 @@ if [ "${1:-}" = "--selftest" ] && [ "$(basename -- "$0")" = "einfacht-env.sh" ];
     if [ "$2" = "$3" ]; then
       echo "PASS | $1"
     else
-      echo "fail | $1（期望「$2」实测「$3」）"
+      echo "fail | $(_say hookenv.case_failed label="$1" expected="$2" actual="$3")"
       _bad=$((_bad + 1))
     fi
   }
   # ① 无 Einfacht.env ⇒ 回落默认名
-  _chk "无 Einfacht.env ⇒ 默认 STATE.md" "DOC=STATE.md" "$("$_t/h/fake")"
+  _chk "hookenv.default_name" "DOC=STATE.md" "$("$_t/h/fake")"
   # ② 钩子目录 Einfacht.env ⇒ 生效
   printf 'export REFLECT_DOC="MYSTATE.md"\n' > "$_t/h/Einfacht.env"
-  _chk "reflect-hooks/Einfacht.env ⇒ MYSTATE.md" "DOC=MYSTATE.md" "$("$_t/h/fake")"
+  _chk "hookenv.hooks_dir_env" "DOC=MYSTATE.md" "$("$_t/h/fake")"
   # ③ 仓库根 Einfacht.env（钩子目录没有时回落）
   rm "$_t/h/Einfacht.env"
   printf 'export REFLECT_DOC="ROOTSTATE.md"\n' > "$_t/Einfacht.env"
-  _chk "仓库根 Einfacht.env ⇒ ROOTSTATE.md" "DOC=ROOTSTATE.md" "$("$_t/h/fake")"
+  _chk "hookenv.repo_root_env" "DOC=ROOTSTATE.md" "$("$_t/h/fake")"
   # ④ 两处都有 ⇒ 钩子目录优先
   printf 'export REFLECT_DOC="HOOKS.md"\n' > "$_t/h/Einfacht.env"
-  _chk "两处都有 ⇒ 钩子目录优先" "DOC=HOOKS.md" "$("$_t/h/fake")"
+  _chk "hookenv.hooks_dir_wins" "DOC=HOOKS.md" "$("$_t/h/fake")"
   # ⑤ 环境 export 与文件同时在 ⇒ 文件覆盖（对钩子，文件是可复现来源）
-  _chk "文件覆盖环境 export" "DOC=HOOKS.md" "$(REFLECT_DOC=ENVVALUE "$_t/h/fake")"
+  _chk "hookenv.file_beats_export" "DOC=HOOKS.md" "$(REFLECT_DOC=ENVVALUE "$_t/h/fake")"
   # ⑥ 拔掉插件 ⇒ 钩子什么都不改地回落（「能拔」的证伪证明）
   rm "$_t/h/einfacht-env.sh"
-  _chk "拔掉插件 ⇒ 回落默认名" "DOC=STATE.md" "$("$_t/h/fake")"
+  _chk "hookenv.plugin_removable" "DOC=STATE.md" "$("$_t/h/fake")"
   rm -rf "$_t"
-  echo "=== einfacht-env 插件自证：$((6 - _bad)) PASS / $_bad fail ==="
+  # 人读摘要行（翻译）+ 机器摘要行（字面量，不译）。
+  echo "=== $(_say hookenv.summary passed="$((6 - _bad))" failed="$_bad") ==="
   echo "=== $((6 - _bad)) PASS / $_bad FAIL ==="
   if [ "$_bad" -eq 0 ]; then exit 0; else exit 1; fi
 fi
 
 # —— 加载逻辑 ——
-_ENV_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+# ⚠️ `$0` 不可靠：被 `sh -c '. "$1"' sh <plugin>` 调用时 `$0` 是 `sh`，
+# `dirname` 就成了 `/`，插件目录找错 ⇒ **钩子目录里的 Einfacht.env 被静默忽略**
+# （实测：`env -0` 里一个 REFLECT_* 都没有）。调用方可以用
+# `EINFACHT_PLUGIN_DIR` 显式告诉它 —— 有就用它，没有才回落 `$0`（直接跑本文件
+# 或旧的 `source` 用法都走这条）。
+_ENV_DIR=${EINFACHT_PLUGIN_DIR:-$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)}
 _ENV_REPO=$(CDPATH= cd -- "$_ENV_DIR/.." && pwd)
 _ENV_FILE=${REFLECT_ENV_FILE:-Einfacht.env}
 if [ -f "$_ENV_DIR/$_ENV_FILE" ]; then

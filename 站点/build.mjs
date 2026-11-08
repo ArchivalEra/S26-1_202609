@@ -69,11 +69,11 @@ if (argvCanonical) {
   CANONICAL_ROOT = argvCanonical.endsWith('/') ? argvCanonical : argvCanonical + '/';
 }
 
-// 学习助手激活材料（2026-10-27 单向锁模型，设计见 .zcode/设计-加解密模块-20261026.md）：
+// 学习助手激活材料（2026-10-27 单向锁模型，设计见 .kimi-code/设计-加解密模块-20261026.md）：
 //   <html data-assistant-key> = K_page，32 字节随机数的 base64url
 // 站点**只埋这一件**。它单独无处可用：没有插件内置的 C_upstream 密文，K_page
 // 这串随机字节打不开任何东西；反过来 C_upstream 没有这把钥匙也解不出上游配置。
-// 两件合体才出 material（见 .zcode/userscript/vault.mjs）。
+// 两件合体才出 material（见 .kimi-code/userscript/vault.mjs）。
 //
 // ⚠️ 不传 --assistant-secrets 时**不埋**：本机构建与 CI 未配 secret 都落这一档，
 // 页面没有钥匙 ⇒ 插件探测到无钥匙 ⇒ 永久休眠。这是特性不是遗漏（设计文档 §八）。

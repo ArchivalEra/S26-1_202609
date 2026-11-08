@@ -94,7 +94,7 @@ site_list_images  →  site_image（canvas 解码 webp → JPEG dataUrl）
 
 ## 两套注册表为什么要 shim
 
-WebMCP 现在有**两套互不可见的注册表**（2026-10-15 实测，详见 `.zcode/需求书-浏览器内置AI与MCP端点.md` §3）：
+WebMCP 现在有**两套互不可见的注册表**（2026-10-15 实测，详见 `.kimi-code/需求书-浏览器内置AI与MCP端点.md` §3）：
 
 | | 规范 / `@mcp-b` 生态 | Firefox 原生 |
 | :--- | :--- | :--- |

@@ -42,7 +42,7 @@ handoff 是全仓唯一不在 `REFLECT_DOCS` 里的活文档——check_facts �
 
 位置：环境变量 `HANDOFF_SPEC`（本仓私有名，非 Einfacht 旋钮——新版名册无此旋钮，
 用私有名避免幻影告警）指定；未配时退回本机默认
-`.zcode/handoff-口径.json`。两处都没有 ⇒ 明说未启用、退 0。
+`.kimi-code/handoff-口径.json`。两处都没有 ⇒ 明说未启用、退 0。
 
 ## 零值守卫
 
@@ -63,12 +63,12 @@ from gate import repo                                   # noqa: E402
 
 HANDOFF_RAW = os.environ.get("HANDOFF_SPEC", "").strip()
 # PINNED: 判据输出与夹具的中文是 handoff.md 协议标记与 zh 报告（翻译等于改协议）。
-DEFAULT_SPEC = ".zcode/handoff-口径.json"
+DEFAULT_SPEC = ".kimi-code/handoff-口径.json"
 
 
 def _blocks(text, marker):
     """以 marker 开头的块：标记行 + 到下一个空行为止的连续行。返回 [ [行...] ]。
-    PINNED: 判据输出的中文标记（**当前基线/**未竟 等）本身就是 .zcode/handoff.md 的协议字符串，翻译它们等于改协议；本闸门只服务 zh 读者（站长），不存在第二语言受众。
+    PINNED: 判据输出的中文标记（**当前基线/**未竟 等）本身就是 .kimi-code/handoff.md 的协议字符串，翻译它们等于改协议；本闸门只服务 zh 读者（站长），不存在第二语言受众。
     """
     lines = text.split("\n")
     out, i = [], 0
@@ -88,7 +88,7 @@ def _blocks(text, marker):
 
 def _spec_problems(spec, facts):
     """① 零值守卫：表本身必须有效。返回问题清单（非空 ⇒ 后续判定不做）。
-    PINNED: 判据输出的中文标记（**当前基线/**未竟 等）本身就是 .zcode/handoff.md 的协议字符串，翻译它们等于改协议；本闸门只服务 zh 读者（站长），不存在第二语言受众。
+    PINNED: 判据输出的中文标记（**当前基线/**未竟 等）本身就是 .kimi-code/handoff.md 的协议字符串，翻译它们等于改协议；本闸门只服务 zh 读者（站长），不存在第二语言受众。
     """
     out = []
     if not spec.get("docs"):
@@ -126,7 +126,7 @@ def _spec_problems(spec, facts):
 
 def _block_body(blk, marker):
     """块的可判区域：标记行**冒号之后**的正文 + 后续行。
-    PINNED: 判据输出的中文标记（**当前基线/**未竟 等）本身就是 .zcode/handoff.md 的协议字符串，翻译它们等于改协议；本闸门只服务 zh 读者（站长），不存在第二语言受众。
+    PINNED: 判据输出的中文标记（**当前基线/**未竟 等）本身就是 .kimi-code/handoff.md 的协议字符串，翻译它们等于改协议；本闸门只服务 zh 读者（站长），不存在第二语言受众。
 
     冒号前的标题区允许放日期（「当前基线（2026-10-26 复核）**：」），
     冒号后才是条目——条目常直接写在标记行上（**未竟**：① …），不能漏判。
@@ -141,7 +141,7 @@ def _block_body(blk, marker):
 
 def problems(spec, docs_text, fact_values=None, facts=None):
     """纯函数：返回问题清单（空 = 绿）。自证期间不许 print。
-    PINNED: 判据输出的中文标记（**当前基线/**未竟 等）本身就是 .zcode/handoff.md 的协议字符串，翻译它们等于改协议；本闸门只服务 zh 读者（站长），不存在第二语言受众。
+    PINNED: 判据输出的中文标记（**当前基线/**未竟 等）本身就是 .kimi-code/handoff.md 的协议字符串，翻译它们等于改协议；本闸门只服务 zh 读者（站长），不存在第二语言受众。
 
     `spec` = 口径表；`docs_text` = {相对路径: 正文（None = 缺失）}；
     `fact_values` = {键: 值}（裸值判定；None = 跳过裸值层）；
@@ -225,7 +225,7 @@ def problems(spec, docs_text, fact_values=None, facts=None):
 
 
 def run(argv=None):
-    """PINNED: 判据输出的中文标记（**当前基线/**未竟 等）本身就是 .zcode/handoff.md 的协议字符串，翻译它们等于改协议；本闸门只服务 zh 读者（站长），不存在第二语言受众。"""
+    """PINNED: 判据输出的中文标记（**当前基线/**未竟 等）本身就是 .kimi-code/handoff.md 的协议字符串，翻译它们等于改协议；本闸门只服务 zh 读者（站长），不存在第二语言受众。"""
     argv = list(sys.argv[1:] if argv is None else argv)
     name = HANDOFF_RAW or DEFAULT_SPEC
     spec_path = repo(name)
@@ -262,7 +262,7 @@ def run(argv=None):
                      len(ok_keys)))
 
 
-# PINNED: 夹具里的中文是 .zcode/handoff.md 的**协议标记本身**（**当前基线/**未竟/N-N
+# PINNED: 夹具里的中文是 .kimi-code/handoff.md 的**协议标记本身**（**当前基线/**未竟/N-N
 # 形态），判据就是对这些字面量做匹配 —— 翻译夹具等于测另一个协议。模块级常量
 # （不在 _cases 扫描范围）+ PINNED 声明，是上游 check_i18n 认的两条豁免之一。
 # PINNED: 夹具中文是 handoff.md 协议标记（判据的匹配目标，翻译等于换协议）。
@@ -330,8 +330,8 @@ FIXTURE_WANT_BARE_COPY = "裸抄台账值"
 
 def _cases():
     """自证：三档硬规矩（能绿 / 能红 / 空输入必报）。
-    PINNED: .zcode/handoff.md 的协议标记（**当前基线/**未竟/N-N 形态）就是要匹配的目标字面量，夹具必须固定中文——翻译夹具等于把判据改成测另一个协议。
-    PINNED: 判据输出的中文标记（**当前基线/**未竟 等）本身就是 .zcode/handoff.md 的协议字符串，翻译它们等于改协议；本闸门只服务 zh 读者（站长），不存在第二语言受众。
+    PINNED: .kimi-code/handoff.md 的协议标记（**当前基线/**未竟/N-N 形态）就是要匹配的目标字面量，夹具必须固定中文——翻译夹具等于把判据改成测另一个协议。
+    PINNED: 判据输出的中文标记（**当前基线/**未竟 等）本身就是 .kimi-code/handoff.md 的协议字符串，翻译它们等于改协议；本闸门只服务 zh 读者（站长），不存在第二语言受众。
     """
     spec = FIXTURE_SPEC
     good = FIXTURE_GOOD

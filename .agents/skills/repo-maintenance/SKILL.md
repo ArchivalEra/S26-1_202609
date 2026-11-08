@@ -111,7 +111,7 @@ python3 .githooks/update-readme.py --worktree && python3 .githooks/test-update-r
   && git fsck --no-progress && git diff --check
 ```
 
-改过 `课程总览/` 或 `站点/` → 同轮更新 `.zcode/handoff.md`（pre-commit 强制）。
+改过 `课程总览/` 或 `站点/` → 同轮更新 `.kimi-code/handoff.md`（pre-commit 强制）。
 提交被拦就按提示修命名、索引或两处 AUTO 区块（那两个区块由钩子从暂存区重算，交给它写）。
 **提交即止，不推送**——推送由站长发话。
 

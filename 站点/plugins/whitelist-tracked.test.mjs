@@ -32,8 +32,8 @@ const ALLOWED_UNTRACKED = [
   // 课堂转写原件：含点名与个人信息，隐私规则要求「只存 study/课程总览 磁盘上，永不 git add」。
   // 白名单声明它们只是为了让 `git ls-files --others --exclude-standard` 能看见（链接检查要用）。
   /\/原始资料\/[^/]*原文\.(txt|doc|docx)$/,
-  // 同理：`.zcode/` 一律不推送，只落盘。
-  /^\.zcode\//,
+  // 同理：`.kimi-code/` 一律不推送，只落盘。
+  /^\.kimi-code\//,
 ];
 
 test('白名单里声明的文件必须已入库（否则 CI 克隆后缺失）', () => {

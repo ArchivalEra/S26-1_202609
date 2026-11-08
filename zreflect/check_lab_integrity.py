@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""实验空完整性闸门（lab 相位，手动触发）——Einfacht 对 .zcode/学习通API/ 与
-.zcode/userscript/（2026-10-24 迁入的生产装配层）两处不入库活代码的管辖权。
+"""实验空完整性闸门（lab 相位，手动触发）——Einfacht 对 .kimi-code/学习通API/ 与
+.kimi-code/userscript/（2026-10-24 迁入的生产装配层）两处不入库活代码的管辖权。
 
-管辖对象是**不入库的活代码**（.zcode/ 只落盘），所以：
-  · 不进 FACTS.json（事实=入库内容的不变量不动；clone 后无 .zcode/ 不掉条）；
-  · 不挂 pre-commit（.zcode/ 改动不产生 commit，挂了形同虚设）；
+管辖对象是**不入库的活代码**（.kimi-code/ 只落盘），所以：
+  · 不进 FACTS.json（事实=入库内容的不变量不动；clone 后无 .kimi-code/ 不掉条）；
+  · 不挂 pre-commit（.kimi-code/ 改动不产生 commit，挂了形同虚设）；
   · runs_at="lab"：`python3 zreflect/registry.py --run lab` 手动触发
     （悬案 questions/02 的 Settling 就是这条命令）。
 
@@ -19,7 +19,7 @@
   · 全部测试文件 `node --test` 全绿（cwd=实验空；154 项）；
   · 白名单里的文件必须存在（少 ⇒ 报，活文件被误删/误归档）。
 
-零值守卫：实验空目录整个不存在 ⇒ 通过（clone 环境本来就没有 .zcode/），
+零值守卫：实验空目录整个不存在 ⇒ 通过（clone 环境本来就没有 .kimi-code/），
 但只要存在就按全量判。
 """
 
@@ -29,11 +29,11 @@ import sys
 
 from i18n import M  # noqa: E402
 from gate import meta, main_selftest_or
-# PINNED: 夹具里的中文目录名/文件名是被测对象本身（.zcode/学习通API/ 的真实路径），不可翻译。
+# PINNED: 夹具里的中文目录名/文件名是被测对象本身（.kimi-code/学习通API/ 的真实路径），不可翻译。
 _FIX_LAB_DIR = "学习通API"
-# PINNED: 夹具里的中文目录名/文件名是被测对象本身（.zcode/学习通API/ 的真实路径），不可翻译。
+# PINNED: 夹具里的中文目录名/文件名是被测对象本身（.kimi-code/学习通API/ 的真实路径），不可翻译。
 _FIX_RECIPE = "配方.test.mjs"
-# PINNED: 夹具里的中文目录名/文件名是被测对象本身（.zcode/学习通API/ 的真实路径），不可翻译。
+# PINNED: 夹具里的中文目录名/文件名是被测对象本身（.kimi-code/学习通API/ 的真实路径），不可翻译。
 _FIX_STRAY = "随手丢的脚本.mjs"
 
 # 活文件白名单（2026-10-16 grilling Q4-A 定案；增删活文件 = 改这里 + 改悬案）
@@ -56,13 +56,13 @@ ALIVE_FILES = (
 )
 
 # PINNED: lab 闸门的中文报告面向站长单人（手动触发的排障输出）；白名单路径本身就是中文目录名。
-LAB_DIR = os.path.join(".zcode", "学习通API")
+LAB_DIR = os.path.join(".kimi-code", "学习通API")
 
 def run(args):
     """PINNED: lab 闸门的中文报告面向站长单人（手动触发的排障输出）；白名单路径本身就是中文目录名。"""
     if not os.path.isdir(LAB_DIR):
-        # clone 环境守卫：目录不存在不是事故（.zcode/ 不入库），绿着退场
-        print("lab: .zcode/学习通API/ 不存在（clone 环境属预期）—— 通过")
+        # clone 环境守卫：目录不存在不是事故（.kimi-code/ 不入库），绿着退场
+        print("lab: .kimi-code/学习通API/ 不存在（clone 环境属预期）—— 通过")
         return 0
     problems = []
 
@@ -117,7 +117,7 @@ def _cases():
         PINNED: lab 闸门的中文报告面向站长单人（手动触发的排障输出）；白名单路径本身就是中文目录名。
         """
         tmp = tempfile.mkdtemp()
-        lab = os.path.join(tmp, ".zcode", _FIX_LAB_DIR)
+        lab = os.path.join(tmp, ".kimi-code", _FIX_LAB_DIR)
         os.makedirs(lab)
         for f in files:
             open(os.path.join(lab, f), "w", encoding="utf-8").write("")

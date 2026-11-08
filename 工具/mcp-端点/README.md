@@ -3,7 +3,7 @@
 把本仓库的内容暴露成 **MCP 工具**，供任意 MCP 客户端（Claude Desktop、Cursor、ZCode…）调用。
 **全离线、零依赖**（只用 Node 内置模块 + 仓内既有的零依赖纯函数）。
 
-设计文档：`.zcode/MCP读层设计.md`（内部详版）、`.zcode/外审-MCP读层设计.md`（去标识外审版）。
+设计文档：`.kimi-code/MCP读层设计.md`（内部详版）、`.kimi-code/外审-MCP读层设计.md`（去标识外审版）。
 
 ## 怎么用
 

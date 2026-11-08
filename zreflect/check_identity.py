@@ -38,7 +38,7 @@
       "scope": { "dirs": [...], "exclude": [...] } }
 
 位置：环境变量 `IDENTITY_SPEC`（本仓私有名，非 Einfacht 旋钮——新版名册无此旋钮）指定；未配时退回本机默认
-`.zcode/会话语义/身份白名单.json`。两处都没有 ⇒ 明说未启用、退 0。
+`.kimi-code/会话语义/身份白名单.json`。两处都没有 ⇒ 明说未启用、退 0。
 
 ## 零值守卫
 
@@ -62,7 +62,7 @@ _FIX_SRC_SESSIONKEY = "// 这里原来叫 sessionKey，已删\nconst x = convers
 
 IDENTITY_RAW = os.environ.get("IDENTITY_SPEC", "").strip()
 # PINNED: 白名单判据的中文报错面向站长单人（zh 唯一读者）；判据文本引用的协议词（conversationId 等）不可翻译。
-DEFAULT_SPEC = ".zcode/会话语义/身份白名单.json"
+DEFAULT_SPEC = ".kimi-code/会话语义/身份白名单.json"
 
 TEXT_EXT = (".mjs", ".js", ".py", ".json", ".md", ".sh")
 

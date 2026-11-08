@@ -14,7 +14,7 @@
     python3 .githooks/check-markdown.py 文件或目录 ...   # 指定路径
 
 默认范围：README.md、维护条例.md、课程/、模板/。knowledge/ 是历史兼容入口，
-.zcode/ 是本地工具目录，默认不检查。
+.kimi-code/ 是本地工具目录，默认不检查。
 """
 from __future__ import annotations
 
@@ -367,7 +367,7 @@ def collect(paths: list[str]) -> list[Path]:
         if path.is_file() and path.suffix == '.md':
             files.append(path)
         elif path.is_dir():
-            files.extend(sorted(p for p in path.rglob('*.md') if '.git' not in p.parts and '.zcode' not in p.parts))
+            files.extend(sorted(p for p in path.rglob('*.md') if '.git' not in p.parts and '.kimi-code' not in p.parts))
     seen: set[Path] = set()
     unique: list[Path] = []
     for path in files:
