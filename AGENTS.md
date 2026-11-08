@@ -91,7 +91,10 @@ skill 正文**不会自动加载**——上下文里只有名字和一句描述�
 - **旧值不许回来**：翻案进 `retractions.json`（`text` 片段出现在活状态文档里、该行又不带更正标记
   就报）；已知的手抄旧值用 `invariants.json` 按片段拦。
 - **悬案**：`questions/*.md` 每条必须带 `**Status:**` 与可区分的 `**Settling:**`（`… rc=0 ⇒ A；rc≠0 ⇒ B`）。
-- 开工先看 `STATE.md`（活状态）——会话开始 ZCode 会通过 `.kimi-code/inject-state.py` 自动注入未结案悬案与台账规模。
+- 开工先看 `STATE.md`（活状态）；未结案悬案与「接着上一轮」由 Einfacht 采集：
+  `printf '%s' '{"cwd":"'$PWD'"}' | .kimi-code/hooks/einfacht-next.sh`
+  （仓级薄壳，不注册用户级钩子——kimi-code 钩子只有用户级，按仓注入不成立；
+  自证 `sh .kimi-code/hooks/selftest.sh`。ZCode 时代的 `inject-state.py` 自动注入已随宿主迁移作废。）
 
 ## 三、写作口径
 

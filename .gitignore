@@ -620,6 +620,8 @@
 !/FACTS.json
 !/gates-selftest.sh
 !/PRINCIPLES.md
+!/.kimi-code/hooks/einfacht-next.sh
+!/.kimi-code/hooks/selftest.sh
 !/.githooks/check-markdown.py
 !/.githooks/extract-transcript.py
 !/.githooks/flip-photo.py
