@@ -33,10 +33,10 @@
 | 电力大数据与人工智能 | 16 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E7%94%B5%E5%8A%9B%E5%A4%A7%E6%95%B0%E6%8D%AE%E4%B8%8E%E4%BA%BA%E5%B7%A5%E6%99%BA%E8%83%BD/index.md) |
 | 电子技术 | 41 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E7%94%B5%E5%AD%90%E6%8A%80%E6%9C%AF/index.md) |
 | 电机学 | 23 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E7%94%B5%E6%9C%BA%E5%AD%A6/index.md) |
-| 电路原理 | 212 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/index.md) |
+| 电路原理 | 213 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/index.md) |
 
-共 **7** 门课程、**345** 份资料。
-<!-- 仓库内容摘要（不含 README）：fe515f5d5ceabf2cd960aa8d5bddb40be7ebae7f690c4ac4be0c91a42fadeb90 -->
+共 **7** 门课程、**346** 份资料。
+<!-- 仓库内容摘要（不含 README）：1d69013b31bf398c4cc579f799987af7c613269a9872a37fc0020376717b1d61 -->
 
 <!-- AUTO-CATALOG:END -->
 

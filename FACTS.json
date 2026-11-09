@@ -1,29 +1,29 @@
 {
  "schema": 1,
- "generated": "2026-11-09T19:37:20+0800",
+ "generated": "2026-11-09T20:42:03+0800",
  "_why": "事实台账：每条 = 一个**测出来**的值 + 复跑命令 + 出处。别手改，跑 zreflect/facts.py。",
  "facts": {
   "courses": {
    "value": 7,
    "cmd": "ls -d 课程总览/*/ | wc -l",
    "source": "课程总览/",
-   "measured_at": "2026-11-09T19:36:58+0800",
+   "measured_at": "2026-11-09T20:41:40+0800",
    "first_seen": "2026-10-28",
    "note": "课程门数"
   },
   "notes": {
-   "value": 50,
+   "value": 51,
    "cmd": "find 课程总览 -path '*/课堂笔记/*.md' ! -name 'index.md' | wc -l",
    "source": "课程总览/",
-   "measured_at": "2026-11-09T19:36:58+0800",
-   "first_seen": "2026-11-05",
+   "measured_at": "2026-11-09T20:41:40+0800",
+   "first_seen": "2026-11-09",
    "note": "课堂笔记篇数（不含索引）"
   },
   "homework": {
    "value": 29,
    "cmd": "find 课程总览 -path '*/作业/*.md' ! -name 'index.md' | wc -l",
    "source": "课程总览/",
-   "measured_at": "2026-11-09T19:36:58+0800",
+   "measured_at": "2026-11-09T20:41:40+0800",
    "first_seen": "2026-11-06",
    "note": "作业页数（不含索引）"
   },
@@ -31,7 +31,7 @@
    "value": 31,
    "cmd": "find 课程总览 -path '*/教材解析/*.md' ! -name 'index.md' | wc -l",
    "source": "课程总览/",
-   "measured_at": "2026-11-09T19:36:58+0800",
+   "measured_at": "2026-11-09T20:41:40+0800",
    "first_seen": "2026-11-07",
    "note": "教材解析篇数（不含索引）"
   },
@@ -39,7 +39,7 @@
    "value": 278,
    "cmd": "python3 -c \"import re,glob;print(sum(len(re.findall(r'[0-9]+',s)) for f in glob.glob('课程总览/电路原理/作业/习题册第*.md') for ln in open(f,encoding='utf-8') if ln.startswith('### ') for s in re.findall(r'(?:选|填|计|判|画图)\\s*([0-9][0-9、,\\s]*)', re.sub(r'（[^）]*）','',ln[4:]))))\"",
    "source": "课程总览/电路原理/作业/",
-   "measured_at": "2026-11-09T19:36:58+0800",
+   "measured_at": "2026-11-09T20:41:40+0800",
    "first_seen": "2026-10-10",
    "note": "习题册题数（合并题号的标题按题号展开计数）"
   },
@@ -47,7 +47,7 @@
    "value": 174,
    "cmd": "ls 课程总览/电路原理/作业/figures/ | wc -l",
    "source": "课程总览/电路原理/作业/figures/",
-   "measured_at": "2026-11-09T19:36:58+0800",
+   "measured_at": "2026-11-09T20:41:40+0800",
    "first_seen": "2026-10-14",
    "note": "习题册配图张数"
   },
@@ -55,7 +55,7 @@
    "value": 227,
    "cmd": "awk '/^:::glossary-dict/{f=1;next} /^:::/{f=0} f&&/^sym-/{n++} END{print n}' 站点/符号包/通用.md 课程总览/*/教材解析/符号入门.md",
    "source": "站点/符号包/通用.md + 课程总览/*/教材解析/符号入门.md",
-   "measured_at": "2026-11-09T19:36:58+0800",
+   "measured_at": "2026-11-09T20:41:40+0800",
    "first_seen": "2026-11-05",
    "note": "全部符号包的词条合计（通用 + 电机学 / 电路原理 / 工程数学 / 电子技术）"
   },
@@ -63,7 +63,7 @@
    "value": 5,
    "cmd": "grep -cE \"^  '[^']+': '[^']+.md',$\" 站点/符号环境.mjs",
    "source": "站点/符号环境.mjs",
-   "measured_at": "2026-11-09T19:36:58+0800",
+   "measured_at": "2026-11-09T20:41:40+0800",
    "first_seen": "2026-10-26",
    "note": "符号包个数（SYMBOL_PACKS 注册表条数；正文引用它，别手抄「三包/五包」——会随加包腐烂）"
   },
@@ -71,23 +71,23 @@
    "value": 74,
    "cmd": "cd .kimi-code/学习通API && node --test chaoxing.test.mjs 判据.test.mjs bridge.test.mjs 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2==\"tests\"||$2==\"fail\"||$2==\"cancelled\") {v[$2]=$3} END {t=v[\"tests\"]; f=v[\"fail\"]+0; c=v[\"cancelled\"]+0; if (t==\"\") {print \"lab_tests：没读到 tests 汇总行\" > \"/dev/stderr\"; exit 1} print t; if (f+c>0) {print \"lab_tests：fail=\" f \" cancelled=\" c \" ⇒ 红测试，非零退出\" > \"/dev/stderr\"; exit 1}}'",
    "source": ".kimi-code/学习通API/",
-   "measured_at": "2026-11-09T19:36:59+0800",
+   "measured_at": "2026-11-09T20:41:41+0800",
    "first_seen": "2026-10-27",
    "note": "lab 回归测试项数（canonical 三件；与 lab 闸同一套文件，改名单两边一起红）"
   },
   "sitepages": {
-   "value": 159,
+   "value": 160,
    "cmd": "sed -n '/^export const TARGET_FILES = \\[/,/^\\];/p' 站点/页面清单.mjs | grep -c \"^  '\"",
    "source": "站点/build.mjs",
-   "measured_at": "2026-11-09T19:36:59+0800",
-   "first_seen": "2026-11-07",
+   "measured_at": "2026-11-09T20:41:41+0800",
+   "first_seen": "2026-11-09",
    "note": "站点页数（TARGET_FILES 条数）"
   },
   "md_files": {
-   "value": 190,
+   "value": 191,
    "cmd": "git ls-files '*.md' | wc -l",
    "source": "repo",
-   "measured_at": "2026-11-09T19:36:59+0800",
+   "measured_at": "2026-11-09T20:41:41+0800",
    "first_seen": "2026-11-09",
    "note": "受管 Markdown 篇数"
   },
@@ -95,7 +95,7 @@
    "value": 31,
    "cmd": "python3 .githooks/test-update-readme.py 2>&1 | grep -oE 'Ran [0-9]+ tests' | awk '{print $2}'",
    "source": ".githooks/test-update-readme.py",
-   "measured_at": "2026-11-09T19:37:11+0800",
+   "measured_at": "2026-11-09T20:41:54+0800",
    "first_seen": "2026-10-29",
    "note": "钩子集成测试项数",
    "replay": false,
@@ -103,42 +103,42 @@
    "witness_expect": "31"
   },
   "plugin_tests": {
-   "value": 1018,
+   "value": 1021,
    "cmd": "cd 站点 && node --test plugins/ 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2==\"tests\"||$2==\"fail\"||$2==\"cancelled\") {v[$2]=$3} END {t=v[\"tests\"]; f=v[\"fail\"]+0; c=v[\"cancelled\"]+0; if (t==\"\") {print \"plugin_tests：没读到 tests 汇总行（node --test 没跑完？）\" > \"/dev/stderr\"; exit 1} print t; if (f+c>0) {print \"plugin_tests：fail=\" f \" cancelled=\" c \" ⇒ 红测试，非零退出（issue #18 决策 #7）\" > \"/dev/stderr\"; exit 1}}'",
    "source": "站点/plugins/",
-   "measured_at": "2026-11-09T19:37:20+0800",
-   "first_seen": "2026-11-08",
+   "measured_at": "2026-11-09T20:42:02+0800",
+   "first_seen": "2026-11-09",
    "note": "站点插件测试项数（fail+cancelled>0 ⇒ 复跑非零退出）"
   },
   "handoff_lines": {
-   "value": 8576,
+   "value": 8585,
    "cmd": "wc -l < .kimi-code/handoff.md",
    "source": ".kimi-code/handoff.md",
-   "measured_at": "2026-11-09T19:37:20+0800",
+   "measured_at": "2026-11-09T20:42:02+0800",
    "first_seen": "2026-11-09",
    "note": "进度手记总行数（超 ~1500 行该归档精简）"
   },
   "handoff_sections": {
-   "value": 213,
+   "value": 214,
    "cmd": "grep -c '^### 0\\.' .kimi-code/handoff.md",
    "source": ".kimi-code/handoff.md",
-   "measured_at": "2026-11-09T19:37:20+0800",
+   "measured_at": "2026-11-09T20:42:02+0800",
    "first_seen": "2026-11-09",
    "note": "进度手记节数（### 0.x 条目数）"
   },
   "symbols_bubbled": {
-   "value": 13515,
+   "value": 13736,
    "cmd": "python3 -c \"import json;print(json.load(open('站点/dist/symbol-coverage.json'))['symbols_bubbled'])\"",
    "source": "站点/dist/symbol-coverage.json",
-   "measured_at": "2026-11-09T19:37:20+0800",
-   "first_seen": "2026-11-07",
+   "measured_at": "2026-11-09T20:42:02+0800",
+   "first_seen": "2026-11-09",
    "note": "全站真冒泡的符号锚点数（a.sym-gloss；公式+正文令牌+图内合计）"
   },
   "symbols_uncovered": {
    "value": 0,
    "cmd": "python3 -c \"import json;print(json.load(open('站点/dist/symbol-coverage.json'))['symbols_uncovered'])\"",
    "source": "站点/dist/symbol-coverage.json",
-   "measured_at": "2026-11-09T19:37:20+0800",
+   "measured_at": "2026-11-09T20:42:02+0800",
    "first_seen": "2026-11-05",
    "note": "该冒泡却没冒的符号数（未解析令牌/裸 span/链接目标缺失；>0 构建即红）"
   },
@@ -146,7 +146,7 @@
    "value": "ok",
    "cmd": "cd 站点 && node --test plugins/solution-discipline.test.mjs 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2==\"tests\"||$2==\"pass\"||$2==\"fail\") {v[$2]=$3} END {t=v[\"tests\"]; p=v[\"pass\"]; fl=v[\"fail\"]+0; if (t==\"\") {print \"discipline：没读到 tests 汇总行\" > \"/dev/stderr\"; exit 1} if (p!=t || fl>0) {print \"discipline：red tests=\" t \" pass=\" p \" fail=\" fl > \"/dev/stderr\"; exit 1} print \"ok\"}'",
    "source": "站点/plugins/solution-discipline.test.mjs",
-   "measured_at": "2026-11-09T19:37:20+0800",
+   "measured_at": "2026-11-09T20:42:03+0800",
    "first_seen": "2026-11-08",
    "note": "解析纪律闸全绿 ⇒ ok（反人类词 0 / 题面引用图号必见图 / 完成边界 ≤150 字且已解析已验证在场）",
    "kind": "principle"
@@ -155,7 +155,7 @@
    "value": "ok",
    "cmd": "python3 -c \"import json,sys;d=json.load(open('FACTS.json', encoding='utf-8'))['facts'];bad=[k for k,v in d.items() if not (isinstance(v,dict) and str(v.get('cmd','')).strip())];print('facts_without_cmd=%d' % len(bad));sys.exit(1 if bad else 0)\"",
    "source": "principle",
-   "measured_at": "2026-11-09T19:37:20+0800",
+   "measured_at": "2026-11-09T20:42:03+0800",
    "first_seen": "2026-11-08",
    "note": "数值/行为只认实测；每条事实都必须有一条复跑命令",
    "kind": "principle"
@@ -164,7 +164,7 @@
    "value": "ok",
    "cmd": "python3 zreflect/check_facts.py",
    "source": "principle",
-   "measured_at": "2026-11-09T19:37:20+0800",
+   "measured_at": "2026-11-09T20:42:03+0800",
    "first_seen": "2026-11-08",
    "note": "数字只生产一次：文档引用写 [[键名]]，不手抄（双向拦）",
    "kind": "principle"
@@ -173,7 +173,7 @@
    "value": "ok",
    "cmd": "python3 zreflect/registry.py --selftest",
    "source": "principle",
-   "measured_at": "2026-11-09T19:37:20+0800",
+   "measured_at": "2026-11-09T20:42:03+0800",
    "first_seen": "2026-11-08",
    "note": "断言要能证伪：恒真短路由 AST 扫出，命中即判 fail",
    "kind": "principle"
@@ -182,7 +182,7 @@
    "value": "ok",
    "cmd": "python3 zreflect/registry.py --gates",
    "source": "principle",
-   "measured_at": "2026-11-09T19:37:20+0800",
+   "measured_at": "2026-11-09T20:42:03+0800",
    "first_seen": "2026-11-08",
    "note": "谓词是声明不是文件名：执行面读 registry --run <相位>",
    "kind": "principle"
@@ -191,7 +191,7 @@
    "value": "ok",
    "cmd": "python3 -c \"import sys;sys.path.insert(0,'zreflect');import registry, criteria;gs=registry.gates()[0];p=criteria.off_reason_problems(gs);print('off_reason_ok gates=%d problems=%d' % (len(gs), len(p)));sys.exit(0 if gs and not p else 1)\"",
    "source": "principle",
-   "measured_at": "2026-11-09T19:37:20+0800",
+   "measured_at": "2026-11-09T20:42:03+0800",
    "first_seen": "2026-11-08",
    "note": "off 与「跑过且通过」必须可区分；会 off 的闸门必须声明理由",
    "kind": "principle"
@@ -200,7 +200,7 @@
    "value": "ok",
    "cmd": "python3 zreflect/check_i18n.py",
    "source": "principle",
-   "measured_at": "2026-11-09T19:37:20+0800",
+   "measured_at": "2026-11-09T20:42:03+0800",
    "first_seen": "2026-11-08",
    "note": "本体零语言：用户可见消息走 M(code)，机器契约结构上不可译",
    "kind": "principle"
@@ -209,7 +209,7 @@
    "value": "ok",
    "cmd": "python3 zreflect/machine.py --selftest",
    "source": "principle",
-   "measured_at": "2026-11-09T19:37:20+0800",
+   "measured_at": "2026-11-09T20:42:03+0800",
    "first_seen": "2026-11-08",
    "note": "机器行由 machine.ROWS 唯一产地定义；shell 侧有行为对账器",
    "kind": "principle"
@@ -218,7 +218,7 @@
    "value": "ok",
    "cmd": "python3 zreflect/check_readme_sync.py",
    "source": "principle",
-   "measured_at": "2026-11-09T19:37:20+0800",
+   "measured_at": "2026-11-09T20:42:03+0800",
    "first_seen": "2026-11-08",
    "note": "三语 README 是同一条断言的三份拷贝：改一份必须三份同批",
    "kind": "principle"
@@ -227,7 +227,7 @@
    "value": "ok",
    "cmd": "python3 zreflect/check_snapshots.py",
    "source": "principle",
-   "measured_at": "2026-11-09T19:37:20+0800",
+   "measured_at": "2026-11-09T20:42:03+0800",
    "first_seen": "2026-11-08",
    "note": "跨模块 import 的可变全局是值拷贝（陈旧快照）：改读属性",
    "kind": "principle"
@@ -236,7 +236,7 @@
    "value": "ok",
    "cmd": "python3 zreflect/check_retractions.py",
    "source": "principle",
-   "measured_at": "2026-11-09T19:37:20+0800",
+   "measured_at": "2026-11-09T20:42:03+0800",
    "first_seen": "2026-11-08",
    "note": "被推翻的断言不许悄悄回来当现状",
    "kind": "principle"
@@ -245,7 +245,7 @@
    "value": "ok",
    "cmd": "python3 zreflect/check_stale.py",
    "source": "principle",
-   "measured_at": "2026-11-09T19:37:20+0800",
+   "measured_at": "2026-11-09T20:42:03+0800",
    "first_seen": "2026-11-08",
    "note": "退役名不许以现状出现；sha 出处与测龄可查",
    "kind": "principle"
@@ -254,7 +254,7 @@
    "value": "ok",
    "cmd": "python3 zreflect/check_questions.py",
    "source": "principle",
-   "measured_at": "2026-11-09T19:37:20+0800",
+   "measured_at": "2026-11-09T20:42:03+0800",
    "first_seen": "2026-11-08",
    "note": "未结案的悬案必须挂一个能跑的结算件",
    "kind": "principle"
@@ -263,7 +263,7 @@
    "value": "ok",
    "cmd": "python3 -c \"import sys;sys.path.insert(0,'zreflect');import registry;u=registry.modules()[1];print('undeclared_modules=%d' % len(u));sys.exit(1 if u else 0)\"",
    "source": "principle",
-   "measured_at": "2026-11-09T19:37:20+0800",
+   "measured_at": "2026-11-09T20:42:03+0800",
    "first_seen": "2026-11-08",
    "note": "每个闸门都要有 --selftest 入口（写而不跑 = 装饰）",
    "kind": "principle"
@@ -272,7 +272,7 @@
    "value": "ok",
    "cmd": "python3 -c \"import os,sys;w=['.'+chr(122)+chr(99)+chr(111)+chr(100)+chr(101)+'/','ZCODE_'+'PROJECT_DIR','hook'+'SpecificOutput'];bad=[(d,f) for d in ('zreflect','reflect-hooks') for r,_,fs in os.walk(d) for f in fs if f.endswith(('.py','.sh')) and any(k in open(os.path.join(r,f),encoding='utf-8',errors='replace').read() for k in w)];print('host_coupled=%d' % len(bad));sys.exit(1 if bad else 0)\"",
    "source": "principle",
-   "measured_at": "2026-11-09T19:37:20+0800",
+   "measured_at": "2026-11-09T20:42:03+0800",
    "first_seen": "2026-11-08",
    "note": "套件源码不认任何宿主的目录名 / 配置格式（宿主接线归使用方）",
    "kind": "principle"
