@@ -648,6 +648,7 @@
 # MathLive（vendored，MIT）：**只剩浏览器版**。
 !/questions/01-frontmatter-silent-failure.md
 !/questions/02-实验空三件套改造.md
+!/questions/03-录音入库未写笔记.md
 !/README.md
 !/reflect-hooks/Einfacht.env
 !/reflect-hooks/Einfacht.env.example
