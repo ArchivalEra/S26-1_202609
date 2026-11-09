@@ -236,6 +236,8 @@ test('⑪ 输入框的拖拽把手必须跟主题（不许写死 color-scheme: l
 //   「面板里居然没有 mathlive 的选择器」
 //   「深色模式下 mathlive 那两个按钮有点不可视」
 //   「编辑器与面板里面都不要出现虚拟键盘按钮吧，那个全站都不需要」
+//   ↑ 第三条已于 2026-11-09 改定案：手机端没有物理键盘，按钮是唯一输入方式，
+//     改为「桌面隐藏、触屏恢复」；前两条（math-field 选择器、深色可见度）照旧。
 // ══════════════════════════════════════════════════════════════════
 
 test('⑬ 笔记本的公式块用 math-field（MathLive），不是 textarea', () => {
@@ -252,20 +254,20 @@ test('⑬ 笔记本的公式块用 math-field（MathLive），不是 textarea', 
   assert.match(BUILD, /<textarea class="nb-code" id="nb-code"/, 'MATLAB 块被误改成 math-field 了');
 });
 
-test('⑭ 虚拟键盘全站不要（含页面编辑器与笔记本）', () => {
-  // 站长：「编辑器与面板里面都不要出现虚拟键盘按钮吧，那个全站都不需要」。
-  // 三处都要拦住：
+test('⑭ 虚拟键盘按钮桌面隐藏、触屏保留（2026-11-09 改定案）', () => {
+  // 2026-11-01 曾全站隐藏；站长 2026-11-09 恢复：手机端没有物理键盘，
+  // 按钮是唯一输入方式。policy=manual 仍设（只禁自动弹出）。
   const pr = PR;
-  // ① 笔记本 math-field：运行期注入 shadow 样式藏掉按钮
-  assert.match(pr, /\.ML__virtual-keyboard-toggle/, '没有藏虚拟键盘按钮的规则');
-  assert.match(pr, /display: none !important/, '虚拟键盘按钮没被 display:none 掉');
-  // ② 属性层面（MathLive 自己也会读）
+  assert.match(pr, /\.ML__virtual-keyboard-toggle/, '虚拟键盘按钮的规则丢了');
+  assert.match(pr, /@media \(pointer: fine\)/, '桌面隐藏的媒体查询丢了');
+  assert.match(pr, /@media \(pointer: coarse\)/, '触屏恢复的媒体查询丢了');
+  // 属性层面（MathLive 自己也会读）
   assert.match(pr, /math-virtual-keyboard-policy/, '没有设 math-virtual-keyboard-policy');
   assert.match(pr, /virtualKeyboardMode:\s*"manual"/, '没有设 virtualKeyboardMode: manual');
-  // ③ 页面编辑器（formula-cells 动态建的 math-field）也要设属性
+  // 页面编辑器（formula-cells 动态建的 math-field）也要设属性
   const cells = fs.readFileSync(path.join(HERE, 'formula-cells.mjs'), 'utf8');
   assert.match(cells, /setAttribute\('math-virtual-keyboard-policy',\s*'manual'\)/,
-    '页面公式编辑器的 math-field 没设 policy —— 它还会弹键盘');
+    '页面公式编辑器的 math-field 没设 policy —— 键盘会未经点击自动弹出');
 });
 
 test('⑮ math-field 的内置按钮在深色下必须可见（不许吃 MathLive 的硬编码暗色）', () => {

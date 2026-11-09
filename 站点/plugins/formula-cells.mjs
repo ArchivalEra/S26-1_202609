@@ -277,10 +277,12 @@ export function createFormulaCells(deps = {}) {
     if (cell.mf?.isConnected) return cell.mf;
     const mf = document.createElement('math-field');
     mf.className = 'fcell-mathfield';
-    // 虚拟键盘**全站不要**（2026-11-01 站长定案）：本站是桌面阅读场景。
+    // 只禁虚拟键盘「自动弹出」，不禁按钮（2026-11-09 改定案）：手机端
+    // 没有物理键盘，按钮是唯一输入方式；桌面隐藏由 pack-runtime 注入的
+    // pointer:fine 媒体查询负责。
     mf.setAttribute('math-virtual-keyboard-policy', 'manual');
     cell.body.appendChild(mf);
-    // 配置一次（注入 shadow 样式：藏虚拟键盘按钮 + 三道杠 display 覆盖 + 提亮）。
+    // 配置一次（注入 shadow 样式：虚拟键盘按钮分设备显隐 + 三道杠 display 覆盖 + 提亮）。
     try { if (window.__configureMathField) window.__configureMathField(mf); } catch { /* 配置缺失不影响编辑本身 */ }
 
     mf.addEventListener('input', () => {

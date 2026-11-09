@@ -2740,8 +2740,8 @@ body[data-pack-mode="computable"] .article-content .ML__latex {
  *     `data-theme="dark"` 与它的 `prefers-color-scheme` 不同步）；
  *   · 那两个按钮的色相/前景通过 MathLive 的公开变量提过去
  *     （`--hue` 与鼠标 hover 的背景色都由它派生，见下面的注释）；
- *   · **把虚拟键盘按钮直接藏掉**（站长：「编辑器与面板里面都不要出现
- *     虚拟键盘按钮吧，那个全站都不需要」）。
+ *   · 虚拟键盘按钮曾按 2026-11-01 定案全站隐藏；2026-11-09 站长改为
+ *     「桌面隐藏、触屏恢复」——手机端没有物理键盘，它是唯一输入方式。
  */
 .nb-mathfield {
   display: block;
@@ -2765,18 +2765,22 @@ body[data-pack-mode="computable"] .article-content .ML__latex {
   --hue: var(--primary-h);
   color-scheme: light;
 }
-/* 虚拟键盘按钮：**全站不要**（站长 2026-11-01 定案）。
-   MathLive 用 `.ML__virtual-keyboard-toggle` 这个类名（见它的 shadow DOM）。
-   `display:none` 之外还要把 `is-visible` 那条也压掉 —— 它靠这个类决定是否
-   显示，只加 display 会被更高特异性的规则盖过。 */
-.nb-mathfield::part(virtual-keyboard-toggle),
-math-field::part(virtual-keyboard-toggle) {
-  display: none !important;
+/* 虚拟键盘按钮：桌面隐藏、触屏恢复（站长 2026-11-09 改定案）。
+   2026-11-01 曾按「美观」全站藏掉，但手机端没有物理键盘 ⇒ 那是唯一输入方式。
+   MathLive 用 `.ML__virtual-keyboard-toggle` 这个类名（见它的 shadow DOM）；
+   `is-visible` 那条也要压掉 —— 它靠这个类决定是否显示，只加 display 会被
+   更高特异性的规则盖过。
+   ⚠️ 这里只管 light DOM 的 ::part；shadow 内的同类按钮由 pack-runtime 的
+   configureMathField 注入样式管（CSS 穿不过 shadow 边界），两处判据必须一致。 */
+@media (pointer: fine) {
+  .nb-mathfield::part(virtual-keyboard-toggle),
+  math-field::part(virtual-keyboard-toggle) {
+    display: none !important;
+  }
 }
-/* math-field 的 shadow DOM 里那两个按钮是普通元素，不是 part ——
-   得穿过 shadow 边界。CSS 做不到跨 shadow 选择，所以在运行时用 JS 注入
-   一条样式（见 pack-runtime 的 configureMathField）。
-   这里保留注释说明为什么下面那段 JS 必须存在。 */
+/* 触屏：按钮留给 MathLive 自己渲染（manual policy 只禁自动弹出，不禁按钮）。
+   三道杠菜单的深色可见度修复在 .nb-mathfield 那段，与此处无关，照旧生效。 */
+
 
 .pack-editor-actions {
   display: flex;

@@ -528,7 +528,7 @@ function bindNotebookBlock(ids) {
 }
 
 /**
- * 把 MathLive 的虚拟键盘关掉 + 让内置按钮在深色下可见。
+ * 虚拟键盘按钮分设备显隐 + 让内置按钮在深色下可见。
  *
  * ## 为什么必须走 JS 而不能只靠 CSS
  *
@@ -539,9 +539,10 @@ function bindNotebookBlock(ids) {
  *
  * ## 两件事
  *
- * ① **藏掉虚拟键盘按钮**（站长 2026-11-01：「编辑器与面板里面都不要出现
- *    虚拟键盘按钮吧，那个全站都不需要」）。本站是桌面阅读场景，那个键盘
- *    只会挡住公式。
+ * ① **虚拟键盘按钮：桌面隐藏、触屏恢复**（2026-11-01 曾全站隐藏，
+ *    2026-11-09 站长改定案：手机端没有物理键盘，它是唯一输入方式）。
+ *    math-virtual-keyboard-policy=manual 仍设 —— 只禁「自动弹出」，
+ *    按钮本身在触屏上留着让读者主动点开。
  * ② **让菜单按钮在深色下可见**（站长：「深色模式下 mathlive 那两个按钮
  *    有点不可视」）。MathLive 的图标色是 hsl(var(--_hue), 25%, 35%) 那套
  *    硬编码 —— 深色面板上 35% 亮度几乎与背景同色。这里把它提亮到
@@ -575,12 +576,27 @@ function configureMathField(mf) {
     var fg = getComputedStyle(mf).color || "#e0e0e6";
     var bg = getComputedStyle(mf).backgroundColor || "transparent";
     st.textContent = [
-      // ① 虚拟键盘按钮：彻底不显示（含它自己的 is-visible 状态）。
-      // **这才是「所有 UI 消失」的真凶**（2026-11-06 实测）：虚拟键盘一旦弹出就是
-      // 1265×1000、占视口 99% 的一块，压在整页之上，读者看到的正是「周边 UI 全没了」。
-      // 本站是桌面阅读场景，那个键盘只会挡住公式。（注：此处不用反引号，见文件头。）
-      ".ML__virtual-keyboard-toggle, .ML__virtual-keyboard-toggle.is-visible {",
-      "  display: none !important;",
+      // ① 虚拟键盘按钮：桌面隐藏、触屏恢复（2026-11-09 站长改定案）。
+      // 2026-11-06 实测「虚拟键盘一弹出就是 1265×1000、压住整页」的真凶是
+      // **自动弹出**，不是按钮本身：policy=manual 已经禁掉自动弹出；手机端
+      // 没有物理键盘，按钮必须留着给读者主动点。shadow 内媒体查询同样按
+      // pointer 判，与 light DOM 的 ::part 规则口径一致。
+      // 触屏另给按钮一个可点的尺寸与前景色（深色段在下方追加，仍生效）。
+      "@media (pointer: fine) {",
+      "  .ML__virtual-keyboard-toggle, .ML__virtual-keyboard-toggle.is-visible {",
+      "    display: none !important;",
+      "  }",
+      "}",
+      "@media (pointer: coarse) {",
+      "  .ML__virtual-keyboard-toggle {",
+      "    display: flex !important;",
+      "    color: " + fg + " !important;",
+      "    fill: " + fg + " !important;",
+      "    opacity: 0.85 !important;",
+      "    min-width: 2rem !important;",
+      "    min-height: 2rem !important;",
+      "  }",
+      "  .ML__virtual-keyboard-toggle:hover { opacity: 1 !important; }",
       "}",
       // ② 三道杠（菜单按钮）：**必须留着，且要压住 MathLive 自己写的 inline 隐藏**。
       // 2026-11-06 站长报「三道杠在全站迷失」。真因不是我们上一轮的 CSS，而是
@@ -677,6 +693,10 @@ function refreshMathFieldChrome(mf) {
     var sr = mf.shadowRoot;
     var btn = sr && sr.querySelector("[part=menu-toggle]");
     if (btn && btn.style && btn.style.display === "none") btn.style.removeProperty("display");
+    // 虚拟键盘按钮同理：MathLive 在宿主宽度 <50 时也会写 inline display:none。
+    // 触屏上注入的 CSS 用 !important 压得住显示，这里再把 inline 清掉让上游状态一致。
+    var kb = sr && sr.querySelector("[part=virtual-keyboard-toggle]");
+    if (kb && kb.style && kb.style.display === "none") kb.style.removeProperty("display");
   } catch (e) {}
   // 触发 MathLive 的 resizeObserver → 重渲染（Y()/_t 会按新宽度重算按钮显隐）。
   try { if (typeof mf.dispatchEvent === "function") mf.dispatchEvent(new Event("resize")); } catch (e) {}

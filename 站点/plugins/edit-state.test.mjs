@@ -133,14 +133,17 @@ test('三道杠：注入 CSS 用 display:flex !important 压住 MathLive 的 inl
     'refresh 没挂 window —— formula-cells 是独立模块，拿不到局部函数');
 });
 
-test('虚拟键盘仍然全站关闭（三道杠回归不许把真凶放出来）', () => {
+test('虚拟键盘按钮分设备显隐（桌面隐藏、触屏保留）', () => {
   const cfg = PR.slice(PR.indexOf('function configureMathField('), PR.indexOf('function refreshMathFieldChrome'));
-  assert.match(cfg, /"  display: none !important;",/, '虚拟键盘按钮没被藏');
+  assert.match(cfg, /@media \(pointer: fine\)/, '桌面隐藏的媒体查询丢了');
+  assert.match(cfg, /@media \(pointer: coarse\)/, '触屏恢复的媒体查询丢了');
   assert.match(cfg, /\.ML__virtual-keyboard-toggle/, '虚拟键盘规则整块丢了');
+  assert.match(cfg, /display: none !important/, '桌面没藏按钮');
+  assert.match(cfg, /display: flex !important/, '触屏没恢复按钮');
   // 菜单/工具栏弹层尺寸兜底还在
   assert.match(cfg, /max-height: 60vh/, '菜单弹层的尺寸兜底丢了');
   assert.match(CELLS, /setAttribute\('math-virtual-keyboard-policy', 'manual'\)/,
-    '页内 math-field 没设 manual policy');
+    '页内 math-field 没设 manual policy（只禁自动弹出，按钮留给触屏）');
 });
 
 test('detach 必须清掉装配层的全局「正在编辑」标记（SPA 换页不残留）', () => {
