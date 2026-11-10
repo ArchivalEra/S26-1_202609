@@ -106,9 +106,15 @@ PLUGIN_TESTS_CMD = (
 # 就能接着干」的进度手记，越长越读不完。两条事实把它变成可测量的：
 # 行数超阈值、节数超阈值，都该触发一次归档精简。
 # PINNED: 命令串里的中文是磁盘路径/统计目标（数据，不是用户消息）。
+# handoff 已拆分（2026-11-10 站长定案：Einfacht 不允许「无法校验却被当事实遵守」的文档）。
+# 它现在只是一张指针，所以量「指针是不是还短着」——长回去就说明状态断言又往里塞了。
 HANDOFF_LINES_CMD = "wc -l < .kimi-code/handoff.md"
-# PINNED: 命令串里的中文是磁盘路径/统计目标（数据，不是用户消息）。
-HANDOFF_SECTIONS_CMD = "grep -c '^### 0\\.' .kimi-code/handoff.md"
+# 第二步：**历史文件里不许混进状态断言**。历史允许写「当时是 X」，但不许写
+# 「现在是 X」「当前 X」「目前 X」这类会被当成事实读的措辞。命中即报。
+# PINNED: 命令串里的中文是磁盘路径与检索模式（数据，不是用户消息）。
+HISTORY_STATE_CLAIMS_CMD = (
+    "grep -cE '\\*\\*(当前|目前|如今)\\*\\*|^当前|^目前' HISTORY.md || true"
+)
 
 # 符号覆盖（2026-11-05 站长定案「构建期能跟公式一样直接 CI 来测试每个是否能冒泡
 # 并且能统计」）：build.mjs 量**最终产物**写进 dist/symbol-coverage.json，台账只读
@@ -166,11 +172,12 @@ TABLE = [
       "witness_expect": "31"}),
     ("plugin_tests", PLUGIN_TESTS_CMD, "站点/plugins/",
      "站点插件测试项数（fail+cancelled>0 ⇒ 复跑非零退出）"),
-    # handoff 体量：见 HANDOFF_LINES_CMD 处的注释。「读不完」本身就是要量的事实。
+    # handoff 拆分（2026-11-10）：它现在只是指针，行数长回去说明状态断言又塞进来了。
     ("handoff_lines", HANDOFF_LINES_CMD, ".kimi-code/handoff.md",
-     "进度手记总行数（超 ~1500 行该归档精简）"),
-    ("handoff_sections", HANDOFF_SECTIONS_CMD, ".kimi-code/handoff.md",
-     "进度手记节数（### 0.x 条目数）"),
+     "进度手记行数（指针应短；长回去 = 状态断言回流）"),
+    # 历史文件不许混状态断言：历史写「当时是 X」可以，写「当前/目前/如今 X」会被当事实读。
+    ("history_state_claims", HISTORY_STATE_CLAIMS_CMD, "HISTORY.md",
+     "HISTORY.md 里的「当前/目前/如今」式状态断言条数（应为 0）"),
     # 符号覆盖：见 SYMBOLS_BUBBLED_CMD 处的注释。uncovered 常态是 0（闸门管着），
     # 它一旦非 0 说明有人绕过构建硬拦改了内容——台账把它记成可见的事实。
     ("symbols_bubbled", SYMBOLS_BUBBLED_CMD, "站点/dist/symbol-coverage.json",

@@ -574,6 +574,7 @@
 !/FACTS.json
 !/gates-selftest.sh
 !/PRINCIPLES.md
+!/HISTORY.md
 !/.kimi-code/hooks/einfacht-next.sh
 !/.kimi-code/hooks/selftest.sh
 !/.githooks/check-markdown.py
@@ -637,6 +638,7 @@
 !/zreflect/check_stale.py
 !/zreflect/check_world.py
 !/zreflect/check_transcript_privacy.py
+!/zreflect/check_doc_paths.py
 !/zreflect/transcript_baseline.json
 !/zreflect/collect.py
 !/zreflect/criteria.py

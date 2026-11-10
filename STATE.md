@@ -37,38 +37,38 @@ sh gates-selftest.sh                             # 每道闸门先证明自己�
 
 | 键 | 值 | 测于 | 复跑命令 |
 |---|---|---|---|
-| `courses` | **8** | 2026-11-10T13:48:35+0800 | `ls -d 课程总览/*/ | wc -l` |
-| `discipline` | **ok** | 2026-11-10T13:48:57+0800 | `cd 站点 && node --test plugins/solution-discipline.test.mjs 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2=="tests"||$2=="pass"||$2=="fail") {v[$2]=$3} END {t=v["tests"]; p=v["pass"]; fl=v["fail"]+0; if (t=="") {print "discipline：没读到 tests 汇总行" > "/dev/stderr"; exit 1} if (p!=t || fl>0) {print "discipline：red tests=" t " pass=" p " fail=" fl > "/dev/stderr"; exit 1} print "ok"}'` |
-| `figures` | **174** | 2026-11-10T13:48:35+0800 | `ls 课程总览/电路原理/作业/figures/ | wc -l` |
-| `glossary_entries` | **227** | 2026-11-10T13:48:35+0800 | `awk '/^:::glossary-dict/{f=1;next} /^:::/{f=0} f&&/^sym-/{n++} END{print n}' 站点/符号包/通用.md 课程总览/*/教材解析/符号入门.md` |
-| `handoff_lines` | **8666** | 2026-11-10T13:48:57+0800 | `wc -l < .kimi-code/handoff.md` |
-| `handoff_sections` | **217** | 2026-11-10T13:48:57+0800 | `grep -c '^### 0\.' .kimi-code/handoff.md` |
-| `homework` | **29** | 2026-11-10T13:48:35+0800 | `find 课程总览 -path '*/作业/*.md' ! -name 'index.md' | wc -l` |
-| `hooktests` | **31** | 2026-11-10T13:48:48+0800 | `python3 .githooks/test-update-readme.py 2>&1 | grep -oE 'Ran [0-9]+ tests' | awk '{print $2}'` |
-| `lab_tests` | **74** | 2026-11-10T13:48:36+0800 | `cd .kimi-code/学习通API && node --test chaoxing.test.mjs 判据.test.mjs bridge.test.mjs 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2=="tests"||$2=="fail"||$2=="cancelled") {v[$2]=$3} END {t=v["tests"]; f=v["fail"]+0; c=v["cancelled"]+0; if (t=="") {print "lab_tests：没读到 tests 汇总行" > "/dev/stderr"; exit 1} print t; if (f+c>0) {print "lab_tests：fail=" f " cancelled=" c " ⇒ 红测试，非零退出" > "/dev/stderr"; exit 1}}'` |
-| `md_files` | **203** | 2026-11-10T13:48:36+0800 | `git ls-files '*.md' | wc -l` |
-| `notes` | **57** | 2026-11-10T13:48:35+0800 | `find 课程总览 -path '*/课堂笔记/*.md' ! -name 'index.md' | wc -l` |
-| `plugin_tests` | **1039** | 2026-11-10T13:48:57+0800 | `cd 站点 && node --test plugins/ 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2=="tests"||$2=="fail"||$2=="cancelled") {v[$2]=$3} END {t=v["tests"]; f=v["fail"]+0; c=v["cancelled"]+0; if (t=="") {print "plugin_tests：没读到 tests 汇总行（node --test 没跑完？）" > "/dev/stderr"; exit 1} print t; if (f+c>0) {print "plugin_tests：fail=" f " cancelled=" c " ⇒ 红测试，非零退出（issue #18 决策 #7）" > "/dev/stderr"; exit 1}}'` |
-| `principle.assertion_lifecycle` | **ok** | 2026-11-10T13:48:57+0800 | `python3 zreflect/check_retractions.py` |
-| `principle.declared_not_globbed` | **ok** | 2026-11-10T13:48:57+0800 | `python3 zreflect/registry.py --gates` |
-| `principle.falsifiable` | **ok** | 2026-11-10T13:48:57+0800 | `python3 zreflect/registry.py --selftest` |
-| `principle.host_agnostic` | **ok** | 2026-11-10T13:48:57+0800 | `python3 -c "import os,sys;w=['.'+chr(122)+chr(99)+chr(111)+chr(100)+chr(101)+'/','ZCODE_'+'PROJECT_DIR','hook'+'SpecificOutput'];bad=[(d,f) for d in ('zreflect','reflect-hooks') for r,_,fs in os.walk(d) for f in fs if f.endswith(('.py','.sh')) and any(k in open(os.path.join(r,f),encoding='utf-8',errors='replace').read() for k in w)];print('host_coupled=%d' % len(bad));sys.exit(1 if bad else 0)"` |
-| `principle.machine_rows` | **ok** | 2026-11-10T13:48:57+0800 | `python3 zreflect/machine.py --selftest` |
-| `principle.no_retired_names` | **ok** | 2026-11-10T13:48:57+0800 | `python3 zreflect/check_stale.py` |
-| `principle.number_once` | **ok** | 2026-11-10T13:48:57+0800 | `python3 zreflect/check_facts.py` |
-| `principle.off_is_visible` | **ok** | 2026-11-10T13:48:57+0800 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import registry, criteria;gs=registry.gates()[0];p=criteria.off_reason_problems(gs);print('off_reason_ok gates=%d problems=%d' % (len(gs), len(p)));sys.exit(0 if gs and not p else 1)"` |
-| `principle.only_measured` | **ok** | 2026-11-10T13:48:57+0800 | `python3 -c "import json,sys;d=json.load(open('FACTS.json', encoding='utf-8'))['facts'];bad=[k for k,v in d.items() if not (isinstance(v,dict) and str(v.get('cmd','')).strip())];print('facts_without_cmd=%d' % len(bad));sys.exit(1 if bad else 0)"` |
-| `principle.open_questions_settle` | **ok** | 2026-11-10T13:48:57+0800 | `python3 zreflect/check_questions.py` |
-| `principle.selfcert_harness` | **ok** | 2026-11-10T13:48:57+0800 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import registry;u=registry.modules()[1];print('undeclared_modules=%d' % len(u));sys.exit(1 if u else 0)"` |
-| `principle.snapshot_hygiene` | **ok** | 2026-11-10T13:48:57+0800 | `python3 zreflect/check_snapshots.py` |
-| `principle.three_readmes` | **ok** | 2026-11-10T13:48:57+0800 | `python3 zreflect/check_readme_sync.py` |
-| `principle.zero_language` | **ok** | 2026-11-10T13:48:57+0800 | `python3 zreflect/check_i18n.py` |
-| `problems` | **278** | 2026-11-10T13:48:35+0800 | `python3 -c "import re,glob;print(sum(len(re.findall(r'[0-9]+',s)) for f in glob.glob('课程总览/电路原理/作业/习题册第*.md') for ln in open(f,encoding='utf-8') if ln.startswith('### ') for s in re.findall(r'(?:选|填|计|判|画图)\s*([0-9][0-9、,\s]*)', re.sub(r'（[^）]*）','',ln[4:]))))"` |
-| `sitepages` | **170** | 2026-11-10T13:48:36+0800 | `sed -n '/^export const TARGET_FILES = \[/,/^\];/p' 站点/页面清单.mjs | grep -c "^  '"` |
-| `symbol_packs` | **5** | 2026-11-10T13:48:35+0800 | `grep -cE "^  '[^']+': '[^']+.md',$" 站点/符号环境.mjs` |
-| `symbols_bubbled` | **15323** | 2026-11-10T13:48:57+0800 | `python3 -c "import json;print(json.load(open('站点/dist/symbol-coverage.json'))['symbols_bubbled'])"` |
-| `symbols_uncovered` | **0** | 2026-11-10T13:48:57+0800 | `python3 -c "import json;print(json.load(open('站点/dist/symbol-coverage.json'))['symbols_uncovered'])"` |
-| `textbook` | **31** | 2026-11-10T13:48:35+0800 | `find 课程总览 -path '*/教材解析/*.md' ! -name 'index.md' | wc -l` |
+| `courses` | **8** | 2026-11-10T14:35:29+0800 | `ls -d 课程总览/*/ | wc -l` |
+| `discipline` | **ok** | 2026-11-10T14:35:51+0800 | `cd 站点 && node --test plugins/solution-discipline.test.mjs 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2=="tests"||$2=="pass"||$2=="fail") {v[$2]=$3} END {t=v["tests"]; p=v["pass"]; fl=v["fail"]+0; if (t=="") {print "discipline：没读到 tests 汇总行" > "/dev/stderr"; exit 1} if (p!=t || fl>0) {print "discipline：red tests=" t " pass=" p " fail=" fl > "/dev/stderr"; exit 1} print "ok"}'` |
+| `figures` | **174** | 2026-11-10T14:35:29+0800 | `ls 课程总览/电路原理/作业/figures/ | wc -l` |
+| `glossary_entries` | **227** | 2026-11-10T14:35:29+0800 | `awk '/^:::glossary-dict/{f=1;next} /^:::/{f=0} f&&/^sym-/{n++} END{print n}' 站点/符号包/通用.md 课程总览/*/教材解析/符号入门.md` |
+| `handoff_lines` | **55** | 2026-11-10T14:35:51+0800 | `wc -l < .kimi-code/handoff.md` |
+| `history_state_claims` | **0** | 2026-11-10T14:35:51+0800 | `grep -cE '\*\*(当前|目前|如今)\*\*|^当前|^目前' HISTORY.md || true` |
+| `homework` | **29** | 2026-11-10T14:35:29+0800 | `find 课程总览 -path '*/作业/*.md' ! -name 'index.md' | wc -l` |
+| `hooktests` | **31** | 2026-11-10T14:35:42+0800 | `python3 .githooks/test-update-readme.py 2>&1 | grep -oE 'Ran [0-9]+ tests' | awk '{print $2}'` |
+| `lab_tests` | **74** | 2026-11-10T14:35:30+0800 | `cd .kimi-code/学习通API && node --test chaoxing.test.mjs 判据.test.mjs bridge.test.mjs 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2=="tests"||$2=="fail"||$2=="cancelled") {v[$2]=$3} END {t=v["tests"]; f=v["fail"]+0; c=v["cancelled"]+0; if (t=="") {print "lab_tests：没读到 tests 汇总行" > "/dev/stderr"; exit 1} print t; if (f+c>0) {print "lab_tests：fail=" f " cancelled=" c " ⇒ 红测试，非零退出" > "/dev/stderr"; exit 1}}'` |
+| `md_files` | **204** | 2026-11-10T14:35:30+0800 | `git ls-files '*.md' | wc -l` |
+| `notes` | **57** | 2026-11-10T14:35:29+0800 | `find 课程总览 -path '*/课堂笔记/*.md' ! -name 'index.md' | wc -l` |
+| `plugin_tests` | **1039** | 2026-11-10T14:35:51+0800 | `cd 站点 && node --test plugins/ 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2=="tests"||$2=="fail"||$2=="cancelled") {v[$2]=$3} END {t=v["tests"]; f=v["fail"]+0; c=v["cancelled"]+0; if (t=="") {print "plugin_tests：没读到 tests 汇总行（node --test 没跑完？）" > "/dev/stderr"; exit 1} print t; if (f+c>0) {print "plugin_tests：fail=" f " cancelled=" c " ⇒ 红测试，非零退出（issue #18 决策 #7）" > "/dev/stderr"; exit 1}}'` |
+| `principle.assertion_lifecycle` | **ok** | 2026-11-10T14:35:51+0800 | `python3 zreflect/check_retractions.py` |
+| `principle.declared_not_globbed` | **ok** | 2026-11-10T14:35:51+0800 | `python3 zreflect/registry.py --gates` |
+| `principle.falsifiable` | **ok** | 2026-11-10T14:35:51+0800 | `python3 zreflect/registry.py --selftest` |
+| `principle.host_agnostic` | **ok** | 2026-11-10T14:35:51+0800 | `python3 -c "import os,sys;w=['.'+chr(122)+chr(99)+chr(111)+chr(100)+chr(101)+'/','ZCODE_'+'PROJECT_DIR','hook'+'SpecificOutput'];bad=[(d,f) for d in ('zreflect','reflect-hooks') for r,_,fs in os.walk(d) for f in fs if f.endswith(('.py','.sh')) and any(k in open(os.path.join(r,f),encoding='utf-8',errors='replace').read() for k in w)];print('host_coupled=%d' % len(bad));sys.exit(1 if bad else 0)"` |
+| `principle.machine_rows` | **ok** | 2026-11-10T14:35:51+0800 | `python3 zreflect/machine.py --selftest` |
+| `principle.no_retired_names` | **ok** | 2026-11-10T14:35:51+0800 | `python3 zreflect/check_stale.py` |
+| `principle.number_once` | **ok** | 2026-11-10T14:35:51+0800 | `python3 zreflect/check_facts.py` |
+| `principle.off_is_visible` | **ok** | 2026-11-10T14:35:51+0800 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import registry, criteria;gs=registry.gates()[0];p=criteria.off_reason_problems(gs);print('off_reason_ok gates=%d problems=%d' % (len(gs), len(p)));sys.exit(0 if gs and not p else 1)"` |
+| `principle.only_measured` | **ok** | 2026-11-10T14:35:51+0800 | `python3 -c "import json,sys;d=json.load(open('FACTS.json', encoding='utf-8'))['facts'];bad=[k for k,v in d.items() if not (isinstance(v,dict) and str(v.get('cmd','')).strip())];print('facts_without_cmd=%d' % len(bad));sys.exit(1 if bad else 0)"` |
+| `principle.open_questions_settle` | **ok** | 2026-11-10T14:35:51+0800 | `python3 zreflect/check_questions.py` |
+| `principle.selfcert_harness` | **ok** | 2026-11-10T14:35:51+0800 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import registry;u=registry.modules()[1];print('undeclared_modules=%d' % len(u));sys.exit(1 if u else 0)"` |
+| `principle.snapshot_hygiene` | **ok** | 2026-11-10T14:35:51+0800 | `python3 zreflect/check_snapshots.py` |
+| `principle.three_readmes` | **ok** | 2026-11-10T14:35:51+0800 | `python3 zreflect/check_readme_sync.py` |
+| `principle.zero_language` | **ok** | 2026-11-10T14:35:51+0800 | `python3 zreflect/check_i18n.py` |
+| `problems` | **278** | 2026-11-10T14:35:29+0800 | `python3 -c "import re,glob;print(sum(len(re.findall(r'[0-9]+',s)) for f in glob.glob('课程总览/电路原理/作业/习题册第*.md') for ln in open(f,encoding='utf-8') if ln.startswith('### ') for s in re.findall(r'(?:选|填|计|判|画图)\s*([0-9][0-9、,\s]*)', re.sub(r'（[^）]*）','',ln[4:]))))"` |
+| `sitepages` | **170** | 2026-11-10T14:35:30+0800 | `sed -n '/^export const TARGET_FILES = \[/,/^\];/p' 站点/页面清单.mjs | grep -c "^  '"` |
+| `symbol_packs` | **5** | 2026-11-10T14:35:29+0800 | `grep -cE "^  '[^']+': '[^']+.md',$" 站点/符号环境.mjs` |
+| `symbols_bubbled` | **15323** | 2026-11-10T14:35:51+0800 | `python3 -c "import json;print(json.load(open('站点/dist/symbol-coverage.json'))['symbols_bubbled'])"` |
+| `symbols_uncovered` | **0** | 2026-11-10T14:35:51+0800 | `python3 -c "import json;print(json.load(open('站点/dist/symbol-coverage.json'))['symbols_uncovered'])"` |
+| `textbook` | **31** | 2026-11-10T14:35:29+0800 | `find 课程总览 -path '*/教材解析/*.md' ! -name 'index.md' | wc -l` |
 
 32 条事实。
 <!-- /AUTO:FACTS -->
@@ -80,6 +80,7 @@ sh gates-selftest.sh                             # 每道闸门先证明自己�
 | 闸门 | 相位 | 它挡住什么 | 消费的旋钮 | 可未启用的理由 |
 |---|---|---|---|---|
 | `check_ab.py`（A/B 闸门） | commit | A/B 同旗标不变式（非 allow 轴差异 = 混淆变量，A/B 作废） | `REFLECT_AB` | 不做 A/B 对照实验的仓不需要它：规格未配 ⇒ 明说未启用 |
+| `check_doc_paths.py`（活文档路径闸门） | commit | 活状态文档里写的仓库内路径必须真实存在（消灭跑不通的判据） | — | — |
 | `check_envfile.py`（env 文件闸门） | commit | 守钩子的 REFLECT_* 载体（旋钮 typo / 指向缺失 / 空值） | `REFLECT_ENV_FILE` | 没有 env 载体的仓（旋钮全用默认值）不需要它：规格未配 ⇒ 明说未启用 |
 | `check_facts.py`（事实闸门） | commit | 块一致性 / 裸数字 / 坏引用 | `REFLECT_FACTS`, `REFLECT_DOC`, `REFLECT_NAKED_MIN` | — |
 | `check_facts_replay.py`（复跑闸门） | commit | 台账 cmd 逐字复跑（裸值契约：stdout 必须等于值） | `REFLECT_FACTS`, `REFLECT_REPLAY`, `REFLECT_REPLAY_TIMEOUT` | 显式设 REFLECT_REPLAY=off 时整道闸门关闭（这是整仓出口；未配时照跑） |
@@ -102,5 +103,5 @@ sh gates-selftest.sh                             # 每道闸门先证明自己�
 | `check_semantics.py`（语义闸门） | start-of-work | 语义唯一性：一个概念只许一个规范键名，禁用别名出现即红 | — | 可插拔模块：语义表未配置且默认位置无表时明说未启用（配 SEMANTICS_SPEC 表即启用） |
 | `doctor.py`（开工预检 doctor） | start-of-work | 进程 / 端口活性（查会死的东西 ⇒ runs_at=start-of-work，不进 pre-commit） | `REFLECT_DOCTOR`, `REFLECT_DOCTOR_TIMEOUT` | 本仓没有 doctor.json 规格：不查进程/端口活性 ⇒ 明说未启用 |
 
-22 道闸门（发现式名录派生 —— 手写清单会漂，加闸门 = 落一个声明行，这里自动长出来）；其中 13 道**可未启用**（末列是**声明**理由，不是运行时状态 —— 此刻谁 off 要看 `registry --run <相位>`）。
+23 道闸门（发现式名录派生 —— 手写清单会漂，加闸门 = 落一个声明行，这里自动长出来）；其中 13 道**可未启用**（末列是**声明**理由，不是运行时状态 —— 此刻谁 off 要看 `registry --run <相位>`）。
 <!-- /AUTO:GATES -->

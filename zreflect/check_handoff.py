@@ -176,7 +176,10 @@ def problems(spec, docs_text, fact_values=None, facts=None):
             out.append("%s 里「%s」块出现 %d 处（上限 %d）—— 基线两处并存是 "
                        "488/477 事件的直接成因，现状只许一个锚"
                        % (rel, marker, len(blocks), max_blocks))
-        if not blocks:
+        # 「必须有基线块」只对**现状型**活文档成立。口径表用 `requires_baseline: false`
+        # 显式声明「这份文档按定义没有现状」（HISTORY.md 就是这种：它只写当时）。
+        # 声明为 false 时，块的出现与唯一性仍查（出现两处照样报），只是不要求必须存在。
+        if not blocks and spec.get("requires_baseline", True):
             out.append("%s 里一个「%s」块都没有 —— 现状必须有唯一锚（零值守卫）"
                        % (rel, marker))
         for blk in blocks:
