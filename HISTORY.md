@@ -719,6 +719,14 @@ handoff 拆成指针后这类小节数为 0，判据**恒为 0 且不再有对�
 全部 `原始资料/*-原文.{txt,doc}`，提交数 436 → 434；原件导出到 `/mnt/hdd/study/`
 本地归档；悬垂对象用干净 `clone` 的 `objects` 整体替换（`gc`/`repack -ad` 对残留无效）。
 
+**同日自查：拆掉自己发明的「校历」。** 为把国庆放假与站长请假从「课表周律缺口」
+里剔除，我造了 `工具/校历.json`（holidays / absences / makeup 三段）并在检索工具里
+加了一套「同课同星期隔 N 天」的缺口推断。**两样都没人要求，是我自己发明的**，
+而且这个 JSON 正好又是「人工维护、没有判定命令、却被当事实遵守」——刚拆掉 handoff
+就再造一个同类东西。价值也近乎为零：放假是常识、请假是站长亲口说的，
+真正有用的「有转写无笔记」检查根本不需要课表推断；而课表推断会被放假、调课、
+临时换教室误报。已全部删除。
+
 **第二次：清除 Claude 贡献者声明。** GitHub contributor 列表里出现 Claude，
 根因是 `397ce12` 提交信息带 `Co-Authored-By: Claude Fable 3 <noreply@anthropic.com>`。
 `filter-repo --message-callback` 清掉该 trailer（注意：本机装的那版回调收到的是

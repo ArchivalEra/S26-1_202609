@@ -42,39 +42,6 @@ INDEX_ROW = re.compile(r"\|\s*`(20\d{6}_\d{4}\d{4}-原文[^`]*)`\s*\|")
 MP3_ROW = re.compile(r"\|\s*`(20\d{6}_\d{4}\d{4}\.mp3)`\s*\|")
 NOTE_LINK = re.compile(r"\]\(\.\./课堂笔记/")
 MERGED = ("同上", "合一篇", "同一节课的第二段", "同上第二段", "连堂", "第二段")
-CALENDAR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "校历.json")
-
-
-def load_calendar():
-    if not os.path.isfile(CALENDAR):
-        return {"holidays": [], "makeup": []}
-    with open(CALENDAR, encoding="utf-8") as fh:
-        return json.load(fh)
-
-
-def is_off_day(d: dt.date, cal, course: str | None = None) -> bool:
-    """这一天该课「本来就没有录音」——放假（课没有）或请假（人没到，课可能照上）。
-
-    两者都不是「缺件」：缺件的前提是「本该有录音却没收到」。请假恰恰是
-    「不该有」，所以从缺口候选里排除，并在报告里单独点名原因。
-    """
-    iso = d.isoformat()
-    if iso in cal.get("holidays", []):
-        return True
-    for a in cal.get("absences", []):
-        if a.get("date") == iso and (course is None or a.get("course") == course):
-            return True
-    return False
-
-
-def absent_reason(d: dt.date, cal, course: str) -> str | None:
-    """这一天该课没有录音的原因（放假日不点名课，请假点名）。"""
-    for a in cal.get("absences", []):
-        if a.get("date") == d.isoformat() and a.get("course") == course:
-            return a.get("reason", "已登记为无录音")
-    if d.isoformat() in cal.get("holidays", []):
-        return "校历停课"
-    return None
 
 
 def date_of(key: str) -> str:
@@ -173,37 +140,7 @@ def scan():
     return records, problems
 
 
-def weekday_gaps(records, cal=None):
-    """按「同一课程、同一星期」的已知课次序列，找隔周以上缺口；校历假日不算缺。"""
-    cal = cal if cal is not None else load_calendar()
-    by_course = defaultdict(list)
-    for (course, d), rec in records.items():
-        if d == "(命名不符)" or not rec["keys"]:
-            continue
-        by_course[course].append(parse_date(d))
-    gaps = []
-    for course, ds in sorted(by_course.items()):
-        ds = sorted(set(ds))
-        wd = defaultdict(list)
-        for d in ds:
-            wd[d.weekday()].append(d)
-        for weekday, seq in sorted(wd.items()):
-            for a, b in zip(seq, seq[1:]):
-                n = (b - a).days
-                if 10 < n <= 40:
-                    missing = [a + dt.timedelta(days=7 * i)
-                               for i in range(1, n // 7 + 1)
-                               if a + dt.timedelta(days=7 * i) < b
-                               and not is_off_day(a + dt.timedelta(days=7 * i), cal, course)]
-                    if not missing:
-                        continue
-                    gaps.append({"course": course, "weekday": dt.date(2026, 1, 5 + weekday).strftime("%a"),
-                                 "from": a.isoformat(), "to": b.isoformat(), "days": n,
-                                 "candidates": [x.isoformat() for x in missing]})
-    return gaps
-
-
-def report(records, problems, gaps, only_missing=False):
+def report(records, problems, only_missing=False):
     out = []
     if not only_missing:
         out.append("课堂转写检索（主键 yyyymmdd_hhmmhhmm）")
@@ -225,23 +162,6 @@ def report(records, problems, gaps, only_missing=False):
     out.append(f"缺口（有转写无笔记 / 登记未关联 / 命名不符）：{len(problems)}")
     for p in problems:
         out.append("  · " + p)
-    out.append("\n已登记「本来就没有录音」（请假/停课，不算缺件）：")
-    noted = []
-    _cal = load_calendar()
-    for (course, d), rec in sorted(records.items()):
-        if d == "(命名不符)" or rec["keys"]:
-            continue
-        r = absent_reason(parse_date(d), _cal, course)
-        if r:
-            noted.append(f"  · {course} {rec['date']} —— {r}")
-    out.extend(noted or ["  无"])
-
-    out.append("\n课表周律缺口（仅供核实，不等于缺录音）：")
-    if not gaps:
-        out.append("  无")
-    for g in gaps:
-        out.append(f"  · {g['course']} {g['weekday']} {g['from']} → {g['to']} 隔 {g['days']} 天；"
-                   f"中间候选 {', '.join(g['candidates']) or '—'}")
     return "\n".join(out)
 
 
@@ -282,17 +202,16 @@ def main(argv=None):
     if a.course:
         records = {k: v for k, v in records.items() if k[0] == a.course}
         problems = [p for p in problems if p.startswith(a.course)]
-    gaps = weekday_gaps(records)
     if a.json:
         print(json.dumps({
             "records": [{"course": v["course"], "date": v["date"],
                          "transcripts": v["keys"], "notes": v["notes"],
                          "indexed": sorted(v["indexed"]), "mp3": v["mp3"]}
                         for v in records.values()],
-            "problems": problems, "weekday_gaps": gaps,
+            "problems": problems,
         }, ensure_ascii=False, indent=2))
         return 0
-    print(report(records, problems, gaps, only_missing=a.missing))
+    print(report(records, problems, only_missing=a.missing))
     return 0
 
 
