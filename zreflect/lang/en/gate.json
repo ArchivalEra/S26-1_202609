@@ -43,5 +43,6 @@
   "gate.title.registry": "registry (the data side of discovery-based rosters)",
   "gate.title.render": "render (the single place numbers are produced)",
   "gate.title.runner": "runner (verbatim executor: bare-value contract + pipefail + timeout)",
-  "gate.title.semantics": "semantics gate (one canonical key per concept)"
+  "gate.title.semantics": "semantics gate (one canonical key per concept)",
+  "gate.title.transcript_privacy": "check_transcript_privacy (transcript originals never in repo: only .md inside 原始资料)"
 }

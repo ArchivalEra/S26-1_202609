@@ -43,5 +43,6 @@
   "gate.title.registry": "registry (die Datenseite entdeckungsbasierter Namenslisten)",
   "gate.title.render": "render (der einzige Ort, an dem Zahlen entstehen)",
   "gate.title.runner": "runner (wörtlicher Ausführer: nackter-Wert-Vertrag + pipefail + Timeout)",
-  "gate.title.semantics": "Semantik-Gate (ein kanonischer Schlüssel pro Begriff)"
+  "gate.title.semantics": "Semantik-Gate (ein kanonischer Schlüssel pro Begriff)",
+  "gate.title.transcript_privacy": "check_transcript_privacy (Transkript-Originale nicht im Repo: nur .md in 原始资料)"
 }

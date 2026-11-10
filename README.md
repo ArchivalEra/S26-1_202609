@@ -19,6 +19,7 @@
 | 电子技术 | 开课 |
 | 电机学 | 开课 |
 | 劳动教育 | 开课 |
+| 电气前沿 | 开课 |
 <!-- COURSE-STATUS:END -->
 
 <!-- AUTO-CATALOG:START -->
@@ -27,16 +28,17 @@
 
 | 课程 | 资料数 | 入口 |
 | :--- | ---: | :--- |
-| 劳动教育 | 2 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E5%8A%B3%E5%8A%A8%E6%95%99%E8%82%B2/index.md) |
-| 工程数学 | 42 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E5%B7%A5%E7%A8%8B%E6%95%B0%E5%AD%A6/index.md) |
-| 形势与政策 | 9 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E5%BD%A2%E5%8A%BF%E4%B8%8E%E6%94%BF%E7%AD%96/index.md) |
-| 电力大数据与人工智能 | 16 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E7%94%B5%E5%8A%9B%E5%A4%A7%E6%95%B0%E6%8D%AE%E4%B8%8E%E4%BA%BA%E5%B7%A5%E6%99%BA%E8%83%BD/index.md) |
-| 电子技术 | 41 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E7%94%B5%E5%AD%90%E6%8A%80%E6%9C%AF/index.md) |
-| 电机学 | 23 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E7%94%B5%E6%9C%BA%E5%AD%A6/index.md) |
-| 电路原理 | 213 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/index.md) |
+| 劳动教育 | 1 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E5%8A%B3%E5%8A%A8%E6%95%99%E8%82%B2/index.md) |
+| 工程数学 | 34 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E5%B7%A5%E7%A8%8B%E6%95%B0%E5%AD%A6/index.md) |
+| 形势与政策 | 4 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E5%BD%A2%E5%8A%BF%E4%B8%8E%E6%94%BF%E7%AD%96/index.md) |
+| 电力大数据与人工智能 | 8 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E7%94%B5%E5%8A%9B%E5%A4%A7%E6%95%B0%E6%8D%AE%E4%B8%8E%E4%BA%BA%E5%B7%A5%E6%99%BA%E8%83%BD/index.md) |
+| 电子技术 | 28 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E7%94%B5%E5%AD%90%E6%8A%80%E6%9C%AF/index.md) |
+| 电机学 | 17 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E7%94%B5%E6%9C%BA%E5%AD%A6/index.md) |
+| 电气前沿 | 1 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E7%94%B5%E6%B0%94%E5%89%8D%E6%B2%BF/index.md) |
+| 电路原理 | 198 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E7%94%B5%E8%B7%AF%E5%8E%9F%E7%90%86/index.md) |
 
-共 **7** 门课程、**346** 份资料。
-<!-- 仓库内容摘要（不含 README）：911f221a6f089e6e63cdc755c7d5233fbf1d181205b7387ab406f18618ae8b85 -->
+共 **8** 门课程、**291** 份资料。
+<!-- 仓库内容摘要（不含 README）：0882cb9e6edfaf06222e64e0560cd90f0ba368037eaacfe68eb5191223cceabe -->
 
 <!-- AUTO-CATALOG:END -->
 

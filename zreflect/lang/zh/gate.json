@@ -43,5 +43,6 @@
   "gate.title.registry": "registry（发现式名录的数据面）",
   "gate.title.render": "render（数字的唯一产地）",
   "gate.title.runner": "runner（逐字执行器：裸值契约 + pipefail + 超时）",
-  "gate.title.semantics": "语义闸门（一个概念只许一个规范键名）"
+  "gate.title.semantics": "语义闸门（一个概念只许一个规范键名）",
+  "gate.title.transcript_privacy": "check_transcript_privacy（转写原件零入库：原始资料目录内只许 .md）"
 }
