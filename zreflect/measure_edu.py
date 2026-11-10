@@ -161,7 +161,11 @@ TABLE = [
     ("lab_tests", LAB_TESTS_CMD, ".kimi-code/学习通API/",
      "lab 回归测试项数（canonical 三件；与 lab 闸同一套文件，改名单两边一起红）"),
     ("sitepages", SITEPAGES_CMD, "站点/build.mjs", "站点页数（TARGET_FILES 条数）"),
-    ("md_files", "git ls-files '*.md' | wc -l", "repo", "受管 Markdown 篇数"),
+    # mail/ 排除：它是跨 agent 往来记录（信），不是受管的课程/站点内容。
+    # 2026-11-10 mail/ 入库后曾把 25 封信算进来（204→229），那是量错了对象——
+    # 信件增减与内容规模无关，混进来只会让这个键随通信量乱跳。
+    ("md_files", "git ls-files '*.md' | grep -v '^mail/' | wc -l", "repo",
+     "受管 Markdown 篇数（不含 mail/ 往来信件）"),
     ("hooktests", HOOKTESTS_CMD, ".githooks/test-update-readme.py", "钩子集成测试项数",
      # 贵事实：值 = 完整跑一遍测试套件（>10s，超复跑闸门超时）。按三档设计挂便宜
      # 见证——来源是「测试文件里声明了多少项」，命令活着、数量对了才算数。

@@ -574,6 +574,37 @@
 !/gates-selftest.sh
 !/PRINCIPLES.md
 !/HISTORY.md
+
+# ── 跨 agent 通信（其他 agent 写来的信；只追加不删）───────────────────────
+# mail/ 必须入库（2026-11-10）：否则 mail-read.py 归档时 git mv 失败、退化成 rename，
+# 丢掉 --follow 历史与「已读」在版本库里的可见性。
+# ⚠️ 本仓白名单只许逐文件精确路径（禁目录式与通配符，见 hook_lib 的校验），
+#    所以不能像相邻仓那样写 `!mail/*.md`——新增信件时必须补一行。
+!/mail/001-host-wasm32-release-and-answers.md
+!/mail/002-host-execute-interp-is-the-missing-step.md
+!/mail/003-host-symbolic-on-wasm32-minimal-line.md
+!/mail/068-extra-content-pull-by-contract.md
+!/mail/069-octave-ui-three-contracts-and-fzstd-and-how-to-fetch.md
+!/mail/070-static-contract-reference-client-for-wasm32.md
+!/mail/071-static-contract-please-adopt-our-releases.md
+!/mail/072-static-contract-correction-to-071.md
+!/mail/073-multisim-mcp-report-and-join-request.md
+!/mail/read/011-re-octave-ui-embed-answers.md
+!/mail/read/075-multisim-mcp-attachment-received.md
+!/mail/read/076-multisim-mcp-fig-list-batch1.md
+!/mail/read/077-multisim-mcp-fig-delivery-batch1.md
+!/mail/read/079-multisim-mcp-figure-commission-accepted.md
+!/mail/read/080-multisim-mcp-figure-proposal-delivered.md
+!/mail/read/081-multisim-mcp-figure-selection-corrected.md
+!/mail/read/082-multisim-mcp-figures-batch2.md
+!/mail/read/084-multisim-mcp-083-conditions-addressed.md
+!/mail/read/085-multisim-mcp-084-correction-812-swapped.md
+!/mail/read/086-multisim-mcp-code-review-fixes.md
+!/mail/read/087-multisim-mcp-wire-styles.md
+!/mail/README.md
+!/mail/sent/067-symbolic-on-wasm32-minimal-line.md
+!/mail/sent/074-re-multisim-mcp-join-accepted.md
+!/mail/sent/078-re-multisim-mcp-fig-batch1-accepted.md
 !/.kimi-code/hooks/einfacht-next.sh
 !/.kimi-code/hooks/selftest.sh
 !/.githooks/check-markdown.py
