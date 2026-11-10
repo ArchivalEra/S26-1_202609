@@ -711,3 +711,22 @@ handoff 拆成指针后这类小节数为 0，判据**恒为 0 且不再有对�
 **替代品**：`history_state_claims` + `zreflect/check_doc_paths.py`（活文档路径必须真实存在）。
 
 **掉键是显式放行的**：`facts.py --allow-drop`，不是静默消失。
+
+## 2026-11-10 · 两次历史改写（转写隐私清除 + Claude trailer 清除）
+
+**第一次：转写原件隐私清除。** 61 份课堂转写（含教师个人信息与学生发言）自 `84a41f8`
+起就在远端，已公开。按站长「历史必须清掉」定案：`filter-repo --invert-paths` 剔除
+全部 `原始资料/*-原文.{txt,doc}`，提交数 436 → 434；原件导出到 `/mnt/hdd/study/`
+本地归档；悬垂对象用干净 `clone` 的 `objects` 整体替换（`gc`/`repack -ad` 对残留无效）。
+
+**第二次：清除 Claude 贡献者声明。** GitHub contributor 列表里出现 Claude，
+根因是 `397ce12` 提交信息带 `Co-Authored-By: Claude Fable 3 <noreply@anthropic.com>`。
+`filter-repo --message-callback` 清掉该 trailer（注意：本机装的那版回调收到的是
+**字节串**，用字节正则才不报 `cannot use a string pattern on a bytes-like object`）。
+全历史 `Co-Authored-By` 类声明已归零。另一处 `fc41d03` 正文里的「交 Claude 评审」
+是叙述过程、不是贡献者声明，保留。
+
+**⚠️ 教训（我自己踩的，写下来防重犯）：** `filter-repo` 收尾会做 `reset --hard`，
+**未提交的工作区改动会被直接冲掉**。第二次改写时我刚改完 `工具/校历.json` 与
+`工具/录音检索.py`（给「请假」建类别），还没提交就跑了 filter-repo，改动全丢，
+只能重做一遍。**正确顺序是：先提交（或先 stash + 存副本），再改写历史。**

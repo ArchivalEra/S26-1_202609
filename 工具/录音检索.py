@@ -52,8 +52,29 @@ def load_calendar():
         return json.load(fh)
 
 
-def is_off_day(d: dt.date, cal) -> bool:
-    return d.isoformat() in cal.get("holidays", []) or d.strftime("%Y-%m-%d") in cal.get("holidays", [])
+def is_off_day(d: dt.date, cal, course: str | None = None) -> bool:
+    """这一天该课「本来就没有录音」——放假（课没有）或请假（人没到，课可能照上）。
+
+    两者都不是「缺件」：缺件的前提是「本该有录音却没收到」。请假恰恰是
+    「不该有」，所以从缺口候选里排除，并在报告里单独点名原因。
+    """
+    iso = d.isoformat()
+    if iso in cal.get("holidays", []):
+        return True
+    for a in cal.get("absences", []):
+        if a.get("date") == iso and (course is None or a.get("course") == course):
+            return True
+    return False
+
+
+def absent_reason(d: dt.date, cal, course: str) -> str | None:
+    """这一天该课没有录音的原因（放假日不点名课，请假点名）。"""
+    for a in cal.get("absences", []):
+        if a.get("date") == d.isoformat() and a.get("course") == course:
+            return a.get("reason", "已登记为无录音")
+    if d.isoformat() in cal.get("holidays", []):
+        return "校历停课"
+    return None
 
 
 def date_of(key: str) -> str:
@@ -173,7 +194,7 @@ def weekday_gaps(records, cal=None):
                     missing = [a + dt.timedelta(days=7 * i)
                                for i in range(1, n // 7 + 1)
                                if a + dt.timedelta(days=7 * i) < b
-                               and not is_off_day(a + dt.timedelta(days=7 * i), cal)]
+                               and not is_off_day(a + dt.timedelta(days=7 * i), cal, course)]
                     if not missing:
                         continue
                     gaps.append({"course": course, "weekday": dt.date(2026, 1, 5 + weekday).strftime("%a"),
@@ -204,6 +225,17 @@ def report(records, problems, gaps, only_missing=False):
     out.append(f"缺口（有转写无笔记 / 登记未关联 / 命名不符）：{len(problems)}")
     for p in problems:
         out.append("  · " + p)
+    out.append("\n已登记「本来就没有录音」（请假/停课，不算缺件）：")
+    noted = []
+    _cal = load_calendar()
+    for (course, d), rec in sorted(records.items()):
+        if d == "(命名不符)" or rec["keys"]:
+            continue
+        r = absent_reason(parse_date(d), _cal, course)
+        if r:
+            noted.append(f"  · {course} {rec['date']} —— {r}")
+    out.extend(noted or ["  无"])
+
     out.append("\n课表周律缺口（仅供核实，不等于缺录音）：")
     if not gaps:
         out.append("  无")
