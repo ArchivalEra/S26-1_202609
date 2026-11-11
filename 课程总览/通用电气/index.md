@@ -33,7 +33,7 @@ sources:
 
 ## 分类
 
-[Walkthrough](./Walkthrough.md)（唯一主页：这条交叉线怎么走） · [交叉内容](./交叉内容/index.md)（大栏目：逐个交叉点拆开讲）
+[Walkthrough](./Walkthrough.md)（唯一主页：八站一条线，末节指回各门课的真实资料） · [交叉内容](./交叉内容/index.md)（大栏目：逐个交叉点拆开讲）
 
 ## 为什么叫这个名字
 
