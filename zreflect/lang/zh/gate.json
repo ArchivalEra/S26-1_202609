@@ -21,6 +21,7 @@
   "gate.title.collect": "采集器契约",
   "gate.title.criteria": "名录判据",
   "gate.title.doc": "原则登记表",
+  "gate.title.doc_paths": "check_doc_paths（活文档里的路径必须真实存在）",
   "gate.title.doctor": "开工预检 doctor（进程/端口活性）",
   "gate.title.envfile": "env 文件闸门（可插拔：守钩子的 REFLECT_* 载体）",
   "gate.title.facts": "check_facts（块一致性 / 裸数字 / 坏引用）",
@@ -44,6 +45,6 @@
   "gate.title.render": "render（数字的唯一产地）",
   "gate.title.runner": "runner（逐字执行器：裸值契约 + pipefail + 超时）",
   "gate.title.semantics": "语义闸门（一个概念只许一个规范键名）",
-  "gate.title.transcript_privacy": "check_transcript_privacy（转写原件零入库：原始资料目录内只许 .md）",
-  "gate.title.doc_paths": "check_doc_paths（活文档里的路径必须真实存在）"
+  "gate.title.study": "check_study（study/ 不许进 git；根层不许散落转写与照片）",
+  "gate.title.transcript_privacy": "check_transcript_privacy（转写原件零入库：原始资料目录内只许 .md）"
 }

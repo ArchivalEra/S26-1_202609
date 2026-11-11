@@ -21,6 +21,7 @@
   "gate.title.collect": "collector contract",
   "gate.title.criteria": "roster criteria",
   "gate.title.doc": "principle registry",
+  "gate.title.doc_paths": "check_doc_paths (paths in living docs must exist)",
   "gate.title.doctor": "start-of-work doctor (process / port liveness)",
   "gate.title.envfile": "env-file gate (removable: guards the hooks' REFLECT_* carrier)",
   "gate.title.facts": "check_facts (block consistency / bare numbers / bad citations)",
@@ -44,6 +45,6 @@
   "gate.title.render": "render (the single place numbers are produced)",
   "gate.title.runner": "runner (verbatim executor: bare-value contract + pipefail + timeout)",
   "gate.title.semantics": "semantics gate (one canonical key per concept)",
-  "gate.title.transcript_privacy": "check_transcript_privacy (transcript originals never in repo: only .md inside 原始资料)",
-  "gate.title.doc_paths": "check_doc_paths (paths in living docs must exist)"
+  "gate.title.study": "check_study (study/ must not be tracked; no stray transcripts or photos at its root)",
+  "gate.title.transcript_privacy": "check_transcript_privacy (transcript originals never in repo: only .md inside 原始资料)"
 }

@@ -687,6 +687,7 @@
 !/zreflect/check_world.py
 !/zreflect/check_transcript_privacy.py
 !/zreflect/check_doc_paths.py
+!/zreflect/check_study.py
 !/zreflect/transcript_baseline.json
 !/zreflect/collect.py
 !/zreflect/criteria.py

@@ -21,6 +21,7 @@
   "gate.title.collect": "Sammler-Vertrag",
   "gate.title.criteria": "Verzeichnis-Kriterien",
   "gate.title.doc": "Prinzipienregister",
+  "gate.title.doc_paths": "check_doc_paths (Pfade in lebenden Dokumenten müssen existieren)",
   "gate.title.doctor": "Arbeitsbeginn-doctor (Prozess- / Port-Lebendigkeit)",
   "gate.title.envfile": "env-Datei-Tor (entfernbar: bewacht den REFLECT_* Träger der Hooks)",
   "gate.title.facts": "check_facts (Blockkonsistenz / nackte Zahlen / schlechte Zitate)",
@@ -44,6 +45,6 @@
   "gate.title.render": "render (der einzige Ort, an dem Zahlen entstehen)",
   "gate.title.runner": "runner (wörtlicher Ausführer: nackter-Wert-Vertrag + pipefail + Timeout)",
   "gate.title.semantics": "Semantik-Gate (ein kanonischer Schlüssel pro Begriff)",
-  "gate.title.transcript_privacy": "check_transcript_privacy (Transkript-Originale nicht im Repo: nur .md in 原始资料)",
-  "gate.title.doc_paths": "check_doc_paths (Pfade in lebenden Dokumenten müssen existieren)"
+  "gate.title.study": "check_study (study/ darf nicht versioniert sein; keine losen Transkripte oder Fotos im Wurzelverzeichnis)",
+  "gate.title.transcript_privacy": "check_transcript_privacy (Transkript-Originale nicht im Repo: nur .md in 原始资料)"
 }
