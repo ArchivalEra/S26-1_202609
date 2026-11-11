@@ -37,6 +37,17 @@
 数字只生产一次：计数住 `FACTS.json`，文档引用写 `[[键名]]`；机器块由
 `python3 zreflect/facts.py --render-doc STATE.md` 渲染，不手改；改口用 `--accept-changes=k1,k2`
 （数真的变了才放行）。闸门 `python3 zreflect/registry.py --run commit`（off 单列，没查 ≠ 通过）。
+
+**手动跑闸门必须先加载 env**，否则 `REFLECT_MEASURE_MODULE` 为空、采集回落占位实现，
+`check_facts` / `check_facts_replay` / `check_readme_sync` 会一起误报（看起来像仓库坏了）：
+
+```bash
+set -a && . reflect-hooks/Einfacht.env && set +a && export PYTHONPATH=zreflect
+python3 zreflect/registry.py --run commit
+```
+
+`git commit` 走的 `reflect-hooks/gate.py` 自己会加载 env，所以钩子路径没有这个问题——
+只有手工敲命令时才要这条前缀。
 翻案进 `retractions.json`，手抄旧值用 `invariants.json` 拦。
 悬案 `questions/*.md` 每条带 `**Status:**` 与可区分的 `**Settling:**`。
 开工看 `STATE.md`。
