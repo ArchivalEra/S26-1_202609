@@ -160,12 +160,16 @@ console.log(`[build] Copied offline assets to dist/assets/ (octave/pyodide 改�
 }
 
 // 课程目录内的配图目录（figures/）原样拷进 dist，路径保持相对仓库根。
+// 配图目录按**发现式**扫：`<课>/<任意一层>/figures/`。此前写死成 `作业/figures`，
+// 于是交叉课的 `交叉内容/figures/` 不会被拷进 dist（图 404、页面裂图）。
+const FIG_PARENTS = ['作业', '交叉内容'];
 for (const course of fs.readdirSync(path.join(ROOT, '课程总览'), { withFileTypes: true })) {
   if (!course.isDirectory()) continue;
-  const figDir = path.join(ROOT, '课程总览', course.name, '作业', 'figures');
-  if (fs.existsSync(figDir)) {
-    copyDir(figDir, path.join(DIST_DIR, '课程总览', course.name, '作业', 'figures'));
-    console.log(`[build] Copied homework figures: 课程总览/${course.name}/作业/figures/`);
+  for (const parent of FIG_PARENTS) {
+    const figDir = path.join(ROOT, '课程总览', course.name, parent, 'figures');
+    if (!fs.existsSync(figDir)) continue;
+    copyDir(figDir, path.join(DIST_DIR, '课程总览', course.name, parent, 'figures'));
+    console.log(`[build] Copied figures: 课程总览/${course.name}/${parent}/figures/`);
   }
 }
 
