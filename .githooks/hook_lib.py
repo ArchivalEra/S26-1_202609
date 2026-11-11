@@ -308,11 +308,16 @@ def validate(files):
                 raise ValueError(
                     f'{path} 写了 status —— 课程状态由 README 的 COURSE-STATUS 块统一给出，'
                     '资料页不写（构建期自动继承）。')
+    # ⚠️ 2026-11-11 实测漏洞：下面这段原本用 `classify(path)` 过滤，只覆盖四类目录
+    # （作业/教材解析/课堂笔记/原始资料）。于是 `Walkthrough.md`、课程 `index.md`
+    # 与任何自定义栏目（如 通用电气/交叉内容/）都 `classify → None` 被跳过，
+    # 「文件名 = 侧栏标签 = H1 = 网址最后一段」这条判据对它们**完全没生效**：
+    # 通用电气 一度是 文件 `Walkthrough.md` / H1 与侧栏「通用电气 · Walkthrough」 /
+    # 网址 `/通用电气/Walkthrough.html`，三者错位而全部闸门绿。
+    # 现在改成：**凡是在侧栏里有 label 的 .md 都查**，与 `check_nav_titles` 同一覆盖面。
     for path in files:
         category = classify(path)
-        if not category:
-            continue
-        course, kind = category
+        course, kind = category if category else (None, None)
         name = PurePosixPath(path).name
         # ⚠️ 2026-10-29 站长定案：**文件名 = 侧栏标签**，不再按类别套不同命名模板。
         #
@@ -324,9 +329,17 @@ def validate(files):
         # 现在只有一条：**文件名（去 .md）= 侧栏标签**。三条结构（网址 / 侧栏 / 面包屑）
         # 因此天然逐字一致；命名是否美观由侧栏标签决定，而侧栏标签本来就要求短（§3.4.1 宽度预算）。
         # 这条规则替代了原来按类别分支的两套正则——「美观看标签」而不是「看类别模板」。
-        if kind == '原始资料' and not name.endswith('.md'):
-            # 配图等二进制资产（如 作业/figures/*.jpg）豁免命名检查；
+        if not name.endswith('.md'):
+            # 配图等二进制资产（如 作业/figures/*.jpg）不参与「文件名 = 侧栏标签」；
             # 是否随批次登记到分类索引仍由 index-sync 检查统一把关。
+            continue
+        # 范围限定在 课程总览/ 下：站点的 README 侧栏标签是「学期」而文件名是
+        # README.md（站点根就是 /，不是 /学期.html），属于每门课之外的例外。
+        if not path.startswith('课程总览/'):
+            continue
+        # index.md 同样是例外：侧栏标签是目录名（如「课程总览」「作业」），
+        # 而文件名是 index.md —— 网址走目录形式 /课程总览/、/…/作业/，不是 /课程总览.html。
+        if name == 'index.md':
             continue
         nav_label = _nav_label_of(files, path)
         if nav_label is not None:
@@ -336,6 +349,10 @@ def validate(files):
                     f'文件名必须与侧栏标签逐字一致：本页侧栏写「{nav_label}」，'
                     f'所以文件应叫「{expect}」，实际是「{name}」（{path}）。'
                     '三条结构（网址/侧栏/面包屑）以网址为准，改哪边都要两边一起改。')
+        if category is None:
+            # 不在四类目录里的页面（课程 index / Walkthrough / 自定义栏目）只校
+            # 「文件名 = 侧栏标签」这一条；分类索引登记另行由 index-sync 管。
+            continue
         index = f'课程总览/{course}/{kind}/index.md'
         # 教材解析分三部分，链接登记在分部索引里（如 …/教材解析/第一部分-线性代数/index.md），
         # 所以除分类总索引外，也接受该分类下**任意一层的 index.md** 里被链接到。

@@ -1,6 +1,6 @@
 ---
 id: okf.course.general_electric.walkthrough
-name: 通用电气 · Walkthrough
+name: Walkthrough
 type: Guide
 spec_version: "0.2"
 last_updated: "2026-11-11"
@@ -12,7 +12,7 @@ sources:
   - 站长指定 2026-11-11
 ---
 
-# 通用电气 · Walkthrough
+# Walkthrough
 
 > **这一页是什么**：把四门课的交叉点排成一条**能顺着走的路**。每一步只回答一个问题，
 > 走完你就能把「一条正弦」一路推到「一个放大电路的放大倍数」。
