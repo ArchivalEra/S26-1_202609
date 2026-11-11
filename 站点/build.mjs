@@ -1453,7 +1453,7 @@ for (const relPath of TARGET_FILES) {
     // 标点——只剥一个：万一公式真以省略号收尾不至于被整串误删。
     const src = tex.trim().replace(/[.。，、；;][ \t]*$/, '');
     const { rendered, plain } = renderOneMath(src, 'display', relPath, pageMathEnv, pageMathHits, { calc: !!mark, bubbledLabels: pageBubbledLabels });
-    mathBlocks.push({ display: true, html: rendered, plain });
+    mathBlocks.push({ display: true, html: rendered, plain, tex: src });
     return `@@MATH_BLOCK_${id}@@`;
   });
 
@@ -1462,7 +1462,7 @@ for (const relPath of TARGET_FILES) {
     const id = mathBlocks.length;
     totalFormulasRendered++;
     const { rendered, plain } = renderOneMath(tex.trim(), 'inline', relPath, pageMathEnv, pageMathHits, { bubbledLabels: pageBubbledLabels });
-    mathBlocks.push({ display: false, html: rendered, plain });
+    mathBlocks.push({ display: false, html: rendered, plain, tex: tex.trim() });
     return `@@MATH_INLINE_${id}@@`;
   });
 
@@ -1587,10 +1587,22 @@ for (const relPath of TARGET_FILES) {
     renderTex: (tex) => {
       // 令牌内部的 TeX 同样用**空词库**编译：令牌自己就是可点符号，
       // 里面再套一层锚点就是嵌套 <a>（非法 DOM）。结构保证，不是约定。
-      const out = compileMath({ blocks: [{ raw: tex, mode: 'inline' }] },
+      //
+      // ⚠️ 2026-11-11 真 bug（issue #37）：令牌正文里的公式在 **Step 2 已经变成
+      // 数学占位符**（`[$J$]{#sym-J}` → `[@@MATH_INLINE_3@@]{#sym-J}`），Step 2.6
+      // 走到这里时拿到的 `tex` 是**占位符本身**，而不是 `J`。此前无条件
+      // `compileMath(tex)` 就把占位符当公式编了一遍——`_` 被当子标，页面上显示成
+      // `@@MATH` + 下标 `INLINE3` + `@@`，而构建与 31 项闸门全绿。
+      //
+      // 修法：认出占位符就**取回原始 TeX 重编**（口径与此处一致：空词库、不取词），
+      // 不能原样透传——那是错的，Step 6 会把带锚点的 `mathBlocks[id].html` 塞进
+      // 本 <a> 里，形成嵌套 `<a class="sym-gloss">`（`anchors-markup` 闸当场红）。
+      const ph = /^@@MATH_INLINE_(\d+)@@$/.exec(tex.trim());
+      const src = ph ? (mathBlocks[Number(ph[1])]?.tex ?? tex) : tex;
+      const out = compileMath({ blocks: [{ raw: src, mode: 'inline' }] },
         { dictionary: mathDictionary, packs: [] });
       if (out.problems.some((x) => x.severity === 'error')) {
-        return `<span class="math-fallback">${tex.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))}</span>`;
+        return `<span class="math-fallback">${src.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))}</span>`;
       }
       return renderMathDoc(out.docs[0], mathRenderer).html;
     },
@@ -2928,11 +2940,19 @@ for (const relPath of TARGET_FILES) {
   //
   // 只认带数字的形式：文档页（维护细则）会**故意**写出这个模式的字面例子，
   // 那种没有数字的 `@@MATH_INLINE_n@@` 是正文，不是残留。
-  const leaked = /@@MATH_INLINE_\d+@@/.exec(htmlWithVers);
+  //
+  // ⚠️ 2026-11-11 补第二个形态（issue #37）：占位符若被**当公式编译过一遍**，
+  // 产物里不再是裸文本 `@@MATH_INLINE_3@@`，而是
+  // `aria-label="@@MATH\u200bINLINE3@@"`——下划线被 KaTeX 当子标记吃掉，还掺了
+  // 零宽空格。只匹配裸文本的正则对它**永远返回 null**，于是
+  // 「构建绿 + 31 项闸门全过 + 页面上摆着乱码」。两个形态都要拦。
+  const leaked = /@@MATH_INLINE_\d+@@/.exec(htmlWithVers)
+    ?? /@@MATH[\u200b\s]*INLINE\d+@@/.exec(htmlWithVers);
   if (leaked) {
     throw new Error(
       `${targetHtmlPath} 的产物里残留数学占位符 ${leaked[0]}` +
-      '（说明有段文字晚了 Step 6 才进 HTML——多半是图注或模板里新加的字段）');
+      '（说明有段文字晚了 Step 6 才进 HTML，或被当成 TeX 又编译了一遍——' +
+      '多半是图注/依赖表令牌或模板里新加的字段）');
   }
   fs.mkdirSync(path.dirname(outFilePath), { recursive: true });
   fs.writeFileSync(outFilePath, htmlWithVers, 'utf-8');
