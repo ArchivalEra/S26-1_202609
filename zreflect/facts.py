@@ -1255,14 +1255,32 @@ def _copy_suite_into(d):
             if os.path.isdir(pkg) and any(x.endswith(".json")
                                           for x in os.listdir(pkg)):
                 shutil.copytree(pkg, os.path.join(dst_z, "lang", n))
-    hooks_src = os.path.join(os.path.dirname(src_z), "reflect-hooks")
-    if os.path.isdir(hooks_src):
-        shutil.copytree(hooks_src, os.path.join(d, "reflect-hooks"),
-                        ignore=shutil.ignore_patterns(
-                            "__pycache__", ".mypy_cache", "*.pyc"))
+    # ── 钩子入口：**按名册逐个拷，不整目录 copytree**（上游 0040c7e / issue #34）
+    #
+    # 此前 copytree 把宿主仓的 `reflect-hooks/` 整份拷进「全新仓」，**含宿主的
+    # `Einfacht.env`**（旋钮载体，从不入库）。夹具里 `--init` 会为自己写一份 env，
+    # 两份载体文档名不同 ⇒ `--render-doc` 报 doc_has_no_home，两条 bootstrap 自证
+    # 结构性必红（实测：工作仓 14 PASS / 2 FAIL，干净 clone 16 PASS / 0 FAIL，
+    # 唯一差别就是本地载体那份文件）。全新仓必须**只从 `--init` 生成的那份载体起步**。
+    _copy_hooks_roster(src_z, d)
     ruff_conf = os.path.join(gate.tool_repo(), "ruff.toml")
     if os.path.isfile(ruff_conf):
         shutil.copy(ruff_conf, d)
+
+
+def _copy_hooks_roster(src_z, d):
+    """拷钩子平台文件；**宿主的本地旋钮载体（`Einfacht.env`）永不拷**。"""
+    import shutil  # noqa: PLC0415
+    hooks_src = os.path.join(os.path.dirname(src_z), "reflect-hooks")
+    if not os.path.isdir(hooks_src):
+        return
+    os.makedirs(os.path.join(d, "reflect-hooks"))
+    for name in sorted(os.listdir(hooks_src)):
+        src = os.path.join(hooks_src, name)
+        if (os.path.isfile(src) and not name.startswith(".")
+                and name != "Einfacht.env"
+                and not name.endswith((".pyc", ".mypy_cache"))):
+            shutil.copy(src, os.path.join(d, "reflect-hooks", name))
 
 
 def _corrupt_ledger_rc():
