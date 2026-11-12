@@ -78,70 +78,37 @@ test('不发布的文件不许以 <a href> 形式出现在产物里', () => {
   assert.deepEqual(uniq, [], `这些不发布的文件被写成了链接：\n${uniq.slice(0, 12).join('\n')}`);
 });
 
-// machine/Birthright.json 是给「只有 webfetch」的来访模型拼网址用的：树 + extraPages
-// 合起来必须等于全站页面（SITE_PAGE_PATHS）。一条拼不出来的路径 = 模型照着拿
-// 就 404，而它没有任何别的途径发现这件事。判据直接对着 dist 产物核。
-test('machine/Birthright.json：树形目录每条路径都能拼出真实存在的页面', () => {
-  const catFile = path.join(DIST, 'machine', 'Birthright.json');
-  assert.ok(existsSync(catFile), 'Birthright.json 不存在——先跑 node build.mjs');
-  const cat = JSON.parse(readFileSync(catFile, 'utf8'));
-  assert.equal(cat.title, 'Birthright', 'Birthright 的 title 必须自报家门');
-  assert.equal(typeof cat.base, 'string');
-  assert.ok(cat.base.startsWith('https://') && cat.base.endsWith('/'),
-    'base 必须是带尾斜杠的绝对网址');
-
-  // 形态照 site_index：树节点是 {name, depth, path?, children?}。
-  // 组节点**可以没有 path**——侧栏里「第1章-行列式」这类中间章没有自己的索引页，
-  // 它只是层级骨架；有 path 的组是目录索引页（`…/` 目录形态），同样是可点页面。
-  // 缺的 29 条正是这些目录索引页——只收叶子会漏掉它们（2026-11-12 实测）。
-  const paths = [];
-  const walk = (nodes) => {
-    for (const n of nodes) {
-      assert.ok(n.name && typeof n.depth === 'number', `树节点缺 name/depth：${JSON.stringify(n)}`);
-      if (n.path) paths.push(n.path);
-      if (n.children) walk(n.children);
-      else assert.ok(n.path, `叶子没有 path：${n.name}`);
-    }
-  };
-  assert.ok(Array.isArray(cat.tree) && cat.tree.length > 0, 'tree 不能为空');
-  walk(cat.tree);
-
-  // extraPages + 树内页面 = 全站（与 SITE_PAGE_PATHS 一一对应，不重不漏）。
-  const all = new Set([...paths, ...(cat.extraPages || [])]);
-  const sitePages = JSON.parse(
-    readFileSync(path.join(DIST, 'index.html'), 'utf8')
-      .match(/id="site-pages-json">(.*?)<\/script>/s)[1],
-  );
-  assert.equal(all.size, sitePages.length,
-    `覆盖数不符：Birthright ${all.size} vs site-pages ${sitePages.length}；`
-    + `缺：${sitePages.filter((p) => !all.has(p)).slice(0, 5)} 多：${[...all].filter((p) => !sitePages.includes(p)).slice(0, 5)}`);
-
-  // 举例必须自洽：example.path 来自树内叶子，example.url = base + path。
-  assert.ok(paths.includes(cat.example.path), 'example.path 不在树里');
-  assert.equal(cat.example.url, cat.base + cat.example.path, '示例网址拼法与 base 不一致');
-
-  // howToOpen 是给**不执行代码**的模型看的：拼法必须由例子里现成的完整网址展示，
-  // 不许退化成 "base + path" 这种要人自己算的公式（2026-11-12 站长裁定）。
-  assert.ok(cat.howToOpen && cat.howToOpen.includes('https://'),
-    'howToOpen 必须包含拼好的完整网址例子');
-
-  // 路径 → 磁盘产物：目录形态（末尾 /）落 index.html，其余直接是文件。
-  const missing = [];
-  for (const p of [...paths, ...(cat.extraPages || [])]) {
-    const rel = p === '' ? 'index.html' : (p.endsWith('/') ? p + 'index.html' : p);
-    if (!existsSync(path.join(DIST, rel))) missing.push(p);
-  }
-  assert.deepEqual(missing, [], `Birthright 里这些路径线上会 404：\n${missing.slice(0, 12).join('\n')}`);
-});
-
-// `.json` 在浏览器里只是纯文本，标签页显示文件名；`<title>` 要靠同目录的 HTML。
-// 这一条钉住两件事：页面存在且标题就是 Birthright；它给的 JSON 链接真能取到。
-test('machine/Birthright.html：有自己的网页标题，并能直达 JSON', () => {
+// machine/Birthright.html 是全站目录的**唯一载体**（2026-11-12 站长裁定：
+// 不要 JSON、不要花哨渲染，越小越好）。每个条目都是拼好的完整绝对网址——
+// 人点了就走，webfetch 模型抓这一页就能走到全站任何一页。
+// 一条 404 链接 = 照着走的模型撞墙且无从发现，所以判据直接对着 dist 产物核。
+test('machine/Birthright.html：每条链接都指向真实存在的页面，且覆盖全站', () => {
   const htmlFile = path.join(DIST, 'machine', 'Birthright.html');
   assert.ok(existsSync(htmlFile), 'Birthright.html 不存在——先跑 node build.mjs');
   const html = readFileSync(htmlFile, 'utf8');
   assert.ok(/<title>Birthright<\/title>/.test(html),
-    '<title> 必须是 Birthright（否则浏览器标签页显示的是文件名）');
-  assert.ok(/href="Birthright\.json"/.test(html), '页面必须给出 Birthright.json 的直达链接');
-  assert.ok(existsSync(path.join(DIST, 'machine', 'Birthright.json')), '同目录的 JSON 必须存在');
+    '<title> 必须是 Birthright（浏览器标签页显示的就是它）');
+
+  // 页面里所有站内 href（都在 base 之后），逐条解析回相对路径。
+  const links = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1])
+    .filter((u) => u.startsWith('https://isui.ren/repo/S26-1_202609/'));
+  assert.ok(links.length > 100, `目录链接太少（${links.length}），构建可能坏了`);
+  const rels = links.map((u) => decodeURIComponent(
+    u.slice('https://isui.ren/repo/S26-1_202609/'.length)));
+
+  // 每条链接都落到真实产物：目录形态（末尾 /）落 index.html。
+  const missing = rels.filter((p) => {
+    const rel = p === '' ? 'index.html' : (p.endsWith('/') ? p + 'index.html' : p);
+    return !existsSync(path.join(DIST, rel));
+  });
+  assert.deepEqual(missing, [], `Birthright 里这些链接线上会 404：\n${missing.slice(0, 12).join('\n')}`);
+
+  // 覆盖数 = 全站页面清单（site-pages-json），不重不漏。
+  const sitePages = JSON.parse(
+    readFileSync(path.join(DIST, 'index.html'), 'utf8')
+      .match(/id="site-pages-json">(.*?)<\/script>/s)[1],
+  );
+  assert.equal(new Set(rels).size, sitePages.length,
+    `覆盖数不符：Birthright ${new Set(rels).size} vs site-pages ${sitePages.length}；`
+    + `缺：${sitePages.filter((p) => !new Set(rels).has(p)).slice(0, 5)} 多：${[...new Set(rels)].filter((p) => !sitePages.includes(p)).slice(0, 5)}`);
 });
