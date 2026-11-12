@@ -3106,29 +3106,99 @@ if (symbolUncovered.length > 0) {
     + `${stats.grams} grams / ${stats.positions} positions, ${(bytes / 1024 / 1024).toFixed(2)} MB raw`);
 }
 
-// 机器可读的全站目录（2026-11-12）：给只有 webfetch 的模型用。
-// base 写死正式站根：CANONICAL_ROOT 是构建参数，本地不传时是 '/'，拿它拼会
-// 产出错误网址。这个文件的唯一消费者是**线上**的来访模型，不是本地预览。
-// 目的不是「列文件」，是**用一个例子教会它拼网址**：base + pages[i] 就是完整 URL。
-// 纯 JSON、零注释、无嵌套层级——层级已经在路径里（课程/分类/页名），
-// 再造一棵树只会让模型多读一层而没多得到任何东西。
-// 路径直接取 SITE_PAGE_PATHS（TARGET_FILES 派生的真实产物路径），不另抄一份清单。
+// Birthright（2026-11-12）：全站目录，**括号树压缩**格式（2026-11-12 老师给的范例）。
+// 一页文字装下 180 个页面，重复前缀只写一次——比平铺 JSON 小一个数量级。
+//
+// 格式（首行就是自解释规则，机器读完即可拼）：
+//   A(B,C)  ⇒  A/ 与 A/B 与 A/C   （A 自己也是页面）
+//   A[B,C]  ⇒  只展开 A/B 与 A/C  （A 只是路径前缀，没有自己的页面）
+//   非 / 结尾的叶子补 .html
+// 生成后**立即反向解析自证**：还原出的 URL 集合必须与 SITE_PAGE_PATHS 完全相等，
+// 不等就抛错（这个文件是给陌生模型的唯一索引，错一条就是 404 且无从发现）。
+// 路径直接取 SITE_PAGE_PATHS（TARGET_FILES 派生），不另抄一份清单。
 {
   const base = 'https://isui.ren/repo/S26-1_202609/';
-  const sample = SITE_PAGE_PATHS.find((p) => p.endsWith('Walkthrough.html'))
-    || SITE_PAGE_PATHS[3] || '';
-  const catalogue = {
-    base,
-    // 一行例子代替说明文字：path 取自 pages，url 是拼好的结果，照抄即可。
-    example: { path: sample, url: base + sample },
-    pages: SITE_PAGE_PATHS.slice(),
+  const pages = SITE_PAGE_PATHS.slice();
+
+  // ── 建树：目录（末尾 /）与页面分开记 ──────────────────────────────
+  const root = { isPage: false, isDir: true, children: new Map() };
+  for (const p of pages) {
+    if (p === '') { root.isPage = true; continue; }
+    const isDir = p.endsWith('/');
+    const parts = p.replace(/\/$/, '').split('/');
+    let cur = root;
+    parts.forEach((raw, i) => {
+      const last = i === parts.length - 1;
+      // 剥离统一的 .html 后缀（规则首行已写明「非 / 结尾补 .html」）
+      const name = (last && !isDir && raw.endsWith('.html')) ? raw.slice(0, -5) : raw;
+      if (!cur.children.has(name)) {
+        cur.children.set(name, { isPage: false, isDir: false, children: new Map() });
+      }
+      cur = cur.children.get(name);
+      if (last) { cur.isPage = true; cur.isDir = isDir; }
+    });
+  }
+
+  // ── 序列化：单子节点且自身非页面 ⇒ 直接 A/B 缩短；否则用括号分组 ──────
+  const serialize = (node, name = '') => {
+    const keys = [...node.children.keys()].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN', { numeric: true }));
+    if (keys.length === 0) return name + (node.isDir ? '/' : '');
+    const kids = keys.map((k) => serialize(node.children.get(k), k));
+    if (keys.length === 1 && !node.isPage) return `${name}/${kids[0]}`;
+    return node.isPage
+      ? `${name}(${kids.join(',')})`
+      : `${name}[${kids.join(',')}]`;
   };
-  const machineDir = path.join(DIST_DIR, 'machine');
-  fs.mkdirSync(machineDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(machineDir, 'Birthright.json'),
-    JSON.stringify(catalogue, null, 1) + '\n',
-    'utf-8',
-  );
-  console.log(`[Birthright] ${catalogue.pages.length} 个页面 → dist/machine/Birthright.json（base=${base}）`);
+
+  const RULE = 'A(B,C)展开为A/及A/B,A/C;A[B,C]仅展开为A/B,A/C;非/结尾补.html';
+  const tree = serialize(root, base.replace(/\/$/, ''));
+  const birthright = `${RULE}\n${tree}\n`;
+
+  // ── 反向解析：还原 URL 集合，与源清单逐条比对（不一致就构建失败）────────
+  const expand = (expr) => {
+    const out = [];
+    const walk = (s) => {
+      // 顶层按逗号切分（括号内的逗号不算）
+      const items = []; let depth = 0, start = 0;
+      for (let i = 0; i < s.length; i += 1) {
+        const ch = s[i];
+        if (ch === '(' || ch === '[') depth += 1;
+        else if (ch === ')' || ch === ']') depth -= 1;
+        else if (ch === ',' && depth === 0) { items.push(s.slice(start, i)); start = i + 1; }
+      }
+      items.push(s.slice(start));
+      for (const item of items) {
+        const i1 = item.indexOf('('); const i2 = item.indexOf('[');
+        const idx = i1 === -1 ? i2 : (i2 === -1 ? i1 : Math.min(i1, i2));
+        if (idx === -1) { out.push(item); continue; }
+        const prefix = item.slice(0, idx);
+        const open = item[idx];
+        const inner = item.slice(idx + 1, -1);
+        if (open === '(') out.push(`${prefix}/`);   // A(...) 自身也是页面
+        const sub = [];
+        const before = out.length;
+        walk(inner);
+        for (let i = before; i < out.length; i += 1) sub.push(out[i]);
+        out.length = before;
+        for (const c of sub) out.push(`${prefix}/${c}`);
+      }
+    };
+    walk(expr);
+    return out.map((u) => (u.endsWith('/') ? u : `${u}.html`));
+  };
+  const restored = expand(tree).map((u) => (u.startsWith(base) ? u.slice(base.length) : u));
+  // 首页（""）在树里是 root 自身，还原时得到 base → 剥成 "" 后与源清单对得上。
+  const wantSet = new Set(pages);
+  const gotSet = new Set(restored);
+  const missing = [...wantSet].filter((p) => !gotSet.has(p));
+  const extra = restored.filter((p) => !wantSet.has(p));
+  if (missing.length || extra.length || gotSet.size !== wantSet.size) {
+    throw new Error(`[Birthright] 压缩树无损校验失败：缺 ${missing.slice(0, 5).join(' ')} / `
+      + `多 ${extra.slice(0, 5).join(' ')} / 还原 ${gotSet.size} vs 源 ${wantSet.size}`);
+  }
+
+  fs.mkdirSync(path.join(DIST_DIR, 'machine'), { recursive: true });
+  fs.writeFileSync(path.join(DIST_DIR, 'machine', 'Birthright.txt'), birthright, 'utf-8');
+  console.log(`[Birthright] ${pages.length} 个页面 → dist/machine/Birthright.txt`
+    + `（${Buffer.byteLength(birthright)} bytes，无损校验通过）`);
 }

@@ -78,27 +78,56 @@ test('不发布的文件不许以 <a href> 形式出现在产物里', () => {
   assert.deepEqual(uniq, [], `这些不发布的文件被写成了链接：\n${uniq.slice(0, 12).join('\n')}`);
 });
 
-// machine/Birthright.json 是给「只有 webfetch」的来访模型拼网址用的：它列了全站页面。
-// 一条拼不出来的路径 = 模型照着拿就 404，而它没有任何别的途径发现这件事。
-// 所以判据直接对着 dist 产物核：每条 path 都能落到一个真实文件。
-test('machine/Birthright.json：每条路径都能拼出真实存在的页面', () => {
-  const catFile = path.join(DIST, 'machine', 'Birthright.json');
-  assert.ok(existsSync(catFile), 'Birthright.json 不存在——先跑 node build.mjs');
-  const cat = JSON.parse(readFileSync(catFile, 'utf8'));
-  assert.equal(typeof cat.base, 'string');
-  assert.ok(cat.base.startsWith('https://') && cat.base.endsWith('/'),
-    'base 必须是带尾斜杠的绝对网址');
-  assert.ok(Array.isArray(cat.pages) && cat.pages.length > 0, 'pages 不能为空');
+// machine/Birthright.txt 是全站目录（括号树压缩格式，2026-11-12）：
+//   A(B,C) ⇒ A/ 与 A/B 与 A/C ；A[B,C] ⇒ 只 A/B 与 A/C ；非 / 结尾补 .html
+// 它是给「只有 webfetch」的模型用的唯一索引：一条还原不出来 = 照着走就 404，
+// 而它无从发现。所以判据是**独立反向解析**：还原的 URL 集合必须与全站页面清单
+// 完全相等，且每条都落到 dist 里的真实文件。
+test('machine/Birthright.txt：括号树能无损还原全站且每条都真实存在', () => {
+  const file = path.join(DIST, 'machine', 'Birthright.txt');
+  assert.ok(existsSync(file), 'Birthright.txt 不存在——先跑 node build.mjs');
+  const lines = readFileSync(file, 'utf8').trimEnd().split('\n');
+  assert.equal(lines.length, 2, '格式必须是「规则行 + 树行」两行');
+  const [, tree] = lines;
 
-  // 举例必须自洽：example.path 取自 pages，example.url 就是 base + path。
-  assert.ok(cat.pages.includes(cat.example.path), 'example.path 不在 pages 里');
-  assert.equal(cat.example.url, cat.base + cat.example.path, '示例网址拼法与 base 不一致');
+  // 解析器刻意不复用构建里的实现——用一份独立写法，才验得出「树本身对不对」。
+  // 树行以完整 base 开头（根节点自身就是首页）；剥掉它再按相对路径判。
+  const base = 'https://isui.ren/repo/S26-1_202609/';
+  const out = [];
+  const parse = (s, prefix) => {
+    const items = []; let depth = 0; let start = 0;
+    for (let i = 0; i < s.length; i += 1) {
+      const c = s[i];
+      if (c === '(' || c === '[') depth += 1;
+      else if (c === ')' || c === ']') depth -= 1;
+      else if (c === ',' && depth === 0) { items.push(s.slice(start, i)); start = i + 1; }
+    }
+    items.push(s.slice(start));
+    for (const item of items) {
+      const i1 = item.indexOf('('); const i2 = item.indexOf('[');
+      const idx = i1 === -1 ? i2 : (i2 === -1 ? i1 : Math.min(i1, i2));
+      const path = prefix + (idx === -1 ? item : item.slice(0, idx));
+      if (idx === -1) { out.push(path.endsWith('/') ? path : `${path}.html`); continue; }
+      if (item[idx] === '(') out.push(`${path}/`);   // A(...) 自身也是页面
+      parse(item.slice(idx + 1, -1), `${path}/`);
+    }
+  };
+  parse(tree, '');
 
-  // 路径 → 磁盘产物：目录形态（末尾 /）落 index.html，其余直接是文件。
-  const missing = [];
-  for (const p of cat.pages) {
+  const restored = new Set(out.map((u) => (u.startsWith(base) ? u.slice(base.length) : u)));
+  const sitePages = JSON.parse(
+    readFileSync(path.join(DIST, 'index.html'), 'utf8')
+      .match(/id="site-pages-json">(.*?)<\/script>/s)[1],
+  );
+  assert.equal(restored.size, sitePages.length,
+    `还原数不符：${restored.size} vs 全站 ${sitePages.length}；`
+    + `缺：${sitePages.filter((p) => !restored.has(p)).slice(0, 5)} `
+    + `多：${[...restored].filter((p) => !sitePages.includes(p)).slice(0, 5)}`);
+
+  // 每条还原出的路径都落到真实产物：目录形态（末尾 /）落 index.html。
+  const missing = [...restored].filter((p) => {
     const rel = p === '' ? 'index.html' : (p.endsWith('/') ? p + 'index.html' : p);
-    if (!existsSync(path.join(DIST, rel))) missing.push(p);
-  }
+    return !existsSync(path.join(DIST, rel));
+  });
   assert.deepEqual(missing, [], `Birthright 里这些路径线上会 404：\n${missing.slice(0, 12).join('\n')}`);
 });
