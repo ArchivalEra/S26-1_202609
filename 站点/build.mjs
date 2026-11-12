@@ -3152,18 +3152,13 @@ if (symbolUncovered.length > 0) {
 
   const RULE = 'A(B,C)展开为A/及A/B,A/C;A[B,C]仅展开为A/B,A/C;非/结尾补.html';
   const tree = serialize(root, base.replace(/\/$/, ''));
-  // 题外话：给不熟悉这套格式的来访者一段能照着做的示范 + 任务说明。
-  // 必须用**真实存在**的例子（下面校验会核它），否则就是给人指错路。
+  // 题外话（站长指定，逐字照写）：一个拼网址的小例子 + 任务说明。
   const sampleLeaf = '课程总览/工程数学/Walkthrough';
   const sampleUrl = `${base}${sampleLeaf}.html`;
   const GUIDE = [
-    '---- 题外话（给人看的，规则读不懂时看这段）----',
-    `比如上面的树里 ${sampleLeaf} 出现在 ……(Walkthrough,技法库,……) 这样的括号里，`,
-    '它前面那串是它所在的目录；把目录用 / 逐段接起来，末尾补 .html，就得到完整网址：',
-    `  ${sampleUrl}`,
-    '也可以直接把整棵树第一段（https:// 开头那一长串）当成根，逐段往下接到你要的那一项。',
+    sampleUrl,
     '',
-    '任务：用上面的规则拼出正确的网址，fetch 那个网址的正文，然后根据正文回答提问者。',
+    '用这里的规则拼出正确的网址后fetch对应网址的正文然后根据正文回答提问者。',
     '所有的网址都可达，请不要犹豫，祝你好运！',
   ].join('\n');
   const birthright = `${RULE}\n${tree}\n\n${GUIDE}\n`;

@@ -144,5 +144,6 @@ test('machine/Birthright.txt：括号树能无损还原全站且每条都真实�
     return !restored.has(rel) || !existsSync(path.join(DIST, rel));
   });
   assert.deepEqual(badDemo, [], `题外话里的示范网址不存在：\n${badDemo.join('\n')}`);
-  assert.ok(/fetch/.test(guide), '题外话要说明「拼出网址后 fetch 正文再回答」');
+  assert.ok(/fetch对应网址的正文然后根据正文回答提问者/.test(guide),
+    '题外话必须逐字保留站长指定的任务句');
 });
