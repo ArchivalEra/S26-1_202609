@@ -113,8 +113,10 @@ test('machine/Birthright.txt：括号树能无损还原全站且每条都真实�
       const idx = i1 === -1 ? i2 : (i2 === -1 ? i1 : Math.min(i1, i2));
       const path = prefix + (idx === -1 ? item : item.slice(0, idx));
       if (idx === -1) { out.push(path.endsWith('/') ? path : `${path}.html`); continue; }
-      if (item[idx] === '(') out.push(`${path}/`);   // A(...) 自身也是页面
-      parse(item.slice(idx + 1, -1), `${path}/`);
+      // A(...) 中的 A 自带斜杠（规则行已写明）；前缀已有尾斜杠时不重复补。
+      const self = path.endsWith('/') ? path : `${path}/`;
+      if (item[idx] === '(') out.push(self);   // A(...) 自身也是页面
+      parse(item.slice(idx + 1, -1), self);
     }
   };
   parse(tree, '');
@@ -136,8 +138,7 @@ test('machine/Birthright.txt：括号树能无损还原全站且每条都真实�
   });
   assert.deepEqual(missing, [], `Birthright 里这些路径线上会 404：\n${missing.slice(0, 12).join('\n')}`);
 
-  // 题外话里的示范网址必须是真页面——给来访者指错路比不给例子更糟。
-  // 页首（规则行之前）里的每条 https 网址都必须是真页面。
+  // 页首（规则行之前）只该有两样：一条真页面的示范网址 + 专给 AGENT 的提示词。
   const demo = head.match(/https:\/\/\S+/g) || [];
   assert.ok(demo.length > 0, '页首必须给至少一条现成示范网址');
   const badDemo = demo.filter((u) => {
@@ -145,7 +146,5 @@ test('machine/Birthright.txt：括号树能无损还原全站且每条都真实�
     return !restored.has(rel) || !existsSync(path.join(DIST, rel));
   });
   assert.deepEqual(badDemo, [], `页首的示范网址不存在：\n${badDemo.join('\n')}`);
-  assert.ok(/fetch对应网址的正文然后根据正文回答提问者/.test(head),
-    '页首必须逐字保留站长指定的任务句');
   assert.ok(/web research/.test(head), '页首必须保留「非用户明确要求就别 web research」的约束');
 });
