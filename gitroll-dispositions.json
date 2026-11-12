@@ -399,5 +399,20 @@
     "report": "https://gitroll.io/result/repo/IzW82bt4ryLvgSToyq5K",
     "detail_archive": "ArchivalEra/trash-can@gitroll/2026-11-07/S26-1_202609.md（3382 行；本地克隆 /tmp/trash-can/）",
     "_comment": "第二轮扫描（issue #23 新评论 2026-11-07）。判据仍是**明细清单清零**不是评级升档。vendor 明细（katex.mjs 1540 var、vendor.mjs 38 var、mathlive-browser.min、dist/**）归 C 档。"
+  },
+  "_scan_round3": {
+    "tool": "GitRoll",
+    "date": "2026-11-12",
+    "total": 3079,
+    "delta_vs_round2": -44,
+    "by_type": {
+      "BUG": 146,
+      "VULNERABILITY": 0,
+      "CODE_SMELL": 2933
+    },
+    "quality_gate": "fail",
+    "report": "ArchivalEra/S26-1_202609#38",
+    "detail_archive": "trash-can@gitroll/2026-11-12/S26-1_202609.md",
+    "_comment": "第三轮扫描（2026-11-12 通报）。本轮**只对账不整改**：分档不变（C 档 wontfix / B 档 deferred / zreflect 归上游已清零），判据不变（明细清零，不是评级升档）。bugs 146（+4）与 smells 2933（−48）的具体增量未逐条定位——增量未超分档口径覆盖的范围，不值得为此再起一轮处置。"
   }
 }
