@@ -87,12 +87,13 @@ test('machine/Birthright.txt：括号树能无损还原全站且每条都真实�
   const file = path.join(DIST, 'machine', 'Birthright.txt');
   assert.ok(existsSync(file), 'Birthright.txt 不存在——先跑 node build.mjs');
   const lines = readFileSync(file, 'utf8').trimEnd().split('\n');
-  // 结构：规则行 + 树行 + 空行 + 题外话（给读不懂规则的来访者）。
-  assert.ok(lines.length >= 3, '至少要有「规则行 + 树行 + 题外话」');
-  assert.ok(/A\(B,C\)/.test(lines[0]) && /A\[B,C\]/.test(lines[0]),
-    '首行必须是自解释的压缩规则');
-  const tree = lines[1];
-  assert.ok(tree.startsWith('https://'), '第二行是整棵树，必须以 base 开头');
+  // 结构（2026-11-12 站长定）：页首是例子 + 行为约束 + 祝福，之后才是规则行与树。
+  const ruleIdx = lines.findIndex((l) => /A\(B,C\)/.test(l) && /A\[B,C\]/.test(l));
+  assert.ok(ruleIdx > 0, '必须有自解释的压缩规则行，且不在文件开头（页首留给 AGENT 指引）');
+  const tree = lines[ruleIdx + 1];
+  assert.ok(tree && tree.startsWith('https://'), '规则行下一行是整棵树，必须以 base 开头');
+  const head = lines.slice(0, ruleIdx).join('\n');
+  assert.ok(head.includes('AGENT听好了'), '页首必须有给 AGENT 的行为约束');
 
   // 解析器刻意不复用构建里的实现——用一份独立写法，才验得出「树本身对不对」。
   // 树行以完整 base 开头（根节点自身就是首页）；剥掉它再按相对路径判。
@@ -136,14 +137,15 @@ test('machine/Birthright.txt：括号树能无损还原全站且每条都真实�
   assert.deepEqual(missing, [], `Birthright 里这些路径线上会 404：\n${missing.slice(0, 12).join('\n')}`);
 
   // 题外话里的示范网址必须是真页面——给来访者指错路比不给例子更糟。
-  const guide = lines.slice(2).join('\n');
-  const demo = guide.match(/https:\/\/\S+/g) || [];
-  assert.ok(demo.length > 0, '题外话必须给至少一条现成示范网址');
+  // 页首（规则行之前）里的每条 https 网址都必须是真页面。
+  const demo = head.match(/https:\/\/\S+/g) || [];
+  assert.ok(demo.length > 0, '页首必须给至少一条现成示范网址');
   const badDemo = demo.filter((u) => {
     const rel = u.replace(base, '');
     return !restored.has(rel) || !existsSync(path.join(DIST, rel));
   });
-  assert.deepEqual(badDemo, [], `题外话里的示范网址不存在：\n${badDemo.join('\n')}`);
-  assert.ok(/fetch对应网址的正文然后根据正文回答提问者/.test(guide),
-    '题外话必须逐字保留站长指定的任务句');
+  assert.deepEqual(badDemo, [], `页首的示范网址不存在：\n${badDemo.join('\n')}`);
+  assert.ok(/fetch对应网址的正文然后根据正文回答提问者/.test(head),
+    '页首必须逐字保留站长指定的任务句');
+  assert.ok(/web research/.test(head), '页首必须保留「非用户明确要求就别 web research」的约束');
 });
