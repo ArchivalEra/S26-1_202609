@@ -78,13 +78,14 @@ test('不发布的文件不许以 <a href> 形式出现在产物里', () => {
   assert.deepEqual(uniq, [], `这些不发布的文件被写成了链接：\n${uniq.slice(0, 12).join('\n')}`);
 });
 
-// catalogue.json 是给「只有 webfetch」的来访模型拼网址用的：树 + extraPages
+// machine/Birthright.json 是给「只有 webfetch」的来访模型拼网址用的：树 + extraPages
 // 合起来必须等于全站页面（SITE_PAGE_PATHS）。一条拼不出来的路径 = 模型照着拿
 // 就 404，而它没有任何别的途径发现这件事。判据直接对着 dist 产物核。
-test('machine/catalogue.json：树形目录每条路径都能拼出真实存在的页面', () => {
-  const catFile = path.join(DIST, 'machine', 'catalogue.json');
-  assert.ok(existsSync(catFile), 'catalogue.json 不存在——先跑 node build.mjs');
+test('machine/Birthright.json：树形目录每条路径都能拼出真实存在的页面', () => {
+  const catFile = path.join(DIST, 'machine', 'Birthright.json');
+  assert.ok(existsSync(catFile), 'Birthright.json 不存在——先跑 node build.mjs');
   const cat = JSON.parse(readFileSync(catFile, 'utf8'));
+  assert.equal(cat.title, 'Birthright', 'Birthright 的 title 必须自报家门');
   assert.equal(typeof cat.base, 'string');
   assert.ok(cat.base.startsWith('https://') && cat.base.endsWith('/'),
     'base 必须是带尾斜杠的绝对网址');
@@ -112,7 +113,7 @@ test('machine/catalogue.json：树形目录每条路径都能拼出真实存在�
       .match(/id="site-pages-json">(.*?)<\/script>/s)[1],
   );
   assert.equal(all.size, sitePages.length,
-    `覆盖数不符：catalogue ${all.size} vs site-pages ${sitePages.length}；`
+    `覆盖数不符：Birthright ${all.size} vs site-pages ${sitePages.length}；`
     + `缺：${sitePages.filter((p) => !all.has(p)).slice(0, 5)} 多：${[...all].filter((p) => !sitePages.includes(p)).slice(0, 5)}`);
 
   // 举例必须自洽：example.path 来自树内叶子，example.url = base + path。
@@ -130,5 +131,5 @@ test('machine/catalogue.json：树形目录每条路径都能拼出真实存在�
     const rel = p === '' ? 'index.html' : (p.endsWith('/') ? p + 'index.html' : p);
     if (!existsSync(path.join(DIST, rel))) missing.push(p);
   }
-  assert.deepEqual(missing, [], `catalogue 里这些路径线上会 404：\n${missing.slice(0, 12).join('\n')}`);
+  assert.deepEqual(missing, [], `Birthright 里这些路径线上会 404：\n${missing.slice(0, 12).join('\n')}`);
 });

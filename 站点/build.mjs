@@ -3106,15 +3106,17 @@ if (symbolUncovered.length > 0) {
     + `${stats.grams} grams / ${stats.positions} positions, ${(bytes / 1024 / 1024).toFixed(2)} MB raw`);
 }
 
-// 机器可读的全站目录（2026-11-12）：给只有 webfetch 的模型用。
+// Birthright（2026-11-12）：机器可读的全站目录，给只有 webfetch 的模型用。
+// 文件名就是它的身份——`machine/Birthright.json`，不再叫 catalogue（那个名字
+// 与 Static-Contract 的 release 目录重名，容易混淆；两者 schema 无关）。
 // base 写死正式站根：CANONICAL_ROOT 是构建参数，本地不传时是 '/'，拿它拼会
 // 产出错误网址。这个文件的唯一消费者是**线上**的来访模型，不是本地预览。
 // 形态照抄 site_index 的输出树（name/path/children/depth，组节点带 indexHref、
 // 叶子带 href）——来访模型若以前见过 site_index 就零学习成本，没见过也能从
-// root + example 一眼学会拼法。树从 NAV_STRUCTURE 直接构建（根相对路径），
-// 与侧栏/site_index 同源，不会各说各话。
-// ⚠️ 树里**只含侧栏可见的页面**；首页与符号包页没有侧栏入口，catalogue 必须自己
-// 补——用 pages 字段（SITE_PAGE_PATHS 全量）兜底，缺页比缺拼法更糟（拼出来 404）。
+// howToOpen 的两条现成网址一眼学会拼法（它不执行代码，所以不许写 base+path 公式）。
+// 树从 NAV_STRUCTURE 直接构建（根相对路径），与侧栏/site_index 同源。
+// ⚠️ 树里**只含侧栏可见的页面**；首页与符号包页没有侧栏入口，Birthright 必须自己
+// 补——用 extraPages（SITE_PAGE_PATHS 全量兜底），缺页比缺拼法更糟（拼出来 404）。
 {
   const base = 'https://isui.ren/repo/S26-1_202609/';
   const navModel = buildNavModel(NAV_STRUCTURE, '');
@@ -3144,6 +3146,8 @@ if (symbolUncovered.length > 0) {
   const inTree = (p, nodes) => nodes.some((n) => n.path === p
     || (n.children && inTree(p, n.children)));
   const catalogue = {
+    // 标题：这个文件是机器入口，不是给人看的页面，但要有自己的身份。
+    title: 'Birthright',
     base,
     // 消费者不执行代码——拼法必须由**例子本身**展示，不许出现 "base + path"
     // 这类要人自己算的公式。两条例子里 url 都是已经拼好的完整网址。
@@ -3157,10 +3161,10 @@ if (symbolUncovered.length > 0) {
   const machineDir = path.join(DIST_DIR, 'machine');
   fs.mkdirSync(machineDir, { recursive: true });
   fs.writeFileSync(
-    path.join(machineDir, 'catalogue.json'),
+    path.join(machineDir, 'Birthright.json'),
     JSON.stringify(catalogue, null, 1) + '\n',
     'utf-8',
   );
   const countTree = (nodes) => nodes.reduce((s, n) => s + (n.children ? countTree(n.children) : 1), 0);
-  console.log(`[catalogue] 树 ${countTree(tree)} 节点 + extra ${catalogue.extraPages.length} 页 → dist/machine/catalogue.json（base=${base}）`);
+  console.log(`[Birthright] 树 ${countTree(tree)} 节点 + extra ${catalogue.extraPages.length} 页 → dist/machine/Birthright.json（base=${base}）`);
 }
