@@ -686,8 +686,8 @@
 !/reflect-hooks/Einfacht.env
 !/reflect-hooks/Einfacht.env.example
 !/reflect-hooks/einfacht-env.sh
+!/reflect-hooks/gate.py
 !/reflect-hooks/install.py
-!/reflect-hooks/install.sh
 !/reflect-hooks/pre-commit
 !/reflect-hooks/pre-push
 !/retractions.json
