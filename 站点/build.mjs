@@ -3106,48 +3106,29 @@ if (symbolUncovered.length > 0) {
     + `${stats.grams} grams / ${stats.positions} positions, ${(bytes / 1024 / 1024).toFixed(2)} MB raw`);
 }
 
-// Birthright（2026-11-12）：全站目录，就一个 HTML 页面——`machine/Birthright.html`。
-// 站长裁定：不要 JSON、不要花哨渲染，越小越好。树里每个条目都是**拼好的完整
-// 绝对网址**：给人是可点的目录，给只有 webfetch 的模型是「抓一页就能走到全站
-// 任何一页」的索引——不需要先取数据再自己拼。
-// 树从 NAV_STRUCTURE 直接构建（根相对路径），与侧栏/site_index 同源。
+// Birthright（2026-11-12，站长裁定回退）：全站目录回到**最后一版 JSON 数据形态**
+// （base + example + pages 平铺数组，12.9 KB），但落在 `machine/Birthright.html`
+// ——同一路径、`.html` 后缀让浏览器把 `<title>Birthright</title>` 识别为网页标题
+// （`.json` 后缀只会显示原文、标签页是文件名）。内容仍是纯 JSON 文本：
+// 消费者是只拿 webfetch 的模型，example 的 url 是拼好的完整网址，照抄即可。
 // base 写死正式站根：CANONICAL_ROOT 是构建参数，本地不传时是 '/'，拿它拼会
-// 产出错误网址。
-// ⚠️ 树里**只含侧栏可见的页面**；首页与符号包页没有侧栏入口， Birthright 必须自己补。
+// 产出错误网址。pages 直接取 SITE_PAGE_PATHS（TARGET_FILES 派生），不另抄清单。
 {
   const base = 'https://isui.ren/repo/S26-1_202609/';
-  const navModel = buildNavModel(NAV_STRUCTURE, '');
-  const toNode = (n) => {
-    const isGroup = !!n.children?.length;
-    const node = { name: n.label, depth: n.depth };
-    if (isGroup) {
-      if (n.indexHref) node.path = n.indexHref;
-      node.children = n.children.map(toNode);
-    } else if (n.href) {
-      node.path = n.href;
-    }
-    return node;
+  const sample = SITE_PAGE_PATHS.find((p) => p.endsWith('Walkthrough.html'))
+    || SITE_PAGE_PATHS[3] || '';
+  const catalogue = {
+    title: 'Birthright',
+    base,
+    // 一行例子代替说明文字：path 取自 pages，url 是拼好的结果，照抄即可。
+    example: { path: sample, url: base + sample },
+    pages: SITE_PAGE_PATHS.slice(),
   };
-  const tree = navModel.json.nodes.map(toNode);
-  const escHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  const renderTree = (nodes) => nodes.map((n) => {
-    const hasKids = !!n.children?.length;
-    const head = n.path
-      ? `<a href="${escHtml(base + n.path)}">${escHtml(n.name)}</a>`
-      : escHtml(n.name);
-    const kids = hasKids ? `<ul>${renderTree(n.children)}</ul>` : '';
-    return `<li data-depth="${n.depth}">${head}${kids}</li>`;
-  }).join('');
-  // 首页（""）与符号包页没有侧栏入口，单独补在最后。
-  const inTree = (p, nodes) => nodes.some((n) => n.path === p
-    || (n.children && inTree(p, n.children)));
-  const extraList = SITE_PAGE_PATHS.filter((p) => !inTree(p, tree))
-    .map((p) => `<li><a href="${escHtml(base + p)}">${escHtml(p === '' ? '首页' : p)}</a></li>`)
-    .join('');
-  const birthrightHtml = `<!DOCTYPE html><html lang=zh-CN><meta charset=utf-8><title>Birthright</title><style>body{margin:0;padding:1.5rem;background:#14110f;color:#e8e2da;font:15px/1.6 system-ui,sans-serif}a{color:#8fb8ff}ul{list-style:none;padding-left:1.3em;margin:.2em 0}li{margin:.12em 0}li[data-depth="0"]{margin-top:.8em;font-weight:600}li[data-depth="0"]>a{color:#d9c9a3}li[data-depth="1"]>a{color:#b9d4b0}</style><h1>Birthright</h1><p>S26-1 课程知识库 · 全站目录</p><ul>${renderTree(tree)}${extraList}</ul>`;
+  const birthrightHtml = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">'
+    + '<title>Birthright</title></head><body><pre>'
+    + JSON.stringify(catalogue).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    + '</pre></body></html>';
   fs.mkdirSync(path.join(DIST_DIR, 'machine'), { recursive: true });
   fs.writeFileSync(path.join(DIST_DIR, 'machine', 'Birthright.html'), birthrightHtml, 'utf-8');
-  const countTree = (nodes) => nodes.reduce((s, n) => s + (n.children ? countTree(n.children) : 1), 0);
-  console.log(`[Birthright] ${countTree(tree)} 节点 → dist/machine/Birthright.html（${Buffer.byteLength(birthrightHtml)} bytes）`);
+  console.log(`[Birthright] ${catalogue.pages.length} 个页面 → dist/machine/Birthright.html（${Buffer.byteLength(birthrightHtml)} bytes）`);
 }
