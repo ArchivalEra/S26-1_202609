@@ -78,25 +78,50 @@ test('不发布的文件不许以 <a href> 形式出现在产物里', () => {
   assert.deepEqual(uniq, [], `这些不发布的文件被写成了链接：\n${uniq.slice(0, 12).join('\n')}`);
 });
 
-// catalogue.json 是给「只有 webfetch」的来访模型拼网址用的：它列了全站页面。
-// 一条拼不出来的路径 = 模型照着拿就 404，而它没有任何别的途径发现这件事。
-// 所以判据直接对着 dist 产物核：每条 path 都能落到一个真实文件。
-test('machine/catalogue.json：每条路径都能拼出真实存在的页面', () => {
+// catalogue.json 是给「只有 webfetch」的来访模型拼网址用的：树 + extraPages
+// 合起来必须等于全站页面（SITE_PAGE_PATHS）。一条拼不出来的路径 = 模型照着拿
+// 就 404，而它没有任何别的途径发现这件事。判据直接对着 dist 产物核。
+test('machine/catalogue.json：树形目录每条路径都能拼出真实存在的页面', () => {
   const catFile = path.join(DIST, 'machine', 'catalogue.json');
   assert.ok(existsSync(catFile), 'catalogue.json 不存在——先跑 node build.mjs');
   const cat = JSON.parse(readFileSync(catFile, 'utf8'));
   assert.equal(typeof cat.base, 'string');
   assert.ok(cat.base.startsWith('https://') && cat.base.endsWith('/'),
     'base 必须是带尾斜杠的绝对网址');
-  assert.ok(Array.isArray(cat.pages) && cat.pages.length > 0, 'pages 不能为空');
 
-  // 举例必须自洽：example.path 取自 pages，example.url 就是 base + path。
-  assert.ok(cat.pages.includes(cat.example.path), 'example.path 不在 pages 里');
+  // 形态照 site_index：树节点是 {name, depth, path?, children?}。
+  // 组节点**可以没有 path**——侧栏里「第1章-行列式」这类中间章没有自己的索引页，
+  // 它只是层级骨架；有 path 的组是目录索引页（`…/` 目录形态），同样是可点页面。
+  // 缺的 29 条正是这些目录索引页——只收叶子会漏掉它们（2026-11-12 实测）。
+  const paths = [];
+  const walk = (nodes) => {
+    for (const n of nodes) {
+      assert.ok(n.name && typeof n.depth === 'number', `树节点缺 name/depth：${JSON.stringify(n)}`);
+      if (n.path) paths.push(n.path);
+      if (n.children) walk(n.children);
+      else assert.ok(n.path, `叶子没有 path：${n.name}`);
+    }
+  };
+  assert.ok(Array.isArray(cat.tree) && cat.tree.length > 0, 'tree 不能为空');
+  walk(cat.tree);
+
+  // extraPages + 树内页面 = 全站（与 SITE_PAGE_PATHS 一一对应，不重不漏）。
+  const all = new Set([...paths, ...(cat.extraPages || [])]);
+  const sitePages = JSON.parse(
+    readFileSync(path.join(DIST, 'index.html'), 'utf8')
+      .match(/id="site-pages-json">(.*?)<\/script>/s)[1],
+  );
+  assert.equal(all.size, sitePages.length,
+    `覆盖数不符：catalogue ${all.size} vs site-pages ${sitePages.length}；`
+    + `缺：${sitePages.filter((p) => !all.has(p)).slice(0, 5)} 多：${[...all].filter((p) => !sitePages.includes(p)).slice(0, 5)}`);
+
+  // 举例必须自洽：example.path 来自树内叶子，example.url = base + path。
+  assert.ok(paths.includes(cat.example.path), 'example.path 不在树里');
   assert.equal(cat.example.url, cat.base + cat.example.path, '示例网址拼法与 base 不一致');
 
   // 路径 → 磁盘产物：目录形态（末尾 /）落 index.html，其余直接是文件。
   const missing = [];
-  for (const p of cat.pages) {
+  for (const p of [...paths, ...(cat.extraPages || [])]) {
     const rel = p === '' ? 'index.html' : (p.endsWith('/') ? p + 'index.html' : p);
     if (!existsSync(path.join(DIST, rel))) missing.push(p);
   }

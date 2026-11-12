@@ -3109,19 +3109,46 @@ if (symbolUncovered.length > 0) {
 // 机器可读的全站目录（2026-11-12）：给只有 webfetch 的模型用。
 // base 写死正式站根：CANONICAL_ROOT 是构建参数，本地不传时是 '/'，拿它拼会
 // 产出错误网址。这个文件的唯一消费者是**线上**的来访模型，不是本地预览。
-// 目的不是「列文件」，是**用一个例子教会它拼网址**：base + pages[i] 就是完整 URL。
-// 纯 JSON、零注释、无嵌套层级——层级已经在路径里（课程/分类/页名），
-// 再造一棵树只会让模型多读一层而没多得到任何东西。
-// 路径直接取 SITE_PAGE_PATHS（TARGET_FILES 派生的真实产物路径），不另抄一份清单。
+// 形态照抄 site_index 的输出树（name/path/children/depth，组节点带 indexHref、
+// 叶子带 href）——来访模型若以前见过 site_index 就零学习成本，没见过也能从
+// root + example 一眼学会拼法。树从 NAV_STRUCTURE 直接构建（根相对路径），
+// 与侧栏/site_index 同源，不会各说各话。
+// ⚠️ 树里**只含侧栏可见的页面**；首页与符号包页没有侧栏入口，catalogue 必须自己
+// 补——用 pages 字段（SITE_PAGE_PATHS 全量）兜底，缺页比缺拼法更糟（拼出来 404）。
 {
   const base = 'https://isui.ren/repo/S26-1_202609/';
-  const sample = SITE_PAGE_PATHS.find((p) => p.endsWith('Walkthrough.html'))
-    || SITE_PAGE_PATHS[3] || '';
+  const navModel = buildNavModel(NAV_STRUCTURE, '');
+  const toNode = (n) => {
+    const isGroup = !!n.children?.length;
+    const node = { name: n.label, depth: n.depth };
+    if (isGroup) {
+      if (n.indexHref) node.path = n.indexHref;
+      node.children = n.children.map(toNode);
+    } else if (n.href) {
+      node.path = n.href;
+    }
+    return node;
+  };
+  const tree = navModel.json.nodes.map(toNode);
+  // 例子的取法：找一个**叶子**（带 href 的）而不是组节点——组节点 path 是目录形态，
+  // 叶子 path 是 .html 形态，例子要展示的是最常见的「进一篇文章」。
+  const firstLeaf = (nodes) => {
+    for (const n of nodes) {
+      if (n.children) { const f = firstLeaf(n.children); if (f) return f; }
+      else if (n.path) return n;
+    }
+    return null;
+  };
+  const leaf = firstLeaf(tree) || { path: SITE_PAGE_PATHS[3] || '' };
+  // 侧栏没有入口的页面（首页 "" 与符号包）：树里没有它们，单独列出。
+  const inTree = (p, nodes) => nodes.some((n) => n.path === p
+    || (n.children && inTree(p, n.children)));
   const catalogue = {
     base,
-    // 一行例子代替说明文字：path 取自 pages，url 是拼好的结果，照抄即可。
-    example: { path: sample, url: base + sample },
-    pages: SITE_PAGE_PATHS.slice(),
+    root: 'url = base + path（逐段拼接；目录 path 以 / 结尾 = 该目录索引页）',
+    example: { path: leaf.path, url: base + leaf.path },
+    tree,
+    extraPages: SITE_PAGE_PATHS.filter((p) => !inTree(p, tree)),
   };
   const machineDir = path.join(DIST_DIR, 'machine');
   fs.mkdirSync(machineDir, { recursive: true });
@@ -3130,5 +3157,6 @@ if (symbolUncovered.length > 0) {
     JSON.stringify(catalogue, null, 1) + '\n',
     'utf-8',
   );
-  console.log(`[catalogue] ${catalogue.pages.length} 个页面 → dist/machine/catalogue.json（base=${base}）`);
+  const countTree = (nodes) => nodes.reduce((s, n) => s + (n.children ? countTree(n.children) : 1), 0);
+  console.log(`[catalogue] 树 ${countTree(tree)} 节点 + extra ${catalogue.extraPages.length} 页 → dist/machine/catalogue.json（base=${base}）`);
 }
