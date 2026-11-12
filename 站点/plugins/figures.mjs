@@ -878,8 +878,7 @@ function gateShape(kind, w, h) {
     return `<rect x="0" y="${-half}" width="${w}" height="${h}" rx="3" ` +
            `stroke-dasharray="4 3"/>`;
   }
-  return `<rect x="0" y="${-half}" width="${w}" height="${h}" rx="3"/>` +
-         (g.outBubble ? '' : '');
+  return `<rect x="0" y="${-half}" width="${w}" height="${h}" rx="3"/>`;
 }
 
 /**

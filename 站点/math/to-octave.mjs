@@ -498,7 +498,8 @@ function emit(n, loopVars) {
       const g = n.glyph || n.accent || '';
       const body = emit(n.base || n.body);
       if (!body.ok) return body;
-      if (/^[‾_¯̄]$/.test(g) || n.tex === '\\overline') {
+      if (g === '‾' || g === '_' || g === '¯' || g === '̄' || g === '¯̄' ||
+          g === 'overline' || g === 'bar' || n.tex === '\\overline') {
         return { ok: true, code: `(~(${body.code}))` };
       }
       return fail(`不认识的修饰符「${g}」`);
@@ -517,8 +518,7 @@ function emit(n, loopVars) {
 
     case 'fence': {
       // 括号本身透明：`(a+b)` 的分组语义已由 group 承担
-      const body = emit(n.body, loopVars);
-      return body.ok ? body : body;
+      return emit(n.body, loopVars);
     }
 
     case 'label':

@@ -43,6 +43,11 @@ const COMPUTES = [
   ['\\begin{vmatrix}1&2\\\\3&4\\end{vmatrix}', 'det([1 2; 3 4])'],
   ['\\begin{Vmatrix}1&2\\\\3&4\\end{Vmatrix}', 'det([1 2; 3 4])'],
   ['\\sin\\frac{\\pi}{2}', 'sin((pi)/(2))'],
+  // 上划线在 Octave 里是逻辑取反（~）。2026-11-12 实测：parser 给 accent 节点的
+  // 是语义名 `accent:'overline'`，旧判据只认上划线**字形**，于是 \overline 全被
+  // 判成「不认识的修饰符」——运行按钮对这类公式直接失效。
+  ['\\overline{0}', '(~(0))'],
+  ['\\bar{1}', '(~(1))'],
 ];
 
 for (const [tex, want] of COMPUTES) {
@@ -64,6 +69,10 @@ const REFUSES = [
   ['\\begin{cases} 1 & x>0 \\\\ 0 & x\\le 0 \\end{cases}', /分段|cases|不认识/],
   ['\\cdots', /省略号|不认识/],
   ['x \\to 0', /没有数值|箭头/],
+  // 放宽 \overline/\bar 时不能顺手把其他 accent 也放进来：hat/vec 在 Octave
+  // 里没有对应物，必须继续明说「不认识的修饰符」。
+  ['\\hat{1}', /不认识的修饰符/],
+  ['\\vec{1}', /不认识的修饰符/],
 ];
 
 /** 2026-11-07 新增：bigop 展开（站长要求求和/连乘可算）。 */

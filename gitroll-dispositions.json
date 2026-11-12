@@ -414,5 +414,51 @@
     "report": "ArchivalEra/S26-1_202609#38",
     "detail_archive": "trash-can@gitroll/2026-11-12/S26-1_202609.md",
     "_comment": "第三轮扫描（2026-11-12 通报）。本轮**只对账不整改**：分档不变（C 档 wontfix / B 档 deferred / zreflect 归上游已清零），判据不变（明细清零，不是评级升档）。bugs 146（+4）与 smells 2933（−48）的具体增量未逐条定位——增量未超分档口径覆盖的范围，不值得为此再起一轮处置。"
+  },
+  "_bug_audit_2026_11_12": {
+    "why": "站长问『自家 100 多个 bug 为什么不修』，逐条核了 BUG 型全部 146 条（不是只看汇总）。结论：vendored 133 条按 C 档 wontfix，自有代码只有 13 条；13 条里 4 条真修、9 条误报/夹具/已显式化。**『146』这个数字的大头不是本仓代码**。",
+    "vendored": {
+      "count": 133,
+      "files": ["站点/vendor.mjs（130）", "站点/assets/katex/katex.mjs（3）"],
+      "decision": "wontfix",
+      "why": "bundled marked+yaml 与 vendored KaTeX 源码拷贝。改了下次上游同步/构建即被覆盖，制造本地私版。"
+    },
+    "own_total": 13,
+    "fixed": [
+      {
+        "file": "站点/math/to-octave.mjs:501",
+        "finding": "字符类里的组合字符 \\u0175\\u0772 应移出",
+        "verdict": "真 bug，且扫描器报的是表面症状。根因：parser 给 accent 节点的是语义名 accent:'overline'，旧判据只认上划线**字形**，于是 \\overline{0} / \\bar{1} 全被判『不认识的修饰符』——运行按钮对这类公式直接失效。",
+        "fix": "改成按语义名与字形逐个比对（overline/bar + ‾_¯̄ 与组合序列），并补 4 条 to-octave 测试（2 可算 2 拒绝）。实测 \\overline{0} → (~(0))、\\hat{1} 仍拒绝。"
+      },
+      {
+        "file": "站点/math/to-octave.mjs:521",
+        "finding": "两分支同值",
+        "verdict": "真冗余。case 'fence' 的 return body.ok ? body : body 恒等于 return body。",
+        "fix": "直接 return emit(n.body, loopVars)。"
+      },
+      {
+        "file": "站点/plugins/figures.mjs:882",
+        "finding": "两分支同值",
+        "verdict": "真死代码。字符串拼接 (g.outBubble ? '' : '') 恒为空串。",
+        "fix": "删掉该拼接。"
+      },
+      {
+        "file": "站点/plugins/webmcp-tools.mjs:1232",
+        "finding": "条件被上一行覆盖（'This condition is covered by…'）",
+        "verdict": "真死代码，且比扫描器说的更坏：if (w.scrollTo) … else if (w.scrollTo) … 两条件相同，else 永不执行；而缺 scrollTo 时仍返回 ok:true —— 静默假成功。",
+        "fix": "改成 if (!w.scrollTo) return {ok:false, reason:'scroll_unavailable'}，再走滚动。"
+      }
+    ],
+    "false_positive": [
+      "zreflect/registry.py:822-824（3 条 identical sub-expression）：never_falsifiable 自证夹具里故意写的恒真/恒假样本，是闸门的牙齿，不是逻辑错误。",
+      "zreflect/runner.py:259（float 相等）：default_timeout()==10.0 是「配置解析出确切值」的语义判据，非数值计算比较。",
+      "zreflect/check_envfile.py:64（regex 优先级）：^(?:[\"'])|(?:[\"'])$ 分组已显式，注释里写明与无括号版逐字等价。",
+      "站点/build.mjs:1194（regex 优先级）：/^-+|-+$/g 交替本身优先级最低，语义正确。",
+      "站点/build.mjs:1326（2 条控制字符）：\\u0000M(\\d+)\\u0000 是数学公式占位符的** deliberate 分隔符**，不是误入的控制字符。",
+      "站点/build.mjs:1326（2 条控制字符）：\\u0000M(\\d+)\\u0000 是数学公式占位符的**刻意分隔符**，不是误入的控制字符。",
+      "站点/plugins/webmcp-tools.mjs:1957（BLOCKER 'format' 未修改）：format 是 while 的只读条件，循环里改的是 q（JPEG 逐档降质量）。这是该规则要保护的写法本身。"
+    ],
+    "false_positive_note": "上列 6 个条目覆盖 9 条扫描明细（registry.py 的 3 条同族、build.mjs:1326 的 2 条同族各合并成一条）。13 = 4 真修 + 9 误报/夹具/已显式化。"
   }
 }

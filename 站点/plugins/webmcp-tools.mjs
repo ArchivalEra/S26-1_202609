@@ -1228,8 +1228,8 @@ export function createPageView(doc, loc, winOverride) {
     if (to === 'top' || to === 'bottom') {
       try {
         const y = to === 'top' ? 0 : (doc.documentElement?.scrollHeight || 0);
-        if (w.scrollTo) w.scrollTo({ top: y, behavior: 'smooth' });
-        else if (w.scrollTo) w.scrollTo(0, y);
+        if (!w.scrollTo) return { ok: false, reason: 'scroll_unavailable' };
+        w.scrollTo({ top: y, behavior: 'smooth' });
         return { ok: true, to, y };
       } catch { return { ok: false, reason: 'scroll_unavailable' }; }
     }
