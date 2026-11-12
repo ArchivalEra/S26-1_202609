@@ -3145,7 +3145,11 @@ if (symbolUncovered.length > 0) {
     || (n.children && inTree(p, n.children)));
   const catalogue = {
     base,
-    root: 'url = base + path（逐段拼接；目录 path 以 / 结尾 = 该目录索引页）',
+    // 消费者不执行代码——拼法必须由**例子本身**展示，不许出现 "base + path"
+    // 这类要人自己算的公式。两条例子里 url 都是已经拼好的完整网址。
+    howToOpen: '每个节点的 path 接在本文件 base 后面就是该页网址。'
+      + `例：${leaf.path} 打开 ${base + leaf.path}；`
+      + `例：课程总览/工程数学/ 打开 ${base}课程总览/工程数学/`,
     example: { path: leaf.path, url: base + leaf.path },
     tree,
     extraPages: SITE_PAGE_PATHS.filter((p) => !inTree(p, tree)),

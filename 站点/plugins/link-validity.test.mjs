@@ -119,6 +119,11 @@ test('machine/catalogue.json：树形目录每条路径都能拼出真实存在�
   assert.ok(paths.includes(cat.example.path), 'example.path 不在树里');
   assert.equal(cat.example.url, cat.base + cat.example.path, '示例网址拼法与 base 不一致');
 
+  // howToOpen 是给**不执行代码**的模型看的：拼法必须由例子里现成的完整网址展示，
+  // 不许退化成 "base + path" 这种要人自己算的公式（2026-11-12 站长裁定）。
+  assert.ok(cat.howToOpen && cat.howToOpen.includes('https://'),
+    'howToOpen 必须包含拼好的完整网址例子');
+
   // 路径 → 磁盘产物：目录形态（末尾 /）落 index.html，其余直接是文件。
   const missing = [];
   for (const p of [...paths, ...(cat.extraPages || [])]) {
