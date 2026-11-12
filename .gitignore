@@ -549,6 +549,7 @@
 !/站点/plugins/formula-cells.test.mjs
 !/站点/plugins/formula-editable.test.mjs
 !/站点/plugins/glossary-bubble.test.mjs
+!/站点/plugins/link-validity.test.mjs
 !/站点/plugins/mathlive-css.test.mjs
 !/站点/plugins/module-mime.test.mjs
 !/站点/plugins/nav-structure.mjs
