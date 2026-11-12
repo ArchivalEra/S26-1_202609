@@ -3,8 +3,7 @@
 2026 年秋季学期 · 九门课的学习记录。**[在线阅读站 →](https://isui.ren/repo/S26-1_202609/)**
 
 > 🤖 **机器 / bot / agent 看这里**：`https://isui.ren/repo/S26-1_202609/machine/Birthright.json`
-> —— 全站目录树（纯 JSON，只抓这一个文件就能遍历整个站点；文件里 `howToOpen` 给了两条现成网址作例子）。
-> 同名 [Birthright.html](https://isui.ren/repo/S26-1_202609/machine/Birthright.html) 是它的门面页（给人看的说明 + JSON 直达链接）。
+> —— 全站目录（纯 JSON：`base` + `example` 拼好的完整网址 + 180 条 `pages`；只抓这一个文件就能遍历整个站点）。
 
 站内速览：左侧导航树（可拖宽）· `/` 或 `Ctrl+K` 全站搜索 · 右侧目录跳转 · 调色盘与昼夜主题 · **能力包**（右上角 package 图标：可下载公式编辑器与计算内核，下载后公式能点击编辑、能当场用 Octave 求值；不下载就保持只读）。作业页的提示分层展开——先自己按提示做，卡住了再往下点。
 
@@ -44,7 +43,7 @@
 | 通用电气 | 0 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E9%80%9A%E7%94%A8%E7%94%B5%E6%B0%94/index.md) |
 
 共 **9** 门课程、**309** 份资料。
-<!-- 仓库内容摘要（不含 README）：5f521c9d93def5881183663879282f0d3d0f3b9b2fc6051561d5c438c052fce5 -->
+<!-- 仓库内容摘要（不含 README）：4fa8072b925214e2e828de5dfb9704da1757ece29cf78c97021244761e56c982 -->
 
 <!-- AUTO-CATALOG:END -->
 

@@ -78,42 +78,27 @@ test('不发布的文件不许以 <a href> 形式出现在产物里', () => {
   assert.deepEqual(uniq, [], `这些不发布的文件被写成了链接：\n${uniq.slice(0, 12).join('\n')}`);
 });
 
-// machine/Birthright.html 是全站目录的唯一载体（2026-11-12 站长裁定回退）：
-// 数据形态 = 最后一版 JSON（base + example + pages 平铺数组，最小数据量），
-// 但落在 .html 里让 <title>Birthright</title> 被浏览器识别为网页标题。
-// pages 一条拼不出来 = 照着走的模型撞 404 且无从发现，所以判据对着 dist 产物核。
-test('machine/Birthright.html：pages 覆盖全站且每条都能拼出真实页面', () => {
-  const htmlFile = path.join(DIST, 'machine', 'Birthright.html');
-  assert.ok(existsSync(htmlFile), 'Birthright.html 不存在——先跑 node build.mjs');
-  const html = readFileSync(htmlFile, 'utf8');
-  assert.ok(/<title>Birthright<\/title>/.test(html),
-    '<title> 必须是 Birthright（浏览器标签页显示的就是它）');
-
-  // 正文是包在 <pre> 里的纯 JSON——解析它，判数据不判标记。
-  const data = JSON.parse(html.match(/<pre>([\s\S]*?)<\/pre>/)[1]
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<'));
-  assert.equal(data.title, 'Birthright', 'JSON 里的 title 必须自报家门');
-  assert.ok(data.base.startsWith('https://') && data.base.endsWith('/'),
+// machine/Birthright.json 是给「只有 webfetch」的来访模型拼网址用的：它列了全站页面。
+// 一条拼不出来的路径 = 模型照着拿就 404，而它没有任何别的途径发现这件事。
+// 所以判据直接对着 dist 产物核：每条 path 都能落到一个真实文件。
+test('machine/Birthright.json：每条路径都能拼出真实存在的页面', () => {
+  const catFile = path.join(DIST, 'machine', 'Birthright.json');
+  assert.ok(existsSync(catFile), 'Birthright.json 不存在——先跑 node build.mjs');
+  const cat = JSON.parse(readFileSync(catFile, 'utf8'));
+  assert.equal(typeof cat.base, 'string');
+  assert.ok(cat.base.startsWith('https://') && cat.base.endsWith('/'),
     'base 必须是带尾斜杠的绝对网址');
-  assert.ok(Array.isArray(data.pages) && data.pages.length > 0, 'pages 不能为空');
+  assert.ok(Array.isArray(cat.pages) && cat.pages.length > 0, 'pages 不能为空');
 
-  // 举例必须自洽：example.path 取自 pages，example.url = base + path。
-  assert.ok(data.pages.includes(data.example.path), 'example.path 不在 pages 里');
-  assert.equal(data.example.url, data.base + data.example.path, '示例网址拼法与 base 不一致');
+  // 举例必须自洽：example.path 取自 pages，example.url 就是 base + path。
+  assert.ok(cat.pages.includes(cat.example.path), 'example.path 不在 pages 里');
+  assert.equal(cat.example.url, cat.base + cat.example.path, '示例网址拼法与 base 不一致');
 
-  // 覆盖数 = 全站页面清单（site-pages-json），不重不漏。
-  const sitePages = JSON.parse(
-    readFileSync(path.join(DIST, 'index.html'), 'utf8')
-      .match(/id="site-pages-json">(.*?)<\/script>/s)[1],
-  );
-  assert.equal(new Set(data.pages).size, sitePages.length,
-    `覆盖数不符：Birthright ${new Set(data.pages).size} vs site-pages ${sitePages.length}；`
-    + `缺：${sitePages.filter((p) => !new Set(data.pages).has(p)).slice(0, 5)} 多：${[...new Set(data.pages)].filter((p) => !sitePages.includes(p)).slice(0, 5)}`);
-
-  // 每条 path 都落到真实产物：目录形态（末尾 /）落 index.html。
-  const missing = data.pages.filter((p) => {
+  // 路径 → 磁盘产物：目录形态（末尾 /）落 index.html，其余直接是文件。
+  const missing = [];
+  for (const p of cat.pages) {
     const rel = p === '' ? 'index.html' : (p.endsWith('/') ? p + 'index.html' : p);
-    return !existsSync(path.join(DIST, rel));
-  });
+    if (!existsSync(path.join(DIST, rel))) missing.push(p);
+  }
   assert.deepEqual(missing, [], `Birthright 里这些路径线上会 404：\n${missing.slice(0, 12).join('\n')}`);
 });

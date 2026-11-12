@@ -3106,29 +3106,29 @@ if (symbolUncovered.length > 0) {
     + `${stats.grams} grams / ${stats.positions} positions, ${(bytes / 1024 / 1024).toFixed(2)} MB raw`);
 }
 
-// Birthright（2026-11-12，站长裁定回退）：全站目录回到**最后一版 JSON 数据形态**
-// （base + example + pages 平铺数组，12.9 KB），但落在 `machine/Birthright.html`
-// ——同一路径、`.html` 后缀让浏览器把 `<title>Birthright</title>` 识别为网页标题
-// （`.json` 后缀只会显示原文、标签页是文件名）。内容仍是纯 JSON 文本：
-// 消费者是只拿 webfetch 的模型，example 的 url 是拼好的完整网址，照抄即可。
+// 机器可读的全站目录（2026-11-12）：给只有 webfetch 的模型用。
 // base 写死正式站根：CANONICAL_ROOT 是构建参数，本地不传时是 '/'，拿它拼会
-// 产出错误网址。pages 直接取 SITE_PAGE_PATHS（TARGET_FILES 派生），不另抄清单。
+// 产出错误网址。这个文件的唯一消费者是**线上**的来访模型，不是本地预览。
+// 目的不是「列文件」，是**用一个例子教会它拼网址**：base + pages[i] 就是完整 URL。
+// 纯 JSON、零注释、无嵌套层级——层级已经在路径里（课程/分类/页名），
+// 再造一棵树只会让模型多读一层而没多得到任何东西。
+// 路径直接取 SITE_PAGE_PATHS（TARGET_FILES 派生的真实产物路径），不另抄一份清单。
 {
   const base = 'https://isui.ren/repo/S26-1_202609/';
   const sample = SITE_PAGE_PATHS.find((p) => p.endsWith('Walkthrough.html'))
     || SITE_PAGE_PATHS[3] || '';
   const catalogue = {
-    title: 'Birthright',
     base,
     // 一行例子代替说明文字：path 取自 pages，url 是拼好的结果，照抄即可。
     example: { path: sample, url: base + sample },
     pages: SITE_PAGE_PATHS.slice(),
   };
-  const birthrightHtml = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">'
-    + '<title>Birthright</title></head><body><pre>'
-    + JSON.stringify(catalogue).replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    + '</pre></body></html>';
-  fs.mkdirSync(path.join(DIST_DIR, 'machine'), { recursive: true });
-  fs.writeFileSync(path.join(DIST_DIR, 'machine', 'Birthright.html'), birthrightHtml, 'utf-8');
-  console.log(`[Birthright] ${catalogue.pages.length} 个页面 → dist/machine/Birthright.html（${Buffer.byteLength(birthrightHtml)} bytes）`);
+  const machineDir = path.join(DIST_DIR, 'machine');
+  fs.mkdirSync(machineDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(machineDir, 'Birthright.json'),
+    JSON.stringify(catalogue, null, 1) + '\n',
+    'utf-8',
+  );
+  console.log(`[Birthright] ${catalogue.pages.length} 个页面 → dist/machine/Birthright.json（base=${base}）`);
 }
