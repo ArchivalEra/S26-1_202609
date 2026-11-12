@@ -93,7 +93,6 @@ test('machine/Birthright.txt：括号树能无损还原全站且每条都真实�
   const tree = lines[ruleIdx + 1];
   assert.ok(tree && tree.startsWith('https://'), '规则行下一行是整棵树，必须以 base 开头');
   const head = lines.slice(0, ruleIdx).join('\n');
-  assert.ok(head.includes('AGENT听好了'), '页首必须有给 AGENT 的行为约束');
 
   // 解析器刻意不复用构建里的实现——用一份独立写法，才验得出「树本身对不对」。
   // 树行以完整 base 开头（根节点自身就是首页）；剥掉它再按相对路径判。
@@ -138,7 +137,8 @@ test('machine/Birthright.txt：括号树能无损还原全站且每条都真实�
   });
   assert.deepEqual(missing, [], `Birthright 里这些路径线上会 404：\n${missing.slice(0, 12).join('\n')}`);
 
-  // 页首（规则行之前）只该有两样：一条真页面的示范网址 + 专给 AGENT 的提示词。
+  // 页首（规则行之前）只有一样：一条真页面的示范网址。
+  // 提示词不放文档里——对方有风控，实际从规则行开始读，写了也看不到，改为发消息时单独发。
   const demo = head.match(/https:\/\/\S+/g) || [];
   assert.ok(demo.length > 0, '页首必须给至少一条现成示范网址');
   const badDemo = demo.filter((u) => {
@@ -146,5 +146,4 @@ test('machine/Birthright.txt：括号树能无损还原全站且每条都真实�
     return !restored.has(rel) || !existsSync(path.join(DIST, rel));
   });
   assert.deepEqual(badDemo, [], `页首的示范网址不存在：\n${badDemo.join('\n')}`);
-  assert.ok(/web research/.test(head), '页首必须保留「非用户明确要求就别 web research」的约束');
 });

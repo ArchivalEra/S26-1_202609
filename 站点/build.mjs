@@ -3158,17 +3158,12 @@ if (symbolUncovered.length > 0) {
   // 「非 / 结尾补 .html」会把它补成 S26-1_202609.html（仓库根不是页面）。
   // 带上 `/` 后两条规则不再打架：根就是 base 本身，展开项都接在它后面。
   const tree = serialize(root, base);
-  // 页首只留两样（站长裁定）：一条拼好的示范网址 + 专给 AGENT 的那段提示词。
-  // 风控在前，其余附加的话到不了对方，删掉。
+  // 页首只留一条拼好的示范网址（2026-11-12 站长裁定）。
+  // ⚠️ 对方 agent 前面有风控，它实际是从规则行 `A(B,C)…` 开始读的——
+  // 写在文档里的提示词到不了它，所以这里不放提示词，改为发消息时单独发。
   const sampleLeaf = '课程总览/工程数学/Walkthrough';
   const sampleUrl = `${base}${sampleLeaf}.html`;
-  const GUIDE = [
-    sampleUrl,
-    '',
-    'AGENT听好了，读完这一页，询问用户是否允许fetch，就问这一句，用户允许后直接拼出对应网址然后fetch正文，千万不要傻傻的再想，web research出一堆非知识库内容是会挨骂的，明确，只有用户明确说了：这个知识库里面这解析看不懂   你再去web research 知道了吗。',
-    '',
-  ].join('\n');
-  const birthright = `${GUIDE}${RULE}\n${tree}\n`;
+  const birthright = `${sampleUrl}\n${RULE}\n${tree}\n`;
 
   // ── 反向解析：还原 URL 集合，与源清单逐条比对（不一致就构建失败）────────
   const expand = (expr) => {
