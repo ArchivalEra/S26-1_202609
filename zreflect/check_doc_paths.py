@@ -37,6 +37,7 @@
 """
 import os
 import re
+import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -77,14 +78,68 @@ def extract_paths(text):
     return out
 
 
-def check(docs):
-    """docs = {相对路径: 正文}。返回 [(文档, 行号, 路径)]。纯函数。"""
+def check(docs, ignored=None, repo=None):
+    """docs = {相对路径: 正文}。返回 [(文档, 行号, 路径)]（**硬失败**）。纯函数。
+
+    分三类，判据是**这条路径在版本库里吗**（不是「目录在不在」）：
+
+      · 本工作树存在 ⇒ 查，通过；
+      · 不存在、但**被 git 排除**（按规则不入库）⇒ 本环境不适用，由 `skipped`
+        报出来（干净克隆 / CI 里这一类必然落到这里）；
+      · 不存在、且没被排除 ⇒ **硬失败**（写错名字，或删了没提交）。
+
+    2026-11-12 干净克隆实测逼出这个三分：第一版按「`.kimi-code/` 根目录在不在」
+    判，而该目录里有两个入库的 hook 文件，于是目录一直在、判据永远走不到豁免分支。
+    「按规则不入库」的真相在 `.gitignore` 里，只有问 git 才准确。
+    """
+    ignore = _ignored_fn(ignored, repo)
     problems = []
     for rel, text in docs.items():
         for lineno, tok in extract_paths(text):
-            if not os.path.exists(os.path.join(REPO, tok)):
-                problems.append((rel, lineno, tok))
+            if os.path.exists(os.path.join(repo or REPO, tok)):
+                continue
+            if ignore(tok):
+                continue
+            problems.append((rel, lineno, tok))
     return problems
+
+
+def _ignored_fn(ignored, repo):
+    """返回 `ignored(tok) -> bool`。默认问 git；注入时用注入的实现（自证）。"""
+    if ignored is not None:
+        return ignored
+    base = repo or REPO
+
+    def ask(tok):
+        rc, _out = _git(base, "check-ignore", "-q", "--", tok)
+        # rc 0 = 被排除；1 = 没被排除；128 = 不是 git 仓（导出包/压缩包）
+        # —— 那时无从判断，**按没排除处理**，宁可红也不静默豁免。
+        return rc == 0
+
+    return ask
+
+
+def _git(cwd, *args):
+    """跑一条 git（`cwd` 是仓库根）。返回 (rc, stdout)。失败不抛。"""
+    try:
+        p = subprocess.run(["git", "-C", cwd, *args], capture_output=True,
+                           text=True, encoding="utf-8", errors="replace",
+                           timeout=30, check=False)
+        return p.returncode, p.stdout
+    except (OSError, subprocess.SubprocessError):
+        return 128, ""
+
+
+def skipped(docs, ignored=None, repo=None):
+    """本环境不适用的路径（可见地报出来，不静默）。纯函数。"""
+    ignore = _ignored_fn(ignored, repo)
+    base = repo or REPO
+    out = []
+    for rel, text in docs.items():
+        for lineno, tok in extract_paths(text):
+            if not os.path.exists(os.path.join(base, tok)) and ignore(tok):
+                out.append((rel, lineno, tok))
+    return out
 
 
 def _read_docs():
@@ -104,12 +159,22 @@ def run(args):
         print("活文档路径闸门：零文档可扫 —— 这不是通过（零值守卫）")
         return 1
     problems = check(docs)
+    absent = skipped(docs)
     if problems:
         print(f"活文档路径闸门：{len(problems)} 个路径在仓库里不存在")
         for rel, lineno, tok in problems:
             print(f"  · {rel}:{lineno} → `{tok}`")
         print("  处置：改对路径，或把该断言移进 HISTORY.md（历史允许提已删路径）")
+        if absent:
+            print(f"  （另有 {len(absent)} 处属本地专属目录、本环境无该目录，未计入）")
         return 1
+    if absent:
+        # 不适用必须说出来：干净 clone / CI 里这几条没被查过，不是「查过且通过」。
+        print(f"活文档路径闸门：OK（{len(docs)} 份活文档）——"
+              f"但 {len(absent)} 处**本环境不适用**（被 .gitignore 排除、此处不存在）：")
+        for rel, lineno, tok in absent:
+            print(f"  · {rel}:{lineno} → `{tok}`（本地专属，未查）")
+        return 0
     print(f"活文档路径闸门：OK（{len(docs)} 份活文档，路径全部真实存在）")
     return 0
 
@@ -126,26 +191,51 @@ def _empty_docs_guard():
 
 
 def _cases():
-    """PINNED: 夹具一律用 ASCII 路径（`ROOTS` 里的中文目录名由模块级常量覆盖，夹具不复述）。"""
+    """PINNED: 夹具一律用 ASCII 路径（`ROOTS` 里的中文目录名由模块级常量覆盖，夹具不复述）。
+
+    每条都注入 `ignored=`（假实现），**不落到默认的 git 询问**——否则自证结果依赖
+    跑它的那台机器上 `.gitignore` 写了什么，同一份代码在两台机器上红绿不同。
+    """
     gone = "zreflect/definitely-not-here.py"
+    nothing_ignored = lambda _t: False  # noqa: E731 —— 夹具用的假实现，值恒定
     return [
         ("real_path_passes",
-         lambda: check({"doc.md": "see `AGENTS.md`"} ) == []),
+         lambda: check({"doc.md": "see `AGENTS.md`"}, ignored=nothing_ignored) == []),
         ("vanished_path_reported",
-         lambda: check({"doc.md": "seam `" + gone + "`"}) != []),
+         lambda: check({"doc.md": "seam `" + gone + "`"},
+                       ignored=nothing_ignored) != []),
         ("placeholder_ignored",
-         lambda: check({"doc.md": "see `src/<name>/x.md` placeholder"}) == []),
+         lambda: check({"doc.md": "see `src/<name>/x.md` placeholder"},
+                       ignored=nothing_ignored) == []),
         ("glob_ignored",
-         lambda: check({"doc.md": "scan `zreflect/**/*.md`"}) == []),
+         lambda: check({"doc.md": "scan `zreflect/**/*.md`"},
+                       ignored=nothing_ignored) == []),
         ("non_path_token_ignored",
-         lambda: check({"doc.md": "key `symbol_packs`"}) == []),
+         lambda: check({"doc.md": "key `symbol_packs`"},
+                       ignored=nothing_ignored) == []),
         ("bare_filename_not_rooted_ignored",
-         lambda: check({"doc.md": "see `build.mjs`"}) == []),
+         lambda: check({"doc.md": "see `build.mjs`"},
+                       ignored=nothing_ignored) == []),
         ("line_number_reported",
          lambda: (lambda ps: bool(ps) and ps[0][1] == 2)(
-             check({"doc.md": "first line\nseam `" + gone + "`"}))),
+             check({"doc.md": "first line\nseam `" + gone + "`"},
+                   ignored=nothing_ignored))),
         ("empty_docs_is_not_pass_guard",
          lambda: _empty_docs_guard()),
+        # 2026-11-12 干净克隆实测：`.kimi-code/` 里大部分文件按规则不入库，
+        # 所以 CI 上那几条路径必然不存在。判据改成问 git（「这条路径被排除吗」），
+        # 而不是猜目录在不在——第一版按目录判，栽在「目录里有两个入库的 hook」上。
+        ("ignored_path_is_not_a_failure",
+         lambda: check({"doc.md": "note `.kimi-code/handoff.md`"},
+                       ignored=lambda t: t.startswith(".kimi-code/")) == []),
+        ("unignored_missing_path_still_fails",
+         lambda: check({"doc.md": "seam `.kimi-code/no-such-file-xyz.md`"},
+                       ignored=nothing_ignored) != []),
+        ("skipped_is_visible_not_silent",
+         # 夹具必须用**本机不存在**的路径：`.kimi-code/handoff.md` 在开发机上是
+         # 真有的，用它做夹具会在本机 pass、在 CI 上 fail（第一版就这么错）。
+         lambda: skipped({"doc.md": "note `.kimi-code/no-such-file-xyz.md`"},
+                         ignored=lambda t: t.startswith(".kimi-code/")) != []),
     ]
 
 
