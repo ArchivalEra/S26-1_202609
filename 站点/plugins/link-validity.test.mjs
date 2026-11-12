@@ -133,3 +133,15 @@ test('machine/Birthright.json：树形目录每条路径都能拼出真实存在
   }
   assert.deepEqual(missing, [], `Birthright 里这些路径线上会 404：\n${missing.slice(0, 12).join('\n')}`);
 });
+
+// `.json` 在浏览器里只是纯文本，标签页显示文件名；`<title>` 要靠同目录的 HTML。
+// 这一条钉住两件事：页面存在且标题就是 Birthright；它给的 JSON 链接真能取到。
+test('machine/Birthright.html：有自己的网页标题，并能直达 JSON', () => {
+  const htmlFile = path.join(DIST, 'machine', 'Birthright.html');
+  assert.ok(existsSync(htmlFile), 'Birthright.html 不存在——先跑 node build.mjs');
+  const html = readFileSync(htmlFile, 'utf8');
+  assert.ok(/<title>Birthright<\/title>/.test(html),
+    '<title> 必须是 Birthright（否则浏览器标签页显示的是文件名）');
+  assert.ok(/href="Birthright\.json"/.test(html), '页面必须给出 Birthright.json 的直达链接');
+  assert.ok(existsSync(path.join(DIST, 'machine', 'Birthright.json')), '同目录的 JSON 必须存在');
+});

@@ -4,6 +4,7 @@
 
 > 🤖 **机器 / bot / agent 看这里**：`https://isui.ren/repo/S26-1_202609/machine/Birthright.json`
 > —— 全站目录树（纯 JSON，只抓这一个文件就能遍历整个站点；文件里 `howToOpen` 给了两条现成网址作例子）。
+> 同名 [Birthright.html](https://isui.ren/repo/S26-1_202609/machine/Birthright.html) 是它的门面页（给人看的说明 + JSON 直达链接）。
 
 站内速览：左侧导航树（可拖宽）· `/` 或 `Ctrl+K` 全站搜索 · 右侧目录跳转 · 调色盘与昼夜主题 · **能力包**（右上角 package 图标：可下载公式编辑器与计算内核，下载后公式能点击编辑、能当场用 Octave 求值；不下载就保持只读）。作业页的提示分层展开——先自己按提示做，卡住了再往下点。
 
@@ -43,7 +44,7 @@
 | 通用电气 | 0 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E9%80%9A%E7%94%A8%E7%94%B5%E6%B0%94/index.md) |
 
 共 **9** 门课程、**309** 份资料。
-<!-- 仓库内容摘要（不含 README）：8aedc8be5465539e8a5e945929846efd2b5122c9441f8c027be493ca043ba71b -->
+<!-- 仓库内容摘要（不含 README）：159b51b86a76ba6a9f33438bc16cf96b79f9a5946e5996cc2d114048f448952b -->
 
 <!-- AUTO-CATALOG:END -->
 

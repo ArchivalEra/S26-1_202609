@@ -3160,11 +3160,62 @@ if (symbolUncovered.length > 0) {
   };
   const machineDir = path.join(DIST_DIR, 'machine');
   fs.mkdirSync(machineDir, { recursive: true });
-  fs.writeFileSync(
-    path.join(machineDir, 'Birthright.json'),
-    JSON.stringify(catalogue, null, 1) + '\n',
-    'utf-8',
-  );
+  const jsonText = JSON.stringify(catalogue, null, 1) + '\n';
+  fs.writeFileSync(path.join(machineDir, 'Birthright.json'), jsonText, 'utf-8');
+  // 同名 .html：`.json` 浏览器只会把原文摊开当文本，`<title>` 才让标签页显示
+  // Birthright。页面本身不渲染目录树（那是给机器读的），只做三件事：
+  // 报出身份、给 JSON 的直达链接、给一条现成网址示例。
+  const escHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const birthrightHtml = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Birthright</title>
+<meta name="description" content="S26-1 课程知识库 · 机器可读的全站目录（JSON 树）">
+<style>
+  body{margin:0;padding:2.5rem 1.5rem;background:#14110f;color:#e8e2da;
+       font:15px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+  main{max-width:46rem;margin:0 auto}
+  h1{font-size:1.6rem;letter-spacing:.02em;margin:0 0 .35rem}
+  .sub{color:#9a9086;margin:0 0 2rem;font-size:.92rem}
+  a{color:#8fb8ff}
+  code{background:#221d19;padding:.15em .4em;border-radius:4px;font-size:.88em}
+  pre{background:#221d19;padding:1rem;border-radius:6px;overflow-x:auto;
+      font-size:.82rem;line-height:1.6;border:1px solid #302a24}
+  section{margin:1.8rem 0}
+  h2{font-size:1rem;color:#9a9086;font-weight:600;margin:0 0 .6rem;
+     text-transform:uppercase;letter-spacing:.08em}
+</style>
+</head>
+<body>
+<main>
+<h1>Birthright</h1>
+<p class="sub">S26-1 课程知识库 · 机器可读的全站目录</p>
+<section>
+<h2>给机器</h2>
+<p>直接取这份 JSON：<a href="Birthright.json">Birthright.json</a>
+（全站目录树，一个文件覆盖每个已发布页面）。</p>
+</section>
+<section>
+<h2>怎么打开某一页</h2>
+<p>每个节点的 <code>path</code> 接在 <code>base</code> 后面就是该页网址。两条现成例子：</p>
+<pre>${escHtml(leaf.path)}
+→ ${escHtml(base + leaf.path)}
+
+课程总览/工程数学/
+→ ${escHtml(base)}课程总览/工程数学/</pre>
+</section>
+<section>
+<h2>给人</h2>
+<p><a href="${escHtml(base)}">${escHtml(base)}</a> —— 在线阅读站（侧栏导航、搜索、主题切换）。</p>
+</section>
+</main>
+</body>
+</html>
+`;
+  fs.writeFileSync(path.join(machineDir, 'Birthright.html'), birthrightHtml, 'utf-8');
   const countTree = (nodes) => nodes.reduce((s, n) => s + (n.children ? countTree(n.children) : 1), 0);
-  console.log(`[Birthright] 树 ${countTree(tree)} 节点 + extra ${catalogue.extraPages.length} 页 → dist/machine/Birthright.json（base=${base}）`);
+  console.log(`[Birthright] 树 ${countTree(tree)} 节点 + extra ${catalogue.extraPages.length} 页 → dist/machine/{Birthright.json,Birthright.html}（base=${base}）`);
 }

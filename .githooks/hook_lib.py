@@ -1076,8 +1076,10 @@ def sync(worktree=False):
     outputs = {'README.md': staged['README.md'], MAINT_PATH: maintenance}
     validate(staged)
     check_index_sync(staged, head_snapshot())
-    if not worktree:
-        # 提交时强制「实施一步 → 更新 handoff」；--worktree 只生成文件、不提交，不拦
+    if not worktree and os.environ.get('HANDOFF_FRESHNESS', '').lower() in ('1', 'on', 'true'):
+        # 提交时强制「实施一步 → 更新 handoff」。2026-11-12 站长裁定：**默认关**——
+        # handoff 只该记「下个会话必须知道的事」，不该被提交闸门逼着写施工流水账；
+        # 要临时恢复这道闸，导出 HANDOFF_FRESHNESS=1（或 on / true）。
         check_handoff_freshness(staged, head_snapshot())
     for path, data in outputs.items():
         if files[path] != data:

@@ -97,8 +97,10 @@ class ReadmeHookTest(unittest.TestCase):
         self.write('.gitignore', '*\n!*/\n' + ''.join(f'!/{p}\n' for p in paths))
         self.git('add', '-A')
 
-    def git(self, *args, success=True):
-        result = subprocess.run(['git', *args], cwd=self.repo, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    def git(self, *args, success=True, env=None):
+        result = subprocess.run(['git', *args], cwd=self.repo,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                env={**os.environ, **(env or {})})
         if success:
             self.assertEqual(result.returncode, 0, result.stdout.decode())
         return result
@@ -122,25 +124,40 @@ class ReadmeHookTest(unittest.TestCase):
         self.git('push')
 
     def test_handoff_freshness_enforced(self):
-        """改动 课程/ 或 站点/ 而未更新 .kimi-code/handoff.md 的提交必须被拒。"""
+        """handoff 时效闸：**默认关**（2026-11-12 站长裁定），HANDOFF_FRESHNESS=1 时启用。
+
+        默认关的理由：handoff 只该记「下个会话必须知道的事」，不该被提交闸门
+        逼着写施工流水账。开着的判定形态保留原样：改 课程/ 或 站点/ 而 handoff
+        陈旧的提交必须被拒。
+        """
         handoff = self.write('.kimi-code/handoff.md', '# Handoff\n\n维护约定：每实施完一步回来更新。\n')
         self.stage()
         self.git('commit', '-m', '建立 handoff')
         stale = time.time() - 3600
         os.utime(handoff, (stale, stale))
 
-        # 改课堂笔记（课程/ 区域）且同步索引，但 handoff 陈旧 → 拒绝
+        # 改课堂笔记（课程/ 区域）且同步索引；默认关 → 放行
         self.note.write_text(self.note.read_text() + '\n新增一段。\n')
         self.touch_chain('课程总览/工程数学/课堂笔记/行列式学习.md', '已同步。')
         self.stage()
-        result = self.git('commit', '-m', '未更新 handoff', success=False)
+        result = self.git('commit', '-m', '默认关：handoff 陈旧也放行')
+        self.assertEqual(result.returncode, 0)
+
+        # 显式开（HANDOFF_FRESHNESS=1）→ 陈旧 handoff 必须被拒
+        os.utime(handoff, (stale, stale))
+        self.note.write_text(self.note.read_text() + '\n再增一段。\n')
+        self.touch_chain('课程总览/工程数学/课堂笔记/行列式学习.md', '再同步。')
+        self.stage()
+        result = self.git('commit', '-m', '显式开：拒', env={**os.environ, 'HANDOFF_FRESHNESS': '1'},
+                          success=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('handoff', result.stdout.decode())
 
         # 更新 handoff 后放行
         handoff.write_text(handoff.read_text() + '\n- 已更新。\n')
         self.stage()
-        self.git('commit', '-m', '更新 handoff 后提交')
+        self.git('commit', '-m', '更新 handoff 后提交',
+                 env={**os.environ, 'HANDOFF_FRESHNESS': '1'})
 
         # 范围收窄验证：只改 README（不在 课程/ 站点/）不受这条规则限制
         os.utime(handoff, (stale, stale))
