@@ -3179,7 +3179,9 @@ if (symbolUncovered.length > 0) {
 //   非 / 结尾补 .html
 // 生成后立即反向解析自证：还原的 URL 集合必须与 SITE_PAGE_PATHS 完全相等。
 {
-  const base = 'https://isui.ren/repo/S26-1_202609/';
+  // 根带 machine/ 前缀：这个目录的存在理由就是「页面里读不到公式与图」，
+  // 所以拼出来的地址直接指向镜像，不指向 HTML。
+  const base = 'https://isui.ren/repo/S26-1_202609/machine/';
   const pages = SITE_PAGE_PATHS.slice();
   const root = { isPage: false, isDir: true, children: new Map() };
   for (const p of pages) {
@@ -3204,12 +3206,12 @@ if (symbolUncovered.length > 0) {
     if (keys.length === 1 && !node.isPage) return `${name}/${kids[0]}`;
     return node.isPage ? `${name}(${kids.join(',')})` : `${name}[${kids.join(',')}]`;
   };
-  const RULE = 'A(B,C)展开为A/及A/B,A/C;A[B,C]仅展开为A/B,A/C;非/结尾补.html;'
+  const RULE = 'A(B,C)展开为A/及A/B,A/C;A[B,C]仅展开为A/B,A/C;非/结尾补.json;'
     + '「A(B,C)」中的A自带斜杠（A/），根亦如此';
   const tree = serialize(root, base);
   // 页首一条拼好的示范网址（其余附加话已删：对方有风控，从规则行开始读）。
   const sampleLeaf = '课程总览/工程数学/Walkthrough';
-  const sampleUrl = `${base}${sampleLeaf}.html`;
+  const sampleUrl = `${base}${sampleLeaf}.json`;
   const birthright = `${sampleUrl}\n${RULE}\n${tree}\n`;
 
   const expand = (expr) => {
@@ -3240,9 +3242,15 @@ if (symbolUncovered.length > 0) {
       }
     };
     walk(expr);
-    return out.map((u) => (u.endsWith('/') ? u : `${u}.html`));
+    return out.map((u) => (u.endsWith('/') ? u : `${u}.json`));
   };
-  const restored = expand(tree).map((u) => (u.startsWith(base) ? u.slice(base.length) : u));
+  // 还原结果是**镜像地址**（…/machine/foo.json）：与页面清单比对时双向归一到
+  // 「页面路径」形态——镜像的 `目录/index.json` ≡ 页面的 `目录/`。
+  const restoreToPage = (u) => {
+    const rel = u.startsWith(base) ? u.slice(base.length) : u;
+    return rel.replace(/index\.json$/, '').replace(/\.json$/, '.html');
+  };
+  const restored = expand(tree).map(restoreToPage);
   const wantSet = new Set(pages);
   const gotSet = new Set(restored);
   const missing = [...wantSet].filter((p) => !gotSet.has(p));
@@ -3250,6 +3258,14 @@ if (symbolUncovered.length > 0) {
   if (missing.length || extra.length || gotSet.size !== wantSet.size) {
     throw new Error(`[Birthright] 压缩树无损校验失败：缺 ${missing.slice(0, 5).join(' ')} / `
       + `多 ${extra.slice(0, 5).join(' ')} / 还原 ${gotSet.size} vs 源 ${wantSet.size}`);
+  }
+  // 每条拼出来的镜像地址必须真的写着文件——这是「拼完就能取到」的直接证据。
+  const ghost = expand(tree).filter((u) => {
+    const rel = u.startsWith(base) ? u.slice(base.length) : u;
+    return !fs.existsSync(path.join(DIST_DIR, 'machine', rel));
+  });
+  if (ghost.length) {
+    throw new Error(`[Birthright] 这些拼出来的镜像不存在：${ghost.slice(0, 5).join(' ')}`);
   }
   fs.writeFileSync(path.join(DIST_DIR, 'machine', 'Birthright.txt'), birthright, 'utf-8');
   console.log(`[Birthright] ${pages.length} 个页面 → dist/machine/Birthright.txt`

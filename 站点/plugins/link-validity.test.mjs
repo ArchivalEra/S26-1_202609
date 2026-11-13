@@ -110,7 +110,9 @@ test('machine/：镜像与站内页面一一对应，Birthright 括号树无损'
   assert.ok(ruleIdx > 0, '规则行必须在示范网址之后');
   const tree = lines2[ruleIdx + 1];
   assert.ok(tree?.startsWith('https://'), '规则行下一行是整棵树');
-  const base = 'https://isui.ren/repo/S26-1_202609/';
+  // 根带 machine/ 前缀：拼出来的地址直接指向镜像（这个目录存在的理由就是
+  // 页面里读不到公式与图），不是 HTML 页面。
+  const base = 'https://isui.ren/repo/S26-1_202609/machine/';
   const out = [];
   const parse = (s, prefix) => {
     const items = []; let depth = 0; let start2 = 0;
@@ -125,17 +127,25 @@ test('machine/：镜像与站内页面一一对应，Birthright 括号树无损'
       const i1 = item.indexOf('('); const i2 = item.indexOf('[');
       const ix = i1 === -1 ? i2 : (i2 === -1 ? i1 : Math.min(i1, i2));
       const path = prefix + (ix === -1 ? item : item.slice(0, ix));
-      if (ix === -1) { out.push(path.endsWith('/') ? path : `${path}.html`); continue; }
+      if (ix === -1) { out.push(path.endsWith('/') ? path : `${path}.json`); continue; }
       const self = path.endsWith('/') ? path : `${path}/`;
       if (item[ix] === '(') out.push(self);
       parse(item.slice(ix + 1, -1), self);
     }
   };
   parse(tree, '');
-  const restored = new Set(out.map((u) => (u.startsWith(base) ? u.slice(base.length) : u)));
+  // 还原结果是镜像地址（…/machine/foo.json）；归一到页面形态再比：
+  // 镜像的 `目录/index.json` ≡ 页面的 `目录/`。
+  const toPage = (u) => (u.startsWith(base) ? u.slice(base.length) : u)
+    .replace(/index\.json$/, '').replace(/\.json$/, '.html');
+  const mirrorPaths = out.map((u) => (u.startsWith(base) ? u.slice(base.length) : u));
+  const restored = new Set(mirrorPaths.map(toPage));
   assert.equal(restored.size, sitePages.length,
     `括号树还原 ${restored.size} ≠ 页面 ${sitePages.length}；`
     + `缺：${sitePages.filter((p) => !restored.has(p)).slice(0, 5)}`);
+  // 拼出来的每条镜像地址必须真的写着文件——「拼完就能取到」的直接证据。
+  const ghost = mirrorPaths.filter((m) => !existsSync(path.join(DIST, 'machine', m)));
+  assert.deepEqual(ghost.slice(0, 5), [], `这些拼出来的镜像不存在：\n${ghost.slice(0, 5).join('\n')}`);
 
   // ③ 镜像与产物抽样一致：挑公式最多的一页，核其 TeX 与图。
   let richest = null; let n = -1;
