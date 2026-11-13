@@ -44,6 +44,20 @@ function clean(s) {
     .replace(/\s+/g, ' ').trim();
 }
 
+async function detectTotal(cfg) {
+  // 从 task-work 骨架页拿「共包含 N 道题目」，避免硬编码题数
+  const url = `${cfg.base}/mooc-ans/work/phone/task-work`
+    + `?taskrefId=${cfg.workId}&courseId=${cfg.courseId}&classId=${cfg.classId}`
+    + `&userId=${cfg.userId || ''}&role=&source=0&enc_task=${cfg.enc}`
+    + `&cpi=${cfg.cpi || ''}&vx=0&fromGroup=0`;
+  const code = `(async () => { const r = await fetch(${JSON.stringify(url)}, { credentials: "include" }); return await r.text(); })()`;
+  const res = await ev(code);
+  const html = res.data?.value || '';
+  const m = html.match(/共包含\s*(\d+)\s*道题目/) || html.match(/共包含(\d+)道/);
+  if (!m) throw new Error('无法从 task-work 页探测题目总数');
+  return Number(m[1]);
+}
+
 async function fetchQuestion(cfg, index) {
   const url = `${cfg.base}/mooc-ans/work/phone/doHomeWork`
     + `?courseId=${cfg.courseId}&classId=${cfg.classId}&workId=${cfg.workId}`
@@ -94,7 +108,9 @@ async function main() {
   // 先导航到作业列表建立会话（WebBridge 要求 session 有 tab 才能 evaluate）
   await nav(cfg.base + '/work/stu-work?vx=0');
   await new Promise((r) => setTimeout(r, 1500));
-  const total = Number(cfg.total);
+  // 题数不硬编码：从 task-work 骨架页探测「共包含 N 道题目」
+  const total = cfg.total ? Number(cfg.total) : await detectTotal(cfg);
+  console.log('探测到题目总数:', total);
   const out = { work: cfg.workId, title: cfg.title || '', fetchedAt: new Date().toISOString(),
     questions: [] };
   for (let i = 0; i < total; i++) {
