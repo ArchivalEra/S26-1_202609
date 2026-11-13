@@ -48,8 +48,7 @@ async function detectTotal(cfg) {
   // 从 task-work 骨架页拿「共包含 N 道题目」，避免硬编码题数
   const url = `${cfg.base}/mooc-ans/work/phone/task-work`
     + `?taskrefId=${cfg.workId}&courseId=${cfg.courseId}&classId=${cfg.classId}`
-    + `&userId=${cfg.userId || ''}&role=&source=0&enc_task=${cfg.enc}`
-    + `&cpi=${cfg.cpi || ''}&vx=0&fromGroup=0`;
+    + `&role=&source=0&enc_task=${cfg.enc}&vx=0`;
   const code = `(async () => { const r = await fetch(${JSON.stringify(url)}, { credentials: "include" }); return await r.text(); })()`;
   const res = await ev(code);
   const html = res.data?.value || '';
