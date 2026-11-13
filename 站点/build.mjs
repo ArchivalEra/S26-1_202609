@@ -3121,65 +3121,137 @@ if (symbolUncovered.length > 0) {
     + `${stats.grams} grams / ${stats.positions} positions, ${(bytes / 1024 / 1024).toFixed(2)} MB raw`);
 }
 
-// Birthright（2026-11-12）：`machine/` 下的**格式不变**——仍是
-// base + example + pages 平铺数组（括号树导航已被否，平铺最省）。
-// 每页的结构（公式 TeX / 配图）由**各页自己交代**：`站点/dist/<页>/` 旁不另生文件，
-// 而是写进 machine/pages/<编号>.json，Birthright 的 pages 条目给一个 `meta` 字段指过去。
-// 对方 agent 读不到 KaTeX 排版后的 TeX——HTML 里只有排版结果，TeX 源在这里。
-// 正文仍以 fetch 对应 HTML 页面为准；这里只收「HTML 里看不见源码」的部分。
+// machine/ 全站镜像（2026-11-12 站长裁定）：**按站内路径一比一复刻**。
+//   站内  /课程总览/工程数学/Walkthrough.html
+//   镜像  /machine/课程总览/工程数学/Walkthrough.json
+// 目录页同理（/课程总览/工程数学/ → /machine/课程总览/工程数学/index.json）。
+// 每份镜像只放「HTML 里取不到源码」的东西：公式 TeX 源 + 配图（相对路径 + alt）。
+// 正文不复制——文本请 fetch 对应 HTML 页面，镜像与页面一一对应，拼法零成本。
+// 同时写一份 _index.json：全站页面 → 镜像文件，两者一一对应可自证。
 {
   const base = 'https://isui.ren/repo/S26-1_202609/';
-  // 示范页挑**结构数据最多**的一页：example 是给来访者照着学的，空页没得学。
-  const sample = machinePages.reduce((best, m) => (
-    (m.math.length + m.figures.length) > (best.math.length + best.figures.length) ? m : best
-  ), machinePages[0]).url;
-  const sampleMeta = machinePages.find((m) => m.url === sample);
   const machineDir = path.join(DIST_DIR, 'machine');
+  fs.rmSync(machineDir, { recursive: true, force: true });
   fs.mkdirSync(machineDir, { recursive: true });
-  const metaDir = path.join(machineDir, 'pages');
-  fs.mkdirSync(metaDir, { recursive: true });
 
-  // 每页一个 JSON：url / title / math[] / figures[]。文件名用自增编号（稳定、短、
-  // 路径安全），Birthright 的 pages[] 按同顺序给 meta 链接。
-  const sampleIdx = machinePages.indexOf(machinePages.find((m) => m.url === sample));
-  const pagesOut = machinePages.map((m, i) => {
-    const rel = `pages/${i}.json`;
-    fs.writeFileSync(
-      path.join(metaDir, `${i}.json`),
-      JSON.stringify({ url: m.url, title: m.title, math: m.math, figures: m.figures }, null, 1) + '\n',
-      'utf-8',
-    );
-    return { path: m.url, meta: rel };
-  });
+  const index = [];
+  for (const m of machinePages) {
+    // targetHtmlPath（'index.html' / '目录/index.html' / '目录/页.html'）
+    // → 镜像路径：'index.json' / '目录/index.json' / '目录/页.json'
+    const mirror = m.url.replace(/\.html$/, '.json');
+    const abs = path.join(machineDir, mirror);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    const payload = { url: m.url, title: m.title };
+    if (m.math.length) payload.math = m.math;
+    if (m.figures.length) payload.figures = m.figures;
+    fs.writeFileSync(abs, JSON.stringify(payload, null, 1) + '\n', 'utf-8');
+    index.push({ page: m.url, mirror });
+  }
 
-  const catalogue = {
-    base,
-    example: { path: sample, meta: `pages/${sampleIdx}.json` },
-    pages: pagesOut,
+  // _index.json：页面 ↔ 镜像的两列。拼法一句话写在第一个字段里。
+  const indexDoc = {
+    howToBuild: '把页面网址里的 .html 换成 .json 并加上 machine/ 前缀：'
+      + `${base}课程总览/工程数学/Walkthrough.html → ${base}machine/课程总览/工程数学/Walkthrough.json`,
+    base: `${base}machine/`,
+    pages: index,
   };
-  const jsonText = JSON.stringify(catalogue, null, 1) + '\n';
-  fs.writeFileSync(path.join(machineDir, 'Birthright.json'), jsonText, 'utf-8');
+  fs.writeFileSync(path.join(machineDir, '_index.json'),
+    JSON.stringify(indexDoc, null, 1) + '\n', 'utf-8');
 
-  // 覆盖自证：pages 的 path 必须恰好等于全站页面清单（不重不漏）。
-  // pages.path 是 targetHtmlPath（目录页带 index.html），页面清单是网址形态——归一。
-  const normalize = (p) => (p === 'index.html' ? ''
-    : (p.endsWith('/index.html') ? p.slice(0, -'index.html'.length) : p));
-  const covered = new Set(pagesOut.map((p) => normalize(p.path)));
-  const want = new Set(SITE_PAGE_PATHS);
-  const miss = [...want].filter((p) => !covered.has(p));
-  const over = [...covered].filter((p) => !want.has(p));
-  if (miss.length || over.length) {
-    throw new Error(`[Birthright] pages 与全站页面清单不符：缺 ${miss.slice(0, 5).join(' ')} / 多 ${over.slice(0, 5).join(' ')}`);
+  // 覆盖自证：镜像数 = 页面数，且每个镜像文件真的存在。
+  if (index.length !== SITE_PAGE_PATHS.length) {
+    throw new Error(`[machine] 镜像数 ${index.length} ≠ 页面数 ${SITE_PAGE_PATHS.length}`);
   }
-  // meta 自证：example 指向的文件必须存在且能解析、url 对得上。
-  const sampleParsed = JSON.parse(fs.readFileSync(path.join(metaDir, `${sampleIdx}.json`), 'utf-8'));
-  if (sampleParsed.url !== sample) {
-    throw new Error(`[Birthright] example.meta 指向的页面 url 不对：${sampleParsed.url} ≠ ${sample}`);
-  }
-  if (sampleParsed.math.length === 0 && sampleParsed.figures.length === 0) {
-    throw new Error(`[Birthright] 示范页 ${sample} 没有任何结构数据，换一个有内容的做示范`);
+  const missing = index.filter((i) => !fs.existsSync(path.join(machineDir, i.mirror)));
+  if (missing.length) {
+    throw new Error(`[machine] 这些镜像没写出来：${missing.slice(0, 5).map((i) => i.mirror).join(' ')}`);
   }
   const mathCount = machinePages.reduce((s2, m) => s2 + m.math.length, 0);
   const figCount = machinePages.reduce((s2, m) => s2 + m.figures.length, 0);
-  console.log(`[Birthright] ${machinePages.length} 页（公式 ${mathCount} / 配图 ${figCount}）→ machine/{Birthright.json, pages/<n>.json}（覆盖校验通过）`);
+  console.log(`[machine] ${index.length} 页镜像（公式 ${mathCount} / 配图 ${figCount}）`
+    + ` → dist/machine/<与站内同路径>.json + _index.json`);
+}
+
+// Birthright（2026-11-12）：全站目录，**括号树压缩**（4 KB 装 180 页）。
+// 首行是自解释规则（怎么拼地址就写在里面），第二行是整棵树。
+//   A(B,C) ⇒ A/ 与 A/B 与 A/C（A 自己也是页面）
+//   A[B,C] ⇒ 只 A/B 与 A/C（A 只是路径前缀）
+//   非 / 结尾补 .html
+// 生成后立即反向解析自证：还原的 URL 集合必须与 SITE_PAGE_PATHS 完全相等。
+{
+  const base = 'https://isui.ren/repo/S26-1_202609/';
+  const pages = SITE_PAGE_PATHS.slice();
+  const root = { isPage: false, isDir: true, children: new Map() };
+  for (const p of pages) {
+    if (p === '') { root.isPage = true; continue; }
+    const isDir = p.endsWith('/');
+    const parts = p.replace(/\/$/, '').split('/');
+    let cur = root;
+    parts.forEach((raw, i) => {
+      const last = i === parts.length - 1;
+      const name = (last && !isDir && raw.endsWith('.html')) ? raw.slice(0, -5) : raw;
+      if (!cur.children.has(name)) {
+        cur.children.set(name, { isPage: false, isDir: false, children: new Map() });
+      }
+      cur = cur.children.get(name);
+      if (last) { cur.isPage = true; cur.isDir = isDir; }
+    });
+  }
+  const serialize = (node, name = '') => {
+    const keys = [...node.children.keys()].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN', { numeric: true }));
+    if (keys.length === 0) return name + (node.isDir ? '/' : '');
+    const kids = keys.map((k) => serialize(node.children.get(k), k));
+    if (keys.length === 1 && !node.isPage) return `${name}/${kids[0]}`;
+    return node.isPage ? `${name}(${kids.join(',')})` : `${name}[${kids.join(',')}]`;
+  };
+  const RULE = 'A(B,C)展开为A/及A/B,A/C;A[B,C]仅展开为A/B,A/C;非/结尾补.html;'
+    + '「A(B,C)」中的A自带斜杠（A/），根亦如此';
+  const tree = serialize(root, base);
+  // 页首一条拼好的示范网址（其余附加话已删：对方有风控，从规则行开始读）。
+  const sampleLeaf = '课程总览/工程数学/Walkthrough';
+  const sampleUrl = `${base}${sampleLeaf}.html`;
+  const birthright = `${sampleUrl}\n${RULE}\n${tree}\n`;
+
+  const expand = (expr) => {
+    const out = [];
+    const walk = (s) => {
+      const items = []; let depth = 0; let start = 0;
+      for (let i = 0; i < s.length; i += 1) {
+        const ch = s[i];
+        if (ch === '(' || ch === '[') depth += 1;
+        else if (ch === ')' || ch === ']') depth -= 1;
+        else if (ch === ',' && depth === 0) { items.push(s.slice(start, i)); start = i + 1; }
+      }
+      items.push(s.slice(start));
+      for (const item of items) {
+        const i1 = item.indexOf('('); const i2 = item.indexOf('[');
+        const idx = i1 === -1 ? i2 : (i2 === -1 ? i1 : Math.min(i1, i2));
+        if (idx === -1) { out.push(item); continue; }
+        const prefix = item.slice(0, idx);
+        const open = item[idx];
+        const inner = item.slice(idx + 1, -1);
+        const self = prefix.endsWith('/') ? prefix : `${prefix}/`;
+        if (open === '(') out.push(self);
+        const sub = []; const before = out.length;
+        walk(inner);
+        for (let i = before; i < out.length; i += 1) sub.push(out[i]);
+        out.length = before;
+        for (const c of sub) out.push(`${self}${c}`);
+      }
+    };
+    walk(expr);
+    return out.map((u) => (u.endsWith('/') ? u : `${u}.html`));
+  };
+  const restored = expand(tree).map((u) => (u.startsWith(base) ? u.slice(base.length) : u));
+  const wantSet = new Set(pages);
+  const gotSet = new Set(restored);
+  const missing = [...wantSet].filter((p) => !gotSet.has(p));
+  const extra = restored.filter((p) => !wantSet.has(p));
+  if (missing.length || extra.length || gotSet.size !== wantSet.size) {
+    throw new Error(`[Birthright] 压缩树无损校验失败：缺 ${missing.slice(0, 5).join(' ')} / `
+      + `多 ${extra.slice(0, 5).join(' ')} / 还原 ${gotSet.size} vs 源 ${wantSet.size}`);
+  }
+  fs.writeFileSync(path.join(DIST_DIR, 'machine', 'Birthright.txt'), birthright, 'utf-8');
+  console.log(`[Birthright] ${pages.length} 个页面 → dist/machine/Birthright.txt`
+    + `（${Buffer.byteLength(birthright)} bytes，无损校验通过）`);
 }
