@@ -3177,43 +3177,82 @@ if (symbolUncovered.length > 0) {
 // 图片换成完整 URL、符号不冒泡。就是「进 Shirone reader 之前」的那一份。
 {
   const base = 'https://isui.ren/repo/S26-1_202609/';
+  const machineBase = 'https://isui.ren/repo/S26-1_202609/machine/';
   const machineDir = path.join(DIST_DIR, 'machine');
   fs.rmSync(machineDir, { recursive: true, force: true });
   fs.mkdirSync(machineDir, { recursive: true });
 
   const index = [];
-  for (const m of machinePages) {
-    // targetHtmlPath（'index.html' / '目录/index.html' / '目录/页.html'）
-    // → 镜像路径：'index.json' / '目录/index.json' / '目录/页.json'
-    const mirror = m.url.replace(/\.html$/, '.json');
-    const abs = path.join(machineDir, mirror);
-    fs.mkdirSync(path.dirname(abs), { recursive: true });
-    const payload = { url: m.url, title: m.title, body: m.body };
-    fs.writeFileSync(abs, JSON.stringify(payload) + '\n', 'utf-8');
+  const MAX_BODY = 5000;
+  const writeBodyPieces = (firstPath, text, heading, url, title) => {
+    // 把一段正文切成 ≤MAX_BODY 的片。首片写 firstPath，续片命名规则由调用方
+    // 通过 `stem` 前缀给出（如 `foo/piece-`）。每片（除最后一片）尾部追加
+    // 「剩余见<下一片完整网址>」，读的人顺着链接就能继续。
+    const pieces = [];
+    let rest = text;
+    while (Buffer.byteLength(rest) > MAX_BODY) {
+      let cut = Math.floor(rest.length * MAX_BODY / Buffer.byteLength(rest));
+      while (Buffer.byteLength(rest.slice(0, cut)) > MAX_BODY) cut -= 1;
+      while (cut > 0 && cut < rest.length && (rest.charCodeAt(cut) & 0xFC00) === 0xD800) cut -= 1;
+      pieces.push(rest.slice(0, cut));
+      rest = rest.slice(cut);
+    }
+    pieces.push(rest);
+    pieces.forEach((body, i) => {
+      const stem = firstPath.replace(/\.json$/, '');
+      const rel = i === 0 ? firstPath : `${stem}-piece-${i + 1}.json`;
+      const nextRel = i + 1 < pieces.length ? `${stem}-piece-${i + 2}.json` : null;
+      const outAbs = path.join(machineDir, rel);
+      fs.mkdirSync(path.dirname(outAbs), { recursive: true });
+      let out = body;
+      if (nextRel) out += `\n\n剩余见${machineBase}${nextRel}`;
+      fs.writeFileSync(path.join(machineDir, rel),
+        JSON.stringify({ url, title, section: heading, body: out }) + '\n', 'utf-8');
+    });
+    return pieces.length;
+  };
 
-    // 分片：与整页同目录，`<页名>/<片id>.json` + `<页名>/_index.json`。
-    // 整页 JSON 保留（小的直接取、大的按索引挑片）。
-    const pageStem = mirror.replace(/\.json$/, '');
+  for (const m of machinePages) {
+    const mirror = m.url.replace(/\.html$/, '.json');   // 整页镜像路径（含目录）
+    const pageStem = mirror.replace(/\.json$/, '');     // 无后缀（目录页=目录名，普通页=页名）
+
+    // ① 整页正文：首片直接写在 mirror（Birthright 指向它），续片进 <stem>/piece-N.json。
+    fs.mkdirSync(path.dirname(path.join(machineDir, mirror)), { recursive: true });
+    let pagePieces = 1;
+    if (Buffer.byteLength(m.body) <= MAX_BODY) {
+      fs.writeFileSync(path.join(machineDir, mirror),
+        JSON.stringify({ url: m.url, title: m.title, section: '', body: m.body }) + '\n', 'utf-8');
+    } else {
+      // 续片路径列表：piece-2..piece-N（首片 = mirror）
+      const restBytes = Buffer.byteLength(m.body) - MAX_BODY;
+      // 首片 = 整页镜像本身（mirror），续片 = <stem>-piece-N.json。
+      pagePieces = writeBodyPieces(mirror, m.body, '', m.url, m.title);
+    }
+
+    // ② 小节片：始终在 <stem>/ 下；超长小节续片名 <id>-piece-N.json。
     if (m.sections.length > 1) {
       const secDir = path.join(machineDir, pageStem);
       fs.mkdirSync(secDir, { recursive: true });
       const idxRows = [];
       for (const sec of m.sections) {
-        fs.writeFileSync(path.join(secDir, `${sec.id}.json`),
-          JSON.stringify({ url: m.url, title: m.title, section: sec.heading,
-            body: sec.text }) + '\n', 'utf-8');
+        const byteLen = Buffer.byteLength(sec.text);
+        if (byteLen <= MAX_BODY) {
+          fs.writeFileSync(path.join(secDir, `${sec.id}.json`),
+            JSON.stringify({ url: m.url, title: m.title, section: sec.heading,
+              body: sec.text }) + '\n', 'utf-8');
+        } else {
+          writeBodyPieces(`${pageStem}/${sec.id}`, sec.text, sec.heading, m.url, m.title);
+        }
         idxRows.push({ id: sec.id, heading: sec.heading,
-          chars: Buffer.byteLength(sec.text), file: `${sec.id}.json` });
+          chars: byteLen, file: `${sec.id}.json` });
       }
-      // 索引压到最小：只留「挑哪片」需要的字段（id / heading / chars / file），
-      // 用紧凑 JSON（无缩进）——这个文件本身也必须小到能一次取完。
       fs.writeFileSync(path.join(secDir, '_index.json'), JSON.stringify({
         url: m.url, title: m.title,
-        howToUse: '整页太大就按这里挑一片取：<本目录>/<file>',
+        howToUse: '整页太大就按这里挑一片取：<本目录>/<file>；片尾有「剩余见…」就接着取',
         sections: idxRows,
       }) + '\n', 'utf-8');
     }
-    index.push({ page: m.url, mirror });
+    index.push({ page: m.url, mirror, pieces: pagePieces });
   }
 
   // 覆盖自证：镜像数 = 页面数，且每个镜像文件真的存在。

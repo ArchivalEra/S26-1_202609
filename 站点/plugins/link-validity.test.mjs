@@ -85,6 +85,21 @@ test('不发布的文件不许以 <a href> 形式出现在产物里', () => {
 // 图片换成完整 URL、符号不冒泡。就是「进 Shirone reader 之前」的那一份。
 // Birthright.html 是人类可读的树，每条叶子是完整绝对链接（风控会拆链接，
 // 不依赖任何拼接规则）。
+// 收集一页的全部片：镜像文件 + <stem>-piece-N.json（同一目录、同前缀）。
+function allJsonOfPage(page, machDir, mirrorOf) {
+  const main = path.join(machDir, mirrorOf(page));
+  const stem = path.basename(mirrorOf(page), '.json');
+  const dir = path.dirname(main);
+  const out = [main];
+  if (existsSync(dir)) {
+    for (const e of readdirSync(dir)) {
+      const m = /^(.+?)-piece-\d+\.json$/.exec(e);
+      if (m && m[1] === stem) out.push(path.join(dir, e));
+    }
+  }
+  return out;
+}
+
 test('machine/：镜像含整篇源文（TeX 原文 + 图片绝对 URL），Birthright 链接完整', () => {
   const machDir = path.join(DIST, 'machine');
   const catFile = path.join(machDir, 'Birthright.html');
@@ -115,12 +130,17 @@ test('machine/：镜像含整篇源文（TeX 原文 + 图片绝对 URL），Birt
   assert.ok(!/@@MATH|@@CODE|@@FIGURE/.test(sample.body), '源文里不许残留构建占位符');
   assert.ok(!/data-term|sym-gloss/.test(sample.body), '符号不冒泡（那是给人页面的交互）');
   // 公式保持 TeX 原文（不是 KaTeX 排版后的 HTML）。
-  const dispTex = [...sample.body.matchAll(/\$\$(.+?)\$\$/gs)].map((m) => m[1]);
+  // 整页可能被切成多片——把同页全部片拼起来再核（含首片及 piece-N 续片）。
+  const samePage = (f) => path.basename(f).startsWith(path.basename(mirrorOf(samplePage), '.json'))
+    || f === path.join(machDir, mirrorOf(samplePage));
+  const pieces = allJsonOfPage(samplePage, machDir, mirrorOf);
+  const full = pieces.map((f) => JSON.parse(readFileSync(f, 'utf8')).body).join('\n');
+  const dispTex = [...full.matchAll(/\$\$(.+?)\$\$/gs)].map((m) => m[1]);
   assert.ok(dispTex.length > 10, `块级公式太少（${dispTex.length}），TeX 原文可能丢了`);
   assert.ok(dispTex.some((t) => /\\[a-zA-Z]/.test(t)), 'TeX 原文必须带反斜杠命令');
-  assert.ok(!/<span class="katex/.test(sample.body), '正文里不该有 KaTeX 排版产物');
+  assert.ok(!/<span class="katex/.test(full), '正文里不该有 KaTeX 排版产物');
   // 图片全部是完整绝对 URL。
-  const imgs = [...sample.body.matchAll(/src="([^"]+)"/g)].map((m) => m[1]);
+  const imgs = [...full.matchAll(/src="([^"]+)"/g)].map((m) => m[1]);
   assert.ok(imgs.length > 5, `图片太少（${imgs.length}）`);
   const relImg = imgs.filter((u) => !u.startsWith('https://'));
   assert.deepEqual(relImg.slice(0, 5), [], '图片必须换成完整 URL');
@@ -163,4 +183,35 @@ test('machine/：镜像含整篇源文（TeX 原文 + 图片绝对 URL），Birt
   const norm = (t) => t.replace(/\n{2,}/g, '\n').trim();
   assert.equal(norm(joined).length >= norm(whole.body).length - 200, true,
     `切片拼起来比整页短太多（${norm(joined).length} vs ${norm(whole.body).length}），有内容丢失`);
+
+  // ⑤ 5000 字节上限（2026-11-13 站长定）：腾讯 fetch 会截断，**任何**一份
+  //    正文都不许超限。被切的那份尾部写「剩余见<下一个文件的完整网址>」，
+  //    续链必须指向真实存在的文件，且下一片也不超限（链不断）。
+  const allJson = [];
+  const walkAll = (dir) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walkAll(p);
+      else if (e.name.endsWith('.json')) allJson.push(p);
+    }
+  };
+  walkAll(machDir);
+  const BODY_CAP = 5000;
+  let checked = 0;
+  for (const f of allJson) {
+    if (path.basename(f) === '_index.json') continue;
+    const d = JSON.parse(readFileSync(f, 'utf8'));
+    if (!d.body) continue;
+    checked += 1;
+    // body 含续链文本；剥掉「剩余见…」再量正文，正文必须 ≤ 上限。
+    const bare = d.body.replace(/\n\n剩余见https:\/\/\S+$/, '');
+    assert.ok(Buffer.byteLength(bare) <= BODY_CAP,
+      `${f} 正文 ${Buffer.byteLength(bare)} 超 ${BODY_CAP}，必须切片`);
+    const cont = /剩余见(https:\/\/\S+)$/.exec(d.body);
+    if (cont) {
+      const rel = cont[1].slice('https://isui.ren/repo/S26-1_202609/machine/'.length);
+      assert.ok(existsSync(path.join(machDir, rel)), `${f} 的续链不存在：${cont[1]}`);
+    }
+  }
+  assert.ok(checked >= 200, `只核了 ${checked} 份 JSON，覆盖不足`);
 });
