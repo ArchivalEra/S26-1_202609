@@ -78,72 +78,64 @@ test('不发布的文件不许以 <a href> 形式出现在产物里', () => {
   assert.deepEqual(uniq, [], `这些不发布的文件被写成了链接：\n${uniq.slice(0, 12).join('\n')}`);
 });
 
-// machine/Birthright.txt 是全站目录（括号树压缩格式，2026-11-12）：
-//   A(B,C) ⇒ A/ 与 A/B 与 A/C ；A[B,C] ⇒ 只 A/B 与 A/C ；非 / 结尾补 .html
-// 它是给「只有 webfetch」的模型用的唯一索引：一条还原不出来 = 照着走就 404，
-// 而它无从发现。所以判据是**独立反向解析**：还原的 URL 集合必须与全站页面清单
-// 完全相等，且每条都落到 dist 里的真实文件。
-test('machine/Birthright.txt：括号树能无损还原全站且每条都真实存在', () => {
-  const file = path.join(DIST, 'machine', 'Birthright.txt');
-  assert.ok(existsSync(file), 'Birthright.txt 不存在——先跑 node build.mjs');
-  const lines = readFileSync(file, 'utf8').trimEnd().split('\n');
-  // 结构（2026-11-12 站长定）：页首是例子 + 行为约束 + 祝福，之后才是规则行与树。
-  const ruleIdx = lines.findIndex((l) => /A\(B,C\)/.test(l) && /A\[B,C\]/.test(l));
-  assert.ok(ruleIdx > 0, '必须有自解释的压缩规则行，且不在文件开头（页首留给 AGENT 指引）');
-  const tree = lines[ruleIdx + 1];
-  assert.ok(tree && tree.startsWith('https://'), '规则行下一行是整棵树，必须以 base 开头');
-  const head = lines.slice(0, ruleIdx).join('\n');
+// machine/Birthright.json 格式**不变**（base + example + pages 平铺数组），
+// 但 pages 条目多一个 meta 字段 → machine/pages/<n>.json（每页的结构数据：
+// 公式 TeX 源 + 配图）。对方 agent 读不到 KaTeX 排版后的 TeX，meta 补这一块；
+// 正文仍以 fetch 对应 HTML 为准——meta 不收页面内容，只收「HTML 里看不见源码」的。
+// 判据：① pages 覆盖 = 全站页面清单（不重不漏）且每条落到真实文件；
+//       ② meta 文件与 HTML 抽样一致（公式 TeX 数、图 src/alt）；
+//       ③ example 指向的 meta 必须存在且 url 对得上。
+test('machine/Birthright.json：pages 覆盖全站，meta 结构数据与产物一致', () => {
+  const catFile = path.join(DIST, 'machine', 'Birthright.json');
+  assert.ok(existsSync(catFile), 'Birthright.json 不存在——先跑 node build.mjs');
+  const cat = JSON.parse(readFileSync(catFile, 'utf8'));
+  assert.ok(cat.base.startsWith('https://') && cat.base.endsWith('/'));
+  assert.ok(Array.isArray(cat.pages) && cat.pages.length > 0, 'pages 不能为空');
+  assert.ok(cat.example?.meta && cat.example?.path, 'example 必须带 path + meta');
 
-  // 解析器刻意不复用构建里的实现——用一份独立写法，才验得出「树本身对不对」。
-  // 树行以完整 base 开头（根节点自身就是首页）；剥掉它再按相对路径判。
-  const base = 'https://isui.ren/repo/S26-1_202609/';
-  const out = [];
-  const parse = (s, prefix) => {
-    const items = []; let depth = 0; let start = 0;
-    for (let i = 0; i < s.length; i += 1) {
-      const c = s[i];
-      if (c === '(' || c === '[') depth += 1;
-      else if (c === ')' || c === ']') depth -= 1;
-      else if (c === ',' && depth === 0) { items.push(s.slice(start, i)); start = i + 1; }
-    }
-    items.push(s.slice(start));
-    for (const item of items) {
-      const i1 = item.indexOf('('); const i2 = item.indexOf('[');
-      const idx = i1 === -1 ? i2 : (i2 === -1 ? i1 : Math.min(i1, i2));
-      const path = prefix + (idx === -1 ? item : item.slice(0, idx));
-      if (idx === -1) { out.push(path.endsWith('/') ? path : `${path}.html`); continue; }
-      // A(...) 中的 A 自带斜杠（规则行已写明）；前缀已有尾斜杠时不重复补。
-      const self = path.endsWith('/') ? path : `${path}/`;
-      if (item[idx] === '(') out.push(self);   // A(...) 自身也是页面
-      parse(item.slice(idx + 1, -1), self);
-    }
-  };
-  parse(tree, '');
-
-  const restored = new Set(out.map((u) => (u.startsWith(base) ? u.slice(base.length) : u)));
+  // ① 覆盖：pages.path（targetHtmlPath 形态）归一到网址形态后 = 页面清单。
+  const normalize = (p) => (p === 'index.html' ? ''
+    : (p.endsWith('/index.html') ? p.slice(0, -'index.html'.length) : p));
+  const covered = new Set(cat.pages.map((p) => normalize(p.path)));
   const sitePages = JSON.parse(
     readFileSync(path.join(DIST, 'index.html'), 'utf8')
       .match(/id="site-pages-json">(.*?)<\/script>/s)[1],
   );
-  assert.equal(restored.size, sitePages.length,
-    `还原数不符：${restored.size} vs 全站 ${sitePages.length}；`
-    + `缺：${sitePages.filter((p) => !restored.has(p)).slice(0, 5)} `
-    + `多：${[...restored].filter((p) => !sitePages.includes(p)).slice(0, 5)}`);
+  assert.equal(covered.size, sitePages.length,
+    `覆盖数不符：${covered.size} vs 全站 ${sitePages.length}；`
+    + `缺：${sitePages.filter((p) => !covered.has(p)).slice(0, 5)} `
+    + `多：${[...covered].filter((p) => !sitePages.includes(p)).slice(0, 5)}`);
+  const missing = cat.pages.filter((p) => !existsSync(path.join(DIST, p.path)));
+  assert.deepEqual(missing, [], `pages 里这些文件线上会 404：\n${missing.slice(0, 8).map((p) => p.path).join('\n')}`);
 
-  // 每条还原出的路径都落到真实产物：目录形态（末尾 /）落 index.html。
-  const missing = [...restored].filter((p) => {
-    const rel = p === '' ? 'index.html' : (p.endsWith('/') ? p + 'index.html' : p);
-    return !existsSync(path.join(DIST, rel));
-  });
-  assert.deepEqual(missing, [], `Birthright 里这些路径线上会 404：\n${missing.slice(0, 12).join('\n')}`);
+  // ② meta 抽样：每个 meta 文件必须存在；抽公式最多的一页与产物 HTML 对照。
+  for (const p of cat.pages) {
+    assert.ok(existsSync(path.join(DIST, 'machine', p.meta)), `缺 meta 文件：${p.meta}`);
+  }
+  let richest = null; let richestN = -1;
+  for (const p of cat.pages) {
+    const meta = JSON.parse(readFileSync(path.join(DIST, 'machine', p.meta), 'utf8'));
+    assert.equal(meta.url, p.path, `meta.url 与 pages.path 不一致：${p.meta}`);
+    const n = (meta.math?.length || 0) + (meta.figures?.length || 0);
+    if (n > richestN) { richestN = n; richest = { p, meta }; }
+  }
+  assert.ok(richestN > 100, `结构数据太少（最多 ${richestN} 条），收集逻辑可能坏了`);
+  const { p: richPage, meta } = richest;
+  const built = readFileSync(path.join(DIST, richPage.path), 'utf8');
+  for (const f of meta.figures || []) {
+    assert.ok(built.includes(f.src), `${richPage.path} 产物里没有 ${f.src}`);
+    assert.ok(built.includes(f.alt.slice(0, 12)), 'alt 必须与产物 HTML 一致');
+  }
+  // 公式 TeX：meta 里的 tex 源在产物里只以 KaTeX 排版出现，反查「产物里的
+  // katex-display 公式个数 ≥ meta 记录的 display 公式数」作粗校。
+  const katexCount = (built.match(/class="katex-display"/g) || []).length;
+  const displayCount = (meta.math || []).filter((m) => m.display).length;
+  assert.ok(katexCount >= displayCount,
+    `${richPage.path}：产物块级公式 ${katexCount} < meta 记录的 ${displayCount}`);
 
-  // 页首（规则行之前）只有一样：一条真页面的示范网址。
-  // 提示词不放文档里——对方有风控，实际从规则行开始读，写了也看不到，改为发消息时单独发。
-  const demo = head.match(/https:\/\/\S+/g) || [];
-  assert.ok(demo.length > 0, '页首必须给至少一条现成示范网址');
-  const badDemo = demo.filter((u) => {
-    const rel = u.replace(base, '');
-    return !restored.has(rel) || !existsSync(path.join(DIST, rel));
-  });
-  assert.deepEqual(badDemo, [], `页首的示范网址不存在：\n${badDemo.join('\n')}`);
+  // ③ example 指向的 meta 必须真的存在、url 对得上。
+  const exMeta = JSON.parse(readFileSync(path.join(DIST, 'machine', cat.example.meta), 'utf8'));
+  assert.equal(exMeta.url, cat.example.path, 'example.meta 指向的页面 url 不对');
+  assert.ok((exMeta.math?.length || 0) + (exMeta.figures?.length || 0) > 0,
+    'example 指向的页必须是带结构数据的（空页没得学）');
 });

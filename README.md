@@ -2,8 +2,8 @@
 
 2026 年秋季学期 · 九门课的学习记录。**[在线阅读站 →](https://isui.ren/repo/S26-1_202609/)**
 
-> 🤖 **机器 / bot / agent 看这里**：`https://isui.ren/repo/S26-1_202609/machine/Birthright.txt`
-> —— 全站目录（**括号树压缩**：`A(B,C)` 展开为 `A/` 及 `A/B`、`A/C`；`A[B,C]` 只展开 `A/B`、`A/C`；非 `/` 结尾补 `.html`。180 个页面压成 4 KB）。
+> 🤖 **机器 / bot / agent 看这里**：`https://isui.ren/repo/S26-1_202609/machine/Birthright.json`
+> —— 全站页面清单（纯 JSON：`base` + `example` + `pages`，每条 `path` 接在 `base` 后即页面网址；条目里的 `meta` 指向该页的公式 TeX 源与配图清单——页面上公式是 KaTeX 排版结果，TeX 源在这里拿）。
 
 站内速览：左侧导航树（可拖宽）· `/` 或 `Ctrl+K` 全站搜索 · 右侧目录跳转 · 调色盘与昼夜主题 · **能力包**（右上角 package 图标：可下载公式编辑器与计算内核，下载后公式能点击编辑、能当场用 Octave 求值；不下载就保持只读）。作业页的提示分层展开——先自己按提示做，卡住了再往下点。
 
@@ -43,7 +43,7 @@
 | 通用电气 | 0 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E9%80%9A%E7%94%A8%E7%94%B5%E6%B0%94/index.md) |
 
 共 **9** 门课程、**309** 份资料。
-<!-- 仓库内容摘要（不含 README）：d97df0ac82b70175024a2fcd3ca7e2c6578d409850814458158e254b4282a8c1 -->
+<!-- 仓库内容摘要（不含 README）：c0c45cffad75a68ae1452fb00f03593b9dc2dd0aa5dc62e6eb0857ad685a1dfc -->
 
 <!-- AUTO-CATALOG:END -->
 

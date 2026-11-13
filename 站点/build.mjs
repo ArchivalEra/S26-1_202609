@@ -1252,6 +1252,8 @@ const symbolGaps = [];
 const symbolCoveragePages = [];
 /** 引用了但磁盘上没有的配图（多半是白名单漏了 → 从未入库，CI 上缺图）。 */
 const missingFigureRefs = new Set();
+/** machine/ 映射：每页的结构化数据（公式 TeX + 配图），构建期从管线现成数据收集。 */
+const machinePages = [];
 
 for (const relPath of TARGET_FILES) {
   const fullPath = path.join(ROOT, relPath);
@@ -3020,6 +3022,19 @@ for (const relPath of TARGET_FILES) {
     title: pageMeta.title
   }));
 
+  // machine/ 映射（2026-11-12）：只收构建管线**已经算好的结构化数据**——
+  // 公式 TeX 源（mathBlocks.tex）、配图（相对本页的 figures 路径 + alt）。
+  // 不重新解析 md、不碰人类页面内容：抓取方 fetch 本页 HTML 拿正文，
+  // 这里只补「页面上看不见源码」的部分（公式被 KaTeX 烤成排版，agent 读不到 TeX）。
+  const figImgs = [...htmlContent.matchAll(/<img src="(figures\/[^"]+\.svg)(?:\?[^"]*)?"[^>]*alt="([^"]*)"/g)]
+    .map((m) => ({ src: m[1], alt: m[2] }));
+  machinePages.push({
+    url: targetHtmlPath,
+    title: pageMeta.title,
+    math: mathBlocks.map((m) => ({ tex: m.tex, display: m.display })),
+    figures: figImgs,
+  });
+
   // Also create README.html at root if it's README.md
   if (relPath === 'README.md') {
     fs.writeFileSync(path.join(DIST_DIR, 'README.html'), htmlWithVers, 'utf-8');
@@ -3106,122 +3121,65 @@ if (symbolUncovered.length > 0) {
     + `${stats.grams} grams / ${stats.positions} positions, ${(bytes / 1024 / 1024).toFixed(2)} MB raw`);
 }
 
-// Birthright（2026-11-12）：全站目录，**括号树压缩**格式（2026-11-12 老师给的范例）。
-// 一页文字装下 180 个页面，重复前缀只写一次——比平铺 JSON 小一个数量级。
-//
-// 格式（首行就是自解释规则，机器读完即可拼）：
-//   A(B,C)  ⇒  A/ 与 A/B 与 A/C   （A 自己也是页面）
-//   A[B,C]  ⇒  只展开 A/B 与 A/C  （A 只是路径前缀，没有自己的页面）
-//   非 / 结尾的叶子补 .html
-// 生成后**立即反向解析自证**：还原出的 URL 集合必须与 SITE_PAGE_PATHS 完全相等，
-// 不等就抛错（这个文件是给陌生模型的唯一索引，错一条就是 404 且无从发现）。
-// 路径直接取 SITE_PAGE_PATHS（TARGET_FILES 派生），不另抄一份清单。
+// Birthright（2026-11-12）：`machine/` 下的**格式不变**——仍是
+// base + example + pages 平铺数组（括号树导航已被否，平铺最省）。
+// 每页的结构（公式 TeX / 配图）由**各页自己交代**：`站点/dist/<页>/` 旁不另生文件，
+// 而是写进 machine/pages/<编号>.json，Birthright 的 pages 条目给一个 `meta` 字段指过去。
+// 对方 agent 读不到 KaTeX 排版后的 TeX——HTML 里只有排版结果，TeX 源在这里。
+// 正文仍以 fetch 对应 HTML 页面为准；这里只收「HTML 里看不见源码」的部分。
 {
   const base = 'https://isui.ren/repo/S26-1_202609/';
-  const pages = SITE_PAGE_PATHS.slice();
+  // 示范页挑**结构数据最多**的一页：example 是给来访者照着学的，空页没得学。
+  const sample = machinePages.reduce((best, m) => (
+    (m.math.length + m.figures.length) > (best.math.length + best.figures.length) ? m : best
+  ), machinePages[0]).url;
+  const sampleMeta = machinePages.find((m) => m.url === sample);
+  const machineDir = path.join(DIST_DIR, 'machine');
+  fs.mkdirSync(machineDir, { recursive: true });
+  const metaDir = path.join(machineDir, 'pages');
+  fs.mkdirSync(metaDir, { recursive: true });
 
-  // ── 建树：目录（末尾 /）与页面分开记 ──────────────────────────────
-  const root = { isPage: false, isDir: true, children: new Map() };
-  for (const p of pages) {
-    if (p === '') { root.isPage = true; continue; }
-    const isDir = p.endsWith('/');
-    const parts = p.replace(/\/$/, '').split('/');
-    let cur = root;
-    parts.forEach((raw, i) => {
-      const last = i === parts.length - 1;
-      // 剥离统一的 .html 后缀（规则首行已写明「非 / 结尾补 .html」）
-      const name = (last && !isDir && raw.endsWith('.html')) ? raw.slice(0, -5) : raw;
-      if (!cur.children.has(name)) {
-        cur.children.set(name, { isPage: false, isDir: false, children: new Map() });
-      }
-      cur = cur.children.get(name);
-      if (last) { cur.isPage = true; cur.isDir = isDir; }
-    });
-  }
-
-  // ── 序列化：单子节点且自身非页面 ⇒ 直接 A/B 缩短；否则用括号分组 ──────
-  const serialize = (node, name = '') => {
-    const keys = [...node.children.keys()].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN', { numeric: true }));
-    if (keys.length === 0) return name + (node.isDir ? '/' : '');
-    const kids = keys.map((k) => serialize(node.children.get(k), k));
-    if (keys.length === 1 && !node.isPage) return `${name}/${kids[0]}`;
-    return node.isPage
-      ? `${name}(${kids.join(',')})`
-      : `${name}[${kids.join(',')}]`;
-  };
-
-  // 规则逐字保留老师那一句；歧义（`名称(` 是否自带 `/`）用一句补充收掉，
-  // 否则 `S26-1_202609(` 按字面会被补成 .html。
-  const RULE = 'A(B,C)展开为A/及A/B,A/C;A[B,C]仅展开为A/B,A/C;非/结尾补.html;'
-    + '「A(B,C)」中的A自带斜杠（A/），根亦如此';
-  // 根必须以 `/` 结尾：`名字(` 形式表示「名字自身也是页面」，不带尾斜杠的话
-  // 「非 / 结尾补 .html」会把它补成 S26-1_202609.html（仓库根不是页面）。
-  // 带上 `/` 后两条规则不再打架：根就是 base 本身，展开项都接在它后面。
-  const tree = serialize(root, base);
-  // 页首只留一条拼好的示范网址（2026-11-12 站长裁定）。
-  // ⚠️ 对方 agent 前面有风控，它实际是从规则行 `A(B,C)…` 开始读的——
-  // 写在文档里的提示词到不了它，所以这里不放提示词，改为发消息时单独发。
-  const sampleLeaf = '课程总览/工程数学/Walkthrough';
-  const sampleUrl = `${base}${sampleLeaf}.html`;
-  const birthright = `${sampleUrl}\n${RULE}\n${tree}\n`;
-
-  // ── 反向解析：还原 URL 集合，与源清单逐条比对（不一致就构建失败）────────
-  const expand = (expr) => {
-    const out = [];
-    const walk = (s) => {
-      // 顶层按逗号切分（括号内的逗号不算）
-      const items = []; let depth = 0, start = 0;
-      for (let i = 0; i < s.length; i += 1) {
-        const ch = s[i];
-        if (ch === '(' || ch === '[') depth += 1;
-        else if (ch === ')' || ch === ']') depth -= 1;
-        else if (ch === ',' && depth === 0) { items.push(s.slice(start, i)); start = i + 1; }
-      }
-      items.push(s.slice(start));
-      for (const item of items) {
-        const i1 = item.indexOf('('); const i2 = item.indexOf('[');
-        const idx = i1 === -1 ? i2 : (i2 === -1 ? i1 : Math.min(i1, i2));
-        if (idx === -1) { out.push(item); continue; }
-        const prefix = item.slice(0, idx);
-        const open = item[idx];
-        const inner = item.slice(idx + 1, -1);
-        // A(...) 自身也是页面：前缀已带尾斜杠时不要再补一个（根/首页那种）。
-        const self = prefix.endsWith('/') ? prefix : `${prefix}/`;
-        if (open === '(') out.push(self);
-        // 子项接在 A 后面；同样避免双斜杠。
-        const join = self;
-        const sub = [];
-        const before = out.length;
-        walk(inner);
-        for (let i = before; i < out.length; i += 1) sub.push(out[i]);
-        out.length = before;
-        for (const c of sub) out.push(`${join}${c}`);
-      }
-    };
-    walk(expr);
-    return out.map((u) => (u.endsWith('/') ? u : `${u}.html`));
-  };
-  const restored = expand(tree).map((u) => {
-    if (!u.startsWith(base)) return u;
-    const rel = u.slice(base.length);
-    return rel === '' ? '' : rel;   // base 自身 = 首页（""）；根名后的 / 已在 expand 里合并
+  // 每页一个 JSON：url / title / math[] / figures[]。文件名用自增编号（稳定、短、
+  // 路径安全），Birthright 的 pages[] 按同顺序给 meta 链接。
+  const sampleIdx = machinePages.indexOf(machinePages.find((m) => m.url === sample));
+  const pagesOut = machinePages.map((m, i) => {
+    const rel = `pages/${i}.json`;
+    fs.writeFileSync(
+      path.join(metaDir, `${i}.json`),
+      JSON.stringify({ url: m.url, title: m.title, math: m.math, figures: m.figures }, null, 1) + '\n',
+      'utf-8',
+    );
+    return { path: m.url, meta: rel };
   });
-  // 首页（""）在树里是 root 自身，还原时得到 base → 剥成 "" 后与源清单对得上。
-  const wantSet = new Set(pages);
-  const gotSet = new Set(restored);
-  const missing = [...wantSet].filter((p) => !gotSet.has(p));
-  const extra = restored.filter((p) => !wantSet.has(p));
-  if (missing.length || extra.length || gotSet.size !== wantSet.size) {
-    throw new Error(`[Birthright] 压缩树无损校验失败：缺 ${missing.slice(0, 5).join(' ')} / `
-      + `多 ${extra.slice(0, 5).join(' ')} / 还原 ${gotSet.size} vs 源 ${wantSet.size}`);
-  }
-  // 题外话里的示范网址必须是真页面——给来访者指错路比不给例子更糟。
-  if (!wantSet.has(`${sampleLeaf}.html`)) {
-    throw new Error(`[Birthright] 示范网址 ${sampleUrl} 不在页面清单里，换一条真的`);
-  }
 
-  fs.mkdirSync(path.join(DIST_DIR, 'machine'), { recursive: true });
-  fs.writeFileSync(path.join(DIST_DIR, 'machine', 'Birthright.txt'), birthright, 'utf-8');
-  console.log(`[Birthright] ${pages.length} 个页面 → dist/machine/Birthright.txt`
-    + `（${Buffer.byteLength(birthright)} bytes，无损校验通过）`);
+  const catalogue = {
+    base,
+    example: { path: sample, meta: `pages/${sampleIdx}.json` },
+    pages: pagesOut,
+  };
+  const jsonText = JSON.stringify(catalogue, null, 1) + '\n';
+  fs.writeFileSync(path.join(machineDir, 'Birthright.json'), jsonText, 'utf-8');
+
+  // 覆盖自证：pages 的 path 必须恰好等于全站页面清单（不重不漏）。
+  // pages.path 是 targetHtmlPath（目录页带 index.html），页面清单是网址形态——归一。
+  const normalize = (p) => (p === 'index.html' ? ''
+    : (p.endsWith('/index.html') ? p.slice(0, -'index.html'.length) : p));
+  const covered = new Set(pagesOut.map((p) => normalize(p.path)));
+  const want = new Set(SITE_PAGE_PATHS);
+  const miss = [...want].filter((p) => !covered.has(p));
+  const over = [...covered].filter((p) => !want.has(p));
+  if (miss.length || over.length) {
+    throw new Error(`[Birthright] pages 与全站页面清单不符：缺 ${miss.slice(0, 5).join(' ')} / 多 ${over.slice(0, 5).join(' ')}`);
+  }
+  // meta 自证：example 指向的文件必须存在且能解析、url 对得上。
+  const sampleParsed = JSON.parse(fs.readFileSync(path.join(metaDir, `${sampleIdx}.json`), 'utf-8'));
+  if (sampleParsed.url !== sample) {
+    throw new Error(`[Birthright] example.meta 指向的页面 url 不对：${sampleParsed.url} ≠ ${sample}`);
+  }
+  if (sampleParsed.math.length === 0 && sampleParsed.figures.length === 0) {
+    throw new Error(`[Birthright] 示范页 ${sample} 没有任何结构数据，换一个有内容的做示范`);
+  }
+  const mathCount = machinePages.reduce((s2, m) => s2 + m.math.length, 0);
+  const figCount = machinePages.reduce((s2, m) => s2 + m.figures.length, 0);
+  console.log(`[Birthright] ${machinePages.length} 页（公式 ${mathCount} / 配图 ${figCount}）→ machine/{Birthright.json, pages/<n>.json}（覆盖校验通过）`);
 }
