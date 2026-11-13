@@ -2,12 +2,11 @@
 
 2026 年秋季学期 · 九门课的学习记录。**[在线阅读站 →](https://isui.ren/repo/S26-1_202609/)**
 
-> 🤖 **机器 / bot / agent 看这里**：先取 `https://isui.ren/repo/S26-1_202609/machine/Birthright.txt`
-> —— 全站目录（括号树压缩，4 KB 装下 180 个页面）。**它的规则行拼出来的地址直接指向 `/machine/` 镜像**，
-> 因为建这个目录的理由就是「页面里读不到公式与图」：页面上公式是 KaTeX 排版结果，TeX 源码只在镜像里。
-> 每份镜像是 `…/machine/<与站内同路径>.json`（`…/课程总览/工程数学/Walkthrough.json`，
-> 目录页则是 `…/课程总览/工程数学/index.json`），含该页公式 TeX 源与配图（相对路径 + 文字描述）。
-> 正文仍去 fetch 对应 HTML 页面；`…/machine/_index.json` 有页面↔镜像的完整两列。
+> 🤖 **机器 / bot / agent 看这里**：`https://isui.ren/repo/S26-1_202609/machine/Birthright.html`
+> —— 全站目录树，**每个叶子都是完整网址**（点开或复制即可，不需要按任何规则拼接）。
+> 每份镜像是渲染前**整篇源文**：正文 Markdown、公式 TeX 原文、图片完整 URL（页面上公式是 KaTeX 排版结果、
+> 符号会给术语加气泡，源码只在这里）。镜像路径与站内一一对应：把页面网址里 `.html` 换成 `.json`
+> 并加 `machine/` 前缀（`…/课程总览/工程数学/Walkthrough.html` → `…/machine/课程总览/工程数学/Walkthrough.json`）。
 
 站内速览：左侧导航树（可拖宽）· `/` 或 `Ctrl+K` 全站搜索 · 右侧目录跳转 · 调色盘与昼夜主题 · **能力包**（右上角 package 图标：可下载公式编辑器与计算内核，下载后公式能点击编辑、能当场用 Octave 求值；不下载就保持只读）。作业页的提示分层展开——先自己按提示做，卡住了再往下点。
 
@@ -47,7 +46,7 @@
 | 通用电气 | 0 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E9%80%9A%E7%94%A8%E7%94%B5%E6%B0%94/index.md) |
 
 共 **9** 门课程、**309** 份资料。
-<!-- 仓库内容摘要（不含 README）：7cf79c0313e857afe8541616af8b8d6fda4f3a6a45e3b1f83004b89149cf57cc -->
+<!-- 仓库内容摘要（不含 README）：e957ecaf10d2f8f9bec87e283f69faaad3b7781ee55093f9eba629b873a2a9ca -->
 
 <!-- AUTO-CATALOG:END -->
 
