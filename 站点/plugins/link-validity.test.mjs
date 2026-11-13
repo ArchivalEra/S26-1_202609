@@ -137,4 +137,30 @@ test('machine/：镜像含整篇源文（TeX 原文 + 图片绝对 URL），Birt
   const tails = new Set(links.map((u) => u.slice(MACHINE_BASE.length)));
   const missing = sitePages.filter((p) => !tails.has(mirrorOf(p)));
   assert.deepEqual(missing.slice(0, 5), [], '这些页面在 Birthright 里没有链接');
+
+  // ④ 分片（2026-11-13）：腾讯侧 fetch 有体积限制，整页可能取不全。
+  //    每页切成小节，`<页名>/_index.json` 是「挑哪片」的小索引（必须小到能一次取完），
+  //    `<页名>/<id>.json` 是单题片。索引里的每一项都必须真的存在，且片内容自洽。
+  const sliceDir = path.join(machDir, '课程总览/电路原理/作业/习题册第一章');
+  const sliceIdx = JSON.parse(readFileSync(path.join(sliceDir, '_index.json'), 'utf8'));
+  assert.ok(Buffer.byteLength(JSON.stringify(sliceIdx)) < 64 * 1024,
+    '分片索引必须足够小（风控一次 fetch 能取完）');
+  assert.ok(sliceIdx.sections.length > 10,
+    `切片太少（${sliceIdx.sections.length}），按标题切分可能失效`);
+  for (const sec of sliceIdx.sections) {
+    const f = path.join(sliceDir, sec.file);
+    assert.ok(existsSync(f), `索引里的片不存在：${sec.file}`);
+    const piece = JSON.parse(readFileSync(f, 'utf8'));
+    assert.equal(piece.section, sec.heading, '片的 section 必须与索引 heading 一致');
+    assert.equal(Buffer.byteLength(piece.body), sec.chars, '片的字节数必须与索引 chars 一致');
+    assert.ok(piece.body.length > 0, '片内容不能为空');
+  }
+  // 片拼起来必须还是整页正文（不丢内容）——只判「有片」不够，要判覆盖。
+  const whole = JSON.parse(readFileSync(path.join(machDir, mirrorOf(samplePage)), 'utf8'));
+  const joined = sliceIdx.sections
+    .map((sec) => JSON.parse(readFileSync(path.join(sliceDir, sec.file), 'utf8')).body)
+    .join('\n').replace(/\n{2,}/g, '\n').trim();
+  const norm = (t) => t.replace(/\n{2,}/g, '\n').trim();
+  assert.equal(norm(joined).length >= norm(whole.body).length - 200, true,
+    `切片拼起来比整页短太多（${norm(joined).length} vs ${norm(whole.body).length}），有内容丢失`);
 });

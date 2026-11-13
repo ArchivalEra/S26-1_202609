@@ -3039,10 +3039,48 @@ for (const relPath of TARGET_FILES) {
     if (/^https?:/.test(src)) return `${pre}${src}${tail}`;
     return `${pre}${siteBase}${pageDir}${src}${tail}`;
   });
+  // 切片（2026-11-13）：腾讯侧 fetch 有体积限制，整页 JSON 可能取不全。
+  // 按 Markdown 标题切成小节，**每片一个文件**——agent 先取 _index.json（几十行，
+  // 几十 KB 也放行），挑出想读的那片再 fetch，不必自己截断、也不受整页体积限制。
+  // 切片边界：`##`/`###` 标题（`#` H1 是页名，不单独切片）。
+  const sections = [];
+  {
+    const lines2 = bodyMd.split('\n');
+    let cur = { id: 'intro', heading: '', lines: [] };
+    for (const line of lines2) {
+      const h = /^(#{2,3})\s+(.+?)\s*$/.exec(line);
+      if (h) {
+        sections.push(cur);
+        cur = { id: '', heading: h[2].replace(/\s*\{#[^}]+\}\s*$/, '').trim(), lines: [line] };
+      } else {
+        cur.lines.push(line);
+      }
+    }
+    sections.push(cur);
+  }
+  // 每片给一个稳定短 id：取标题里的编号/序号（`选 1（图 1.1）` → `选-1`），
+  // 没标题的（intro）用 `00-开头`。重复的加 -2、-3。
+  const used = new Map();
+  const slugify = (h) => h.toLowerCase()
+    .replace(/[（(][^）)]*[）)]/g, '')          // 去掉括号里的图号/补充
+    .replace(/[^\w\u4e00-\u9fa5]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'x';
+  const sliced = [];
+  sections.forEach((sec, i) => {
+    const text = sec.lines.join('\n').trim();
+    if (!text) return;
+    const base = sec.heading ? slugify(sec.heading) : `${String(i).padStart(2, '0')}-开头`;
+    const n = (used.get(base) || 0) + 1;
+    used.set(base, n);
+    const id = n === 1 ? base : `${base}-${n}`;
+    sliced.push({ id, heading: sec.heading || '（开头）', text });
+  });
+
   machinePages.push({
     url: targetHtmlPath,
     title: pageMeta.title,
     body: bodyMd,
+    sections: sliced,
   });
 
   // Also create README.html at root if it's README.md
@@ -3152,6 +3190,29 @@ if (symbolUncovered.length > 0) {
     fs.mkdirSync(path.dirname(abs), { recursive: true });
     const payload = { url: m.url, title: m.title, body: m.body };
     fs.writeFileSync(abs, JSON.stringify(payload) + '\n', 'utf-8');
+
+    // 分片：与整页同目录，`<页名>/<片id>.json` + `<页名>/_index.json`。
+    // 整页 JSON 保留（小的直接取、大的按索引挑片）。
+    const pageStem = mirror.replace(/\.json$/, '');
+    if (m.sections.length > 1) {
+      const secDir = path.join(machineDir, pageStem);
+      fs.mkdirSync(secDir, { recursive: true });
+      const idxRows = [];
+      for (const sec of m.sections) {
+        fs.writeFileSync(path.join(secDir, `${sec.id}.json`),
+          JSON.stringify({ url: m.url, title: m.title, section: sec.heading,
+            body: sec.text }) + '\n', 'utf-8');
+        idxRows.push({ id: sec.id, heading: sec.heading,
+          chars: Buffer.byteLength(sec.text), file: `${sec.id}.json` });
+      }
+      // 索引压到最小：只留「挑哪片」需要的字段（id / heading / chars / file），
+      // 用紧凑 JSON（无缩进）——这个文件本身也必须小到能一次取完。
+      fs.writeFileSync(path.join(secDir, '_index.json'), JSON.stringify({
+        url: m.url, title: m.title,
+        howToUse: '整页太大就按这里挑一片取：<本目录>/<file>',
+        sections: idxRows,
+      }) + '\n', 'utf-8');
+    }
     index.push({ page: m.url, mirror });
   }
 
@@ -3226,7 +3287,8 @@ a:hover{text-decoration:underline}
 </head>
 <body>
 <h1>Birthright · S26-1 课程知识库 /machine/ 镜像目录</h1>
-<p>每条都是完整网址，直接可取。页面正文去对应 HTML，公式源码与配图在这些 .json 里。</p>
+<p>每条都是完整网址，直接可取。整页 JSON 里是渲染前的源文（正文 + TeX 原文 + 图片完整 URL）。</p>
+<p>页面太大取不全时，改取同名的目录下的 <code>_index.json</code>：它按小节列出每片（heading / 字数 / 文件名），挑中哪片就取 <code>&lt;页面&gt;/&lt;file&gt;</code>。</p>
 <pre>${treeText.replace(/&lt;/, '&lt;')}</pre>
 </body>
 </html>
