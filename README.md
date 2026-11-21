@@ -48,7 +48,7 @@
 | 通用电气 | 0 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E9%80%9A%E7%94%A8%E7%94%B5%E6%B0%94/index.md) |
 
 共 **9** 门课程、**309** 份资料。
-<!-- 仓库内容摘要（不含 README）：1117441fc6fe7991b70dfcc1fd0d5582fddb1da357a5cf95313cec9abd55c6e9 -->
+<!-- 仓库内容摘要（不含 README）：c412a24c3c4198cecf86590d2c77539a4ebfabc5eca3d04d2c7e0f5e598e3ff0 -->
 
 <!-- AUTO-CATALOG:END -->
 

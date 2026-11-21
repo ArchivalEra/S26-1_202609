@@ -2,8 +2,8 @@
 # 本仓 pre-commit（2026-11-07 起退役为「纯自有链」）：白名单/索引/自动区块检查。
 #
 # Einfacht 段已迁出 —— core.hooksPath 已撤销，钩子由 .git/hooks 的链式 wrapper
-# 接管（install.py --chain 生成：先跑本文件（以 einfacht-prev 副本形式），后跑
-# reflect-hooks/gate.py commit）。本文件保留为 --uninstall 后的手动回滚入口，
+# 接管（reflect-local/hook.py --chain 生成：先跑本文件（以 einfacht-prev 副本形式），后跑
+# reflect-local/hook.py commit）。本文件保留为 --uninstall 后的手动回滚入口，
 # 不再被默认钩子链调用。
 #
 # ⚠️ $PWD 可能是**别人的仓库**（钩子被继承）：没有 .githooks/update-readme.py

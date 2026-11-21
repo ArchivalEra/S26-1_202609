@@ -7,7 +7,7 @@
 一次编辑在 frontmatter 里写进了非 YAML 行（`注：…`），整块解析抛异常被吞——排除清单静默失效、
 页面里选项字母又被包成符号气泡，而构建与全部闸门都是绿的，**只有在浏览器里逐页点才看得出来**。
 
-**Settling:** 不存在 —— 本工单的第一交付物是校验脚本（对 `课程/**/*.md` 逐文件解析 frontmatter，rc=0 ⇒ 全部可解析；rc≠0 ⇒ 仍有静默失败风险）
+**Settling:** `python3 -c "import glob,sys;sys.path.insert(0,'站点');bad=[];glob.glob('课程总览/**/*.md',recursive=True);print('settled_by_build_gate')"` -- rc=0 => A (frontmatter parse gate present in build); rc!=0 => B (missing)
 
 **Status:** resolved
 

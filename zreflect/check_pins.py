@@ -1,37 +1,49 @@
 #!/usr/bin/env python3
-"""上游/派生树 pin 一致性闸门（**可插拔模块**；源自 Octave-Full-Wasm 仓库架构批的通用化）。
+"""Upstream/derived-tree pin consistency gate (**pluggable module**; generalized
+from the repo-architecture batch of Octave-Full-Wasm).
 
-一个仓库挂 N 个上游 fork/submodule 时的新缺口：**submodule 指针 bump 了、
-派生副本（容器里的供给树/部署目录）还在用旧内容**——这种漂移不在任何 git 视图里。
-机制：供给方（build 脚本）把派生树复制的**同时**写一个 stamp 文件
-（约定内容：`<name> <branch> <commit> <dirty-count>`），本闸门每提交把 stamp
-与 worktree 的 HEAD 对读——三条断言：commit 一致 / 派生树干净 / 版本串匹配。
+A new gap when a repo carries N upstream forks/submodules: **the submodule
+pointer was bumped while the derived copy (the provisioned tree / deploy
+directory inside a container) still runs the old content** -- that drift appears
+in no git view. Mechanism: the provisioner (the build script) writes a stamp
+file **at the same moment** it copies the derived tree (convention:
+`<name> <branch> <commit> <dirty-count>`); every commit, this gate reads the
+stamp against the worktree's HEAD -- three assertions: commit matches / the
+derived tree is clean / the version string matches.
 
-规格（`REFLECT_PINS`，默认 `pins.json`；数据不是代码）：
+Spec (`REFLECT_PINS`, default `pins.json`; data, not code):
 
     { "pins": [
         { "name": "octave", "kind": "tree",
-          "worktree": "upstream/octave",                  # 宿主 git 工作树
+          "worktree": "upstream/octave",                  # host git worktree
           "stamp_read": "sudo -E docker exec ctr cat /x/.upstream-pin" },
         { "name": "emsdk", "kind": "version",
           "worktree": "upstream/emsdk",
           "version_read": "sudo -E docker exec ctr emcc --version",
           "expect_version": "5.0.7" } ] }
 
-- `tree`：派生副本 ↔ worktree HEAD。commit 不一致（供给后指针 bump）与
-  dirty≠0（有人手改派生树）都报——与「声明了却没检查」同族的「复制了却没钉」。
-- `version`：命令输出首行必须含 `expect_version`（portable 工具链那种无法整树
-  入 git 的上游，钉版本串）。
-- 读不到命令输出 ⇒ `SKIP:`（明说未核对，不是通过——换了机器不是错）；
-  空 pins ⇒ 报（零值守卫）；`REFLECT_PINS` 未配 ⇒ 明说未启用退 0；
-  显式指定（--spec / 旋钮）而文件不在 ⇒ FATAL 退 2。
+- `tree`: derived copy <-> worktree HEAD. Both a commit mismatch (pointer
+  bumped after provisioning) and dirty != 0 (someone hand-edited the derived
+  tree) are reported -- same family as "declared but never checked": "copied
+  but never pinned".
+- `version`: the first line of the command output must contain
+  `expect_version` (for upstreams like portable toolchains that cannot commit
+  the whole tree to git, pin the version string).
+- Command output unreadable => `SKIP:` (explicitly unchecked, not a pass --
+  running on a different machine is not an error); empty pins => reported
+  (zero-value guard); `REFLECT_PINS` unset => explicitly not enabled, exit 0;
+  explicitly specified (--spec / knob) but the file is missing => FATAL exit 2.
 
-与 `check_invariants`（#7）正交：那边守**仓库文件文本**，这边守**派生副本的活性身份**。
-与 `doctor`（#10）正交：doctor 问「活着吗」，本闸门问「是钉住的那个吗」。
+Orthogonal to `check_invariants` (#7): that one guards **repo file text**, this
+one guards **the living identity of the derived copy**.
+Orthogonal to `doctor` (#10): doctor asks "is it alive?", this gate asks "is it
+the pinned one?".
 
-用法（cwd=仓库根）：python3 zreflect/check_pins.py [--spec pins.json]
-（规格名解析：--spec 显式 > `REFLECT_PINS` 旋钮 > 默认 `pins.json`）
-退出码：0=绿或未启用 / 1=发现问题 / 2=配置坏。自证：--selftest（runner 注入，不碰真 docker）。
+Usage (cwd = repo root): python3 zreflect/check_pins.py [--spec pins.json]
+(Spec-name resolution: explicit --spec > `REFLECT_PINS` knob > default
+`pins.json`.)
+Exit codes: 0 = green or not enabled / 1 = problems found / 2 = broken config.
+Selftest: --selftest (runner-injected; never touches real docker).
 """
 from __future__ import annotations
 
@@ -42,45 +54,24 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import gate  # noqa: E402
-import knobs  # noqa: E402
-import machine  # noqa: E402
-from gate import (  # noqa: E402
-    fatal,
-    finish,
-    load_spec,
-    main_selftest_or,
-    meta,
-    off,
-    repo,  # noqa: E402
-)
-from i18n import M  # noqa: E402
-
-# 从旋钮登记表派生（唯一产地）—— 手写字面量会与它漂（本仓最贵的一类债）。
-DEFAULT_SPEC = knobs.REGISTRY["REFLECT_PINS"][1]
-
-
-def resolve_spec(argv, knob=""):
-    """见 `gate.resolve_spec`：实现只有一处，这里只绑定本闸门的默认名。"""
-    return gate.resolve_spec(argv, knob, DEFAULT_SPEC)
+from gate import main_selftest_or, meta, repo  # noqa: E402
+from i18n import M, Message  # noqa: E402
 
 
 def _run(cmd):
-    try:
-        p = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60,
-                           encoding="utf-8", errors="replace")
-        return p.returncode, p.stdout.strip()
-    except (OSError, subprocess.TimeoutExpired) as e:
-        return -1, str(e)
+    rc, out = gate.run_cmd(cmd)
+    return (-1 if rc is None else rc), out.strip()
 
 
 def _required_field_problems(p):
-    """pin 条目必填字段（name / worktree）缺失 ⇒ 报（why/name 必填的家族规矩）。"""
+    """A pin entry missing a required field (name / worktree) => report."""
     return [M("pins.pin_missing_field", field=f, entry=p)
             for f in ("name", "worktree") if not p.get(f)]
 
 
 def _head_problems(p, root, run):
-    """读 worktree HEAD。返回 (问题清单, head 或 None)；None ⇒ 本 pin 到此为止。"""
+    """Read the worktree HEAD. Returns (problem list, head or None); None means
+    this pin ends here."""
     wt = gate.repo_path(p["worktree"], root)
     if not os.path.isdir(wt):
         return [M("pins.worktree_missing", name=p["name"],
@@ -92,47 +83,61 @@ def _head_problems(p, root, run):
 
 
 def _tree_pin_problems(p, head, run):
-    """kind=tree：派生副本 ↔ worktree HEAD（commit 一致 / 派生树干净）。
+    """kind=tree: derived copy <-> worktree HEAD (commit matches / tree clean).
 
-    返回 (problems, skips)。
+    Returns (problems, skips).
     """
-    problems, skips = [], []
+    problems: list[Message] = []
+    skips: list[Message] = []
+    if p.get("optional"):
+        problems.append(M("gate.optional_forbidden", name=p["name"]))
     rc, out = run(p["stamp_read"])
     if rc != 0 or not out:
-        skips.append(M("pins.stamp_unreadable", name=p["name"]))
+        problems.append(M("pins.stamp_unreadable", name=p["name"]))
         return problems, skips
     parts = out.split()
-    if len(parts) < 3:
+    if len(parts) < 4:
         problems.append(M("pins.stamp_malformed", name=p["name"], actual=out[:40]))
         return problems, skips
     if parts[2] != head:
         problems.append(M("pins.commit_mismatch", name=p["name"],
                           declared=parts[2][:12], actual=head[:12]))
-    if len(parts) > 3 and parts[3] not in ("0", ""):
+    if parts[3] != "0":
         problems.append(M("pins.dirty", name=p["name"], count=parts[3]))
     return problems, skips
 
 
 def _version_pin_problems(p, run):
-    """kind=version：命令输出首行必须含 expect_version。返回 (problems, skips)。"""
-    problems, skips = [], []
+    """kind=version: the first line of the command output must contain
+    expect_version (token-bounded). Returns (problems, skips)."""
+    import re  # noqa: PLC0415
+    problems: list[Message] = []
+    skips: list[Message] = []
+    if p.get("optional"):
+        problems.append(M("gate.optional_forbidden", name=p["name"]))
     rc, out = run(p.get("version_read", ""))
     first = out.splitlines()[0] if out else ""
     if rc != 0 or not first:
-        skips.append(M("pins.version_unreadable", name=p["name"]))
+        problems.append(M("pins.version_unreadable", name=p["name"]))
         return problems, skips
-    if p.get("expect_version") and p["expect_version"] not in first:
+    expect = p.get("expect_version")
+    if not expect:
+        problems.append(M("pins.pin_missing_field", field="expect_version", entry=p))
+    elif not re.search(r"(?<![0-9A-Za-z.])%s(?![0-9A-Za-z.])" % re.escape(expect), first):
         problems.append(M("pins.version_drift", name=p["name"],
-                          declared=p["expect_version"], actual=first[:48]))
+                          declared=expect, actual=first[:48]))
     return problems, skips
 
 
 def _pin_problems(p, root, run):
-    """单个 pin 的三条断言（字段 / HEAD / kind 分派）。返回 (problems, skips)。"""
-    problems, skips = _required_field_problems(p), []
+    """The three assertions for one pin (fields / HEAD / kind dispatch).
+    Returns (problems, skips)."""
+    problems = _required_field_problems(p)
+    skips: list[Message] = []
     if problems:
-        # 必填字段缺失 ⇒ 到此为止（后面的 HEAD / kind 读取都要 name/worktree，
-        # 缺字段本身就是要报的事，别让它退化成 KeyError）。
+        # A missing required field ends it here (the HEAD / kind reads below all
+        # need name/worktree; the missing field is itself the reportable fact --
+        # do not let it degrade into a KeyError).
         return problems, skips
     head_probs, head = _head_problems(p, root, run)
     problems += head_probs
@@ -150,15 +155,18 @@ def _pin_problems(p, root, run):
 
 
 def check(spec, run=_run, root=None):
-    """纯逻辑（自证注入 run）。返回 (problems, skips)。
+    """Pure logic (the selftest injects `run`). Returns (problems, skips).
 
-    `root` = 相对 worktree 的锚（默认被检查仓库根；自证传夹具目录）。
+    `root` = the anchor for resolving relative worktrees (default: the repo
+    under check; the selftest passes a fixture directory).
     """
     root = repo() if root is None else root
-    pins = spec.get("pins") or []
-    if not pins:
+    if not isinstance(spec, dict):
+        return [M("pins.spec_broken", name="pins.json", error="spec must be an object")], []
+    pins = spec.get("pins")
+    if not isinstance(pins, list) or not pins:
         return [M("pins.empty")], []
-    problems, skips = [], []
+    problems, skips = gate.exec_position_problems(spec, "pins.json"), []
     for p in pins:
         probs, sks = _pin_problems(p, root, run)
         problems += probs
@@ -167,28 +175,19 @@ def check(spec, run=_run, root=None):
 
 
 def main(argv):
-    spec_path, explicit = resolve_spec(argv, os.environ.get("REFLECT_PINS", ""))
-    path = gate.repo_path(spec_path)
-    if not os.path.isfile(path):
-        if explicit:
-            return fatal(M("pins.explicit_spec_missing", name=spec_path))
-        return off(M("pins.off", name=spec_path))
-    spec, err = load_spec(path)
-    if err:
-        return fatal(M("pins.spec_broken", name=spec_path, error=err))
-    problems, skips = check(spec)
-    for x in skips:
-        print(machine().emit("skip", str(x)), file=sys.stderr)
-    return finish(M("pins.title"), problems,
-                  M("pins.ok", count=len(spec.get("pins") or [])))
+    return gate.run_spec_gate(
+        argv, "REFLECT_PINS",
+        off_msg=lambda n: M("pins.off", name=n),
+        missing_msg=lambda n: M("pins.explicit_spec_missing", name=n),
+        broken_msg=lambda n, err: M("pins.spec_broken", name=n, error=err),
+        title=M("pins.title"),
+        judge=check,
+        ok_msg=lambda spec: M("pins.ok", count=len(spec.get("pins") or [])),
+    )
 
 
 def _fixture():
-    """真 git 夹具仓 + 各形态的规格。返回 dict。
-
-    ⚠️ 早先这段（八个 spec 字面量 + 建仓）直接写在 `_cases()` 里，和断言
-    交错 —— 70 行里前一半是夹具。分开之后「哪种规格考哪条判据」一眼可见。
-    """
+    """Git worktree fixture and specs for `_cases()`."""
     import atexit  # noqa: PLC0415
     import shutil  # noqa: PLC0415
     import tempfile  # noqa: PLC0415
@@ -204,7 +203,6 @@ def _fixture():
         ["git", "-C", os.path.join(d, "wt"), "rev-parse", "HEAD"],
         capture_output=True, text=True,
                            encoding="utf-8", errors="replace").stdout.strip()
-    # worktree 用**绝对路径**（引擎按仓库根/abs 解析；夹具树在临时目录）
     wt = os.path.join(d, "wt")
     stamp = "echo octave wasm/11.3.0 %s 0"
     return {
@@ -235,12 +233,12 @@ def _cases():
     d = fx["d"]
     return [
         ("pins.resolve_spec",
-         lambda: resolve_spec(["--spec", "x.json"], "K.json") == ("x.json", True)
-         and resolve_spec([], "K.json") == ("K.json", True)
-         and resolve_spec([], "") == ("pins.json", False)),
-        # ① 正常不报
+         lambda: gate.resolve_spec(["--spec", "x.json"], "K.json", "pins.json") == ("x.json", True)
+         and gate.resolve_spec([], "K.json", "pins.json") == ("K.json", True)
+         and gate.resolve_spec([], "", "pins.json") == ("pins.json", False)),
+        # (1) compliant input: nothing reported
         ("pins.ok", lambda: check(fx["ok"], run=_run, root=d) == ([], [])),
-        # ② 该报的必须报
+        # (2) what must be reported is reported
         ("\u2605 pins.commit_mismatch",
          lambda: [p.code for p in check(fx["commit_mismatch"], run=_run,
                                         root=d)[0]] == ["pins.commit_mismatch"]),
@@ -251,8 +249,11 @@ def _cases():
          lambda: [p.code for p in check(fx["version_drift"], run=_run,
                                         root=d)[0]] == ["pins.version_drift"]),
         ("\u2605 pins.stamp_unreadable",
-         lambda: [p.code for p in check(fx["skip"], run=_run, root=d)[1]]
+         lambda: [p.code for p in check(fx["skip"], run=_run, root=d)[0]]
          == ["pins.stamp_unreadable"]),
+        ("\u2605 pins.optional_forbidden",
+         lambda: "gate.optional_forbidden" in [p.code for p in check(
+             {"pins": [{**fx["skip"]["pins"][0], "optional": True}]}, run=_run, root=d)[0]]),
         ("\u2605 pins.worktree_missing",
          lambda: [p.code for p in check(
              {"pins": [{"name": "x", "kind": "tree", "worktree": "nope",
@@ -266,16 +267,16 @@ def _cases():
          lambda: [p.code for p in check(
              {"pins": [{"name": "x", "kind": "weird", "worktree": fx["wt"]}]},
              run=_run, root=d)[0]] == ["pins.unknown_kind"]),
-        # ③ 空输入必须报
+        # (3) empty input must be reported
         ("\u2605 pins.empty",
          lambda: [p.code for p in check(fx["no_pins"], root=d)[0]]
          == ["pins.empty"]),
     ]
 
 
-GATE = meta("pin 闸门", "派生树 pin 一致性（stamp commit / dirty / 版本串对读）",
+GATE = meta("pin gate", "derived-tree pin consistency (stamp commit / dirty / version string cross-read)",
             knobs=("REFLECT_PINS",),
-            off_reason="没有派生树的仓不需要它：规格未配 ⇒ 明说未启用")
+            off_reason="repos without a derived tree do not need it: spec unset => explicitly not enabled")
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:], "check_pins", _cases, main))

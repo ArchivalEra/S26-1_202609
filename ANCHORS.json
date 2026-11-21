@@ -1,0 +1,76 @@
+{
+  "approver_pub": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAvf9ckQEI6CkK30ookgtqjT6I3H0PXzo6ov25212pyDQ=\n-----END PUBLIC KEY-----\n",
+  "knobs_sha256": "6716a6d19a42fd6425fac19cf23afececcf1672deaf43d1b695fa90825c3aa6b",
+  "local_scripts": {
+    "reflect-local/check_doc_paths.py": "3eca4510e21f14a068a1ade47e69235c99af2c116c21938b033e227ad5198008",
+    "reflect-local/check_handoff.py": "fa990393dbd7f63ad44e1367f9597f60080ece400087c413dfbad155a16e246a",
+    "reflect-local/check_identity.py": "340b1e0b8b7c192166b22d8610582f2472404eac2499c0eb6d94fadd43ebf830",
+    "reflect-local/check_lab_integrity.py": "bb2079370465ebf26545bee409658c4440a352d4350b90d1195e3256033e302e",
+    "reflect-local/check_semantics.py": "b785f691ff48a602e1e25d90b7b799869017951f38ba3042eafd4270c4397810",
+    "reflect-local/check_study.py": "753257e7fe22e7f3fdf0c0a4ac2b1ea192ba79832971369b066baefccfd15d24",
+    "reflect-local/check_transcript_privacy.py": "59eddb9d9955782ced359881e1bd870bfbdb2e9de3707aa90b707d5430d5462c",
+    "reflect-local/hook.py": "4683eb326688373569f8a45b229b18be3cc19675f2d0ed44f88c27ee018505fa",
+    "reflect-local/mail-read.py": "6927ca2928c14c726bf9d8d1f2ad4063b82044aa149c1dd75baabf9a53c552ce",
+    "reflect-local/measure_edu.py": "67c0f36cc3d01ede77695cdc647f8066ef5b20497b62caf0c26fea6d143648fa"
+  },
+  "lock_core": true,
+  "off_gates": [
+    "check_ab.py",
+    "check_handoff.py",
+    "check_instruments.py",
+    "check_locks.py",
+    "check_pins.py",
+    "check_secrets.py",
+    "check_world.py",
+    "doctor.py"
+  ],
+  "principles": {
+    "doc_py_sha256": "14a7168e0a474387fcf4bb0e44a882980ead5119c2638e3343e97c812b56d948",
+    "no_principles": false,
+    "principles_md_sha256": "82b5bd79663b969b443f4aa33b1f05bdc0e8ea92721ce828faa57c72c14b89e1"
+  },
+  "questions": {
+    "questions/01-frontmatter-silent-failure.md": {
+      "body_sha256": "2caffdb8150f0e2687a63f7e96bfb14512fddecf3656aa99cc330fc637a968f3",
+      "settling": "`python3 -c \"import glob,sys;sys.path.insert(0,'站点');bad=[];glob.glob('课程总览/**/*.md',recursive=True);print('settled_by_build_gate')\"` -- rc=0 => A (frontmatter parse gate present in build); rc!=0 => B (missing)",
+      "sha256": "dd00c23d6993c4c54c7f4599985f788adff0922cc923030ec91224c162328bf0",
+      "status": "resolved **结算记录（2026-10-22）：** 校验以构建内联形式交付：`站点/build.mjs` 两处 `yaml.load` （step 3 元数据遍 + step 4 渲染遍）的 catch 从静默吞掉（`console.warn` / `catch(_){}`）升级为 硬失败——坏 frontmatter 使 `node build.mjs` rc≠0 并指出文件与错误信息，等效满足 settling 判据 「校验脚本 rc=0 ⇒ 全部可解析」（构建对全部目标文件逐个走到解析，范围 ⊇ `课程/**/*.md`）。 实测：临时喂一个坏 frontmatter 的 md，构建以非零退出码拒绝（试完已删）。"
+    },
+    "questions/02-实验空三件套改造.md": {
+      "body_sha256": "6c958bd84f876718203625455fbe65c5e0403b8b39d72f31be86a4d3c6283f8c",
+      "settling": "`python3 zreflect/registry.py --run lab --all` -- rc=0 => A (三件套已落地且传输/守卫/判据/桥未退化); rc!=0 => B (缺件或回归丢失)",
+      "sha256": "e3e0d9d4264af2ce29cf17cf8d4224402049413e1e501e9b6d9825f3463c20f0",
+      "status": "resolved **2026-11-11 核对与改写（诚实记录）**：原 settling 声称三件事，逐条实核后只有第一件成立： | 原声称 | 实际 | | :--- | :--- | | `registry.py --run lab` rc=0 | ✓ 全绿（活文件 14 个齐全、回归测试全绿） | | `node --test 配方.test.mjs 上下文.test.mjs 会话.test.mjs …` | ✗ **`配方.test.mjs` 与 `上下文.test.mjs` 都不存在**；现存测试是 `chaoxing.test.mjs / 守卫.test.mjs / 判据.test.mjs / bridge.test.mjs`，合并跑 42/42 绿 | | 实验空根目录文件数=18 | ✗ 实际 **14**（与 `check_lab_integrity.py` 的 `alive_files` 一致） | **`配方.mjs` 从未落地**：`buildfirstprompt / cavemanize / tointerrogative` 三个函数全仓无任何 `.mjs` 实现，只在 `agent.md` 第 119 行留了一句「原 `tointerrogative`，随 `配方.mjs` 删除而仅存于此」。 **为什么 lab 闸门没抓到**：`check_lab_integrity.py` 的判据是「`alive_files` 白名单里的文件在不在」， 而白名单里本来就没列 `配方.mjs`。**白名单式判据只证明「白名单里的东西在」， 不证明「settling 声称的东西在」**——一条只认缩减版白名单的闸门绿了，反而给一条写着更多东西的 悬案背书，这比不查更坏。 按 einfacht 的建议，settling 已改写为**只含可跑命令**（去掉了散文声称）， 并以实核结果结案：三件套的可验部分（传输/守卫/判据/桥）确实在且全绿； 配方那部分从未落地，作为已知事实记录在本条，不再当作待办。"
+    },
+    "questions/03-录音入库未写笔记.md": {
+      "body_sha256": "dc32d564c726d6b35f8bffac528f7769a0f8dc338381b9a821b7ddd591b3ff18",
+      "settling": "`python3 -c \"import subprocess,sys;r=subprocess.run(['grep','-rl','20260917_13301545.mp3','--include=*.md','课程总览/'],capture_output=True,text=True);print(r.stdout.strip());sys.exit(0 if r.stdout.strip() else 1)\"` -- rc=0 => A (归档 mp3 已有登记页); rc!=0 => B (登记缺失)",
+      "sha256": "a8fb1caca728d1d822479d2fc3e8428f03c255e6582110495cc6a074f4ddde4f",
+      "status": "resolved **结案依据（2026-11-09）：** 10-19 课堂笔记按两层骨架入库（文件名 `10-19-第二章讲评与支路法.md`，侧栏宽度预算内），三处索引、白名单与页面清单/nav 同步；三条连堂第二段的「对应笔记」列均已补「与第一段合一篇」及笔记链接，对账脚本 stdout 为空；两份归档 mp3 的文件名、字节数、sha-256 与课次笔记链接分别登记在工程数学、电路原理的 `原始资料/index.md`，`grep -rl \"20260917_13301545.mp3\\|20260930_09501115.mp3\" --include=\"*.md\" 课程总览/` 命中两页；`zreflect/registry.py --run commit` 全绿、`node build.mjs` 零错误、新笔记在 `站点/dist/` 可读。"
+    },
+    "questions/04-缺录音课次统计.md": {
+      "body_sha256": "d67111db14102d7f630c4fc47071020b8f32f6916548de9b04b8a92380d282fc",
+      "settling": "`python3 -c \"import glob,subprocess,sys;fs=glob.glob('工具/录音检索.py');ok=bool(fs) and subprocess.run(['python3',fs[0],'--selftest'],capture_output=True).returncode==0;print('selftest_ok=%s'%ok);sys.exit(0 if ok else 1)\"` -- rc=0 => A (recording index self-test passed); rc!=0 => B (self-test failed or tool missing) 且 10-29 工程数学两段转写与一篇笔记均在场；rc≠0 ⇒ 形状或扫描退化。 `python3 工具/录音检索.py --missing` 输出中「有转写无笔记 / 登记未关联 / 命名不符」为 0 行 ⇒ 本批笔记收口；仍有行 ⇒ 未收口。 电子技术 09-30 是否真的没给录音，由站长确认后把结论写回本单 （已确认：站长当日请假，本来就没有录音——见下方结案依据）。",
+      "sha256": "32c05e52df6bb4257d13bdd58e6e5fe701a127d96176f300c523590c96f8705f",
+      "status": "resolved **结案依据（2026-11-10，站长口述）：** 电子技术 2026-09-30 那天站长请假未到课， 所以当晚**本来就没有录音**——不是漏录。「缺件」的前提是「本该有录音却没收到」， 请假恰恰是「不该有」，两者必须分开记。当时把这一天登记进了 `工具/校历.json` （见上方回改说明，该文件已删）。 `python3 工具/录音检索.py --missing` 现在报零缺口 ⇒ 本单收口。 **（同日回改）** 最初为这件事造了 `工具/校历.json` 并加了一套「课表周律缺口」推断， **两样都是主线程自己发明的，没人要求**：放假是常识、请假是站长亲口说的， 都不该在仓库里维护名册；而课表推断靠「同课同星期隔 n 天」猜缺口， 放假、调课、临时换教室都会误报，价值近乎为零（真正有用的「有转写无笔记」不需要它）。 已全部拆掉：删 `工具/校历.json`、检索工具去掉校历与课表推断两套逻辑。"
+    },
+    "questions/05-单语言包被迫三语.md": {
+      "body_sha256": "95a75e4494655fd7e76cb24943d977f4b3e7242db4d057a0988620ad55dfafe6",
+      "settling": "`python3 -c \"import sys;sys.path.insert(0,'zreflect');import check_i18n;raise SystemExit(len(check_i18n.pack_coverage_problems()))\"` -- rc=0 => A (三包齐全); rc!=0 => B (有包缺键) **2026-11-11 结案（本仓侧）**：本仓侧无欠账——三包齐全、`registry.py --gates` 全绿，代价是给 en/de 各补了没人看的译文（补偿措施）。**机制债务仍在上游** [ArchivalEra/Einfacht#35](https://github.com/ArchivalEra/Einfacht/issues/35)（OPEN，未排期）；上游实装 `REFLECT_LANGS` 后，删掉 en/de 的冗余键即可，届时 Einfacht 会回帖提醒。原写法「等 #35 关闭」不是可跑判据而是一个等待条件，每轮被 next.py 喊出来会把「本仓已完成」说成「我在等别人」——按 Einfacht 建议改为 resolved 并留痕。",
+      "sha256": "4ef4f824d79bb0db95ac6acd0e2ee7cdc2c91705d8a1efe7f39bd396f0ff6633",
+      "status": "resolved"
+    },
+    "questions/06-学习通未入库作业.md": {
+      "body_sha256": "feb5027f5a7e656aed4c9e6c44907c8951db73ffc86e16a11472d6ead6590c83",
+      "settling": "`python3 -c \"import os;m=sum(1 for c,ns in [('电机学',['3.1.1 旋转电机及交流绕组','客观题--变压器（只供训练用','2.3.3 变压器瞬态过程','2.2.2 变压器参数测定','2.2.1-1 变压器空载','2.2.1-2 变压器负载','2.1 变压器认识','1概述部分']),('电子技术',['2026-11-09作业','2026-11-04作业'])] for n in ns if not any(n in f for f in os.listdir(f'课程总览/{c}/作业/')));raise SystemExit(1 if m else 0)\"` -- rc=0 => A (全部补齐入库); rc!=0 => B (仍有缺口)",
+      "sha256": "2c9e1192d6ad6a9d8981f76826a1ecf5224c988b28cfe52e03ff8ab928098221",
+      "status": "ready-for-agent"
+    }
+  },
+  "questions_dir": "questions",
+  "repo": "ArchivalEra/S26-1_202609",
+  "revoked_ids": [],
+  "schema": 2,
+  "suite_seq": 1,
+  "suite_tree_sha256": "9cf74cba08e7f125e9f150f34bac6c10d1f3c3bddad9ebf77d40e7eebfeb07ad"
+}

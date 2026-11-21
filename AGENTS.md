@@ -22,13 +22,13 @@
 - 转写现在都是 `.txt`，直接读；`.githooks/extract-transcript.py` 只用于早期 `.doc → .txt` 转换。
 - **课堂转写原件不入库**：原件含教师个人信息与学生发言，本地副本留在
   `课程总览/<课>/原始资料/` 或 `/mnt/hdd/study/<课>/原始资料/`，不跟踪、不加白名单、不推送；
-  仓库只入库 `原始资料/index.md` 的文件名、性质说明与 SHA-256 登记，以及整理后的笔记。
+  仓库只入库 `原始资料/index.md` 的文件名、性质说明与 SHA256 登记，以及整理后的笔记。
 - **`/mnt/hdd/study/` 是仓库外的待办区**：新到的转写、照片先落在它的根层，
   **当天就要归进 `<课>/原始资料/`**（照片先过 `.githooks/prepare-photos.py` 再派单）。
   根层出现文件 = 有东西没归位，意味着检索查不到、索引会漏课；
-  已归档成 JXL 的原件（JPEG）核对哈希后即可删。闸门 `zreflect/check_study.py`
+  已归档成 JXL 的原件（JPEG）核对哈希后即可删。闸门 `reflect-local/check_study.py`
   在提交时拦「根层散落」与「study/ 被 git 追踪」。
-- `.kimi-code/` 一律不推送；助手协议栈真相源在 `.kimi-code/学习通API/protocol/`，`站点/dist` 不出现上游语义。
+- `.kimi-code/` 一律不推送（`.kimi-code/` is never committed）；助手协议栈真相源在 `.kimi-code/学习通API/protocol/`，`站点/dist` 不出现上游语义。
 
 ## 二、图元
 
@@ -44,16 +44,13 @@
 `python3 zreflect/facts.py --render-doc STATE.md` 渲染，不手改；改口用 `--accept-changes=k1,k2`
 （数真的变了才放行）。闸门 `python3 zreflect/registry.py --run commit`（off 单列，没查 ≠ 通过）。
 
-**手动跑闸门必须先加载 env**，否则 `REFLECT_MEASURE_MODULE` 为空、采集回落占位实现，
-`check_facts` / `check_facts_replay` / `check_readme_sync` 会一起误报（看起来像仓库坏了）：
+**配置由 `knobs.json` 提供**（不再需要手动加载 env 文件）：
 
 ```bash
-set -a && . reflect-hooks/Einfacht.env && set +a && export PYTHONPATH=zreflect
 python3 zreflect/registry.py --run commit
 ```
 
-`git commit` 走的 `reflect-hooks/gate.py` 自己会加载 env，所以钩子路径没有这个问题——
-只有手工敲命令时才要这条前缀。
+`git commit` 走的 `reflect-local/hook.py` 与直接运行 `zreflect/` 均直接读取根目录 `knobs.json`。
 翻案进 `retractions.json`，手抄旧值用 `invariants.json` 拦。
 悬案 `questions/*.md` 每条带 `**Status:**` 与可区分的 `**Settling:**`。
 开工看 `STATE.md`。

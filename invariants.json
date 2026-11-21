@@ -23,11 +23,11 @@
       "why": "同上：配图张数旧值不得回潮"
     },
     {
-      "path": "reflect-hooks/Einfacht.env",
+      "path": "knobs.json",
       "must_contain": [
-        "REFLECT_MEASURE_MODULE=\"measure_edu\""
+        "\"REFLECT_MEASURE_MODULE\": \"measure_edu\""
       ],
-      "why": "本仓数据层入口。⚠️ 2026-10-31 接入整改版 Einfacht 后，判据从「facts.py 里写死 measure_edu」换成「Einfacht.env 里配这个旋钮」——上游把这件事做成了正式旋钮（REFLECT_MEASURE_MODULE），内核不再硬编码本仓模块名。若这条配置消失，facts.py 会回落到上游的 measure_example()，台账量的是示例（py/md 文件数）而不是本仓的课程/站点事实。"
+      "why": "本仓数据层入口。knobs.json 里配 REFLECT_MEASURE_MODULE=measure_edu；若缺失则会回落到上游占位 measure_example()。"
     }
   ]
 }

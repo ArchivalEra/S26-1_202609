@@ -1,34 +1,42 @@
 #!/usr/bin/env python3
-"""仪器生命周期闸门（**可插拔模块**，issue #6 ①）。
+"""Instrument lifecycle gate (**pluggable module**, issue #6 item 1).
 
-事实系统管了值、断言、来源，但没管**量它的那条命令/仪器本身会不会
-腐烂**。`cmd` 的复跑契约（issue #2 ①）抓「命令死了」（rc≠0），
-却抓不到**仪器静默失真**：命令成功、值稳定、复跑永远「通过」，
-而它量的根本不是想量的 —— `grep -c X` 在仪器不认 X 时**成功退出
-并返回 0**，这是最阴的一种。
+The facts system guards values, assertions, and sources, but never guarded
+**whether the command/instrument doing the measuring itself rots**. The `cmd`
+replay contract (issue #2, item 1) catches "the command died" (rc != 0) but
+cannot catch **silent instrument distortion**: the command succeeds, the value
+is stable, the replay "passes" forever -- yet it is not measuring what it was
+meant to measure. `grep -c X` **exits successfully returning 0** when the
+instrument does not recognize X -- the stealthiest kind.
 
-本闸门是**可插拔**的：两个旋钮都未配 ⇒ 明说未启用、退 0
-（不配的仓库完全不受影响；发现式名录照样收编它，自证照样证明
-它能红）。启用（各取所需）：
+This gate is **pluggable**: with both knobs unset => explicitly not enabled,
+exit 0 (repos that do not configure it are entirely unaffected; the
+discovery-based roster still enrolls it, and the selftest still proves it can
+go red). Enabling (each part independent):
 
-  · `REFLECT_INSTRUMENT_DAYS=天` —— **恒常检测**：台账条目的
-    `first_seen`（`measure()` 自动维护：值不变沿用旧日期、换值
-    取今天，`ledger.fact()` 盖章）距今超过阈值 ⇒ 报「人工确认：
-    这条 cmd 是在量，还是恒返回同一个数？」。不配 = 该规则
-    明说未启用（读不到 / 不可解析的 first_seen 也报 —— 读不到
-    就明说，不许猜）。
+  - `REFLECT_INSTRUMENT_DAYS=<days>` -- **constancy detection**: when a ledger
+    entry's `first_seen` (maintained automatically by `measure()`: value
+    unchanged keeps the old date, a changed value stamps today,
+    `ledger.fact()` does the stamping) is older than the threshold => report
+    "human confirmation needed: is this cmd measuring, or does it always
+    return the same number?". Unset = that rule explicitly not enabled
+    (unreadable / unparseable first_seen is also reported -- if it cannot be
+    read, say so; guessing is not allowed).
 
-  · `REFLECT_INSTRUMENTS=instruments.json` —— **量法登记位**
-    （schema: `{"methods": [{text, why, fixed_in}]}`）：被证伪的
-    **量法**像 `retractions.json` 管「被推翻的断言」那样有登记位；
-    台账任何 `cmd` 含被证伪片段 ⇒ 报（坏量法不许留在台账里）。
-    设了旋钮而登记位不在 ⇒ 报（配置了却没登记 = 承诺坏了）。
+  - `REFLECT_INSTRUMENTS=instruments.json` -- **the method registry**
+    (schema: `{"methods": [{text, fixed_in}]}`): falsified **measuring
+    methods** get a registration slot, the way `retractions.json` handles
+    "retracted assertions"; any ledger `cmd` containing a falsified snippet =>
+    report (a broken measuring method must not stay in the ledger). Knob set
+    but the registry file missing => report (configured but never registered =
+    a broken promise).
 
-零值守卫：台账为空 ⇒ 报（空不是通过）。
+Zero-value guard: an empty ledger => report (empty is not a pass).
 
-用法（直接跑，cwd=仓库根）：
+Usage (run directly, cwd = repo root):
     python3 zreflect/check_instruments.py [--selftest]
-退出码：0=绿 / 1=发现问题 / 2=配置或环境坏了（配置性失败 ≠ 检查失败）。
+Exit codes: 0 = green / 1 = problems found / 2 = config or environment broken
+(a config failure is not a check failure).
 """
 from __future__ import annotations
 
@@ -37,33 +45,36 @@ import sys
 from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from gate import (  # noqa: E402
-    fatal,
-    finish,
-    load_spec,
-    main_selftest_or,
-    meta,
-    off,
-    repo,  # noqa: E402
-)
+import gate  # noqa: E402
+import knobs  # noqa: E402
+from facts import facts_of, load_or_fatal  # noqa: E402
+from gate import fatal, finish, main_selftest_or, meta, off, repo  # noqa: E402
 from i18n import M  # noqa: E402
-from ledger import facts_of, load_or_fatal  # noqa: E402
 
-INSTRUMENTS_RAW = os.environ.get("REFLECT_INSTRUMENTS", "").strip()
-DAYS_RAW = os.environ.get("REFLECT_INSTRUMENT_DAYS", "").strip()
+
+def _instruments_raw():
+    return (knobs.raw("REFLECT_INSTRUMENTS") or "").strip()
+
+
+def _days_raw():
+    return (knobs.raw("REFLECT_INSTRUMENT_DAYS") or "").strip()
 
 
 def _days():
-    if not DAYS_RAW:
+    import math  # noqa: PLC0415
+    raw = _days_raw()
+    if not raw:
         return None
     try:
-        return float(DAYS_RAW)
+        v = float(raw)
     except ValueError:
         return None
+    return v if (math.isfinite(v) and v >= 0) else None
 
 
 def _age_days(first_seen):
-    """first_seen（%Y-%m-%d）距今天数；不可解析 ⇒ None（读不到就明说）。"""
+    """Age in days of first_seen (%Y-%m-%d); unparseable => None (if it cannot
+    be read, say so)."""
     try:
         d = datetime.strptime(str(first_seen), "%Y-%m-%d").replace(
             tzinfo=timezone.utc)
@@ -73,13 +84,16 @@ def _age_days(first_seen):
 
 
 def _constant_return_problems(f, days):
-    """恒常检测：`first_seen` 距今超过阈值 ⇒ 「这条 cmd 是在量，还是恒返回同一个数？」"""
+    """Constancy detection: a `first_seen` older than the threshold => "is this
+    cmd measuring, or does it always return the same number?\""""
     out = []
     for k in sorted(f):
         entry = f[k] if isinstance(f[k], dict) else {"value": f[k]}
         fs = entry.get("first_seen")
         if not fs:
-            continue                  # 旧台账条目没有 first_seen：不猜、不报
+            out.append(M("instruments.first_seen_unparseable",
+                         key=k, first_seen=fs))
+            continue
         age = _age_days(fs)
         if age is None:
             out.append(M("instruments.first_seen_unparseable",
@@ -90,37 +104,43 @@ def _constant_return_problems(f, days):
     return out
 
 
-def _falsified_hits(text, why, fixed, f):
-    """一个被证伪片段在台账里命中的键（命中 = 那条事实还在用坏量法）。"""
+def _falsified_hits(text, fixed, f):
+    """The ledger keys hit by one falsified snippet (whitespace-normalized)."""
+    import re  # noqa: PLC0415
     hits = []
+    ntext = re.sub(r"\s+", " ", text).strip()
     for k in sorted(f):
         entry = f[k] if isinstance(f[k], dict) else {"value": f[k]}
-        if text in str(entry.get("cmd") or ""):
+        ncmd = re.sub(r"\s+", " ", str(entry.get("cmd") or "")).strip()
+        if ntext in ncmd:
             hits.append(M("instruments.falsified_method", key=k, text=text,
-                          why=why, fixed_in=fixed))
+                          fixed_in=fixed))
     return hits
 
 
 def _falsified_method_problems(f, methods):
-    """量法登记位：台账里任何 `cmd` 含被证伪片段 ⇒ 报（坏量法不许留在台账里）。"""
+    """Method registry: any ledger `cmd` containing a falsified snippet =>
+    report (a broken measuring method must not stay in the ledger)."""
     out = []
     for m in (methods or []):
         text = str(m.get("text") or "").strip()
-        why = str(m.get("why") or "").strip()
-        if not text or not why:
+        if not text:
             out.append(M("instruments.entry_malformed", entry=m))
             continue
         fixed = m.get("fixed_in") or M("instruments.fixed_in_unregistered")
-        out += _falsified_hits(text, why, fixed, f)
+        out += _falsified_hits(text, fixed, f)
     return out
 
 
 def problems(ledger, methods=None, days=None):
-    """纯函数：返回问题清单（空 = 绿）。自证期间不许 print。
+    """Pure function: return the problem list (empty = green). No printing
+    during the selftest.
 
-    `methods` = 量法登记位（被证伪量法清单）；`days` = 恒常检测阈值
-    （None = 该规则未启用）。**两者独立**：恒常检测管「值从来没变过」，
-    登记位管「量法本身被证伪过」—— 各是一个具名 helper，各自可单独懂。
+    `methods` = the method registry (list of falsified measuring methods);
+    `days` = the constancy-detection threshold (None = that rule not enabled).
+    **The two are independent**: constancy detection handles "the value has
+    never changed", the registry handles "the measuring method itself was
+    falsified" -- each is its own named helper, each understandable alone.
     """
     f = facts_of(ledger)
     if not f:
@@ -132,42 +152,44 @@ def problems(ledger, methods=None, days=None):
     return out
 
 
-def _load_methods(name):
-    """读量法登记位（`REFLECT_INSTRUMENTS` 指向的 JSON）。返回 `(methods, rc)`。"""
-    if not name:
-        return [], 0
-    reg_path = repo(name)
-    if not os.path.exists(reg_path):
-        return [], fatal(M("instruments.registry_missing", name=name))
-    reg, err = load_spec(reg_path)
-    if err:
-        return [], fatal(M("instruments.spec_broken", name=name, error=err))
-    return reg.get("methods") or [], 0
-
-
 def run(argv=None):
-    argv = list(sys.argv[1:] if argv is None else argv)
-    name = INSTRUMENTS_RAW
-    days = _days()
-    if DAYS_RAW and days is None:
+    _ = argv
+    name = _instruments_raw()
+    days_raw, days = _days_raw(), _days()
+    if days_raw and days is None:
         return fatal(M("instruments.days_unparseable",
-                       days_knob="REFLECT_INSTRUMENT_DAYS", value=DAYS_RAW))
+                       days_knob="REFLECT_INSTRUMENT_DAYS", value=days_raw))
     if not name and days is None:
         return off(M("instruments.off",
                      days_knob="REFLECT_INSTRUMENT_DAYS",
                      instruments_knob="REFLECT_INSTRUMENTS"))
-    led_path = repo(os.environ.get("REFLECT_FACTS", "FACTS.json"))
+    led_path = repo(knobs.get("REFLECT_FACTS"))
     if not os.path.exists(led_path):
         return fatal(M("instruments.ledger_missing", path=led_path))
-    methods, rc = _load_methods(name)
-    if rc:
-        return rc
+    methods: list[dict[str, object]] = []
+    if name:
+        reg, _n, rc = gate.load_gate_spec(
+            [], "REFLECT_INSTRUMENTS",
+            off_msg=lambda _k: M("instruments.off", days_knob="REFLECT_INSTRUMENT_DAYS",
+                                 instruments_knob="REFLECT_INSTRUMENTS"),
+            missing_msg=lambda k: M("instruments.registry_missing", name=k),
+            broken_msg=lambda k, err: M("instruments.spec_broken", name=k, error=err),
+        )
+        if rc is not None:
+            return rc
+        if not isinstance(reg, dict):
+            return fatal(M("instruments.spec_broken", name=name, error="spec must be an object"))
+        raw_methods = reg.get("methods")
+        if not isinstance(raw_methods, list) or not raw_methods:
+            return fatal(M("instruments.empty_registry", name=name))
+        methods = raw_methods
     probs = problems(load_or_fatal(led_path), methods=methods, days=days)
     return finish(M("instruments.title"), probs, _ok_line(name, methods, days))
 
 
 def _ok_line(name, methods, days):
-    """通过行里要说清**开了哪几档**（否则「绿」不区分「全开」与「一档都没开」）。"""
+    """The pass line must state **which modes are on** (otherwise "green" cannot
+    distinguish "everything on" from "nothing on")."""
     parts = []
     if days is not None:
         parts.append(M("instruments.part_days", threshold=days))
@@ -196,15 +218,15 @@ def _cases():
                        "passes forever)",
                 "fixed_in": "calibrate= a calibration sample known to contain relaxed_madd"}]
     return [
-        # ① 正常不报
+        # (1) compliant input: nothing reported
         ("instruments.fresh",
          lambda: problems(led, days=30) == []),
         ("instruments.registered_method_absent",
          lambda: problems(led, methods=methods, days=30) == []),
-        ("instruments.first_seen_absent",
-         lambda: problems({"facts": {"n": {"value": 1, "cmd": "c"}}},
-                          days=30) == []),
-        # ② 该报的必须报
+        ("★ instruments.first_seen_missing",
+         lambda: [p.code for p in problems({"facts": {"n": {"value": 1, "cmd": "c"}}}, days=30)]
+         == ["instruments.first_seen_unparseable"]),
+        # (2) what must be reported is reported
         ("★ instruments.constant_return",
          lambda: [p.code for p in problems(led_old, days=30)]
          == ["instruments.constant_return"]),
@@ -214,19 +236,22 @@ def _cases():
         ("★ instruments.falsified_method",
          lambda: [p.code for p in problems(led_method, methods=methods)]
          == ["instruments.falsified_method"]),
+        # the only required field now: a registry entry with no snippet cannot
+        # match anything, so it would silently enrol nothing
         ("★ instruments.entry_malformed",
-         lambda: [p.code for p in problems(led, methods=[{"text": "x"}])]
+         lambda: [p.code for p in problems(led, methods=[{"fixed_in": "y"}])]
          == ["instruments.entry_malformed"]),
-        # ③ 空输入必须报
+        # (3) empty input must be reported
         ("★ instruments.ledger_empty",
          lambda: [p.code for p in problems({"facts": {}}, days=30)]
          == ["instruments.ledger_empty"]),
     ]
 
 
-GATE = meta("仪器生命周期闸门", "恒常检测（first_seen）+ 被证伪量法登记",
+GATE = meta("Instrument lifecycle gate", "constancy detection (first_seen) + falsified-method registry",
             knobs=("REFLECT_INSTRUMENTS", "REFLECT_INSTRUMENT_DAYS", "REFLECT_FACTS"),
-            off_reason="两个旋钮都未配 ⇒ 特化机制没启用（可插拔，本仓按需再开）")
+            off_reason="both knobs unset => the specialized mechanism is not enabled"
+                       " (pluggable; this repo turns it on when needed)")
 
 if __name__ == "__main__":
     sys.exit(main_selftest_or(sys.argv[1:], "check_instruments", _cases, run))

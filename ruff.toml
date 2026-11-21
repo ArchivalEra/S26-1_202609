@@ -1,0 +1,89 @@
+# ruff 配置 —— **只登记本仓有意选择的判据**，不做风格统一。
+#
+# ## 为什么有这个文件
+#
+# 此前 CI 用一长串命令行参数调 ruff（`--select=C901,F,E9,B --config
+# lint.mccabe.max-complexity=15`）。那有两个毛病：
+#
+#   1. 选择集不在版本控制里可读地存在 —— 想改判据得改 workflow 的字符串。
+#   2. 「本仓有意接受」的类别没有产地说 —— 每处都得在调用点写 `# noqa` 加一段
+#      理由，同一类理由抄五十遍（ARG005 就是这样：51 处）。
+#
+# 选择集与刻意豁免均以本文件为唯一产地。
+#
+# ## 选了什么
+#
+#   C901  认知复杂度（阈值 8 —— 比 ruff 默认 10、GitRoll 的 15 都严）
+#   F     未定义名 / 未用 import / 未用变量 —— pyflakes 级，全是真 bug 级
+#   E9    语法 / I-O 级错误
+#   B     bugbear：可疑的静默失败形状
+#
+# 这四类是本仓立身所依赖的：**「不报错但答案是错的」是唯一不可接受的失败**。
+#
+# ## 为什么 ignore 这几条（逐条有理由，不是「嫌烦」）
+#
+#   ARG005  自证夹具里 `runner=lambda c: (0, "12")` —— `runner` 的接口契约就是
+#           「收一条命令、返回 (rc, 输出)」。夹具不关心传入的是什么命令，那是
+#           被测对象的输入，不是夹具要读的值。为满足扫描器把它写成
+#           `lambda _c: ...` 会让「这个参数其实是契约的一部分」这条信息消失。
+#           51 处全是同一个形状（`replay_all(..., runner=...)`）。
+#
+#   S603   子进程调用全部是本仓自己的工具链（git / python3 zreflect/*.py），
+#   S607   路径来自 `sys.executable` 与仓根，不是外部输入。相对的 `git` 是
+#          刻意的：跨平台找 PATH 上的 git 比写死 `/usr/bin/git` 正确。本仓
+#          **不**跑用户提供的命令 —— 那由 replay 闸门跑台账里的 `cmd`，而台账
+#          是仓自己审查过的文件。
+#
+#   SIM115  `open(...)` 不总是用 `with`：本仓大量代码是「读一次判断后立刻返回」，
+#          改成 `with` 会改变关闭时机，那些地方是故意的。
+#
+#   S103   `chmod 0o755` 是给生成的 hook wrapper 加执行位（git 要求）。
+#   S310   `urlopen` 只探 http:// 的本机 doctor 端口。
+#
+# ## 怎么用
+#
+#    python3 -m ruff check .            # 默认读本文件
+#    python3 -m ruff check --select=F   # 临时只看一类
+#
+# CI（.github/workflows/gates.yml）读同一份配置 —— 判据只有一处产地。
+
+line-length = 100
+# 目标版本与 CI 的 setup-python 一致。
+target-version = "py313"
+
+[lint]
+select = ["C901", "F", "E9", "B", "SIM", "RET",
+          "I", "ISC", "PIE", "C4", "TRY", "EM", "N"]
+ignore = [
+    "ARG005",   # 自证夹具的 runner 签名（见上）
+    "S603",     # 自己的工具链
+    "S607",     # 相对 `git` 是刻意的跨平台写法
+    "SIM115",   # 部分 open() 需要把句柄传出去
+    "S103",     # chmod 0o755 给生成的 hook wrapper 加执行位
+    "S310",     # doctor 只探本机 http 端口
+    # SIM 的这几条在这个仓会误伤「有意分步」的写法：
+    "SIM105",   # try/except/pass ⇒ contextlib.suppress：本仓的 except 常带注释说明**为什么**吞
+    "SIM108",   # 三元表达式：`if` 分支里常有多行注释，压成一行就丢了
+    # EM101 / N 的三条：本仓的**结构化异常**设计（`MissingPack(code, **params)`
+    # 是 code + 参数，str() 走语言包渲染）与「异常消息写成散文」的规则相反。
+    "EM101",    # raise 处用字符串字面量 —— 本仓的 code 字面量正是设计
+    "EM102",    # f-string in exception
+    "N818",     # 异常名要带 Error 后缀 —— `MissingPack` / `PacksUnreadable` / `Unreadable`
+                # 是有意的名字，不是疏漏
+    "N802",     # 函数名要小写 —— `M()` 是消息构造器，`M` 本身就是它的语义
+    # TRY 的两条与本仓的方向冲突：
+    "TRY300",   # 「把 try 里的 return 移到 else」——那是**增加一层嵌套**，
+                # 与本仓降到 8 的复杂度阈值方向相反；且 `return` 在 try 里
+                # 是 Python 的常规写法，`else` 反而让读者多跳一次。
+    "TRY003",   # 「异常消息不要在 raise 处给」——本仓的 `MissingPack(code, **params)`
+                # 是**结构化异常**（code + 参数），不是散文消息；它的 str()
+                # 走语言包渲染。要求把消息搬进异常类会毁掉这条设计。
+]
+
+[lint.per-file-ignores]
+# check_i18n 的扫描面包含它自己，_fixture_literal_problems 的文档里必须举
+# 「中文常量长什么样」的例子；那些例子不是输出。
+"zreflect/check_i18n.py" = ["RUF001"]
+
+[lint.mccabe]
+max-complexity = 8
