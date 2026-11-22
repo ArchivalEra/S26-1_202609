@@ -250,7 +250,7 @@
   "i18n_cover.scan_empty_dir": "Scan-Fläche %(root)s ist leer — keine Quelle gefunden ist kein sprachfreies Bestehen",
   "i18n_cover.title": "Sprachabdeckungs-Tor",
   "install.chain_blocked_by_hookspath": "Installation abgelehnt: dieses Repo hat bereits `core.hooksPath=%(value)s` — sobald git das gesetzt hat, schaut es nie in `.git/hooks`, ein hier geschriebener Wrapper liefe also nie.",
-  "install.chain_blocked_fix": "`python3 reflect-local/hook.py --uninstall` ausführen (alte Verkabelung entfernen), dann `--chain`.",
+  "install.chain_blocked_fix": "entweder `python3 \"$(git rev-parse --show-toplevel)/reflect-local/hook.py\" commit \"$(git rev-parse --show-toplevel)\"` (und `push`) direkt in den eigenen hooksPath-Skripten aufrufen, oder `python3 reflect-local/hook.py --uninstall` gefolgt von `--chain` ausführen.",
   "install.chain_done": "verketteter Wrapper installiert. rückgängig: python3 reflect-local/hook.py --uninstall",
   "install.chain_hint": "fertige Anbindung: python3 reflect-local/hook.py --chain",
   "install.chain_removed": "verketteter Wrapper entfernt: %(name)s",

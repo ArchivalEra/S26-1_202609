@@ -214,38 +214,38 @@ def _cases():
     fifty = {"facts": {"n": {"value": 50, "cmd": "c"}}}
     return [
         ("facts.block_and_cite_ok",
-         lambda: problems(led, good) == []
-         and problems(led, "see [[count]]\n" + ledger.render_block(led)) == []),
+         lambda: problems(led, good, bare_min=_DEFAULT_NAKED_MIN) == []
+         and problems(led, "see [[count]]\n" + ledger.render_block(led), bare_min=_DEFAULT_NAKED_MIN) == []),
         ("★ facts.block_mismatch",
-         lambda: [p.code for p in problems(led, "x\n" + ledger.render_block({"facts": {}}))]
+         lambda: [p.code for p in problems(led, "x\n" + ledger.render_block({"facts": {}}), bare_min=_DEFAULT_NAKED_MIN)]
          == ["facts.block_mismatch"]),
         ("★ facts.copied_value",
-         lambda: [p.code for p in problems(led, "speed is 4752\n" + ledger.render_block(led))]
+         lambda: [p.code for p in problems(led, "speed is 4752\n" + ledger.render_block(led), bare_min=_DEFAULT_NAKED_MIN)]
          == ["facts.copied_value"]),
         ("★ facts.missing_key_cite",
-         lambda: [p.code for p in problems(led, "see [[nope]]\n" + ledger.render_block(led))]
+         lambda: [p.code for p in problems(led, "see [[nope]]\n" + ledger.render_block(led), bare_min=_DEFAULT_NAKED_MIN)]
          == ["facts.missing_key_cite"]
          and [p.code for p in _cite_problems("bad [[nope]]", led["facts"])] == ["facts.missing_key_cite"]),
         ("★ facts.bare_number_unaccounted",
-         lambda: [p.code for p in problems(led, "measured 99887766.\n" + ledger.render_block(led))]
+         lambda: [p.code for p in problems(led, "measured 99887766.\n" + ledger.render_block(led), bare_min=_DEFAULT_NAKED_MIN)]
          == ["facts.bare_number_unaccounted"]),
         ("facts.cite_counts_as_provenance",
-         lambda: problems(led, "see [[count]] = 4752\n" + ledger.render_block(led)) == []),
+         lambda: problems(led, "see [[count]] = 4752\n" + ledger.render_block(led), bare_min=_DEFAULT_NAKED_MIN) == []),
         ("★ facts.cite_value_mismatch_flagged",
-         lambda: [p.code for p in problems(led, "see [[count]] = 99887766\n" + ledger.render_block(led))]
+         lambda: [p.code for p in problems(led, "see [[count]] = 99887766\n" + ledger.render_block(led), bare_min=_DEFAULT_NAKED_MIN)]
          == ["facts.bare_number_unaccounted"]),
         ("★ facts.empty_ledger",
-         lambda: [p.code for p in problems({"facts": {}}, good)] == ["facts.empty_ledger"]),
+         lambda: [p.code for p in problems({"facts": {}}, good, bare_min=_DEFAULT_NAKED_MIN)] == ["facts.empty_ledger"]),
         ("★ facts.hand_written_in_state",
          lambda: [p.code for p in hand_written_problems("# T\n\n> ok\n- junk\n")]
          == ["facts.hand_written_in_state"]
          and [p.code for p in hand_written_problems("# T\n\n> 1\n> 2\n> 3\n> 4\n")]
          == ["facts.hand_written_in_state"]),
         ("★ facts.no_block_markers",
-         lambda: [p.code for p in problems(led, "plain")] == ["facts.no_block_markers"]),
+         lambda: [p.code for p in problems(led, "plain", bare_min=_DEFAULT_NAKED_MIN)] == ["facts.no_block_markers"]),
         ("★ facts.inline_backtick_and_fenced_numbers_caught",
-         lambda: problems(led, "v1.2.3\n" + ledger.render_block(led)) == []
-         and [p.code for p in problems(led, "`99999`\n" + ledger.render_block(led))]
+         lambda: problems(led, "v1.2.3\n" + ledger.render_block(led), bare_min=_DEFAULT_NAKED_MIN) == []
+         and [p.code for p in problems(led, "`99999`\n" + ledger.render_block(led), bare_min=_DEFAULT_NAKED_MIN)]
          == ["facts.bare_number_unaccounted"]),
         ("★ facts.threshold_knob",
          lambda: [p.code for p in problems(fifty, "is 50\n" + ledger.render_block(fifty), bare_min=10)]

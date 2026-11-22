@@ -423,6 +423,7 @@ def run_zero_language(repo):
     bad = 0
     env = {k: v for k, v in os.environ.items()
            if not k.startswith("REFLECT_")}
+    env["REFLECT_LANG"] = ""
     env["GATE_REPO"] = repo
     for rel, extra in ZERO_LANG_PROBES:
         path = os.path.join(repo, rel)

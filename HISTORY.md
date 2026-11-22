@@ -977,3 +977,36 @@ sh gates-selftest.sh                             # 每道闸门先证明自己�
 **一次性的决策不进这张表。** 「这轮为什么这么改」不构成断言——它属于提交信息
 与 [HISTORY.md](./HISTORY.md)（**纯历史，Einfacht 不扫、不作事实遵守**）。
 现状归 `STATE.md` 机器块与 `FACTS.json` 台账，纪律归本文件，两者都必须能复跑。
+
+
+## 2026-11-22 · 文档体系收敛（`维护条例.md` / `维护细则.md` / `handoff` 退役）与 Einfacht `63dae38` 升级
+
+**背景**：此前本仓同时维护 `维护条例.md`、`维护细则.md`、`AGENTS.md`、`PRINCIPLES.md`、`STATE.md`、`HISTORY.md` 与进度手记 `.kimi-code/handoff.md`，规则与历史散落在多处。按用户裁定：原则全部进入 `PRINCIPLES.md`，`AGENTS.md` 仅保留少量不进机器闸门的常驻红线与路由，`维护条例.md` 与 `维护细则.md` 退役并从仓库删除，`.kimi-code/handoff.md` 及其闸门永久退役。
+
+### 同步升级到 `Einfacht@63dae38`
+
+- 上游新增消费侧声明式原则入口 `reflect-local/principles.json`：由 `zreflect/doc.py` 与内置通用条款一并渲染进 `PRINCIPLES.md`，并由 `check_facts_replay.py` 按 `id`（`principle.<id>`）真跑可执行命令（`rc == 0` 判 `ok`）。
+- 同步移除 `reflect-local/measure_edu.py` 中临时借道的 `discipline` 原则行（`measure_edu.py` 恢复为纯数字采集器），把 11 条本仓原则迁入 `reflect-local/principles.json`。
+- `knobs.json` 恢复完整配置（`REFLECT_LANG="zh"`、`REFLECT_LANGS="zh"`、`REFLECT_STALE_DAYS="14"`），去掉 `REFLECT_OFF_GATES` 里的 `check_handoff.py`。
+- 同步 `reflect-local/hook.py` 上游 `_find_tool_repo` 修复，移除手写插件兼容逻辑对 `.kimi-code/hooks/einfacht-next.sh` 的 env 载体依赖。
+
+### 永久退役 `handoff`
+
+- 删除 `reflect-local/check_handoff.py`；取消 `.gitignore` 白名单登记，从 `ANCHORS.json` 待审清单移除（需经带外批准收据确认删除）。
+- `.githooks/hook_lib.py` 删除 `HANDOFF_PATH`、`check_handoff_freshness` 与 `HANDOFF_FRESHNESS` 检查；`.githooks/test-update-readme.py` 删除 `test_handoff_freshness_enforced`。
+- 清理 `AGENTS.md`、`.agents/skills/repo-maintenance/SKILL.md`、`.agents/skills/adversarial-writing-autonomous/SKILL.md` 等处对 handoff 的约束，不再使用进度手记机制。
+
+### 从 `维护条例.md` / `维护细则.md` 归档的历史定案与踩坑
+
+两份旧文档已从仓库、白名单、CI、构建清单及 `.githooks/hook_lib.py`（`AUTO-MAINTENANCE`、`render_maintenance`）与 `check-markdown.py` 移除；其中属于历史沿革与定案依据的部分汇总归档于此（有效原则已在 `PRINCIPLES.md`，少量不可自动化的红线留在 `AGENTS.md`）：
+
+- **2026-10-12 定案（未竟条目归 GitHub issue）**：正文与索引不留「待补／待核对／待办」占位表述，缺项统一建 issue（open = 没补，closed = 补了）；`待提供` 属外部材料未到的事实表述。
+- **2026-10-13 定案（题面自足）**：题面引用的图或要求产出的图必须画在题面里；图缺则照「不猜补」登记并挂 issue。
+- **2026-10-14 定案（三签）**：双签验答案正确后，独立子代理仅凭题面与依赖表试做，确认依赖自足与步骤无跳步。
+- **2026-10-15 / 10-17 定案**：待渲染清单拆至 `站点/页面清单.mjs` 供构建与 MCP 共用；`last_updated` 由 `.githooks/hook_lib.py` 在提交时据实按实质改动推导。
+- **2026-10-21 / 10-28 定案**：侧栏覆盖、侧栏标签 = 页面 H1 = 正式短名；照片原件统一以 `vips copy in.heic out.jxl[distance=0,effort=7]` 无损归档至 `/mnt/hdd/study/<课>/原始资料/`，先算原 SHA-256 → 转码 → `compare -metric AE` 验 0 → 再清理原件（防 2026-10-28 首批 13 张 HEIC 先删后难复算原哈希之坑）。
+- **2026-10-28 / 10-29 图元质量闸定案**：图元过「语义相符 + 读图自足」两关，并在 `站点/plugins/figures.test.mjs` 固化多门防回归断言（元件 `fill="none"`、SPDT 三脚接线、走线不穿框、画布宽度不依赖子句顺序、多行输入标签不重叠、常高/常低平线 1/0 参考轨、时间轴距 ≥ 8px、构建期硬拦 `@@MATH_INLINE_n@@` 泄露）；单子代理读图上限 6 张、逐张完成再读下一张。
+- **2026-10-29 / 10-30 定案**：校对层统一为文末最后一栏 `## 完成边界`（主列表 ≤150 字，含 `已解析`、`已验证`、`已知限制`），出处收入页顶 `sources`；删除空占位的「音频」分类目录。
+- **2026-11-06 读图副本规范**：派读图子代理前须过 `python3 .githooks/prepare-photos.py` 统一竖屏、无损解码与 ASCII 文件名（防直接 `vips copy` 给中文横图导致误报分辨率不足）。
+- **2026-11-11 图元冻结边界**：`站点/图库/电子技术.figures.txt` 冻结、不再新增手写 DSL 图元，新图改走各课 `figures/` 独立 SVG 并按需过独立读图复核（对应 `站点/build.mjs` 对 `@@MATH[\u200b\s]*INLINE\d+@@` 的 KaTeX 二次编译拦截）。
+

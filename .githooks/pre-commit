@@ -14,5 +14,5 @@ cd "$REPO"
 
 [ -f "$REPO/.githooks/update-readme.py" ] || exit 0
 
-# ── ③ 本仓既有检查：白名单 / 索引同步 / handoff 时效 / 两处自动区块 ─────────
+# ── ③ 本仓既有检查：白名单 / 索引同步 / 自动区块 ─────────
 python3 "$REPO/.githooks/update-readme.py"

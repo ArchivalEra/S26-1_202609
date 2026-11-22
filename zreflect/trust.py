@@ -187,7 +187,7 @@ def local_dir_name(root=None):
 
 
 def local_scripts_map(root=None):
-    """Collect `{relpath: sha256}` for all `.py` files under `reflect-local/`."""
+    """Collect `{relpath: sha256}` for all `.py` files and optional `principles.json` under `reflect-local/`."""
     base = root or gate.GATE_REPO
     ldir_name = local_dir_name(base)
     ldir = os.path.join(base, ldir_name)
@@ -197,7 +197,7 @@ def local_scripts_map(root=None):
     for dirpath, dirnames, filenames in os.walk(ldir):
         dirnames[:] = sorted(d for d in dirnames if d not in ("__pycache__", ".mypy_cache", ".ruff_cache"))
         for fname in sorted(filenames):
-            if not fname.endswith(".py"):
+            if not (fname.endswith(".py") or (dirpath == ldir and fname == "principles.json")):
                 continue
             full = os.path.join(dirpath, fname)
             rel = os.path.relpath(full, base).replace(os.sep, "/")

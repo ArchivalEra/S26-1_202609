@@ -456,8 +456,6 @@
 # 事实系统（Einfacht 机制层 + 本仓数据层 + 钩子 + 规格）
 # 收件口（把手机上的文件传进本机；收到的东西按类型归位，不进这个目录的白名单）
 # 数学动画（已封存归档；配方留档，等多元微积分的 3D 动画再启用）
-!/维护条例.md
-!/维护细则.md
 # 线上地址 /repo/S26-1_202609/Skill.md。2026-10-22 用户定案）
 # 新课程及各类资料模板
 # 新增课程、笔记、原始资料或脚本时，先增加对应 !/完整相对路径。
@@ -693,7 +691,6 @@
 # SW 已根除（2026-10-23）：sw-template.js 退役，换成一次性清老用户的 sw-kill.mjs
 !/tmp-fake-whitelist-probe.md
 !/reflect-local/check_doc_paths.py
-!/reflect-local/check_handoff.py
 !/reflect-local/check_identity.py
 !/reflect-local/check_lab_integrity.py
 !/reflect-local/check_semantics.py
@@ -702,6 +699,7 @@
 !/reflect-local/hook.py
 !/reflect-local/mail-read.py
 !/reflect-local/measure_edu.py
+!/reflect-local/principles.json
 !/reflect-local/transcript_baseline.json
 !/zreflect/SEAL.json
 !/zreflect/check_ab.py

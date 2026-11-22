@@ -23,9 +23,9 @@ It does not judge whether a sentence sounds good. That needs a human.
 
 | Question | Read |
 | :--- | :--- |
-| Who is the reader, what is this repo | `维护条例.md` §1 (仓库定位与读者) |
-| Which phrasings are banned | `维护条例.md` §2 (真实性与溯源); the word blacklist in `human-first-solution` |
-| One fact lives in one place | `维护条例.md` §2 item 4 (不重复维护) |
+| Who is the reader, what is this repo | `AGENTS.md` + `README.md` |
+| Which phrasings are banned | `AGENTS.md` (不猜补与零未竟表述); `PRINCIPLES.md`; the word blacklist in `human-first-solution` |
+| One fact lives in one place | `AGENTS.md` + `PRINCIPLES.md` (`number_once`) |
 | Page skeleton | the matching file under `模板/`, plus the target page's existing shape |
 
 **First step of every run**: read those four places, then write. Writing before reading means the baseline was a guess, and the work comes back.
@@ -94,7 +94,7 @@ The delete-sentence and restate tests have run sentence by sentence and paragrap
 ## 4. Four red lines (a hit means rework, not "close enough")
 
 1. **Zero unfinished wording**: no "待核对 / 待补 / 待办"-style statements on the page.
-Unfinished work is filed as a GitHub issue (`维护条例.md` §2 item 1). — **This is not "writing conservatively"; it is the work being unfinished.**
+Unfinished work is filed as a GitHub issue (`AGENTS.md` 不猜补). — **This is not "writing conservatively"; it is the work being unfinished.**
 2. **No guessing**: values, subscripts, slips of the tongue, missing blackboard work are never guessed.
 3. **Word blacklist at zero**: a full-text search for "巧妙 / 显然 / 容易看出 / 注意到 / 试探 / 凑 / 一眼" returns 0. A hit means rewriting that step per the template in `human-first-solution`.
 4. **One fact, one home**: when the same content appears in both body and index, or in two pages, delete the duplicate and keep the link.

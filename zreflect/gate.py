@@ -23,7 +23,7 @@ GATE_REPO = os.environ.get("GATE_REPO") or os.path.dirname(os.path.dirname(os.pa
 
 EXEC_PREFIXES = (
     "python3", "python", "sh", "bash", "node", "deno", "ruby", "perl",
-    "echo", "printf", "cat", "test", "true", "false", "env", "make", "git",
+    "echo", "printf", "cat", "grep", "test", "true", "false", "env", "make", "git",
     "npm", "pnpm", "yarn", "cargo", "go", "gcc", "cc", "cmake", "docker",
 )
 _OUTCOME_SEP = re.compile(r"\s+(?:——|—|----|--)\s+")
@@ -254,7 +254,7 @@ def _bad_exec_shell_or_prose(s, first, parts):
         return True
     if first.startswith("/") and not (os.path.exists(first) or shutil.which(first)):
         return True
-    if first in ("echo", "make") and len(parts) > 1:
+    if first in ("echo", "make", "grep") and len(parts) > 1:
         rest = parts[1].strip()
         if re.fullmatch(r"[A-Za-z]+(?:\s+[A-Za-z]+)+", rest):
             return True

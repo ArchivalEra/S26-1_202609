@@ -48,14 +48,14 @@
 | 通用电气 | 0 | [进入](./%E8%AF%BE%E7%A8%8B%E6%80%BB%E8%A7%88/%E9%80%9A%E7%94%A8%E7%94%B5%E6%B0%94/index.md) |
 
 共 **9** 门课程、**309** 份资料。
-<!-- 仓库内容摘要（不含 README）：c412a24c3c4198cecf86590d2c77539a4ebfabc5eca3d04d2c7e0f5e598e3ff0 -->
+<!-- 仓库内容摘要（不含 README）：2e434b7a886cdc08fdab88fa3c716d9d9783ce189a8ac135c6e39b26d8cd5cbe -->
 
 <!-- AUTO-CATALOG:END -->
 
 ## 规则与维护
 
-- 整理原则：[维护条例](./维护条例.md) · 操作规程：[维护细则](./维护细则.md)
-- AI 助手常驻指令：[AGENTS.md](./AGENTS.md)（skill 路由表 + 硬约束）
+- 原则与判定：`PRINCIPLES.md` · 常驻规则：`AGENTS.md` · 活状态：`STATE.md` · 变更历史：`HISTORY.md`
+- 仓库根层文档（含 `PRINCIPLES.md`、`AGENTS.md`、`STATE.md`、`HISTORY.md`）仅随 Git 仓库提供，不编入阅读站页面
 - 各课程首页登记本课全部材料（文件名 + SHA-256）；教材照片原件不入库，存本地 `/mnt/hdd/study/`
 - 缺什么、待补什么：看 [GitHub issues](https://github.com/ArchivalEra/S26-1_202609/issues)（open = 没补，closed = 补了）
 

@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """Shared snapshot validation for the semester repository.
 
-每次提交时从暂存内容重新生成两处自动区块：
-- README.md 的 AUTO-CATALOG：课程目录。
-- 维护细则.md 的 AUTO-MAINTENANCE：仓库状态、解析进度与验证基线。
-- 各 md frontmatter 的 last_updated：按「该文件自己的最后一次实质修改」推导
+每次提交时从暂存内容重新生成 README.md 的 AUTO-CATALOG 自动区块（课程目录），
+并在各 md frontmatter 推导 `last_updated`：按「该文件自己的最后一次实质修改」推导
   （实质变更 ⇒ 提交当日；未变 ⇒ 最后一次实质修改该文件的提交日期），自动改写入库。
 
-推送前校验待推送提交里的两处区块都已同步。
+推送前校验待推送提交里的自动区块与目录清单都已同步。
 """
 import datetime
 import hashlib
@@ -23,9 +21,6 @@ from urllib.parse import quote, unquote, urlsplit
 
 START = '<!-- AUTO-CATALOG:START -->'
 END = '<!-- AUTO-CATALOG:END -->'
-MAINT_PATH = '维护细则.md'
-MAINT_START = '<!-- AUTO-MAINTENANCE:START -->'
-MAINT_END = '<!-- AUTO-MAINTENANCE:END -->'
 # 课程的四类子目录（2026-10-30 站长定案：**删掉「音频」类**）。
 # 为什么删：七门课的 `音频/` 目录里从来只有一份 index.md 占位（「尚未提供音频下载链接」），
 # 且正文写满「待提供/待核实」——既没有内容，也违反「资料页零未竟表述」。
@@ -130,50 +125,6 @@ def whitelist_rules(files):
     rules = [line.strip() for line in files['.gitignore'].decode().splitlines()
              if line.strip() and not line.lstrip().startswith('#')]
     return rules
-
-
-def render_maintenance(text, files):
-    """维护细则的 AUTO-MAINTENANCE 区块（2026-10-17 同步瘦身）。
-
-    保留：仓库状态三行摘要 + 课程分类一览表 + 验证基线。
-    删除：教材解析进度、原始资料构成、待补提示（与各课 index 重复；
-    「待补」按 2026-10-12 定案归 GitHub issue，不在仓库正文里列）。
-    """
-    if text.count(MAINT_START) != 1 or text.count(MAINT_END) != 1 or text.index(MAINT_START) > text.index(MAINT_END):
-        raise ValueError(f'{MAINT_PATH} 必须包含唯一且顺序正确的 AUTO-MAINTENANCE 起止标记。')
-    before, rest = text.split(MAINT_START)
-    _, after = rest.split(MAINT_END)
-    names = courses(files)
-    total = sum(1 for p in files if classify(p))
-    rules = whitelist_rules(files)
-    digest = hashlib.sha256()
-    for path, data in sorted(files.items()):
-        if path not in ('README.md', MAINT_PATH):
-            digest.update(path.encode() + b'\0' + hashlib.sha256(data).digest())
-    lines = ['## 仓库状态（自动生成）', '',
-             '> 本区块由 `.githooks/hook_lib.py` 在**每次提交时从暂存内容重新生成**，推送前校验一致性；'
-             '手工修改会在下次提交时被覆盖。要改内容请改这一节之外的正文。', '',
-             f'- 课程 **{len(names)}** 门；正式资料 **{total}** 份（不含索引、模板和历史入口）。',
-             f'- 精确白名单 **{len(rules) - 2}** 条逐文件路径（无通配符），仓库共 **{len(files)}** 个受管文件。',
-             f'- 暂存内容摘要（不含本文件与 README）：`{digest.hexdigest()}`。任何正文改动都会改变这一行。',
-             '']
-    lines.extend(['### 课程分类一览', ''])
-    header = '| 课程 | ' + ' | '.join(KINDS) + f' | {INDEX_LABEL} |'
-    lines.extend([header, '| :--- | ' + ' | '.join(['---:'] * len(KINDS)) + ' | :--- |'])
-    for course in names:
-        required = kinds_of(course)
-        cells = ['—' if kind not in required else str(count_kind(files, course, kind))
-                 for kind in KINDS]
-        missing = [kind for kind in required if f'课程总览/{course}/{kind}/index.md' not in files]
-        lines.append(f'| {course} | ' + ' | '.join(cells) + ' | ' + ('齐全' if not missing else '缺 ' + '、'.join(missing)) + ' |')
-    lines.append('')
-    lines.extend(['### 验证基线', '',
-                  '- `python3 .githooks/update-readme.py --worktree`：同步 README 与维护细则自动区块。',
-                  '- `python3 .githooks/test-update-readme.py`：目录、白名单、命名、索引与移动的集成测试。',
-                  '- `python3 .githooks/check-markdown.py`：Markdown 美观度与可读性检查，错误项必须为 0。',
-                  '- `git fsck --no-progress`：仓库对象完整性，不应有输出。',
-                  '- 推送由 `.githooks/pre-push` 校验待推送提交的两处自动区块。'])
-    return before + MAINT_START + '\n\n' + '\n'.join(lines) + '\n\n' + MAINT_END + after
 
 
 def links(path, data):
@@ -403,7 +354,7 @@ def validate(files):
 # 实质修改」，直接由 git 推导——实质变更（剥掉日期行后内容仍不同）⇒ 提交当日；
 # 未变 ⇒ 最后一次**实质**修改该文件的提交日期（纯改日期行的提交不算修改——
 # 否则钩子自己的纠正会让日期永漂不居）。钩子每次提交自动改写并 git add，手抄作废；
-# 只改日期行不算内容变化——既不能充当「索引已更新」，也不触发 handoff 时效。
+# 只改日期行不算内容变化——不能充当「索引已更新」。
 # （开课/结课的 status 不同：那是上位事实，仍由 README 课程状态表统一传导。）
 LAST_UPDATED_LINE_RE = re.compile(r'(?m)^(last_updated:[ \t]*"?)[^"\n]*("?[ \t]*)$')
 
@@ -587,34 +538,6 @@ def check_index_sync(files, base):
 
 
 BUILD_SCRIPT = '站点/build.mjs'
-HANDOFF_PATH = '.kimi-code/handoff.md'
-# 「实施一步」的工作区：这两处有改动，就要求自更新 handoff 同步更新过
-WORK_AREAS = ('课程总览/', '站点/')
-
-
-def check_handoff_freshness(files, base):
-    """改动 课程/ 或 站点/ 的提交，`.kimi-code/handoff.md` 必须比上一次提交更新。
-
-    自更新 handoff 是抗上下文压缩的唯一载体，此前只靠「维护约定」——此处改为强制：
-    handoff 的修改时间不早于 HEAD 的提交时间，才算「实施完一步回来更新过」。
-    **仅当工作区存在该文件时强制**：handoff 按用户要求不入库，外部克隆与 CI
-    没有它，不应被这条规则拦截。
-    """
-    if base is None:
-        return
-    handoff = Path(HANDOFF_PATH)
-    if not handoff.is_file():
-        return
-    changed = changed_paths(files, base)
-    if not any(p.startswith(WORK_AREAS) for p in changed):
-        return
-    head_time = int(git('log', '-1', '--format=%ct').decode().strip() or '0')
-    if handoff.stat().st_mtime < head_time:
-        raise ValueError(
-            '本次提交改动了 课程/ 或 站点/，但 .kimi-code/handoff.md 未更新——'
-            '按维护约定「实施完一步就回来更新」：改 §1 当前状态 / §6 下一步 / §7 速查，'
-            '把新踩的坑追加进 §8 坑清单。'
-            '（确认本次改动无需更新 handoff 时：touch .kimi-code/handoff.md）')
 # 待渲染清单。**2026-10-15 起搬到独立模块** `站点/页面清单.mjs`（构建期与 MCP 读层共用同一份，
 # 避免读层 import build.mjs 触发整站重建、或抄一份清单制造第二个真相源）。
 # 清单仍是显式枚举，漏填不会报错、只会静默不上线，故在此校验它与仓库实况一致。
@@ -652,7 +575,7 @@ def check_build_targets(files):
         return
     listed = set(targets)
     # 应渲染范围：仓库说明 + 课程目录下所有 Markdown（模板、历史入口除外）
-    expected = {'README.md', '维护条例.md', '维护细则.md'}
+    expected = {'README.md'}
     expected |= {p for p in files
                  if p.startswith('课程总览/') and p.endswith('.md')}
     missing = sorted(expected - listed)
@@ -1041,12 +964,12 @@ def check_exam_prep(files):
 
 
 def check_worktree_sync(files):
-    """未加 --worktree 时，工作区的两处自动区块文件必须与暂存内容一致。"""
-    for path in ('README.md', MAINT_PATH):
-        if path not in files:
-            raise ValueError(f'缺少 {path}。')
-        if not Path(path).is_file() or Path(path).read_bytes() != files[path]:
-            raise ValueError(f'{path} 有未暂存修改；请先暂存或保存这些修改。')
+    """未加 --worktree 时，工作区的自动目录文件必须与暂存内容一致。"""
+    path = 'README.md'
+    if path not in files:
+        raise ValueError(f'缺少 {path}。')
+    if not Path(path).is_file() or Path(path).read_bytes() != files[path]:
+        raise ValueError(f'{path} 有未暂存修改；请先暂存或保存这些修改。')
 
 
 def head_snapshot(base_ref=None):
@@ -1063,30 +986,19 @@ def sync(worktree=False):
     files = snapshot(worktree=worktree)
     if not worktree:
         check_worktree_sync(files)
-    if MAINT_PATH not in files:
-        raise ValueError(f'缺少 {MAINT_PATH}，无法生成自动状态区块。')
     # last_updated 是推导字段：先对齐日期再算自动区块——摘要里看到的是最终内容。
     sync_last_updated(files, head_snapshot(), worktree)
-    # 维护细则的内容摘要不包含 README 与本文件，先算；README 的摘要包含维护细则，
-    # 必须基于“已更新的维护细则”计算，否则推送时两处区块会互相判定为未同步。
-    maintenance = render_maintenance(files[MAINT_PATH].decode(), files).encode()
     staged = dict(files)
-    staged[MAINT_PATH] = maintenance
     staged['README.md'] = render(staged['README.md'].decode(), staged).encode()
-    outputs = {'README.md': staged['README.md'], MAINT_PATH: maintenance}
+    outputs = {'README.md': staged['README.md']}
     validate(staged)
     check_index_sync(staged, head_snapshot())
-    if not worktree and os.environ.get('HANDOFF_FRESHNESS', '').lower() in ('1', 'on', 'true'):
-        # 提交时强制「实施一步 → 更新 handoff」。2026-11-12 站长裁定：**默认关**——
-        # handoff 只该记「下个会话必须知道的事」，不该被提交闸门逼着写施工流水账；
-        # 要临时恢复这道闸，导出 HANDOFF_FRESHNESS=1（或 on / true）。
-        check_handoff_freshness(staged, head_snapshot())
     for path, data in outputs.items():
         if files[path] != data:
             Path(path).write_bytes(data)
             if not worktree:
                 git('add', '--', path)
-    print('README 课程目录、维护细则状态、白名单、命名与索引检查通过。')
+    print('README 课程目录、白名单、命名与索引检查通过。')
     print('课程资料与分类索引同步检查通过。')
 
 
@@ -1102,11 +1014,7 @@ def main():
             check_index_sync(files, head_snapshot(oid + '^'))
             if render(files['README.md'].decode(), files).encode() != files['README.md']:
                 raise ValueError(f'待推送提交 README 自动目录未同步：{local_ref}')
-            if MAINT_PATH not in files:
-                raise ValueError(f'待推送提交缺少 {MAINT_PATH}：{local_ref}')
-            if render_maintenance(files[MAINT_PATH].decode(), files).encode() != files[MAINT_PATH]:
-                raise ValueError(f'待推送提交维护细则自动区块未同步：{local_ref}')
-        print('待推送提交的目录、维护细则与资料检查通过。')
+        print('待推送提交的目录与资料检查通过。')
     elif sys.argv[1:] in ([], ['--worktree']):
         sync(worktree=bool(sys.argv[1:]))
     else:

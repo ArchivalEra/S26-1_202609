@@ -3,7 +3,7 @@ id: okf.course.engineering_math.index
 name: 工程数学
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-11-10"
+last_updated: "2026-11-22"
 stewards:
   - team: 工程数学课程学习记录
 course: 工程数学
@@ -33,4 +33,4 @@ sources:
 
 **原始资料**：课堂转写 6 份、教材照片 61 张（《工程数学基础》第 1–4 章，JXL 归档；2026-11-06 补拍第 4 章 15 张 p65–p79）、
 作业题面截图 1 张（学习通「作业 3」答题页——平台只列题号与小题号，题干在教材上）。09-17 课堂录音归档件只登记元数据与 SHA-256，音频二进制不入库。
-详见[原始资料索引](./原始资料/index.md)。
+详见[原始资料索引](./原始资料/index.md)（归档规程见 `HISTORY.md`）。

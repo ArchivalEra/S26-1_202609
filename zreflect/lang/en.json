@@ -250,7 +250,7 @@
   "i18n_cover.scan_empty_dir": "scan surface %(root)s is empty — finding no source is not a language-free pass",
   "i18n_cover.title": "Language coverage gate",
   "install.chain_blocked_by_hookspath": "refusing to install: this repo already has `core.hooksPath=%(value)s` — once git has that, it never looks at `.git/hooks`, so a wrapper written here would never run.",
-  "install.chain_blocked_fix": "run `python3 reflect-local/hook.py --uninstall` to drop the old wiring, then `--chain`.",
+  "install.chain_blocked_fix": "either call `python3 \"$(git rev-parse --show-toplevel)/reflect-local/hook.py\" commit \"$(git rev-parse --show-toplevel)\"` (and `push`) directly inside your custom hooksPath scripts, or run `python3 reflect-local/hook.py --uninstall` then `--chain`.",
   "install.chain_done": "chained wrapper installed. undo: python3 reflect-local/hook.py --uninstall",
   "install.chain_hint": "for a ready-made hookup: python3 reflect-local/hook.py --chain",
   "install.chain_removed": "removed chained wrapper: %(name)s",

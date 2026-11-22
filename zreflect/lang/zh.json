@@ -250,7 +250,7 @@
   "i18n_cover.scan_empty_dir": "扫描面 %(root)s 为空 —— 没找到源码不是「零语言通过」",
   "i18n_cover.title": "语言覆盖闸门",
   "install.chain_blocked_by_hookspath": "装不了：这个仓已经有 `core.hooksPath=%(value)s` —— git 一旦设了它就完全不看 `.git/hooks`，在这里写 wrapper 是写了也不会跑。",
-  "install.chain_blocked_fix": "先跑 `python3 reflect-local/hook.py --uninstall` 撤掉旧装法，再 `--chain`。",
+  "install.chain_blocked_fix": "或者直接在你自定义的 hooksPath 脚本末尾调 `python3 \"$(git rev-parse --show-toplevel)/reflect-local/hook.py\" commit \"$(git rev-parse --show-toplevel)\"`（及 `push`），或者先跑 `python3 reflect-local/hook.py --uninstall` 撤掉 `core.hooksPath` 再 `--chain`。",
   "install.chain_done": "装了链式 wrapper。撤销：python3 reflect-local/hook.py --uninstall",
   "install.chain_hint": "要现成的接入：python3 reflect-local/hook.py --chain",
   "install.chain_removed": "已移除链式 wrapper：%(name)s",

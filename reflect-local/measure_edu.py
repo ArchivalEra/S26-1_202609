@@ -175,7 +175,7 @@ TABLE = [
       # PINNED: protocol marker / repo-specific data; retained verbatim in HISTORY.md
       # PINNED: protocol marker / repo-specific data; retained verbatim in HISTORY.md
       # PINNED: protocol marker / repo-specific data; retained verbatim in HISTORY.md
-      "calibrate_expect": "31"}),
+      "calibrate_expect": "26"}),
     ("plugin_tests", PLUGIN_TESTS_CMD, (chr(31449)+chr(28857)+'/plugins/'),
      (chr(31449)+chr(28857)+chr(25554)+chr(20214)+chr(27979)+chr(35797)+chr(39033)+chr(25968)+chr(65288)+'fail+cancelled>0 '+chr(8658)+' '+chr(22797)+chr(36305)+chr(38750)+chr(38646)+chr(36864)+chr(20986)+chr(65289))),
     # PINNED: protocol marker / repo-specific data; retained verbatim in HISTORY.md
@@ -189,24 +189,6 @@ TABLE = [
     ("symbols_uncovered", SYMBOLS_UNCOVERED_CMD, (chr(31449)+chr(28857)+'/dist/symbol-coverage.json'),
      (chr(35813)+chr(20882)+chr(27873)+chr(21364)+chr(27809)+chr(20882)+chr(30340)+chr(31526)+chr(21495)+chr(25968)+chr(65288)+chr(26410)+chr(35299)+chr(26512)+chr(20196)+chr(29260)+'/'+chr(35064)+' span/'+chr(38142)+chr(25509)+chr(30446)+chr(26631)+chr(32570)+chr(22833)+chr(65307)+'>0 '+chr(26500)+chr(24314)+chr(21363)+chr(32418)+chr(65289))),
 ]
-# PINNED: protocol marker / repo-specific data; retained verbatim in HISTORY.md
-# PINNED: protocol marker / repo-specific data; retained verbatim in HISTORY.md
-# PINNED: protocol marker / repo-specific data; retained verbatim in HISTORY.md
-# PINNED: protocol marker / repo-specific data; retained verbatim in HISTORY.md
-# PINNED: protocol marker / repo-specific data; retained verbatim in HISTORY.md
-DISCIPLINE_CMD = (
-    "" + "cd 站点 && node --test plugins/solution-discipline.test.mjs 2>&1 | awk "
-    "'NF==3 && $3 ~ /^[0-9]+$/ && ($2==\"tests\"||$2==\"pass\"||$2==\"fail\") {v[$2]=$3} "
-    "END {t=v[\"tests\"]; p=v[\"pass\"]; fl=v[\"fail\"]+0; "
-    "if (t==\"\") {print \"discipline：没读到 tests 汇总行\" > \"/dev/stderr\"; exit 1} "
-    "if (p!=t || fl>0) {print \"discipline：red tests=\" t \" pass=\" p \" fail=\" fl > \"/dev/stderr\"; exit 1} "
-    "print \"ok\"}'"
-)
-# PINNED: protocol marker / repo-specific data; retained verbatim in HISTORY.md
-_DISCIPLINE_ROW = ("discipline", DISCIPLINE_CMD, (chr(31449)+chr(28857)+'/plugins/solution-discipline.test.mjs'),
-                   (chr(35299)+chr(26512)+chr(32426)+chr(24459)+chr(38392)+chr(20840)+chr(32511)+' '+chr(8658)+' ok'+chr(65288)+chr(21453)+chr(20154)+chr(31867)+chr(35789)+' 0 / '+chr(39064)+chr(38754)+chr(24341)+chr(29992)+chr(22270)+chr(21495)+chr(24517)+chr(35265)+chr(22270)+' / '+chr(23436)+chr(25104)+chr(36793)+chr(30028)+' '+chr(8804)+'150 '+chr(23383)+chr(19988)+chr(24050)+chr(35299)+chr(26512)+chr(24050)+chr(39564)+chr(35777)+chr(22312)+chr(22330)+chr(65289)),
-                   {"kind": "principle"})
-TABLE.append(_DISCIPLINE_ROW)
 
 
 def _sh(cmd):

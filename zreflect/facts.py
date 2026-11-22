@@ -347,7 +347,7 @@ def block_homes(ledger):
     """Map documents to their owned `(begin, end, expected_text)` machine blocks."""
     import doc  # noqa: PLC0415
     gs, missing = registry.gates()
-    probs = registry.problems(gs, missing)
+    probs = registry.problems(gs, missing) + doc.local_rules_problems()
     if probs:
         return None, M("facts.registry_mismatch", entries="\n  · ".join(probs))
     homes = [(doc.state_name(), [(BLOCK_BEGIN, BLOCK_END, render_block(ledger)),

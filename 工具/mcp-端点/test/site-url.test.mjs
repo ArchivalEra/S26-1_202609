@@ -18,7 +18,7 @@
 //    那会拖进 CSS/JS 常量），代价是必须用测试锁住两者等价；
 // ③ **顶层目录名只有一份**：`read-core` 里不许再出现 `'课程总览'` 字面；
 // ④ **判据是「第一段是顶层目录」**，不是「第二段像课程名」——后者在
-//    `README.md` / `维护条例.md` 这类站点级页面上会误报。
+//    `README.md` / `站点/符号包/通用.md` 这类站点级页面上会误报。
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -53,7 +53,6 @@ test('克隆等价：toUrl 与构建期 htmlPathOf 对同一输入给出同一�
   // 两边规则必须一直等价，谁改了另一处都要在这里红。
   const sources = [
     'README.md',
-    '维护条例.md',
     `${TOP_DIR}/index.md`,
     `${TOP_DIR}/工程数学/index.md`,
     `${TOP_DIR}/工程数学/作业/index.md`,
@@ -70,7 +69,7 @@ test('克隆等价：toUrl 与构建期 htmlPathOf 对同一输入给出同一�
 test('课程/类目判据：第一段必须是顶层目录（不是「第二段像课程名」）', () => {
   // 反例优先：站点级页面的第二段可能是任意文字，不能靠它猜课程。
   assert.equal(courseOf('README.md'), '', '首页没有课程');
-  assert.equal(courseOf('维护条例.md'), '', '站点级页面没有课程');
+  assert.equal(courseOf('站点/符号包/通用.md'), '', '站点级页面没有课程');
   assert.equal(courseOf(`${TOP_DIR}/index.md`), '', '顶层目录本身没有课程');
   assert.equal(courseOf(`${TOP_DIR}/工程数学/index.md`), '工程数学');
   assert.equal(courseOf(`${TOP_DIR}/工程数学/作业/作业1.html`), '工程数学');

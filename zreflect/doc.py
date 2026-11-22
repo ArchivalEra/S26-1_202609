@@ -166,7 +166,7 @@ RULES = (
          "style preferences do not enter the rule table",
          "python3 -c \"import sys;sys.path.insert(0,'zreflect');import doc;"
          "style=('style','naming','comment','layout','format');"
-         "bad=[r.id for r in doc.RULES if r.id in style];"
+         "bad=[r.id for r in doc.all_rules() if r.id in style];"
          "print('style_ids=%d' % len(bad));sys.exit(1 if bad else 0)\""),
     Rule("core_sealed",
          "shared suite core modules, gates, hooks, and language packs match `zreflect/SEAL.json`",
@@ -174,18 +174,92 @@ RULES = (
 )
 
 _BY_ID = {r.id: r for r in RULES}
+_STYLE_IDS = frozenset({"style", "naming", "comment", "layout", "format"})
+_RESERVED_RULE_IDS = frozenset(_BY_ID) | _STYLE_IDS
+LOCAL_PRINCIPLES_NAME = "principles.json"
 RULES_BEGIN = "<!-- AUTO:RULES -->"
 RULES_END = "<!-- /AUTO:RULES -->"
 PRINCIPLES = "PRINCIPLES.md"
 STATE = "STATE.md"
 
 
+def _local_rules_rel(root=None):
+    base = root or gate.GATE_REPO
+    ldir = knobs.get("REFLECT_LOCAL_DIR", base).strip("/\\")
+    return os.path.join(ldir, LOCAL_PRINCIPLES_NAME).replace(os.sep, "/")
+
+
+def _validate_local_entry(item, seen, rel):
+    if not isinstance(item, dict):
+        return None, "entry must be an object"
+    rid = str(item.get("id") or "").strip()
+    text = str(item.get("text") or "").strip()
+    cmd = str(item.get("cmd") or "").strip()
+    if not rid or not text or not cmd:
+        return None, f"rule {rid or '?'!r} needs non-empty id, text, cmd"
+    if not re.fullmatch(r"[a-z][a-z0-9_]*", rid) or rid in _RESERVED_RULE_IDS or rid in seen:
+        return None, f"invalid or duplicate rule id {rid!r}"
+    rule_obj = Rule(rid, text, cmd)
+    if _cmd_shape_problems([rule_obj]):
+        return None, f"rule {rid!r} cmd shape invalid"
+    if gate.prose_in_exec_problems(rel, rid, cmd):
+        return None, f"rule {rid!r} cmd contains prose"
+    return rule_obj, None
+
+
+def parse_local_rules(data, rel="reflect-local/principles.json"):
+    """Validate optional consumer `principles.json`; return `(tuple[Rule, ...], list[Message])`."""
+    raw_list = data.get("rules") if isinstance(data, dict) else data
+    if not isinstance(raw_list, list):
+        return (), [i18n.M("doc.corrupt_json", path=rel, error="expected array or {rules: [...]}")]
+    out: list[Rule] = []
+    seen: set[str] = set()
+    for item in raw_list:
+        r, err = _validate_local_entry(item, seen, rel)
+        if err or r is None:
+            return (), [i18n.M("doc.corrupt_json", path=rel, error=err or "invalid")]
+        seen.add(r.id)
+        out.append(r)
+    return tuple(out), []
+
+
+def _load_local_rules(root=None):
+    base = root or gate.GATE_REPO
+    rel = _local_rules_rel(base)
+    p = os.path.join(base, rel)
+    if not os.path.exists(p):
+        return (), []
+    if not os.path.isfile(p):
+        return (), [i18n.M("doc.corrupt_json", path=rel, error="not a file")]
+    try:
+        data = json.loads(open(p, encoding="utf-8").read())
+    except (OSError, ValueError) as exc:
+        return (), [i18n.M("doc.corrupt_json", path=rel, error=str(exc))]
+    return parse_local_rules(data, rel=rel)
+
+
+def local_rules_problems(root=None):
+    """Return validation problems for optional `<REFLECT_LOCAL_DIR>/principles.json`."""
+    return _load_local_rules(root)[1]
+
+
+def local_rules(root=None):
+    """Return validated consumer local rules from `<REFLECT_LOCAL_DIR>/principles.json`."""
+    return _load_local_rules(root)[0]
+
+
+def all_rules(root=None):
+    """Return upstream `RULES` plus validated consumer local rules."""
+    return RULES + local_rules(root)
+
+
 def render_rules(rows=None):
-    """PINNED: render fixed-language `AUTO:RULES` block from `RULES`."""
-    rows = RULES if rows is None else rows
+    """PINNED: render fixed-language `AUTO:RULES` block from `RULES` (plus local rules)."""
+    rows = all_rules() if rows is None else rows
     lines = [RULES_BEGIN,
              ("> This block is rendered by `zreflect/facts.py --render-doc` from the "
-              "`RULES` table in `zreflect/doc.py`; **do not hand-edit**."),
+              "`RULES` table in `zreflect/doc.py` (plus optional `reflect-local/principles.json`); "
+              "**do not hand-edit**."),
              ("> Every row's judging command is executed verbatim at every commit (`check_facts_replay`)."),
              "", "| id | principle | judging command |", "|---|---|---|"]
     for r in sorted(rows, key=lambda x: x.id):
@@ -213,8 +287,8 @@ def rule(rid):
     return _BY_ID[rid]
 
 
-def facts_of_rules():
-    """Convert `RULES` to `{principle.<id>: fact_dict}` for direct replay."""
+def facts_of_rules(root=None):
+    """Convert `all_rules()` (`RULES` + local rules) to `{principle.<id>: fact_dict}` for replay."""
     now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
     today = time.strftime("%Y-%m-%d")
     return {
@@ -223,13 +297,13 @@ def facts_of_rules():
             "measured_at": now, "first_seen": today,
             "note": r.text, "kind": "principle",
         }
-        for r in RULES
+        for r in all_rules(root)
     }
 
 
 def _cmd_shape_problems(rows=None):
-    out = []
-    for r in (RULES if rows is None else rows):
+    out = [(LOCAL_PRINCIPLES_NAME, str(m)) for m in local_rules_problems()] if rows is None else []
+    for r in (all_rules() if rows is None else rows):
         cmd = r.cmd.strip()
         if not cmd:
             out.append((r.id, "empty_cmd"))
@@ -277,9 +351,28 @@ def _enforced_by_off_ok():
             os.environ["REFLECT_COMMENTS"] = saved
 
 
+def _local_rules_ok():
+    import tempfile  # noqa: PLC0415
+    ok_rows, ok_err = parse_local_rules([{"id": "local_ok", "text": "t", "cmd": "python3 -c 'pass'"}])
+    if ok_err or len(ok_rows) != 1 or ok_rows[0].id != "local_ok":
+        return False
+    _, dup_err = parse_local_rules([{"id": "only_measured", "text": "t", "cmd": "python3 -c 'pass'"}])
+    _, style_err = parse_local_rules([{"id": "style", "text": "t", "cmd": "python3 -c 'pass'"}])
+    _, bad_cmd = parse_local_rules([{"id": "local_bad", "text": "t", "cmd": "echo nope"}])
+    if not (dup_err and style_err and bad_cmd):
+        return False
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(os.path.join(d, "reflect-local"))
+        open(os.path.join(d, "reflect-local", LOCAL_PRINCIPLES_NAME), "w", encoding="utf-8").write(
+            json.dumps([{"id": "disk_arr", "text": "t", "cmd": "python3 -c 'pass'"}]))
+        disk_rows, disk_err = _load_local_rules(d)
+        return not disk_err and len(disk_rows) == 1 and disk_rows[0].id == "disk_arr"
+
+
 def _cases():
     return [
-        ("doc.rules_well_formed", lambda: _cmd_shape_problems() == []),
+        ("doc.rules_well_formed", lambda: _cmd_shape_problems(RULES) == []),
+        ("doc.local_rules_validation", _local_rules_ok),
         ("doc.ids_unique_and_valid",
          lambda: len({r.id for r in RULES}) == len(RULES)
          and all(re.fullmatch(r"[a-z][a-z0-9_]*", r.id) and r.text.strip() for r in RULES)),

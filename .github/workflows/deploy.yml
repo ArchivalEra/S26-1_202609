@@ -8,8 +8,7 @@ on:
       - "README.md"
       - "课程/**"
       - "站点/**"
-      - "维护条例.md"
-      - "维护细则.md"
+      - "PRINCIPLES.md"
       - ".github/workflows/**"
   workflow_dispatch: {}
 

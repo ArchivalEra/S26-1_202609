@@ -13,7 +13,7 @@
     python3 .githooks/check-markdown.py --strict         # 警告也按失败处理
     python3 .githooks/check-markdown.py 文件或目录 ...   # 指定路径
 
-默认范围：README.md、维护条例.md、课程/、模板/。knowledge/ 是历史兼容入口，
+默认范围：README.md、课程总览/、模板/、站点/、.agents/。knowledge/ 是历史兼容入口，
 .kimi-code/ 是本地工具目录，默认不检查。
 """
 from __future__ import annotations
@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(subprocess.check_output(['git', 'rev-parse', '--show-toplevel']).decode().strip())
-DEFAULT_TARGETS = ('README.md', '维护条例.md', '维护细则.md', '课程总览', '模板', '站点', '.agents')
+DEFAULT_TARGETS = ('README.md', '课程总览', '模板', '站点', '.agents')
 FENCE_RE = re.compile(r'^(\s*)(`{3,}|~{3,})\s*(\S*)\s*$')
 FENCE_ANY_RE = re.compile(r'^\s*(`{3,}|~{3,})')
 HEADING_RE = re.compile(r'^(#{1,6})\s+(.*?)\s*$')
@@ -386,7 +386,7 @@ def read_file(path: Path, staged: bool) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description='Markdown 美观度与可读性检查')
-    parser.add_argument('paths', nargs='*', help='要检查的文件或目录，默认 README.md、维护条例.md、课程/、模板/')
+    parser.add_argument('paths', nargs='*', help='要检查的文件或目录，默认 README.md、课程总览/、模板/')
     parser.add_argument('--staged', action='store_true', help='只检查已暂存的 Markdown（从索引读取内容）')
     parser.add_argument('--strict', action='store_true', help='警告也按失败处理')
     args = parser.parse_args()

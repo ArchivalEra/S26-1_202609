@@ -99,7 +99,7 @@ mail/NNN-re-<topic>.md           回信（`re-` 前缀标明是回复）
 
 本目录**不进**任何闸门的断言面（它是散文往来，不是事实台账）。
 `mail/` **入库**（2026-11-10 起），但只作往来记录——它不产 rc、不写 FACTS、
-不被 `check_facts` / `check_handoff` 扫。
+不被 `check_facts` / `check_stale` 扫。
 
 ## 往来索引
 

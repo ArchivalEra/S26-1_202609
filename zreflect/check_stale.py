@@ -206,7 +206,10 @@ def _retired_name_problems(docs, hist, retired):
     return out
 
 
-def problems(ledger, docs, retired=None, hist_secs=None, stale_days=None):
+_UNSET = object()
+
+
+def problems(ledger, docs, retired=_UNSET, hist_secs=None, stale_days=_UNSET):
     """Return the problem list (pure function: the selftest depends on that).
     `ledger` = the loaded ledger; `docs` = {file name: body}.
 
@@ -226,14 +229,12 @@ def _problem_layers(f, docs, hist_secs, stale_days, retired):
     """The three criterion layers in report order: R1 sha provenance, age check,
     R2 retired names. One layer = one function, concatenated.
 
-    `hist_secs=None` => `HIST_SECS` (the selftest passes it explicitly);
-    `stale_days=None` => `_stale_days()` (unset => age rule off); `retired=None`
-    => `_retired()` (unset => retired-name rule off; `RETIRED is None` lets
-    `run` tell "declared off" apart from an empty list).
+    `hist_secs=None` => `HIST_SECS`; `stale_days=None` => off (`_UNSET` => `_stale_days()`);
+    `retired=()` => off (`_UNSET` => `_retired()`).
     """
     hist = HIST_SECS if hist_secs is None else hist_secs
-    sd = _stale_days() if stale_days is None else stale_days
-    retired_names = _retired() if retired is None else retired
+    sd = _stale_days() if stale_days is _UNSET else stale_days
+    retired_names = _retired() if retired is _UNSET else retired
     return (_sha_assertion_problems(f, docs, hist)
             + _stale_age_problems(f, sd)
             + _retired_name_problems(docs, hist, retired_names))
@@ -300,34 +301,43 @@ def _cases_sha(fx):
     led_sha, led_plain, bare = fx["led_sha"], fx["led_plain"], fx["bare"]
     return [
     ("stale.sourced_history_sha",
-     lambda: problems(led_plain, {"A.md": "old sha `abc1234` (retracted)\n"})
+     lambda: problems(led_plain, {"A.md": "old sha `abc1234` (retracted)\n"},
+                      stale_days=None, retired=())
      == []),
     ("★ stale.dated_record_does_not_exempt_other_sha",
      lambda: [p.code for p in problems(
-         led_sha, {"A.md": "deployed sha DEADBEEF00 -20260101\n"})] == ["stale.sha_unsourced"]),
+         led_sha, {"A.md": "deployed sha DEADBEEF00 -20260101\n"},
+         stale_days=None, retired=())] == ["stale.sha_unsourced"]),
     # (2) Reverse criterion (issue #25): a historical marker is **no longer**
     # a get-out-of-jail card
     ("★ stale.sha_no_facts·history_mark",
      lambda: [p.code for p in problems(
-         led_plain, {"A.md": "deployed sha256 history is 8287589ebdb53b4c\n"})]
+         led_plain, {"A.md": "deployed sha256 history is 8287589ebdb53b4c\n"},
+         stale_days=None, retired=())]
      == ["stale.sha_no_facts"]),
     ("stale.cite_anchor",
-     lambda: problems(led_sha, {"A.md": "old sha256 [[site_sha]] retracted\n"}) == []),
+     lambda: problems(led_sha, {"A.md": "old sha256 [[site_sha]] retracted\n"},
+                      stale_days=None, retired=()) == []),
     ("stale.no_sha_assertion",
-     lambda: problems(led_plain, {"A.md": "a fine day\n"}) == []),
+     lambda: problems(led_plain, {"A.md": "a fine day\n"},
+                      stale_days=None, retired=()) == []),
     ("stale.declared_history_section",
-     lambda: problems(led_plain, {"A.md": "## 5 history\n" + bare}, hist_secs=("5",))
+     lambda: problems(led_plain, {"A.md": "## 5 history\n" + bare}, hist_secs=("5",),
+                      stale_days=None, retired=())
      == []),
     # (2) What must be reported gets reported
     ("★ stale.sha_unsourced",
-     lambda: [p.code for p in problems(led_sha, {"A.md": bare})]
+     lambda: [p.code for p in problems(led_sha, {"A.md": bare},
+                                       stale_days=None, retired=())]
      == ["stale.sha_unsourced"]),
     ("★ stale.sha_no_facts",
-     lambda: [p.code for p in problems(led_plain, {"A.md": bare})]
+     lambda: [p.code for p in problems(led_plain, {"A.md": bare},
+                                       stale_days=None, retired=())]
      == ["stale.sha_no_facts"]),
     ("★ stale.sha_no_facts·undeclared_section",
      lambda: [p.code for p in problems(
-         led_plain, {"A.md": "## 5 history\n" + bare}, hist_secs=(""))
+         led_plain, {"A.md": "## 5 history\n" + bare}, hist_secs=(""),
+         stale_days=None, retired=())
      ] == ["stale.sha_no_facts"]),
     ]
 
@@ -338,17 +348,19 @@ def _cases_retired(fx):
     return [
     ("stale.retired_unconfigured",
      lambda: problems(led_plain, {"A.md": "still using the old component\n"},
-                      retired=()) == []),
+                      stale_days=None, retired=()) == []),
     ("stale.retired_reference",
      lambda: problems(led_plain, {"A.md": "see NOTES-osmesa.md and the osmesa-branch\n"},
-                      retired=("osmesa",)) == []),
+                      stale_days=None, retired=("osmesa",)) == []),
     ("★ stale.retired_name",
      lambda: [p.code for p in problems(
-         led_plain, {"A.md": "backend still uses osmesa\n"}, retired=("osmesa",))]
+         led_plain, {"A.md": "backend still uses osmesa\n"},
+         stale_days=None, retired=("osmesa",))]
      == ["stale.retired_name"]),
     ("★ stale.retired_name·unnumbered_section",
      lambda: [p.code for p in problems(
-         led_plain, {"A.md": "## FAQ\nstill using osmesa\n"}, retired=("osmesa",))]
+         led_plain, {"A.md": "## FAQ\nstill using osmesa\n"},
+         stale_days=None, retired=("osmesa",))]
      == ["stale.retired_name"]),
     ]
 
@@ -359,15 +371,15 @@ def _cases_age(fx):
     return [
     # (2) Age check (issue #3 item 2)
     ("stale.age_fresh",
-     lambda: problems(led_fresh, {"A.md": "x\n"}, stale_days=30) == []),
+     lambda: problems(led_fresh, {"A.md": "x\n"}, stale_days=30, retired=()) == []),
     ("stale.age_rule_off",
-     lambda: problems(led_old, {"A.md": "x\n"}, stale_days=None) == []),
+     lambda: problems(led_old, {"A.md": "x\n"}, stale_days=None, retired=()) == []),
     ("★ stale.too_old",
      lambda: [p.code for p in problems(
-         led_old, {"A.md": "x\n"}, stale_days=30)] == ["stale.too_old"]),
+         led_old, {"A.md": "x\n"}, stale_days=30, retired=())] == ["stale.too_old"]),
     ("★ stale.measured_at_missing",
      lambda: [p.code for p in problems(
-         led_plain, {"A.md": "x\n"}, stale_days=30)]
+         led_plain, {"A.md": "x\n"}, stale_days=30, retired=())]
      == ["stale.measured_at_missing"]),
     ]
 
@@ -379,13 +391,16 @@ def _cases_empty(fx):
     # (1) Normal case: no report
     ("stale.ok",
      lambda: problems(led_sha,
-                      {"A.md": "deployed sha256 %s... (truncated)\n" % ("a" * 16)}) == []),
+                      {"A.md": "deployed sha256 %s... (truncated)\n" % ("a" * 16)},
+                      hist_secs=HIST_SECS, stale_days=None, retired=()) == []),
     # (3) Empty input must be reported
     ("★ stale.ledger_empty",
-     lambda: [p.code for p in problems({"facts": {}}, {"A.md": "x\n"})]
+     lambda: [p.code for p in problems({"facts": {}}, {"A.md": "x\n"},
+                                       hist_secs=HIST_SECS, stale_days=None, retired=())]
      == ["stale.ledger_empty"]),
     ("★ stale.no_docs",
-     lambda: [p.code for p in problems(led_plain, {})] == ["stale.no_docs"]),
+     lambda: [p.code for p in problems(led_plain, {},
+                                       hist_secs=HIST_SECS, stale_days=None, retired=())] == ["stale.no_docs"]),
     ]
 
 

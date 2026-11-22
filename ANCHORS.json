@@ -1,22 +1,21 @@
 {
   "approver_pub": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAvf9ckQEI6CkK30ookgtqjT6I3H0PXzo6ov25212pyDQ=\n-----END PUBLIC KEY-----\n",
-  "knobs_sha256": "6716a6d19a42fd6425fac19cf23afececcf1672deaf43d1b695fa90825c3aa6b",
+  "knobs_sha256": "dd277bf27df4de27bae35c73fb010ccd4f244caa9ba3ef55324226d12998c11c",
   "local_scripts": {
     "reflect-local/check_doc_paths.py": "3eca4510e21f14a068a1ade47e69235c99af2c116c21938b033e227ad5198008",
-    "reflect-local/check_handoff.py": "fa990393dbd7f63ad44e1367f9597f60080ece400087c413dfbad155a16e246a",
     "reflect-local/check_identity.py": "340b1e0b8b7c192166b22d8610582f2472404eac2499c0eb6d94fadd43ebf830",
     "reflect-local/check_lab_integrity.py": "bb2079370465ebf26545bee409658c4440a352d4350b90d1195e3256033e302e",
     "reflect-local/check_semantics.py": "b785f691ff48a602e1e25d90b7b799869017951f38ba3042eafd4270c4397810",
     "reflect-local/check_study.py": "753257e7fe22e7f3fdf0c0a4ac2b1ea192ba79832971369b066baefccfd15d24",
     "reflect-local/check_transcript_privacy.py": "59eddb9d9955782ced359881e1bd870bfbdb2e9de3707aa90b707d5430d5462c",
-    "reflect-local/hook.py": "4683eb326688373569f8a45b229b18be3cc19675f2d0ed44f88c27ee018505fa",
+    "reflect-local/hook.py": "a6a465bcebdec4a60bbcf0f8f37fb3029d8954fa60620f7a72500de3cafddbd2",
     "reflect-local/mail-read.py": "6927ca2928c14c726bf9d8d1f2ad4063b82044aa149c1dd75baabf9a53c552ce",
-    "reflect-local/measure_edu.py": "67c0f36cc3d01ede77695cdc647f8066ef5b20497b62caf0c26fea6d143648fa"
+    "reflect-local/measure_edu.py": "f91c8414364eedc680b37b9505751b9b9681696c7ad6771879e3d37c53a0e90d",
+    "reflect-local/principles.json": "a311576b3cd2dc581d0896e6b9d59adeeb010c1bf55fbf3d28b238a965e491d1"
   },
   "lock_core": true,
   "off_gates": [
     "check_ab.py",
-    "check_handoff.py",
     "check_instruments.py",
     "check_locks.py",
     "check_pins.py",
@@ -25,9 +24,9 @@
     "doctor.py"
   ],
   "principles": {
-    "doc_py_sha256": "14a7168e0a474387fcf4bb0e44a882980ead5119c2638e3343e97c812b56d948",
+    "doc_py_sha256": "688513c088d62eaede5a1d3b42d87f836511b49fdf2df172218b073077d5bde2",
     "no_principles": false,
-    "principles_md_sha256": "82b5bd79663b969b443f4aa33b1f05bdc0e8ea92721ce828faa57c72c14b89e1"
+    "principles_md_sha256": "73f5a0a669f00888cbb61befebea1e1de457b2325607de4bb87058e8b97adf73"
   },
   "questions": {
     "questions/01-frontmatter-silent-failure.md": {
@@ -72,5 +71,5 @@
   "revoked_ids": [],
   "schema": 2,
   "suite_seq": 1,
-  "suite_tree_sha256": "9cf74cba08e7f125e9f150f34bac6c10d1f3c3bddad9ebf77d40e7eebfeb07ad"
+  "suite_tree_sha256": "126b5690b0458c08082d23b557113fd205660c0166a44a67d73e78e95ddd679c"
 }

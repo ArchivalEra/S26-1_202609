@@ -19,7 +19,20 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-TOOL_REPO = os.path.dirname(HERE)
+
+
+def _find_tool_repo(start):
+    cur = start
+    while cur and os.path.dirname(cur) != cur:
+        if os.path.isdir(os.path.join(cur, "zreflect")):
+            return cur
+        if os.path.exists(os.path.join(cur, ".git")):
+            break
+        cur = os.path.dirname(cur)
+    return os.path.dirname(start)
+
+
+TOOL_REPO = _find_tool_repo(HERE)
 sys.path.insert(0, os.path.join(TOOL_REPO, "zreflect"))
 
 import knobs  # noqa: E402

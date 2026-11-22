@@ -153,8 +153,10 @@ def run(argv):
     if not os.path.exists(p):
         return fatal(M("replay.ledger_missing", name=name))
     import trust  # noqa: PLC0415
+    pre_probs = doc.local_rules_problems(repo()) + trust.check_principles_repo(repo()) + trust.check_knobs_anchor(repo())
+    if pre_probs:
+        return finish(M("replay.title"), pre_probs, M("replay.ok", count=0, calibrated=""))
     r = replay_all(_with_principles(load_or_fatal(p)))
-    r["problems"] = trust.check_principles_repo(repo()) + r["problems"]
     ctail = str(M("replay.ok_calibrated", count=r["calibrated"]) if r["calibrated"] else "")
     return finish(M("replay.title"), r["problems"], M("replay.ok", count=r["ok"], calibrated=ctail))
 

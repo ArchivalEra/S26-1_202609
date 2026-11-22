@@ -52,7 +52,7 @@ def main() -> int:
         print(f'相对时间戳：{stamps[0]} … {stamps[-1]}（共 {len(stamps)} 处）')
     print(f'说话人标签：{"、".join(speakers) if speakers else "无（连续文本）"}')
     phones = re.findall(r'(?<!\d)1[3-9]\d{9}(?!\d)', text)
-    print(f'11 位手机号：{"、".join(phones) if phones else "无"}（有命中也不入库，见维护条例第 5 条）')
+    print(f'11 位手机号：{"、".join(phones) if phones else "无"}（有命中也不入库，见 AGENTS.md / PRINCIPLES.md）')
     print('回查原文：按上面时间戳到源文件里找；笔记里引用片段一律带相对时间。')
     return 0
 

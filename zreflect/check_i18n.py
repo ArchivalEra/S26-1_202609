@@ -421,6 +421,20 @@ def _packs_match_their_language():
     return checked >= 1
 
 
+def _real_packs_in_sync_ok():
+    if not i18n.installed_langs():
+        return True
+    saved = os.environ.get("REFLECT_LANGS")
+    os.environ["REFLECT_LANGS"] = ""
+    try:
+        return pack_sync_problems() == [] and pack_coverage_problems() == []
+    finally:
+        if saved is None:
+            os.environ.pop("REFLECT_LANGS", None)
+        else:
+            os.environ["REFLECT_LANGS"] = saved
+
+
 def _cases():
     s = "".join(chr(CJK_LO + i) for i in range(4))
     pinned_fn = 'def r(w):\n    """PINNED: %s pinned, exact."""\n    return "%s"\n' % (s * 3, s[:2])
@@ -453,9 +467,7 @@ def _cases():
          lambda: [p.code for p in problems([("evil\nOFF: x.py", "x = 1\n")])]
          == ["i18n_cover.filename_has_line_break"]),
         ("★ i18n_cover.empty_scan", lambda: problems([]) != []),
-        ("knobs.real_packs_in_sync",
-         lambda: not i18n.installed_langs() or (
-             pack_sync_problems() == [] and pack_coverage_problems() == [])),
+        ("knobs.real_packs_in_sync", _real_packs_in_sync_ok),
         ("★ knobs.pack_missing_keys",
          lambda: [p.code for p in pack_sync_problems(
              discovery=lambda: ("zh", "en"),

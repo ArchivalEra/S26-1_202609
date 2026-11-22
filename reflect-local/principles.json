@@ -1,0 +1,59 @@
+{
+  "rules": [
+    {
+      "id": "solution_discipline",
+      "text": "解析纪律三原则：完整解答层零反人类词（试探/凑/巧妙看出）、题面引用教材图号必见图（或明说「图缺」）、完成边界 ≤150 字且含「已解析」与「已验证」",
+      "cmd": "python3 -c \"import subprocess,sys;sys.exit(subprocess.run(['node','--test','plugins/solution-discipline.test.mjs','plugins/completion-boundary.test.mjs'],cwd='站点').returncode)\""
+    },
+    {
+      "id": "solution_selfcontained",
+      "text": "解答自足：完整做法直接写在本页完整解答层，不把步骤推给技法库或教材解析页",
+      "cmd": "python3 -c \"import subprocess,sys;sys.exit(subprocess.run(['node','--test','plugins/solution-selfcontained.test.mjs'],cwd='站点').returncode)\""
+    },
+    {
+      "id": "figures_wellformed",
+      "text": "题面图元（.figures.txt 与内联 SVG）合法，端口语义挂载与词条一致，布局无穿框截字",
+      "cmd": "python3 -c \"import subprocess,sys;sys.exit(subprocess.run(['node','--test','plugins/figures.test.mjs'],cwd='站点').returncode)\""
+    },
+    {
+      "id": "markdown_wellformed",
+      "text": "Markdown 结构与数学规范：标题不跳级、围栏与数学定界符闭合、数学模式中文用 \\\\text{} 包裹、折叠面板标题裸词",
+      "cmd": "python3 .githooks/check-markdown.py"
+    },
+    {
+      "id": "whitelist_and_site_sync",
+      "text": "精确白名单禁通配符、课程 status 仅「开课/结课」两档、资料与各级索引同进同出、侧栏标签等于 H1 且在宽度预算内、站点与构建清单一致",
+      "cmd": "python3 -c \"import sys;sys.path.insert(0,'.githooks');import hook_lib;f=hook_lib.snapshot(worktree=True);hook_lib.validate(f);print('validated_files=%d' % len(f))\""
+    },
+    {
+      "id": "no_untracked_study",
+      "text": "课堂转写原件与教材照片原件不入 git（原件存 /mnt/hdd/study/<课>/原始资料/），待办区根层不散落文件",
+      "cmd": "python3 -c \"import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_study.py'))\""
+    },
+    {
+      "id": "transcript_privacy",
+      "text": "课堂转写隐私防线：受管文件不含 11 位手机号与未脱敏原文，仅在原始资料/index.md 登记文件名、性质说明与 SHA256",
+      "cmd": "python3 -c \"import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_transcript_privacy.py'))\""
+    },
+    {
+      "id": "doc_paths_verified",
+      "text": "活文档引用的磁盘路径真实存在（被 .gitignore 排除的工作区文件须明说不适用）",
+      "cmd": "python3 -c \"import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_doc_paths.py'))\""
+    },
+    {
+      "id": "identity_consistent",
+      "text": "仓库对外标识、作者与仓名只认唯一真相源，不混用旧仓旧名",
+      "cmd": "python3 -c \"import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_identity.py'))\""
+    },
+    {
+      "id": "semantics_unique",
+      "text": "助手协议术语唯一，按口径表查禁用别名（未配置或默认文件不在时明说 off）",
+      "cmd": "python3 -c \"import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_semantics.py'))\""
+    },
+    {
+      "id": "lab_integrity",
+      "text": "不入库的实验空活代码（.kimi-code/学习通API/）文件清单与回归测试完整（克隆无此目录时通过）",
+      "cmd": "python3 -c \"import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_lab_integrity.py'))\""
+    }
+  ]
+}

@@ -643,7 +643,7 @@ for (const relPath of TARGET_FILES) {
 
 // 站点**真实产物路径**清单（2026-10-29）：`页面清单.mjs` 的 TARGET_FILES 逐个换成 html。
 // 这是 site_navigate 的 to=page 判「这一页存不存在」的**唯一真相**——不是导航形状：
-// README / 维护条例 / 维护细则 / 站点符号包都没有侧栏入口，但它们是真页面。
+// README / 站点符号包都没有侧栏入口，但它们是真页面。
 // 每个页面都烘一份（`#site-pages-json`），客户端不发请求即可校验。
 // 用**网址**形态（不是文件名）：模型的 to=page 参数写的是它从 site_index / 侧栏
 // 看到的那个东西，而侧栏现在给的就是目录形式。用文件名会让「侧栏看到 /课程总览/、
@@ -981,13 +981,6 @@ const NAV_STRUCTURE = [
           { label: "原始资料", path: "课程总览/电气前沿/原始资料/index.md" }
         ]
       }
-    ]
-  },
-  {
-    label: "仓库规约",
-    children: [
-      { label: "维护条例", path: "维护条例.md" },
-      { label: "维护细则", path: "维护细则.md" }
     ]
   }
 ];
@@ -2589,7 +2582,7 @@ for (const relPath of TARGET_FILES) {
   <!-- 站点页面清单烘焙（2026-10-29）：TARGET_FILES 派生的**真实产物路径**。
        site_navigate 的 to=page 靠它判「这一页到底存不存在」——此前判据是「像不像
        index.html」，于是模型拼错层级的路径（少了课程层）也能通过，SPA fetch 撞 404。
-       注意它是**产物清单**不是导航清单：README / 维护条例 / 符号包都在内。 -->
+       注意它是**产物清单**不是导航清单：README / 符号包都在内。 -->
   <script type="application/json" id="site-pages-json">${JSON.stringify(SITE_PAGE_PATHS).replace(/<\//g, '<\\/')}</script>
   <script src="${rootRel}${assetUrl('assets/plugins/math-glossary.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/site-search.js')}" defer></script>
@@ -2964,7 +2957,7 @@ for (const relPath of TARGET_FILES) {
   // 那时 Step 6 的整轮替换已过去，页面上就直挺挺显示 `@@MATH_INLINE_84@@`。
   // 这类残留**肉眼一眼能看出、但构建与全部测试都不报错**，所以在这里硬拦。
   //
-  // 只认带数字的形式：文档页（维护细则）会**故意**写出这个模式的字面例子，
+  // 只认带数字的形式：文档/测试页会**故意**写出这个模式的字面例子，
   // 那种没有数字的 `@@MATH_INLINE_n@@` 是正文，不是残留。
   //
   // ⚠️ 2026-11-11 补第二个形态（issue #37）：占位符若被**当公式编译过一遍**，

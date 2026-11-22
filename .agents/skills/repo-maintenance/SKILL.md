@@ -6,8 +6,8 @@ description: 学期课程仓库的入库：加课程、写课堂笔记/教材解
 # 学期课程仓库维护
 
 `课程总览/<课名>/` 四类：作业、教材解析、课堂笔记、原始资料（没有该类的课程在
-`.githooks/hook_lib.py` 的 `COURSE_SKIPPED_KINDS` 声明豁免）。原则 `维护条例.md`、规程 `维护细则.md`，
-冲突以条例为准。**判据：钩子全绿、网页能读。**
+`.githooks/hook_lib.py` 的 `COURSE_SKIPPED_KINDS` 声明豁免）。原则见 `PRINCIPLES.md`，
+常驻约束与路由见 `AGENTS.md`。**判据：钩子全绿、网页能读。**
 
 **先选一条线**，照做完；每条线末尾的判据就是完成条件。
 
@@ -111,8 +111,7 @@ python3 .githooks/update-readme.py --worktree && python3 .githooks/test-update-r
   && git fsck --no-progress && git diff --check
 ```
 
-改过 `课程总览/` 或 `站点/` → 同轮更新 `.kimi-code/handoff.md`（pre-commit 强制）。
-提交被拦就按提示修命名、索引或两处 AUTO 区块（那两个区块由钩子从暂存区重算，交给它写）。
+提交被拦就按提示修命名、索引或 AUTO 区块（该区块由钩子从暂存区重算，交给它写）。
 **提交即止，不推送**——推送由站长发话。
 
 ## 卡住时
@@ -132,7 +131,6 @@ python3 .githooks/update-readme.py --worktree && python3 .githooks/test-update-r
 - **转写用第 1 步的脚本提取**，随手重写 python 解析是浪费。
 - **照片用 `prepare-photos.py` 统一处理**，不要自己拼 `vips` 命令——竖屏校正与 ASCII 命名都在里面。
 - **索引最小 diff**：只加行，不整篇重写，也不先通读（新写的内容本就在上下文里）；`last_updated` 是推导字段，pre-commit 按各文件自己的提交日期自动写，不手抄。
-- **handoff 最小更新**：§1 该课那一行 + §6 该课小节追加 2–4 行 + §9 加一行。
 - **推送即结束，禁止等 CI**（2026-09-24 用户定案）：本地构建与 CI 等效（同一个 `node build.mjs`、同一套钩子），
   所以 `git push` 就是终点——不 `sleep`、不轮询、不为「看 CI 绿不绿」多花一分钟；线上页面只在改动 `站点/`
   或用户要看时抓。只有部署步骤本身报错（如密钥被拒）时才偶尔看一眼运行状态。

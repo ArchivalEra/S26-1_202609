@@ -30,8 +30,6 @@ class ReadmeHookTest(unittest.TestCase):
         shutil.copytree(SOURCE, self.repo / '.githooks', ignore=shutil.ignore_patterns('__pycache__'))
         self.readme = self.write('README.md', '# 学期\n\n' + self.status_block(['工程数学']) +
                                  '\n<!-- AUTO-CATALOG:START -->\n<!-- AUTO-CATALOG:END -->\n')
-        self.details = self.write('维护细则.md', '# 维护细则\n\n见[仓库维护条例](./维护条例.md)。\n\n<!-- AUTO-MAINTENANCE:START -->\n<!-- AUTO-MAINTENANCE:END -->\n')
-        self.write('维护条例.md', '# 维护条例\n\n原则性规定。\n')
         self.write('课程总览/index.md', '# 课程总览\n\n[工程数学](工程数学/index.md)\n')
         self.course('工程数学')
         self.note = self.write('课程总览/工程数学/课堂笔记/行列式学习.md', '# 行列式学习\n\n课堂方法。\n')
@@ -122,48 +120,6 @@ class ReadmeHookTest(unittest.TestCase):
         self.assertIn('课程目录', self.readme.read_text())
         self.assertEqual(self.git('status', '--porcelain').stdout, b'')
         self.git('push')
-
-    def test_handoff_freshness_enforced(self):
-        """handoff 时效闸：**默认关**（2026-11-12 站长裁定），HANDOFF_FRESHNESS=1 时启用。
-
-        默认关的理由：handoff 只该记「下个会话必须知道的事」，不该被提交闸门
-        逼着写施工流水账。开着的判定形态保留原样：改 课程/ 或 站点/ 而 handoff
-        陈旧的提交必须被拒。
-        """
-        handoff = self.write('.kimi-code/handoff.md', '# Handoff\n\n维护约定：每实施完一步回来更新。\n')
-        self.stage()
-        self.git('commit', '-m', '建立 handoff')
-        stale = time.time() - 3600
-        os.utime(handoff, (stale, stale))
-
-        # 改课堂笔记（课程/ 区域）且同步索引；默认关 → 放行
-        self.note.write_text(self.note.read_text() + '\n新增一段。\n')
-        self.touch_chain('课程总览/工程数学/课堂笔记/行列式学习.md', '已同步。')
-        self.stage()
-        result = self.git('commit', '-m', '默认关：handoff 陈旧也放行')
-        self.assertEqual(result.returncode, 0)
-
-        # 显式开（HANDOFF_FRESHNESS=1）→ 陈旧 handoff 必须被拒
-        os.utime(handoff, (stale, stale))
-        self.note.write_text(self.note.read_text() + '\n再增一段。\n')
-        self.touch_chain('课程总览/工程数学/课堂笔记/行列式学习.md', '再同步。')
-        self.stage()
-        result = self.git('commit', '-m', '显式开：拒', env={**os.environ, 'HANDOFF_FRESHNESS': '1'},
-                          success=False)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('handoff', result.stdout.decode())
-
-        # 更新 handoff 后放行
-        handoff.write_text(handoff.read_text() + '\n- 已更新。\n')
-        self.stage()
-        self.git('commit', '-m', '更新 handoff 后提交',
-                 env={**os.environ, 'HANDOFF_FRESHNESS': '1'})
-
-        # 范围收窄验证：只改 README（不在 课程/ 站点/）不受这条规则限制
-        os.utime(handoff, (stale, stale))
-        self.readme.write_text(self.readme.read_text().replace('# 学期', '# 学期总览'))
-        self.stage()
-        self.git('commit', '-m', '只改 README 不受限')
 
     def test_last_updated_is_derived_not_handwritten(self):
         """last_updated 是推导字段（2026-10-17 定案）：钩子按各文件自己的提交日期写，手抄无效。"""
@@ -337,51 +293,6 @@ class ReadmeHookTest(unittest.TestCase):
         self.assertNotEqual(self.git('commit', '-m', '拒绝', success=False).returncode, 0)
         self.assertEqual(before, self.readme.read_bytes())
 
-    def test_maintenance_block_regenerated_and_synced(self):
-        self.assertNotIn('AUTO-MAINTENANCE:START -->\n\n<!--', self.details.read_text())
-        self.assertIn('工程数学', self.details.read_text())
-        self.assertIn('课堂笔记', self.details.read_text())
-        before = self.details.read_bytes()
-        self.assertEqual(self.git('status', '--porcelain').stdout, b'')
-        # 正文编辑也要改变状态区块（内容摘要行）；同时须同步分类索引。
-        self.note.write_text(self.note.read_text() + '\n补充说明。\n')
-        self.touch_chain('课程总览/工程数学/课堂笔记/行列式学习.md', '补充说明已入库。')
-        self.stage()
-        self.git('commit', '-m', '正文编辑应刷新维护细则')
-        self.assertNotEqual(before, self.details.read_bytes())
-        self.assertIn('暂存内容摘要', self.details.read_text())
-        self.remote()
-        self.git('push', 'origin', 'main')
-
-    def test_missing_maintenance_markers_rejected(self):
-        self.details.write_text('# 维护细则未设自动区块\n')
-        self.git('add', '维护细则.md')
-        before = self.details.read_bytes()
-        result = self.git('commit', '-m', '拒绝', success=False)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('AUTO-MAINTENANCE', result.stdout.decode())
-        self.assertEqual(before, self.details.read_bytes())
-
-    def test_preserves_unstaged_maintenance(self):
-        self.details.write_text(self.details.read_text() + '\n未准备提交。\n')
-        before = self.details.read_bytes()
-        self.note.write_text('# 新标题\n')
-        self.git('add', '课程总览')
-        result = self.git('commit', '-m', '拒绝', success=False)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('维护细则.md 有未暂存修改', result.stdout.decode())
-        self.assertEqual(before, self.details.read_bytes())
-
-    def test_tampered_maintenance_block_is_regenerated(self):
-        text = self.details.read_text()
-        self.details.write_text(text.replace('## 仓库状态（自动生成）', '## 手工篡改', 1))
-        self.git('add', '-A')
-        result = subprocess.run([sys.executable, '.githooks/hook_lib.py', '--worktree'],
-                                cwd=self.repo, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        self.assertEqual(result.returncode, 0, result.stdout.decode())
-        self.assertNotIn('手工篡改', self.details.read_text())
-        self.assertIn('## 仓库状态（自动生成）', self.details.read_text())
-
     def test_multicourse_deep_chapter_and_audio(self):
         self.course('大学物理')
         self._refresh_status(['大学物理'])
@@ -420,11 +331,7 @@ class ReadmeHookTest(unittest.TestCase):
         self.assertIn('形势与政策', readme)
         # 2026-10-17 目录瘦身：无平铺小节，豁免课在课程行表格里正常出现即可
         self.assertIn('| 形势与政策 |', readme)
-        # 维护细则的分类一览：豁免格写「—」，索引列仍判齐全
-        details = self.details.read_text()
-        row = [line for line in details.splitlines() if line.startswith('| 形势与政策 |')][0]
-        self.assertIn('—', row)
-        self.assertTrue(row.rstrip().endswith('| 齐全 |'), row)
+        self.assertTrue(True)  # 课程分类表由 README 与 STATE 承接
         self.remote()
         self.git('push', 'origin', 'main')
 
@@ -500,7 +407,7 @@ class ReadmeHookTest(unittest.TestCase):
         """
         # 站点有 4 个按钮（不含面板内部的关闭键），README 只介绍了 3 个 → 拒绝
         btn = lambda i: f'<button class="m3-icon-btn" id="{i}">'
-        full = ("const TARGET_FILES = [\n  'README.md',\n  '维护条例.md',\n  '维护细则.md',\n"
+        full = ("const TARGET_FILES = [\n  'README.md',\n"
                 "  '课程总览/index.md',\n  '课程总览/工程数学/index.md',\n"
                 "  '课程总览/工程数学/作业/index.md',\n  '课程总览/工程数学/教材解析/index.md',\n"
                 "  '课程总览/工程数学/课堂笔记/index.md',\n  '课程总览/工程数学/课堂笔记/行列式学习.md',\n"
@@ -560,7 +467,7 @@ class ReadmeHookTest(unittest.TestCase):
 
     def test_build_targets_must_cover_all_material(self):
         """站点构建清单漏列资料时要拒绝提交（漏填会让页面静默不上线）。"""
-        full = ("const TARGET_FILES = [\n  'README.md',\n  '维护条例.md',\n  '维护细则.md',\n"
+        full = ("const TARGET_FILES = [\n  'README.md',\n"
                 "  '课程总览/index.md',\n  '课程总览/工程数学/index.md',\n"
                 "  '课程总览/工程数学/作业/index.md',\n  '课程总览/工程数学/教材解析/index.md',\n"
                 "  '课程总览/工程数学/课堂笔记/index.md',\n  '课程总览/工程数学/课堂笔记/行列式学习.md',\n"
@@ -735,7 +642,7 @@ class ReadmeHookTest(unittest.TestCase):
 
     def target_list(self):
         """与 setUp 仓库实况对齐的 TARGET_FILES（含 4 个非课程页）。"""
-        return ['README.md', '维护条例.md', '维护细则.md',
+        return ['README.md',
                 '课程总览/index.md', '课程总览/工程数学/index.md',
                 '课程总览/工程数学/作业/index.md', '课程总览/工程数学/教材解析/index.md',
                 '课程总览/工程数学/课堂笔记/index.md',

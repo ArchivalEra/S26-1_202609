@@ -51,7 +51,7 @@ export function segmentsOf(pathOrUrl) {
  * 从网址（或源路径）取课程名。首页与顶层目录本身返回空串。
  *
  * 判据是**「第一段是不是顶层内容目录」**，不是「第二段像不像课程名」——
- * 后者在 `README.md`、`维护条例.md` 这类站点级页面上会误报。
+ * 后者在 `README.md` 这类站点级页面上会误报。
  */
 export function courseOf(pathOrUrl) {
   const s = segmentsOf(pathOrUrl);

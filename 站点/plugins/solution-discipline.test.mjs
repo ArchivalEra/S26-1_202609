@@ -1,6 +1,6 @@
 // solution-discipline.test.mjs —— 解析纪律闸（node --test，入 npm test 递归面）。
 //
-// 三条判据都来自本仓反复犯错、且已被写成文字规则的条目（维护细则 §3.3 / §3.5.1、
+// 三条判据都来自本仓反复犯错、且已被写成原则的条目（PRINCIPLES.md、
 // human-first-solution skill）。它们此前只靠「写解析的人自觉 + 双签三签抽查」；
 // 本文件把它们变成每次 node --test 都重证一次的断言。
 //
@@ -10,8 +10,8 @@
 //     机械做法是本仓的标准写法，判它就是误伤）。
 //   · 题面引用教材图号 ⇒ 图必须画在题面里（:::figure / 内联 SVG / 图片）；
 //     题面明说「图缺」的（照「不猜补」走 issue）豁免——那是不猜补原则的合规形态。
-//   · 「## 完成边界」主列表 ≤150 字、`已解析` 与 `已验证` 两项在场（维护细则 §3.5.1
-//     规矩三）。只对有该节的页面生效；历史页缺节走 issue，不在这里追认。
+//   · 「## 完成边界」主列表 ≤150 字、`已解析` 与 `已验证` 两项在场。
+//     只对有该节的页面生效；历史页缺节走 issue，不在这里追认。
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -148,7 +148,7 @@ function runFile(f) {
     if (!hasParsed) probs.push('缺「已解析」项');
     if (!hasVerified) probs.push('缺「已验证」项');
     assert.deepEqual(probs, [],
-      '完成边界不合口径（维护细则 §3.5.1）：\n  ' + probs.join('；')
+      '完成边界不合口径：\n  ' + probs.join('；')
       + '\n  处置：压缩到 150 字内，四条固定项各一句；历史页补节或归 issue。');
   });
 }
