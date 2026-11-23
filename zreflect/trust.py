@@ -377,36 +377,63 @@ def _git_prev_sha_and_diff(base, rel):
         return "NONE", ""
 
 
+def _symbolic_request(rel, rname, agent):
+    if rel == "REFLECT_NO_PRINCIPLES":
+        return {
+            "repo": rname, "agent_id": agent, "action": "principles.disable",
+            "target_path": rel, "prev_sha256": "false", "target_sha256": "true",
+            "target_content": "REFLECT_NO_PRINCIPLES=1\n",
+            "diff_summary": "REFLECT_NO_PRINCIPLES: false -> true",
+        }
+    if rel.startswith("check_") and rel.endswith(".py") and "/" not in rel:
+        return {
+            "repo": rname, "agent_id": agent, "action": "gate.off",
+            "target_path": rel, "prev_sha256": "on", "target_sha256": "off",
+            "target_content": "REFLECT_OFF_GATES += %s\n" % rel,
+            "diff_summary": "gate.off %s: on -> off" % rel,
+        }
+    return None
+
+
+def _file_request(base, rel, rname, agent):
+    full = os.path.join(base, rel)
+    text = None
+    if os.path.isfile(full):
+        try:
+            with open(full, encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+        except OSError:
+            text = None
+    target_sha = _sha256_norm_file(full) or "DELETED"
+    prev_sha, diff_sum = _git_prev_sha_and_diff(base, rel)
+    return {
+        "repo": rname,
+        "agent_id": agent,
+        "action": _classify_action(rel, text, prev_sha=prev_sha),
+        "target_path": rel,
+        "prev_sha256": prev_sha,
+        "target_sha256": target_sha,
+        "target_content": (text or "")[:32000],
+        "diff_summary": diff_sum or ("(new or binary file %s)" % rel),
+    }
+
+
 def build_requests(changed_paths, root=None, repo_name=None):
     """Build Approver Protocol v2 `POST /requests` payloads for controlled paths."""
     base = root or gate.GATE_REPO
     rname = repo_name or repo_id(base)
     ldir_prefix = local_dir_name(base) + "/"
+    agent = os.environ.get("USER", "agent")
     out = []
     for raw in sorted(set(changed_paths or ())):
         rel = str(raw).replace("\\", "/").lstrip("./")
+        sym = _symbolic_request(rel, rname, agent)
+        if sym is not None:
+            out.append(sym)
+            continue
         if not (rel.startswith(("zreflect/", ldir_prefix, "questions/")) or rel in trust_core.CONTROLLED_FILES):
             continue
-        full = os.path.join(base, rel)
-        text = None
-        if os.path.isfile(full):
-            try:
-                with open(full, encoding="utf-8", errors="replace") as fh:
-                    text = fh.read()
-            except OSError:
-                text = None
-        target_sha = _sha256_norm_file(full) or "DELETED"
-        prev_sha, diff_sum = _git_prev_sha_and_diff(base, rel)
-        out.append({
-            "repo": rname,
-            "agent_id": os.environ.get("USER", "agent"),
-            "action": _classify_action(rel, text, prev_sha=prev_sha),
-            "target_path": rel,
-            "prev_sha256": prev_sha,
-            "target_sha256": target_sha,
-            "target_content": (text or "")[:32000],
-            "diff_summary": diff_sum or ("(new or binary file %s)" % rel),
-        })
+        out.append(_file_request(base, rel, rname, agent))
     return out
 
 
@@ -1013,8 +1040,9 @@ def _selftest_crlf_and_verify():
         globals()["_post_auto_sync"] = lambda _u, p, _o: seen.setdefault(p["target_path"], True)
         try:
             probs = [M("approval.receipt_required", action="gate.off", target="knobs.json"),
-                     M("approval.receipt_required", action="gate.off", target="ruff.toml")]
-            if not _auto_sync_for_probs(rt, {"approver_pub": "x"}, probs) or len(seen) != 2:
+                     M("approval.receipt_required", action="gate.off", target="check_readme_sync.py")]
+            if (not _auto_sync_for_probs(rt, {"approver_pub": "x"}, probs)
+                    or seen.get("check_readme_sync.py") is not True or len(seen) != 2):
                 return False
         finally:
             globals()["_post_auto_sync"] = orig
