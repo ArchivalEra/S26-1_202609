@@ -6,8 +6,8 @@ description: >-
   link out, and never drop numbers, conditions, negations, scope, or attribution.
   Use for exam-prep pages, Walkthroughs, course-index summaries, README
   fragments, issue bodies. Invoke on "咕噜话" "太长" "压一压".
-  Solution steps and page skeletons go to `solution-production`;
-  aesthetic judgement and baseline confirmation go to
+  Course intake and verification go to `course-intake` / `double-sign` /
+  `triple-sign`; aesthetic judgement and baseline confirmation go to
   `adversarial-essay-sparring` (needs a human).
 ---
 
@@ -24,7 +24,7 @@ It does not judge whether a sentence sounds good. That needs a human.
 | Question | Read |
 | :--- | :--- |
 | Who is the reader, what is this repo | `AGENTS.md` + `README.md` |
-| Which phrasings are banned | `AGENTS.md` (不猜补与零未竟表述); `PRINCIPLES.md`; the word blacklist in `human-first-solution` |
+| Which phrasings are banned | `AGENTS.md` (不猜补与零未竟表述); `PRINCIPLES.md` (`solution_discipline` 与 `站点/plugins/solution-discipline.test.mjs`) |
 | One fact lives in one place | `AGENTS.md` + `PRINCIPLES.md` (`number_once`) |
 | Page skeleton | the matching file under `模板/`, plus the target page's existing shape |
 
@@ -96,7 +96,7 @@ The delete-sentence and restate tests have run sentence by sentence and paragrap
 1. **Zero unfinished wording**: no "待核对 / 待补 / 待办"-style statements on the page.
 Unfinished work is filed as a GitHub issue (`AGENTS.md` 不猜补). — **This is not "writing conservatively"; it is the work being unfinished.**
 2. **No guessing**: values, subscripts, slips of the tongue, missing blackboard work are never guessed.
-3. **Word blacklist at zero**: a full-text search for "巧妙 / 显然 / 容易看出 / 注意到 / 试探 / 凑 / 一眼" returns 0. A hit means rewriting that step per the template in `human-first-solution`.
+3. **Word blacklist at zero**: a full-text search for "巧妙 / 显然 / 容易看出 / 注意到 / 试探 / 凑 / 一眼" returns 0 (`站点/plugins/solution-discipline.test.mjs`). A hit means rewriting that step into explicit mechanical steps.
 4. **One fact, one home**: when the same content appears in both body and index, or in two pages, delete the duplicate and keep the link.
 
 **Done when**: all four checked and the hits fixed.
@@ -140,12 +140,11 @@ After the five steps above, judge each line:
 | :--- | :--- |
 | Sentence- and paragraph-level concision, reader-facing value (**this skill**) | `adversarial-writing-autonomous` |
 | Aesthetic judgement, baseline confirmation, personal narrative | `adversarial-essay-sparring` (**requires a human present**) |
-| Solution steps, derivations, calculations | `solution-production` + human-first + double-sign + triple-sign |
-| Page intake (indexes, whitelist, commit) | `repo-maintenance` |
+| Solution verification & theoretical closure | `double-sign` + `triple-sign` |
+| Page intake (indexes, whitelist, commit) | `course-intake` |
 
-**This skill does not replace the three gates.**
-The three gates (human-first → double-sign → triple-sign) already run in independent
-subagents and are already unattended.
+**This skill does not replace verification gates.**
+`double-sign` and `triple-sign` handle independent numerical re-check and theoretical closure.
 This skill covers the **expression layer** they do not reach.
 
 **This skill does not guarantee taste.** "Does this read like a human" and "should this metaphor stay" need a person.
@@ -154,5 +153,5 @@ What this skill guarantees is that after reading, the reader knows one more conc
 ## Boundaries
 
 - **Do not move the skeleton**: page structure follows `模板/` and the existing shape; this skill works only at the sentence and paragraph level.
-- **Do not change values**: any numerical problem met here goes to `solution-production` or double-sign; do not fix it in passing.
+- **Do not change values**: any numerical problem met here goes to `double-sign`; do not fix it in passing.
 - **Do not write outward-facing material beyond issue bodies**: external narrative and personal writing go to `adversarial-essay-sparring`.

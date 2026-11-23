@@ -8,10 +8,11 @@
     "reflect-local/check_semantics.py": "b785f691ff48a602e1e25d90b7b799869017951f38ba3042eafd4270c4397810",
     "reflect-local/check_study.py": "753257e7fe22e7f3fdf0c0a4ac2b1ea192ba79832971369b066baefccfd15d24",
     "reflect-local/check_transcript_privacy.py": "59eddb9d9955782ced359881e1bd870bfbdb2e9de3707aa90b707d5430d5462c",
+    "reflect-local/check_walkthrough.py": "96218de8ade6c44b55d31d7532ca33a4a11cad5846aa002a8dff0b7e03bb1e70",
     "reflect-local/hook.py": "a6a465bcebdec4a60bbcf0f8f37fb3029d8954fa60620f7a72500de3cafddbd2",
     "reflect-local/mail-read.py": "6927ca2928c14c726bf9d8d1f2ad4063b82044aa149c1dd75baabf9a53c552ce",
     "reflect-local/measure_edu.py": "f91c8414364eedc680b37b9505751b9b9681696c7ad6771879e3d37c53a0e90d",
-    "reflect-local/principles.json": "a311576b3cd2dc581d0896e6b9d59adeeb010c1bf55fbf3d28b238a965e491d1"
+    "reflect-local/principles.json": "fd28db5ba79334036c68ea50e6d957a2a09b3ae3f04bdcb49c92870211e73ce2"
   },
   "lock_core": true,
   "off_gates": [
@@ -26,7 +27,7 @@
   "principles": {
     "doc_py_sha256": "688513c088d62eaede5a1d3b42d87f836511b49fdf2df172218b073077d5bde2",
     "no_principles": false,
-    "principles_md_sha256": "73f5a0a669f00888cbb61befebea1e1de457b2325607de4bb87058e8b97adf73"
+    "principles_md_sha256": "7145cc54b49b240b3fc99ff622090f89f2a572f4b4575c74213f3edb29fb176b"
   },
   "questions": {
     "questions/01-frontmatter-silent-failure.md": {

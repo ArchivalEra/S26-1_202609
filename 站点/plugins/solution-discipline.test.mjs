@@ -1,7 +1,7 @@
 // solution-discipline.test.mjs —— 解析纪律闸（node --test，入 npm test 递归面）。
 //
-// 三条判据都来自本仓反复犯错、且已被写成原则的条目（PRINCIPLES.md、
-// human-first-solution skill）。它们此前只靠「写解析的人自觉 + 双签三签抽查」；
+// 三条判据都来自本仓反复犯错、且已被写成原则的条目（PRINCIPLES.md
+// solution_discipline）。它们此前只靠「写解析的人自觉 + 双签三签抽查」；
 // 本文件把它们变成每次 node --test 都重证一次的断言。
 //
 // 判据范围与豁免（为什么这么切，别扩大）：
@@ -119,7 +119,7 @@ function runFile(f) {
     assert.deepEqual(bad, [],
       '完整解答层出现「试探/凑/巧妙看出」类用语 = 没写完（反人类解析禁令）：\n'
       + bad.map((x) => `  ${x}`).join('\n')
-      + '\n  处置：按 human-first-solution 的模板改写成机械步骤；对照性提及放复盘层。');
+      + '\n  处置：改写成显式机械步骤；对照性提及放复盘层。');
   });
 
   test(`解析纪律 · ${rel} · 题面引用图号时图必须在题面里`, () => {

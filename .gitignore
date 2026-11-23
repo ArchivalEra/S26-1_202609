@@ -598,11 +598,9 @@
 !/AGENTS.md
 !/.agents/skills/adversarial-essay-sparring/SKILL.md
 !/.agents/skills/adversarial-writing-autonomous/SKILL.md
+!/.agents/skills/course-intake/SKILL.md
 !/.agents/skills/double-sign/ratfmt.m
 !/.agents/skills/double-sign/SKILL.md
-!/.agents/skills/human-first-solution/SKILL.md
-!/.agents/skills/repo-maintenance/读图提示词.md
-!/.agents/skills/repo-maintenance/SKILL.md
 !/.agents/skills/triple-sign/SKILL.md
 !/docs/icon.svg
 !/FACTS.json
@@ -696,6 +694,7 @@
 !/reflect-local/check_semantics.py
 !/reflect-local/check_study.py
 !/reflect-local/check_transcript_privacy.py
+!/reflect-local/check_walkthrough.py
 !/reflect-local/hook.py
 !/reflect-local/mail-read.py
 !/reflect-local/measure_edu.py
