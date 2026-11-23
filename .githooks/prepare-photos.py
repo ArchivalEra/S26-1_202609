@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """为教材照片生成统一的「阅读副本」，让 Read 工具能正常看图。
 
-背景（实测结论）：Read 只把 PNG / JPG / GIF 当作图像解码，走图像通道，
-此时**文件大小不影响可读性**；HEIC/HEIF、AVIF、WebP 格式不被支持，
-TIFF/BMP/PDF 等不被识别为图像，跌进 256KB 的文本读取上限。
+背景（实测结论）：Read 只把 PNG / JPG / GIF 当作图像解码，走图像通道；
+HEIC/HEIF、AVIF、WebP、JXL 不被支持，TIFF/BMP/PDF 等跌进 256KB 文本上限。
+无损 PNG 副本在 3072×4096 手机照下可达数 MB（视觉 token 极贵），故统一输出 **JPG**。
 
 预处理做三件事，源图一律不动：
 1. **统一竖屏**：拍摄一律竖持，但手机陀螺仪会把竖拍存成横版。这里按需旋转
    90°，使副本高 > 宽，省去读图者自己判断方向。
-2. **无损解码**：HEIC 等解码为全分辨率 PNG，不缩放、不降质、不裁剪。
+2. **统一转 JPG**：JXL / HEIC / PNG 等统一转为全分辨率 JPG（`Q=90`），不缩放、不裁剪。
 3. **ASCII 文件名**：中文名会让子代理读不出图（实测误报「分辨率不足」），
    非 ASCII 名统一改为 `photo-<序号>` 并在末尾打印对照表。
 
@@ -74,15 +74,14 @@ def is_jxl(path):
 
 
 def convert_jxl(src, dst, portrait, extra_rotate):
-    """JXL → PNG（libvips）：按需竖屏校正 + 额外旋转。
+    """JXL → JPG（libvips）：按需竖屏校正 + 额外旋转。
 
     竖屏校正是**按需**的：只有宽 > 高（横躺）才转 90° 立起来。
     `vips rot` 的 d90/d180/d270 是绝对角度（顺时针），所以两步旋转要分两次做，
     不能把角度相加——相加在 90+180=270 这类组合下与「先转再转」的结果不一致。
     """
     # 临时文件放 /tmp，**不写源文件旁边**（归档目录可能只读或不该被塞临时件）。
-    # ⚠️ 每一步都直接落到 PNG 中间文件：先转成 `.v` 再转会报
-    # 「enum 'VipsAngle' has no member 'd90'」（`.v` 中间格式丢了输入类型信息）。
+    # ⚠️ 旋转中间步骤落 PNG，最终一步再转 JPG[Q=90]：避免中间多次有损压缩，也避免 `.v` 丢输入类型信息。
     tmp_dir = Path(tempfile.mkdtemp(prefix='vipswork-'))
     steps = []
     if portrait:
@@ -97,7 +96,7 @@ def convert_jxl(src, dst, portrait, extra_rotate):
             nxt = tmp_dir / f'step{i}.png'
             subprocess.run(['vips', 'rot', str(cur), str(nxt), angle], check=True)
             cur = nxt
-        subprocess.run(['vips', 'copy', str(cur), str(dst)], check=True)
+        subprocess.run(['vips', 'copy', str(cur), f'{dst}[Q=90]'], check=True)
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
     return steps
@@ -149,11 +148,11 @@ def plan_ops(src, portrait, rotate):
 
 
 def output_name(src, index, used):
-    """ASCII 名原样保留（后缀随内容统一为 .png 或保持可读格式）；否则改为 photo-<序号>。"""
+    """ASCII 名原样保留，后缀统一为 `.jpg`（省视觉 token）；否则改为 `photo-<序号>.jpg`。"""
     stem = src.stem
     if not ASCII_SAFE.match(src.name):
         stem = f'photo-{index:02d}'
-    suffix = '.png' if src.suffix.lower() not in READABLE_SUFFIXES else src.suffix.lower()
+    suffix = '.jpg'
     name = stem + suffix
     counter = 1
     while name in used:
@@ -202,9 +201,8 @@ def main():
             if args.rotate:
                 notes.append(f'旋转 {args.rotate}°')
         else:
-            subprocess.run(['magick', str(src), *ops, str(dst)], check=True)
-        if dst.suffix.lower() in READABLE_SUFFIXES and src.suffix.lower() in READABLE_SUFFIXES \
-                and not ops[1:]:
+            subprocess.run(['magick', str(src), *ops, '-quality', '90', str(dst)], check=True)
+        if src.suffix.lower() in {'.jpg', '.jpeg'} and not ops[1:]:
             copied += 1
         else:
             converted += 1

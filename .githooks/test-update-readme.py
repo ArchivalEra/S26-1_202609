@@ -115,9 +115,8 @@ class ReadmeHookTest(unittest.TestCase):
         self.touch_chain('课程总览/工程数学/课堂笔记/行列式学习.md', '内容有更新。')
         self.stage()
         self.git('commit', '-m', '修改正文并逐层同步父页面')
-        self.assertNotEqual(before, self.readme.read_bytes())
-        # 2026-10-17 目录瘦身：AUTO-CATALOG 不再平铺文件，改为课程行 + digest 变化判据
-        self.assertIn('课程目录', self.readme.read_text())
+        # 2026-11-23 定案：不再自动重写 README.md 的目录或摘要
+        self.assertEqual(before, self.readme.read_bytes())
         self.assertEqual(self.git('status', '--porcelain').stdout, b'')
         self.git('push')
 
@@ -248,10 +247,9 @@ class ReadmeHookTest(unittest.TestCase):
         self.readme.write_text(self.readme.read_text() + '\n未准备提交。\n')
         before = self.readme.read_bytes()
         self.note.write_text('# 新标题\n')
+        self.touch_chain('课程总览/工程数学/课堂笔记/行列式学习.md', '已同步。')
         self.git('add', '课程总览')
-        result = self.git('commit', '-m', '拒绝', success=False)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('未暂存修改', result.stdout.decode())
+        self.git('commit', '-m', '允许忽略未暂存 README')
         self.assertEqual(before, self.readme.read_bytes())
 
     def test_uses_staged_content_only(self):
@@ -260,11 +258,6 @@ class ReadmeHookTest(unittest.TestCase):
         self.git('add', '课程总览')
         self.note.write_text('# 尚未暂存的标题\n')
         self.git('commit', '-m', '部分暂存')
-        # 2026-10-17：标题不上 README 了；判据改为 digest 由暂存内容算出
-        # （暂存 '# 暂存标题' vs 未暂存 '# 尚未暂存的标题' ⇒ digest 应等于暂存版）
-        import importlib, hook_lib
-        files = hook_lib.snapshot(worktree=True)
-        # worktree 快照含未暂存版本；用 staged 快照对 digest
         self.assertNotIn('尚未暂存的标题', self.readme.read_text())
         self.assertEqual(self.note.read_text(), '# 尚未暂存的标题\n')
 
@@ -274,6 +267,7 @@ class ReadmeHookTest(unittest.TestCase):
         self.assertEqual(before, self.readme.read_bytes())
 
     def test_deletion_updates_catalog(self):
+        before = self.readme.read_bytes()
         self.note.unlink()
         self.original.unlink()
         self.index.write_text('# 课堂笔记\n')
@@ -282,15 +276,15 @@ class ReadmeHookTest(unittest.TestCase):
         self.append('课程总览/index.md', '删除资料。')
         self.stage()
         self.git('commit', '-m', '删除资料并逐层同步')
-        self.assertIn('**0** 份资料', self.readme.read_text())
+        self.assertEqual(before, self.readme.read_bytes())
         self.remote()
         self.git('push', 'origin', 'main')
 
-    def test_missing_markers_rejects_without_overwrite(self):
-        self.readme.write_text('# 未设置自动区块\n')
+    def test_missing_markers_allowed_without_overwrite(self):
+        self.readme.write_text('# 学期\n\n' + self.status_block(['工程数学']) + '\n')
         self.git('add', 'README.md')
         before = self.readme.read_bytes()
-        self.assertNotEqual(self.git('commit', '-m', '拒绝', success=False).returncode, 0)
+        self.git('commit', '-m', '无 AUTO-CATALOG 标记也可提交')
         self.assertEqual(before, self.readme.read_bytes())
 
     def test_multicourse_deep_chapter_and_audio(self):
@@ -305,7 +299,7 @@ class ReadmeHookTest(unittest.TestCase):
         self.write('课程总览/大学物理/原始资料/index.md', '[记录](2026-09-17-上午.md)\n')
         self.stage()
         self.git('commit', '-m', '多课程资料')
-        self.assertIn('**2** 门课程、**5** 份资料', self.readme.read_text())
+        self.assertIn('| 大学物理 |', self.readme.read_text())
         self.remote()
         self.git('push', 'origin', 'main')
 
@@ -399,13 +393,8 @@ class ReadmeHookTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertNotIn('没找到', result.stdout.decode())
 
-    def test_readme_must_document_all_header_buttons(self):
-        """站点顶栏按钮必须在 README 手写区有说明。
-
-        真发生过：站点新增了「全站搜索」按钮，但 README 的「网页版怎么看」
-        按钮表还是三个——钩子只管 AUTO-CATALOG 自动区块，手写区没人校验。
-        """
-        # 站点有 4 个按钮（不含面板内部的关闭键），README 只介绍了 3 个 → 拒绝
+    def test_readme_not_blocking_header_buttons(self):
+        """关闭 README 同步闸门后，站点新增按钮不再被 README 说明表拦截。"""
         btn = lambda i: f'<button class="m3-icon-btn" id="{i}">'
         full = ("const TARGET_FILES = [\n  'README.md',\n"
                 "  '课程总览/index.md',\n  '课程总览/工程数学/index.md',\n"
@@ -413,34 +402,12 @@ class ReadmeHookTest(unittest.TestCase):
                 "  '课程总览/工程数学/课堂笔记/index.md',\n  '课程总览/工程数学/课堂笔记/行列式学习.md',\n"
                 "  '课程总览/工程数学/原始资料/index.md'\n];\n"
                 + btn('drawer-toggle') + '\n' + btn('palette-toggle') + '\n'
-                + btn('theme-toggle') + '\n' + btn('search-toggle') + '\n')
-        build = self.write('站点/build.mjs', full)
-
-        readme_missing = ('# 学期\n\n' + self.status_block(['工程数学']) +
-                          '\n<!-- AUTO-CATALOG:START -->\n<!-- AUTO-CATALOG:END -->\n'
-                          '## 网页版怎么看\n导航 · 调色盘 · 昼夜主题\n')
-        self.write('README.md', readme_missing)
+                + btn('theme-toggle') + '\n' + btn('search-toggle') + '\n'
+                + btn('new-thing') + '\n')
+        self.write('站点/build.mjs', full)
+        self.write('README.md', '# 学期\n\n' + self.status_block(['工程数学']) + '\n')
         self.stage()
-        result = self.git('commit', '-m', 'README 漏写搜索按钮', success=False)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('search-toggle', result.stdout.decode())
-
-        # 补上搜索说明后放行
-        self.write('README.md', ('# 学期\n\n' + self.status_block(['工程数学']) +
-                                 '\n<!-- AUTO-CATALOG:START -->\n<!-- AUTO-CATALOG:END -->\n'
-                                 '## 网页版怎么看\n导航 · 调色盘 · 全站搜索 · 昼夜主题\n'))
-        self.stage()
-        self.git('commit', '-m', 'README 补上搜索按钮')
-
-        # 站点新增**未登记**的按钮 → 提示补校验表（防止加按钮时忘了同步这条检查）
-        build.write_text(full + btn('new-thing') + '\n')
-        self.stage()
-        result = self.git('commit', '-m', '新增未登记按钮', success=False)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('new-thing', result.stdout.decode())
-
-        # 把新按钮登记进校验表后，README 里也写了 → 放行
-        # （同时确认：找不到按钮定义的 build.mjs 不应被误伤）
+        self.git('commit', '-m', '关闭 README 按钮文档强检')
 
     def test_bad_date_and_chapter_rejected(self):
         for name, kind in [('2026-02-30-测试.md', '课堂笔记'), ('第一章.md', '教材解析')]:

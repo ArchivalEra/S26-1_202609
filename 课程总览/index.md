@@ -3,7 +3,7 @@ id: okf.semester.catalog_index
 name: 课程总览
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-11-22"
+last_updated: "2026-11-23"
 stewards:
   - team: 学期课程学习记录
 category: 课程索引
@@ -32,3 +32,5 @@ sources:
 > **可算公式按 `{:calc}` 标记**：显示公式带这个标记才出「计算」按钮（站内 Octave 求值）。标记由作者逐个挑、不自动推断；标错在构建期报错。
 
 - 新增课程从[课程索引模板](../模板/课程索引.md)开始，并按 [AGENTS.md](../AGENTS.md) 与[仓库入口](../README.md)更新精确白名单与索引。
+
+> **2026-11-23 口径统一**：废除「条件备注」子节（缺条件并入「完成边界」），「原始资料」按规范文件名登记（不再登记 SHA-256），受管页面执行标题白名单约束。

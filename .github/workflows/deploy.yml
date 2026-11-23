@@ -33,9 +33,13 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           # node 26（26.12.1 起）：2026-10 安全修复线（Brotli RCE / DNS /
-          # TLS ×2 四项全修）；check-latest 防 runner 镜像缓存滞后。
+          # TLS ×2 四项全修）；check-latest 防 runner 镜像缓存滞后（act 下跳过联网探测）。
           node-version: 26
-          check-latest: true
+          check-latest: ${{ !env.ACT }}
+
+      - name: Ensure fontTools & brotli for math-font check (act)
+        if: ${{ env.ACT }}
+        run: python3 -c "import fontTools, brotli" 2>/dev/null || pip3 install --break-system-packages -q fonttools brotli
 
       - name: Materialize assistant secrets
         # 学习助手激活材料（2026-10-20 单向锁模型）：构建期往每页埋 data-assistant-key。
@@ -69,6 +73,7 @@ jobs:
           npm test
 
       - name: Deploy to isui.ren-heart@deploy
+        if: ${{ !env.ACT }}
         env:
           HEART_DEPLOY_KEY: ${{ secrets.HEART_DEPLOY_KEY }}
           REPO_NAME: S26-1_202609

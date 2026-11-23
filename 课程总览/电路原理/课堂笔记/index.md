@@ -3,7 +3,7 @@ id: okf.course.circuit_theory.notes.index
 name: 课堂笔记
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-11-10"
+last_updated: "2026-11-23"
 stewards:
   - team: 电路原理课程学习记录
 course: 电路原理
@@ -48,3 +48,5 @@ sources:
 - **来源收进气泡、完成边界压缩**（2026-10-30 全站定案）：页面顶部的 sources 芯片承载出处
   （≤30 字，明细在 `原始资料/index.md`），正文不再有「来源与边界」一节；
   完成边界 压到 ≤150 字，只写已解析／已验证／已知限制各一句，缺什么进 issue。
+
+> **2026-11-23 口径统一**：废除「条件备注」子节（缺条件并入「完成边界」），「原始资料」按规范文件名登记（不再登记 SHA-256），受管页面执行标题白名单约束。

@@ -345,7 +345,6 @@ def validate(files):
     check_build_targets(files)
     check_nav_coverage(files)
     check_nav_titles(files)
-    check_readme_documents_ui(files)
     check_exam_prep(files)
 
 
@@ -984,21 +983,11 @@ def head_snapshot(base_ref=None):
 
 def sync(worktree=False):
     files = snapshot(worktree=worktree)
-    if not worktree:
-        check_worktree_sync(files)
-    # last_updated 是推导字段：先对齐日期再算自动区块——摘要里看到的是最终内容。
+    # last_updated 是推导字段：先对齐日期再做结构与索引校验（不再自动改写 README.md）。
     sync_last_updated(files, head_snapshot(), worktree)
-    staged = dict(files)
-    staged['README.md'] = render(staged['README.md'].decode(), staged).encode()
-    outputs = {'README.md': staged['README.md']}
-    validate(staged)
-    check_index_sync(staged, head_snapshot())
-    for path, data in outputs.items():
-        if files[path] != data:
-            Path(path).write_bytes(data)
-            if not worktree:
-                git('add', '--', path)
-    print('README 课程目录、白名单、命名与索引检查通过。')
+    validate(files)
+    check_index_sync(files, head_snapshot())
+    print('白名单、命名与索引检查通过。')
     print('课程资料与分类索引同步检查通过。')
 
 
@@ -1012,8 +1001,6 @@ def main():
             files = snapshot(git('rev-parse', oid + '^{commit}').decode().strip())
             validate(files)
             check_index_sync(files, head_snapshot(oid + '^'))
-            if render(files['README.md'].decode(), files).encode() != files['README.md']:
-                raise ValueError(f'待推送提交 README 自动目录未同步：{local_ref}')
         print('待推送提交的目录与资料检查通过。')
     elif sys.argv[1:] in ([], ['--worktree']):
         sync(worktree=bool(sys.argv[1:]))

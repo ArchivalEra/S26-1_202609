@@ -18,6 +18,7 @@
 | `falsifiable` | claims must be falsifiable: every declared gate carries a runnable --selftest | `python3 zreflect/registry.py --all-runnable` |
 | `figures_wellformed` | 题面图元（.figures.txt 与内联 SVG）合法，端口语义挂载与词条一致，布局无穿框截字 | `python3 -c "import subprocess,sys;sys.exit(subprocess.run(['node','--test','plugins/figures.test.mjs'],cwd='站点').returncode)"` |
 | `hard_needs_criterion` | a rule is hard only if it has a machine criterion; without one it does not enter the table at all | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;p=doc._cmd_shape_problems();print('shape_problems=%d' % len(p));sys.exit(1 if p else 0)"` |
+| `headings_allowed` | 受管课堂笔记与作业仅允许白名单标题，「完成边界」居末且禁止「条件备注」「来源与边界」等已废板块 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_headings.py'))"` |
 | `host_agnostic` | the suite's source recognizes no host's directory names or config formats | `python3 -c "import os,sys;w=['.'+chr(122)+chr(99)+chr(111)+chr(100)+chr(101)+'/','ZCODE_'+'PROJECT_DIR','hook'+'SpecificOutput'];bad=[(d,f) for d in ('zreflect','reflect-local') for r,_,fs in os.walk(d) for f in fs if f.endswith('.py') and any(k in open(os.path.join(r,f),encoding='utf-8',errors='replace').read() for k in w)];print('host_coupled=%d' % len(bad));sys.exit(1 if bad else 0)"` |
 | `identity_consistent` | 仓库对外标识、作者与仓名只认唯一真相源，不混用旧仓旧名 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_identity.py'))"` |
 | `lab_integrity` | 不入库的实验空活代码（.kimi-code/学习通API/）文件清单与回归测试完整（克隆无此目录时通过） | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_lab_integrity.py'))"` |
@@ -35,10 +36,10 @@
 | `solution_selfcontained` | 解答自足：完整做法直接写在本页完整解答层，不把步骤推给技法库或教材解析页 | `python3 -c "import subprocess,sys;sys.exit(subprocess.run(['node','--test','plugins/solution-selfcontained.test.mjs'],cwd='站点').returncode)"` |
 | `style_is_not_a_rule` | style preferences do not enter the rule table | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;style=('style','naming','comment','layout','format');bad=[r.id for r in doc.all_rules() if r.id in style];print('style_ids=%d' % len(bad));sys.exit(1 if bad else 0)"` |
 | `three_readmes` | the README group is checked structurally and kept in the same push batch | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_readme_sync.py'))"` |
-| `transcript_privacy` | 课堂转写隐私防线：受管文件不含 11 位手机号与未脱敏原文，仅在原始资料/index.md 登记文件名、性质说明与 SHA256 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_transcript_privacy.py'))"` |
+| `transcript_privacy` | 课堂转写隐私防线：受管文件不含 11 位手机号与未脱敏原文，仅在原始资料/index.md 按规范文件名登记（不抄 SHA-256） | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_transcript_privacy.py'))"` |
 | `walkthrough_covered` | 已建 Walkthrough.md 的课程，受管课堂笔记与作业必须在同课 Walkthrough.md 中有对应入口 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_walkthrough.py'))"` |
 | `whitelist_and_site_sync` | 精确白名单禁通配符、课程 status 仅「开课/结课」两档、资料与各级索引同进同出、侧栏标签等于 H1 且在宽度预算内、站点与构建清单一致 | `python3 -c "import sys;sys.path.insert(0,'.githooks');import hook_lib;f=hook_lib.snapshot(worktree=True);hook_lib.validate(f);print('validated_files=%d' % len(f))"` |
 | `zero_language` | zero language in the core: user-visible messages go through M(code); machine contracts are untranslatable by construction | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_i18n.py'))"` |
 
-30 principles -- each with a judging command that **really runs**.
+31 principles -- each with a judging command that **really runs**.
 <!-- /AUTO:RULES -->

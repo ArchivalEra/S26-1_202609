@@ -4,7 +4,7 @@ PINNED: Consumer extension for this Chinese-language course archive; path litera
 课堂转写隐私闸门：**转写原件不许新增入库**（棘轮）。
 
 课堂转写含教师个人信息与学生发言，原件只在本地留存，仓库只入库
-`原始资料/index.md` 的元数据登记（文件名、性质说明、SHA-256、关联笔记）
+`原始资料/index.md` 的元数据登记（规范文件名、性质说明、关联笔记，不登记 SHA-256）
 以及整理后的笔记。
 
 # PINNED: protocol marker / repo-specific data; retained verbatim in HISTORY.md

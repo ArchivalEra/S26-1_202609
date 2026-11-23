@@ -3,7 +3,7 @@ id: okf.course.electrical_frontier.index
 name: 电气前沿
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-11-10"
+last_updated: "2026-11-23"
 stewards:
   - team: 电气前沿课程学习记录
 course: 电气前沿
@@ -30,3 +30,5 @@ sources:
 - 正式考核文件与要求：待提供。
 
 本课按无教材讲座课处理，不建 `教材解析/`（与劳动教育、形势与政策同）。
+
+> **2026-11-23 口径统一**：废除「条件备注」子节（缺条件并入「完成边界」），「原始资料」按规范文件名登记（不再登记 SHA-256），受管页面执行标题白名单约束。

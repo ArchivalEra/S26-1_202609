@@ -612,7 +612,7 @@
 !/.kimi-code/hooks/einfacht-next.sh
 !/.kimi-code/hooks/selftest.sh
 !/.githooks/check-markdown.py
-!/.githooks/extract-transcript.py
+!/工具/提取-doc转写.py
 !/.githooks/flip-photo.py
 !/.githooks/hook_lib.py
 !/.githooks/pre-commit
@@ -652,6 +652,7 @@
 !/reflect-local/check_semantics.py
 !/reflect-local/check_study.py
 !/reflect-local/check_transcript_privacy.py
+!/reflect-local/check_headings.py
 !/reflect-local/check_walkthrough.py
 !/reflect-local/hook.py
 !/reflect-local/measure_edu.py

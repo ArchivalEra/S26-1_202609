@@ -3,7 +3,7 @@ id: okf.course.electrical_frontier.notes.index
 name: 课堂笔记
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-11-10"
+last_updated: "2026-11-23"
 stewards:
   - team: 电气前沿课程学习记录
 course: 电气前沿
@@ -21,3 +21,5 @@ sources:
 
 课堂笔记按 `YYYY-MM-DD-名称.md` 命名，一天多次课使用不同名称。
 转写原件留本地、不入库，只在本课[原始资料](../原始资料/index.md)登记。
+
+> **2026-11-23 口径统一**：废除「条件备注」子节（缺条件并入「完成边界」），「原始资料」按规范文件名登记（不再登记 SHA-256），受管页面执行标题白名单约束。

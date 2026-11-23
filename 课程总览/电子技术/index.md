@@ -3,7 +3,7 @@ id: okf.course.electronics.index
 name: 电子技术
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-11-22"
+last_updated: "2026-11-23"
 stewards:
   - team: 电子技术课程学习记录
 course: 电子技术
@@ -28,3 +28,5 @@ sources:
 
 > **本课页面已按 2026-10-30 全站定案统一**：出处收进各页顶部 sources 气泡（≤30 字，明细在[原始资料](./原始资料/index.md)），
 > 正文不再有「来源与边界」一节；完成边界 压到 ≤150 字；[教材解析索引](./教材解析/index.md)同步改指向 `AGENTS.md` / 既有目录规范。
+
+> **2026-11-23 口径统一**：废除「条件备注」子节（缺条件并入「完成边界」），「原始资料」按规范文件名登记（不再登记 SHA-256），受管页面执行标题白名单约束。

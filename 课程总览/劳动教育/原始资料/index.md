@@ -3,7 +3,7 @@ id: okf.course.labor_education.originals.index
 name: 劳动教育原始资料索引
 type: CatalogIndex
 spec_version: "0.2"
-last_updated: "2026-11-05"
+last_updated: "2026-11-23"
 stewards:
   - team: 劳动教育课程学习记录
 course: 劳动教育
@@ -24,7 +24,6 @@ sources:
 
 - 原件不入库，由用户本机保存；仓库只存提取后文本。
 - 转写含同音错误与口误，修正记在笔记「转写与术语」一节。
-- SHA-256：`1b4026163cd0a9f651c528bdf79b3b1dc77521def366e664b8e86caad9ad42c4`
 
 ## 二、课件与照片
 
