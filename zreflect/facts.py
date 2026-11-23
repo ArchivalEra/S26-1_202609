@@ -472,7 +472,8 @@ def _run_external_measure(mod_name, rz):
         f"import {mod_name} as m; print(json.dumps(m.measure()))"
     )
     proc = subprocess.run([sys.executable, "-c", code], cwd=gate.GATE_REPO,
-                          capture_output=True, text=True, timeout=60, check=False)
+                          capture_output=True, text=True, timeout=60, check=False,
+                          encoding="utf-8", errors="replace")
     if proc.returncode != 0:
         raise RuntimeError((proc.stderr or proc.stdout or f"rc={proc.returncode}").strip())
     return json.loads(proc.stdout)

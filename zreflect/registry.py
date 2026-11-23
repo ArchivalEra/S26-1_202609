@@ -346,14 +346,27 @@ def _select_affected(gs, argv):
         return gs
     plan = impact.affected_plan(impact.git_changed_files(), gs)
     print(M("registry.affected_plan", selected=len(plan["selected"]),
-            total=plan["total"], reason=plan["reason"]))
+            total=plan["total"], reason=plan["reason"]), flush=True)
     if not plan["selected"]:
-        print(M("registry.affected_none"))
+        print(M("registry.affected_none"), flush=True)
     return plan["selected"]
 
 
 def _run_with_cache(phase, gs):
-    return gate.with_run_cache(lambda: gate.run_phase(phase, gs))
+    import time  # noqa: PLC0415
+    total, idx = len(gs), 0
+
+    def _step(f):
+        nonlocal idx
+        idx += 1
+        t0 = time.monotonic()
+        rc, out = gate.default_runner(f)
+        print("  [%d/%d] %s (%.1fs)" % (idx, total, f, time.monotonic() - t0),
+              file=sys.stderr, flush=True)
+        return rc, out
+
+    runner = _step if gate._INPROC_CACHE is None else None
+    return gate.with_run_cache(lambda: gate.run_phase(phase, gs, runner=runner))
 
 
 def _emit_run_result(phase, res):

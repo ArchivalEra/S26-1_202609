@@ -231,7 +231,8 @@ def git_changed_files(repo_root=None):
     root = repo_root if repo_root is not None else gate.GATE_REPO
     try:
         r = subprocess.run(["git", "-C", root, "status", "--porcelain", "-uall"],
-                           capture_output=True, text=True, timeout=15)
+                           capture_output=True, text=True, timeout=15,
+                           encoding="utf-8", errors="replace")
         if r.returncode != 0:
             return None
         paths = _parse_porcelain(r.stdout)
@@ -239,7 +240,8 @@ def git_changed_files(repo_root=None):
             return paths
         for ref in ("@{upstream}", "origin/main", "origin/master"):
             up = subprocess.run(["git", "-C", root, "diff", "--name-only", f"{ref}..HEAD"],
-                                capture_output=True, text=True, timeout=15)
+                                capture_output=True, text=True, timeout=15,
+                                encoding="utf-8", errors="replace")
             if up.returncode == 0:
                 return [_norm(ln) for ln in up.stdout.splitlines() if ln.strip()]
         return None

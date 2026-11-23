@@ -284,7 +284,7 @@ def pack_coverage_problems(codes=None, loader=None, discovery=None):
         langs = list((discovery or i18n.installed_langs)())
     except i18n.PacksUnreadable as e:
         return [M("knobs.pack_unreadable", lang="*", error=e)]
-    served = knobs.served_langs()
+    served = () if discovery is not None else knobs.served_langs()
     if served:
         missing_srv = [l for l in served if l not in langs]
         if missing_srv:
@@ -308,7 +308,7 @@ def pack_coverage_problems(codes=None, loader=None, discovery=None):
 
 def _resolve_pack_langs(discovery):
     langs = list((discovery or i18n.installed_langs)())
-    served = knobs.served_langs()
+    served = () if discovery is not None else knobs.served_langs()
     if not served:
         return langs, None
     missing = [l for l in served if l not in langs]

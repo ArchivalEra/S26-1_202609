@@ -149,14 +149,32 @@ def _docker_probe(check, timeout):
     return _docker_verdict(r.stdout)
 
 
+def _can_bind_exclusive(host, port):
+    if os.name != "nt":
+        return False
+    fam = socket.AF_INET6 if ":" in host else socket.AF_INET
+    try:
+        with socket.socket(fam, socket.SOCK_STREAM) as s:
+            if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            s.bind((host, port))
+        return True
+    except OSError:
+        return False
+
+
 def _port_free_probe(check, timeout):
-    last_err = None
+    last_err: OSError | None = None
     for host in ("127.0.0.1", "::1"):
         try:
             socket.create_connection((host, check["port"]), timeout=timeout).close()
             return _port_free_verdict(True)
         except ConnectionRefusedError:
             continue
+        except TimeoutError as e:
+            if _can_bind_exclusive(host, check["port"]):
+                continue
+            last_err = e
         except OSError as e:
             last_err = e
     if last_err is not None:

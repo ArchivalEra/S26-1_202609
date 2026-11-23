@@ -9,7 +9,7 @@
     "reflect-local/check_study.py": "753257e7fe22e7f3fdf0c0a4ac2b1ea192ba79832971369b066baefccfd15d24",
     "reflect-local/check_transcript_privacy.py": "59eddb9d9955782ced359881e1bd870bfbdb2e9de3707aa90b707d5430d5462c",
     "reflect-local/check_walkthrough.py": "96218de8ade6c44b55d31d7532ca33a4a11cad5846aa002a8dff0b7e03bb1e70",
-    "reflect-local/hook.py": "a6a465bcebdec4a60bbcf0f8f37fb3029d8954fa60620f7a72500de3cafddbd2",
+    "reflect-local/hook.py": "7b743f4ca7cd3afeede891839e4df69f93f9f8c2289cd4c7253d0582b54de421",
     "reflect-local/measure_edu.py": "ad5e06f5b91347e6eb6de52ef47ba2f56b4acaac591d1f68190051045ded2627",
     "reflect-local/principles.json": "fd28db5ba79334036c68ea50e6d957a2a09b3ae3f04bdcb49c92870211e73ce2"
   },
@@ -71,5 +71,5 @@
   "revoked_ids": [],
   "schema": 2,
   "suite_seq": 1,
-  "suite_tree_sha256": "126b5690b0458c08082d23b557113fd205660c0166a44a67d73e78e95ddd679c"
+  "suite_tree_sha256": "3722f6b9f4a95715513082a6d86b95018de19507b71c52ef55317adadc8f014a"
 }

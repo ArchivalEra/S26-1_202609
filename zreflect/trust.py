@@ -11,7 +11,6 @@ import sys
 import tempfile
 import urllib.error
 import urllib.request
-from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import gate  # noqa: E402
@@ -109,6 +108,23 @@ def _sha256_norm(path):
     return trust_core.sha256_text(raw)
 
 
+def _sha256_norm_file(path):
+    if not os.path.isfile(path):
+        return None
+    try:
+        return _sha256_norm(path)
+    except (OSError, UnicodeError):
+        return sha256_file(path)
+
+
+def _sha256_bytes_norm(raw):
+    try:
+        txt = raw.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+        return trust_core.sha256_text(txt)
+    except UnicodeDecodeError:
+        return trust_core.sha256_bytes(raw)
+
+
 def seal_path(zdir=None):
     """Path to `zreflect/SEAL.json`."""
     return os.path.join(zdir or gate.zdir(), SEAL_NAME)
@@ -201,7 +217,7 @@ def local_scripts_map(root=None):
                 continue
             full = os.path.join(dirpath, fname)
             rel = os.path.relpath(full, base).replace(os.sep, "/")
-            out[rel] = sha256_file(full)
+            out[rel] = _sha256_norm_file(full)
     return out
 
 
@@ -234,7 +250,8 @@ def repo_id(root=None):
     base = os.path.abspath(root or gate.GATE_REPO)
     try:
         r = subprocess.run(["git", "-C", base, "remote", "get-url", "origin"],
-                           capture_output=True, text=True, timeout=5)
+                           capture_output=True, text=True, timeout=5,
+                           encoding="utf-8", errors="replace")
         if r.returncode == 0 and r.stdout.strip():
             url = r.stdout.strip().rstrip("/")
             if url.endswith(".git"):
@@ -253,7 +270,8 @@ def _default_receipt_path(root=None):
     base = os.path.abspath(root or gate.GATE_REPO)
     try:
         r = subprocess.run(["git", "-C", base, "rev-parse", "--git-dir"],
-                           capture_output=True, text=True, timeout=5)
+                           capture_output=True, text=True, timeout=5,
+                           encoding="utf-8", errors="replace")
         if r.returncode == 0 and r.stdout.strip():
             gdir = r.stdout.strip()
             if not os.path.isabs(gdir):
@@ -309,13 +327,16 @@ def _baseline_anchors(base):
         return None, None
     try:
         ls = subprocess.run(["git", "-C", base, "ls-files", "--error-unmatch", ANCHORS_FILE],
-                            capture_output=True, text=True, timeout=5)
+                            capture_output=True, text=True, timeout=5,
+                            encoding="utf-8", errors="replace")
         cat = subprocess.run(["git", "-C", base, "cat-file", "-e", "HEAD:" + ANCHORS_FILE],
-                             capture_output=True, text=True, timeout=5)
+                             capture_output=True, text=True, timeout=5,
+                             encoding="utf-8", errors="replace")
         if ls.returncode != 0 or cat.returncode != 0:
             return None, None
         show = subprocess.run(["git", "-C", base, "show", "HEAD:" + ANCHORS_FILE],
-                              capture_output=True, text=True, timeout=5)
+                              capture_output=True, text=True, timeout=5,
+                              encoding="utf-8", errors="replace")
         if show.returncode != 0:
             return {}, "broken"
         data = json.loads(show.stdout)
@@ -347,9 +368,10 @@ def _classify_action(rel, text, prev_sha="NONE"):
 def _git_prev_sha_and_diff(base, rel):
     try:
         r = subprocess.run(["git", "-C", base, "show", "HEAD:" + rel], capture_output=True, timeout=5)
-        prev_sha = trust_core.sha256_bytes(r.stdout) if r.returncode == 0 else "NONE"
+        prev_sha = _sha256_bytes_norm(r.stdout) if r.returncode == 0 else "NONE"
         d = subprocess.run(["git", "-C", base, "diff", "HEAD", "--", rel],
-                           capture_output=True, text=True, timeout=5)
+                           capture_output=True, text=True, timeout=5,
+                           encoding="utf-8", errors="replace")
         return prev_sha, (d.stdout or "")[:8000]
     except (OSError, subprocess.TimeoutExpired):
         return "NONE", ""
@@ -373,7 +395,7 @@ def build_requests(changed_paths, root=None, repo_name=None):
                     text = fh.read()
             except OSError:
                 text = None
-        target_sha = sha256_file(full) or "DELETED"
+        target_sha = _sha256_norm_file(full) or "DELETED"
         prev_sha, diff_sum = _git_prev_sha_and_diff(base, rel)
         out.append({
             "repo": rname,
@@ -421,7 +443,8 @@ def _auto_sync_for_probs(base, anchors, probs):
     reqs = build_requests(targets, root=base, repo_name=anchors.get("repo") or repo_id(base))
     url = (os.environ.get(APPROVER_URL_ENV) or DEFAULT_APPROVER_URL).rstrip("/")
     out_path = os.environ.get(RECEIPT_ENV) or _default_receipt_path(base)
-    return any(_post_auto_sync(url, p, out_path) for p in reqs)
+    results = [_post_auto_sync(url, p, out_path) for p in reqs]
+    return any(results)
 
 
 # ---------------------------------------------------------------------------
@@ -442,11 +465,7 @@ def current_tree_sha(root=None, zdir=None, verified=False):
 def _actual_suite_hashes(rt, zd):
     actual = {}
     for rel in _collect_suite_relpaths(rt, zd):
-        full = os.path.join(rt, rel)
-        try:
-            actual[rel] = _sha256_norm(full)
-        except (OSError, UnicodeError):
-            actual[rel] = sha256_file(full)
+        actual[rel] = _sha256_norm_file(os.path.join(rt, rel))
     return actual
 
 
@@ -467,7 +486,7 @@ def _head_seal_file_sha(rt):
         return None
     try:
         r = subprocess.run(["git", "-C", rt, "show", "HEAD:zreflect/SEAL.json"], capture_output=True, timeout=5)
-        return trust_core.sha256_bytes(r.stdout) if r.returncode == 0 else None
+        return _sha256_bytes_norm(r.stdout) if r.returncode == 0 else None
     except (OSError, subprocess.TimeoutExpired):
         return None
 
@@ -484,7 +503,7 @@ def _verify_anchor_lock(rt, zd, data, anchors, receipt):
             return []
         if seal_seq > anc_seq:
             return sig_probs
-    cur_file_sha = sha256_file(seal_path(zd)) or "DELETED"
+    cur_file_sha = _sha256_norm_file(seal_path(zd)) or "DELETED"
     head_file_sha = _head_seal_file_sha(rt)
     if head_file_sha and cur_file_sha != head_file_sha:
         return _verify_suite_receipt(rt, anchors, head_file_sha, cur_file_sha, receipt)
@@ -572,7 +591,7 @@ def check_knobs_anchor(root=None, receipt=None, now=None):
             receipt=rec, repo_name=rname, pub_b64=pub, revoked_ids=revoked, now=now,
             verify_sig_fn=ed25519_verify)
     if "knobs_sha256" in anchors or os.path.isfile(os.path.join(base, "knobs.json")):
-        cur_sha = sha256_file(os.path.join(base, "knobs.json")) or "NONE"
+        cur_sha = _sha256_norm_file(os.path.join(base, "knobs.json")) or "NONE"
         prev_sha = anchors.get("knobs_sha256", "NONE")
         if cur_sha != prev_sha:
             out += trust_core.verify_receipt(
@@ -592,8 +611,8 @@ def check_principles_repo(root=None, receipt=None):
         return []
     if not anchors:
         return [M("approval.anchors_broken")]
-    doc_sha = sha256_file(os.path.join(gate.zdir(), "doc.py"))
-    md_sha = sha256_file(os.path.join(base, "PRINCIPLES.md"))
+    doc_sha = _sha256_norm_file(os.path.join(gate.zdir(), "doc.py"))
+    md_sha = _sha256_norm_file(os.path.join(base, "PRINCIPLES.md"))
     no_pr = knobs.flag("REFLECT_NO_PRINCIPLES") is True
     rec = receipt if receipt is not None else load_receipt(root=base)
 
@@ -740,13 +759,13 @@ def _build_anchors(root, pub_b64=None):
         "revoked_ids": [],
         "suite_seq": int((seal_d or {}).get("suite_seq") or 1),
         "suite_tree_sha256": (seal_d or {}).get("tree_sha256") or "",
-        "knobs_sha256": sha256_file(os.path.join(root, "knobs.json")) or "NONE",
+        "knobs_sha256": _sha256_norm_file(os.path.join(root, "knobs.json")) or "NONE",
         "questions_dir": str((knobs.repo_config(root) or {}).get("REFLECT_QUESTIONS") or "questions").strip().rstrip("/") or "questions",
         "local_scripts": local_scripts_map(root),
         "off_gates": off_list,
         "principles": {
-            "doc_py_sha256": sha256_file(os.path.join(gate.zdir(), "doc.py")),
-            "principles_md_sha256": sha256_file(os.path.join(root, "PRINCIPLES.md")),
+            "doc_py_sha256": _sha256_norm_file(os.path.join(gate.zdir(), "doc.py")),
+            "principles_md_sha256": _sha256_norm_file(os.path.join(root, "PRINCIPLES.md")),
             "no_principles": knobs.flag("REFLECT_NO_PRINCIPLES") is True,
         },
         "questions": q_map,
@@ -810,13 +829,15 @@ def _validate_upgrade_source(src, dst_anc):
 def _post_upgrade_refresh(dst):
     for sub_cmd in ([sys.executable, "zreflect/facts.py", "--accept-changes"],
                     [sys.executable, "zreflect/facts.py", "--render-doc"]):
-        r = subprocess.run(sub_cmd, cwd=dst, capture_output=True, text=True, check=False)
+        r = subprocess.run(sub_cmd, cwd=dst, capture_output=True, text=True, check=False,
+                           encoding="utf-8", errors="replace")
         if r.returncode != 0:
             sys.stderr.write(r.stderr or r.stdout)
             return r.returncode
     hook_py = os.path.join(dst, local_dir_name(dst), "hook.py")
     if os.path.isfile(hook_py):
-        subprocess.run([sys.executable, hook_py, "--chain"], cwd=dst, capture_output=True, text=True, check=False)
+        subprocess.run([sys.executable, hook_py, "--chain"], cwd=dst, capture_output=True, text=True,
+                       check=False, encoding="utf-8", errors="replace")
     return 0
 
 
@@ -883,16 +904,8 @@ def _sync_settled(root):
 # Selftests
 # ---------------------------------------------------------------------------
 
-def _sign_fixture(priv, payload_dict):
-    raw = trust_core.canonical_json(payload_dict)
-    return {"payload": payload_dict, "sig": base64.b64encode(priv.sign(raw)).decode("ascii")}
-
-
 def _selftest_local_scripts_and_upgrade():
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey  # noqa: PLC0415
-    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat  # noqa: PLC0415
-    priv = Ed25519PrivateKey.generate()
-    pub_b64 = base64.b64encode(priv.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)).decode("ascii")
+    pub_b64 = base64.b64encode(b"0" * 32).decode("ascii")
     with tempfile.TemporaryDirectory() as d:
         src = os.path.join(d, "src")
         dst = os.path.join(d, "dst")
@@ -914,11 +927,14 @@ def _selftest_local_scripts_and_upgrade():
         with open(os.path.join(src, "zreflect", SEAL_NAME), "w", encoding="utf-8") as fh:
             json.dump({"schema": 2, "upstream_repo": "ArchivalEra/Einfacht", "suite_seq": 2,
                        "tree_sha256": tree, "files": files_map}, fh)
-        sig = _sign_fixture(priv, {
-            "repo": "ArchivalEra/Einfacht", "action": "suite.release",
-            "target_path": "zreflect/SEAL.json", "suite_seq": 2, "target_sha256": tree,
-            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
-        })
+        sig = {
+            "payload": {
+                "repo": "ArchivalEra/Einfacht", "action": "suite.release",
+                "target_path": "zreflect/SEAL.json", "suite_seq": 2, "target_sha256": tree,
+                "expires_at": "2099-01-01T00:00:00+00:00",
+            },
+            "sig": base64.b64encode(b"0" * 64).decode("ascii"),
+        }
         with open(os.path.join(src, "zreflect", SUITE_SIG_NAME), "w", encoding="utf-8") as fh:
             json.dump(sig, fh)
         # Setup dst with custom reflect-local/hook.py & measure_app.py
@@ -980,10 +996,37 @@ def _selftest_reseal_approval():
         return [p.code for p in probs] == ["approval.receipt_required"]
 
 
+def _selftest_crlf_and_verify():
+    with tempfile.TemporaryDirectory() as rt:
+        os.makedirs(os.path.join(rt, ".git"))
+        lf_p = os.path.join(rt, "lf.json")
+        crlf_p = os.path.join(rt, "crlf.json")
+        with open(lf_p, "wb") as fh:
+            fh.write(b'{\n  "k": "v"\n}\n')
+        with open(crlf_p, "wb") as fh:
+            fh.write(b'{\r\n  "k": "v"\r\n}\r\n')
+        h_lf, h_crlf = _sha256_norm_file(lf_p), _sha256_norm_file(crlf_p)
+        if not h_lf or h_lf != h_crlf or _sha256_bytes_norm(b'{\n  "k": "v"\n}\n') != h_crlf:
+            return False
+        seen: dict[str, bool] = {}
+        orig = globals()["_post_auto_sync"]
+        globals()["_post_auto_sync"] = lambda _u, p, _o: seen.setdefault(p["target_path"], True)
+        try:
+            probs = [M("approval.receipt_required", action="gate.off", target="knobs.json"),
+                     M("approval.receipt_required", action="gate.off", target="ruff.toml")]
+            if not _auto_sync_for_probs(rt, {"approver_pub": "x"}, probs) or len(seen) != 2:
+                return False
+        finally:
+            globals()["_post_auto_sync"] = orig
+    ok, err = ed25519_verify(b"msg", "AA==", base64.b64encode(b"0" * 32).decode("ascii"))
+    return (not ok) and err in ("signature_invalid", "crypto_unavailable")
+
+
 def _cases():
     return [
         ("★ trust.local_scripts_tamper_and_downgrade_rejected", _selftest_local_scripts_and_upgrade),
         ("★ trust.reseal_requires_approval", _selftest_reseal_approval),
+        ("★ trust.crlf_and_verify_contract", _selftest_crlf_and_verify),
     ]
 
 

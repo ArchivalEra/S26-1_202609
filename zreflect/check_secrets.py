@@ -85,7 +85,8 @@ def _git_tracked(root):
         return []
     try:
         r = subprocess.run(["git", "-C", root, "ls-files", "--cached", "--others", "--exclude-standard"],
-                           capture_output=True, text=True, timeout=15)
+                           capture_output=True, text=True, timeout=15,
+                           encoding="utf-8", errors="replace")
         if r.returncode != 0:
             return None
         return [ln.strip() for ln in r.stdout.splitlines() if ln.strip()]

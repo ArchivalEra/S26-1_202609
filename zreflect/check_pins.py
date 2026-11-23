@@ -48,6 +48,7 @@ Selftest: --selftest (runner-injected; never touches real docker).
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 import sys
 
@@ -76,7 +77,8 @@ def _head_problems(p, root, run):
     if not os.path.isdir(wt):
         return [M("pins.worktree_missing", name=p["name"],
                   path=p["worktree"])], None
-    rc, head = run("git -C %s rev-parse HEAD" % wt)
+    wt_arg = shlex.quote(wt.replace("\\", "/") if os.name == "nt" else wt)
+    rc, head = run("git -C %s rev-parse HEAD" % wt_arg)
     if rc != 0:
         return [M("pins.head_unreadable", name=p["name"])], None
     return [], head

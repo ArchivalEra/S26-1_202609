@@ -193,10 +193,10 @@ def _resolve_push_refs(repo, stdin_rows):
 
 def _run_repo_gates(target_repo):
     for ph_name in ("commit", "start-of-work"):
-        rc, out = _sh([sys.executable, os.path.join(target_repo, "zreflect", "registry.py"),
-                       "--run", ph_name], cwd=target_repo)
-        if rc != 0:
-            print(out, file=sys.stderr)
+        p = subprocess.run(
+            [sys.executable, "-u", os.path.join(target_repo, "zreflect", "registry.py"),
+             "--run", ph_name], cwd=target_repo, stdout=sys.stderr, stderr=sys.stderr)
+        if p.returncode != 0:
             return 1
     return 0
 

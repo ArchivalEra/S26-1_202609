@@ -377,9 +377,10 @@ def run_cmd(cmd, timeout=None):
         argv = _windows_argv(_python_of(cmd))
     env = dict(os.environ)
     try:
-        env["EINFACHT_REPLAY_DEPTH"] = str(int(env.get("EINFACHT_REPLAY_DEPTH", "0") or 0) + 1)
+        raw_d = int(env.get("EINFACHT_REPLAY_DEPTH", "0") or 0)
     except ValueError:
-        env["EINFACHT_REPLAY_DEPTH"] = "1"
+        raw_d = 0
+    env["EINFACHT_REPLAY_DEPTH"] = str(max(raw_d, _get_inproc_depth()) + 1)
     try:
         p = subprocess.run(argv, cwd=GATE_REPO, capture_output=True, text=True,
                            errors="replace", timeout=t, env=env, encoding="utf-8")
@@ -440,11 +441,11 @@ def has_suite_ancestor(only_pid=None):
 
 
 def _get_inproc_depth():
-    return getattr(_DEPTH_TLS, "depth", 0)
+    return _INPROC_DEPTH
 
 
 def trusted_replay_depth():
-    """Return replay depth from thread-local in-process execution or a verified live suite ancestor."""
+    """Return replay depth from in-process execution or a verified live suite ancestor."""
     try:
         depth = int(os.environ.get("EINFACHT_REPLAY_DEPTH", "0") or 0)
     except ValueError:
@@ -454,10 +455,16 @@ def trusted_replay_depth():
 
 
 _INPROC_CACHE: dict[str, tuple[int | None, str]] | None = None
-_DEPTH_TLS = threading.local()
+_INPROC_DEPTH = 0
 _INPROC_LOCK = threading.RLock()
 _CACHE_MUTEX = threading.Lock()
 _INFLIGHT: dict[str, threading.Event] = {}
+_RO_REGISTRY_ARGS = (["--run", "commit"], ["--run", "commit", "--all"],
+                     ["--verify-seal"], ["--gates"], ["--all-runnable"])
+_SHELL_META = frozenset("&|;><$`\n")
+_ENFORCED_RE = re.compile(
+    r"^python3 -c \"import sys;sys\.path\.insert\(0,'zreflect'\);import doc;sys\.exit\(doc\.enforced_by\('([a-z0-9_]+\.py)'\)\)\"$",
+)
 
 
 def with_run_cache(fn):
@@ -480,62 +487,76 @@ def _is_ro_suite_call(rel, extra):
     base = os.path.basename(rel)
     if extra == ["--selftest"]:
         return base not in ("harness.py", "examples.py", "facts.py")
-    if not extra and base in ("check_questions.py", "check_retractions.py", "check_facts_replay.py", "check_facts.py"):
-        return True
-    if base == "facts.py" and extra == ["--check"]:
-        return True
-    return base == "registry.py" and extra in (["--run", "commit"], ["--run", "commit", "--all"], ["--verify-seal"], ["--gates"])
+    if not extra:
+        return base.startswith("check_")
+    if base == "facts.py":
+        return extra[:1] in (["--check"], ["--count"])
+    return base == "registry.py" and extra in _RO_REGISTRY_ARGS
+
+
+def _inproc_enforced_target(cmd):
+    m = _ENFORCED_RE.match(cmd.strip())
+    if not m or not _is_ro_suite_call("zreflect/doc.py", ["--selftest"]):
+        return None
+    return ("@enforced", [m.group(1)])
 
 
 def _inproc_suite_argv(cmd):
-    if os.path.abspath(GATE_REPO) != os.path.abspath(tool_repo()):
+    if (threading.current_thread() is not threading.main_thread()
+            or os.path.abspath(GATE_REPO) != os.path.abspath(tool_repo())):
         return None
-    if any(ch in cmd for ch in ("&", "|", ";", ">", "<", "$", "`", "\n")):
+    if cmd.lstrip().startswith("python3 -c "):
+        return _inproc_enforced_target(cmd)
+    if set(cmd) & _SHELL_META:
         return None
     parts = cmd.strip().split()
-    if len(parts) < 2:
-        return None
-    exe = os.path.basename(parts[0]).lower()
-    if not (exe.startswith("python") or parts[0] == sys.executable):
+    if len(parts) < 2 or not (os.path.basename(parts[0]).lower().startswith("python") or parts[0] == sys.executable):
         return None
     rel = parts[1].replace("\\", "/")
-    if not (rel.startswith("zreflect/") and rel.endswith(".py")):
-        return None
-    if not _is_ro_suite_call(rel, parts[2:]):
+    if not (rel.startswith("zreflect/") and rel.endswith(".py") and _is_ro_suite_call(rel, parts[2:])):
         return None
     full = os.path.join(GATE_REPO, rel)
     return (full, parts[2:]) if os.path.isfile(full) else None
 
 
+def _exec_inproc_target(script_path, extra_args):
+    if script_path == "@enforced":
+        import doc  # noqa: PLC0415
+        return doc.enforced_by(extra_args[0])
+    import runpy  # noqa: PLC0415
+    old_argv = sys.argv
+    sys.argv = [script_path, *extra_args]
+    try:
+        runpy.run_path(script_path, run_name="__main__")
+        return 0
+    except SystemExit as exc:
+        return exc.code if isinstance(exc.code, int) else (1 if exc.code else 0)
+    finally:
+        sys.argv = old_argv
+
+
 def _run_inproc_script(script_path, extra_args, bump_depth=True):
     import contextlib  # noqa: PLC0415
     import io  # noqa: PLC0415
-    import runpy  # noqa: PLC0415
-    prev_depth = _get_inproc_depth()
+    global _INPROC_DEPTH
+    prev_depth = _INPROC_DEPTH
     if bump_depth:
-        _DEPTH_TLS.depth = prev_depth + 1
+        _INPROC_DEPTH = prev_depth + 1
     try:
         with _INPROC_LOCK:
             buf = io.StringIO()
-            old_argv = sys.argv
-            sys.argv = [script_path, *extra_args]
-            rc = 0
             with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
-                try:
-                    runpy.run_path(script_path, run_name="__main__")
-                except SystemExit as exc:
-                    rc = exc.code if isinstance(exc.code, int) else (1 if exc.code else 0)
-                finally:
-                    sys.argv = old_argv
+                rc = _exec_inproc_target(script_path, extra_args)
             return rc, buf.getvalue()
     finally:
-        _DEPTH_TLS.depth = prev_depth
+        _INPROC_DEPTH = prev_depth
 
 
 def _cache_key(cmd):
     depth_sensitive = any(s in cmd for s in ("check_questions", "check_retractions", "registry.py"))
     d = trusted_replay_depth() if depth_sensitive else 0
-    return "%s|%s|%s" % (os.path.abspath(GATE_REPO), d, cmd)
+    r_env = tuple(sorted((k, v) for k, v in os.environ.items() if k.startswith("REFLECT_")))
+    return "%s|%s|%r|%s" % (os.path.abspath(GATE_REPO), d, r_env, cmd)
 
 
 def _acquire_cache_slot(key):
@@ -554,7 +575,7 @@ def _acquire_cache_slot(key):
     return _acquire_cache_slot(key)
 
 
-def run_cmd_cached(cmd, timeout=None):
+def run_cmd_cached(cmd, timeout=None, bump_depth=True):
     """Run `cmd`, sharing results only within the current process's `with_run_cache` scope."""
     if _INPROC_CACHE is None:
         return run_cmd(cmd, timeout=timeout)
@@ -564,7 +585,8 @@ def run_cmd_cached(cmd, timeout=None):
         return hit
     try:
         target = _inproc_suite_argv(cmd) if timeout is None else None
-        res = _run_inproc_script(target[0], target[1]) if target else run_cmd(cmd, timeout=timeout)
+        res = (_run_inproc_script(target[0], target[1], bump_depth=bump_depth)
+               if target else run_cmd(cmd, timeout=timeout))
         with _CACHE_MUTEX:
             if _INPROC_CACHE is not None:
                 _INPROC_CACHE[key] = res
@@ -667,11 +689,12 @@ def default_runner(f, repo_root=None):
     """Execute gate file `f` in `repo_root or GATE_REPO`; return `(rc, merged_output)`."""
     import trust  # noqa: PLC0415
     root = repo_root or GATE_REPO
+    full = f if os.path.isabs(f) else os.path.join(root, f)
     if (_INPROC_CACHE is not None
             and os.path.abspath(root) == os.path.abspath(tool_repo())
-            and os.path.realpath(f).startswith(os.path.realpath(zdir()) + os.sep)
-            and trust.is_sealed_target(f, root=root, zdir=zdir())):
-        return _run_inproc_script(f, [], bump_depth=False)
+            and os.path.realpath(full).startswith(os.path.realpath(zdir()) + os.sep)
+            and trust.is_sealed_target(full, root=root, zdir=zdir())):
+        return run_cmd_cached("python3 zreflect/" + os.path.basename(full), bump_depth=False)
     p = subprocess.run([sys.executable, f], capture_output=True, text=True,
                        cwd=root, encoding="utf-8", errors="replace")
     return p.returncode, (p.stdout or "") + (p.stderr or "")
@@ -754,16 +777,27 @@ def _case_forged_cache_and_depth():
         if _is_suite_argv(["zreflect/fake", "-c", "pass"]) or _is_suite_argv(["python3", "-c", "# zreflect/"]):
             return False
         out_f = os.path.join(tmp, "depth.txt")
-        code = (
-            f"import os, sys, time; sys.path.insert(0, {zdir()!r}); pid = os.fork()\n"
-            f"if pid == 0:\n    time.sleep(0.05); import gate\n"
-            f"    open({out_f!r}, 'w').write(str(gate.trusted_replay_depth())); os._exit(0)\nos._exit(0)\n"
+        tmp_f = os.path.join(tmp, "depth.tmp")
+        child = (
+            "import os, sys, time; lpid = int(sys.argv[1])\n"
+            "for _ in range(100):\n"
+            "    if os.name == 'nt' or os.getppid() != lpid:\n        break\n"
+            "    time.sleep(0.01)\n"
+            f"sys.path.insert(0, {zdir()!r}); import gate\n"
+            f"with open({tmp_f!r}, 'w', encoding='ascii') as fh:\n"
+            "    fh.write(str(gate.trusted_replay_depth()))\n"
+            f"os.replace({tmp_f!r}, {out_f!r})\n"
         )
-        subprocess.run([sys.executable, "-c", code], env={**os.environ, "EINFACHT_REPLAY_DEPTH": "2"}, check=True)
-        for _ in range(30):
+        launcher = (
+            f"import os, subprocess, sys\n"
+            f"subprocess.Popen([sys.executable, '-c', {child!r}, str(os.getpid())], "
+            f"stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+        )
+        subprocess.run([sys.executable, "-c", launcher], env={**os.environ, "EINFACHT_REPLAY_DEPTH": "2"}, check=True)
+        for _ in range(100):
             if os.path.isfile(out_f):
                 return open(out_f, encoding="ascii").read().strip() == "0"
-            _time.sleep(0.02)
+            _time.sleep(0.03)
         return False
 
 
