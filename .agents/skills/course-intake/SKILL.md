@@ -19,7 +19,7 @@ description: >-
 ## 2. 作业缺图外包（禁止偷懒略过）
 
 - 整理作业遇到需要画电路图、线性图、波形图而缺少原图或无法精确手绘时：**禁止静默省略或乱画占位**。
-- 外包给 `multisim`（通过 `mail/` 收发流程，见 `mail/README.md`），并在 **`questions/*.md`（Einfacht 悬案系统，带 `**Status:**` 与可执行 `**Settling:**`）** 明确建单登记该题缺图需求。
+- 外包给 `multisim`（直接通过 T3 跨线程消息 `t3_thread_list` / `t3_thread_send` 沟通），并在 **`questions/*.md`（Einfacht 悬案系统，带 `**Status:**` 与可执行 `**Settling:**`）** 明确建单登记该题缺图需求。
 - 需要独立核数时按 `double-sign` 组装隔离 prompt；需要核依赖锚点时按 `triple-sign` 查理论闭环。
 
 ## 3. 教材读图防烧钱（禁反复裁剪）

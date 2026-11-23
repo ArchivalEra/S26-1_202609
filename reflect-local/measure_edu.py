@@ -165,8 +165,8 @@ TABLE = [
     # PINNED: protocol marker / repo-specific data; retained verbatim in HISTORY.md
     # PINNED: protocol marker / repo-specific data; retained verbatim in HISTORY.md
     # PINNED: protocol marker / repo-specific data; retained verbatim in HISTORY.md
-    ("md_files", "git ls-files '*.md' | grep -v '^mail/' | wc -l", "repo",
-     (chr(21463)+chr(31649)+' Markdown '+chr(31687)+chr(25968)+chr(65288)+chr(19981)+chr(21547)+' mail/ '+chr(24448)+chr(26469)+chr(20449)+chr(20214)+chr(65289))),
+    ("md_files", "git ls-files '*.md' | wc -l", "repo",
+     (chr(21463)+chr(31649)+' Markdown '+chr(31687)+chr(25968))),
     ("hooktests", HOOKTESTS_CMD, ".githooks/test-update-readme.py", (chr(38057)+chr(23376)+chr(38598)+chr(25104)+chr(27979)+chr(35797)+chr(39033)+chr(25968)),
      # PINNED: protocol marker / repo-specific data; retained verbatim in HISTORY.md
      # PINNED: protocol marker / repo-specific data; retained verbatim in HISTORY.md

@@ -1010,3 +1010,11 @@ sh gates-selftest.sh                             # 每道闸门先证明自己�
 - **2026-11-06 读图副本规范**：派读图子代理前须过 `python3 .githooks/prepare-photos.py` 统一竖屏、无损解码与 ASCII 文件名（防直接 `vips copy` 给中文横图导致误报分辨率不足）。
 - **2026-11-11 图元冻结边界**：`站点/图库/电子技术.figures.txt` 冻结、不再新增手写 DSL 图元，新图改走各课 `figures/` 独立 SVG 并按需过独立读图复核（对应 `站点/build.mjs` 对 `@@MATH[\u200b\s]*INLINE\d+@@` 的 KaTeX 二次编译拦截）。
 
+
+## 2026-11-23 · 精简 `AGENTS.md` / Skills、新增 `Walkthrough` 覆盖闸门并退役 `mail/` 邮箱体系
+
+- **技能与常驻规则收敛**：删除 `repo-maintenance`（含 `读图提示词.md`）、`human-first-solution`、`solution-production`；重构为单一维护 skill `.agents/skills/course-intake/SKILL.md` 及瘦身版 `double-sign`（仅对主线程提供纯题面隔离 prompt 与 Octave/BigInt 坑）、`triple-sign`（仅核理论闭环与依赖锚点）；精简 `AGENTS.md` 加入固定课表与「未知时段不读正文直接确认」规则。
+- **新增 `Walkthrough` 覆盖闸门**：加入 `reflect-local/check_walkthrough.py` 并注册进 `reflect-local/principles.json`（`walkthrough_covered`）与 `ANCHORS.json`，对已建 `Walkthrough.md` 的课程强制校验受管课堂笔记与作业覆盖率。
+- **退役 `mail/` 与 `reflect-local/mail-read.py`**：T3 Code 支持跨线程直接沟通（`t3_thread_list` / `t3_thread_send`），不再需要基于 git 文件的跨仓收件箱，物理移除 `mail/`（历史往来保留在 Git 记录）及 `reflect-local/mail-read.py`。
+
+
