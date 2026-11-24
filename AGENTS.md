@@ -18,3 +18,5 @@
 3. **区分来源身份与单题监督**：教材原文、整理补充、学生草稿严格区分；正式作业题号与截止时间只认学习通通知。首次笔记/解析子代理与 `double-sign` 子代理**一次只允许算一道题**，主线程**每 5 分钟**巡检一次，发现几题一起做或越界读写直接 kill。
 4. **原件、命名与格式边界**：`/mnt/hdd/study/` 根层散落文件当天归进 `<课>/原始资料/`，每个转写必须按 `yyyymmdd_hhmmhhmm-原文.<ext>` 规范重命名（不登记文件哈希）；`.kimi-code/`（`.kimi-code/` is never committed，插件协议唯一真相源在 `.kimi-code/学习通API/protocol/`）永不入库推送。读图副本统一 JPG、归档原件无损 JXL、站点呈现 WebP。
 5. **本地 `act` 跑 CI，用户自己点推送**：提交前跑完 `zreflect` 门禁与本地 `act` 验证构建/测试，不擅自 `git push`，由用户亲自推送。
+   `act` 必须带 **`--action-offline-mode`**（2026-11-24 实测：不加它会去 clone `actions/checkout`／`actions/setup-node`，容器内常报 `no route to host` 或 `connection timed out`，job 直接失败；加了开关只要缓存里有 action 就不再联网）：
+   `act push -W .github/workflows/deploy.yml -P ubuntu-latest=catthehacker/ubuntu:act-latest --container-architecture linux/amd64 --action-offline-mode`
