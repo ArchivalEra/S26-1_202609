@@ -1057,3 +1057,8 @@ sh gates-selftest.sh                             # 每道闸门先证明自己�
 
 - 将原 `.gitignore` 中 46 条 `!/工具/...` 白名单全部撤出并从 Git 索引移除 `工具/`（所有文件与脚本原样保留在本地磁盘，包括 `工具/mcp-端点/`、`工具/查学习通作业.md` 与新增 `工具/学习通网桥全抓.mjs`）；线上站点构建与浏览器端 WebMCP（`站点/plugins/webmcp-*.mjs`）完全不依赖 `工具/`。
 - 在 `reflect-local/principles.json` 新增 `no_tracked_tools` 并配合 `reflect-local/check_tools_untracked.py` 在 `commit` 相位拦截 `git ls-files 工具/` 及 `.gitignore` 放行条目。
+
+### 7. 归档并移除推翻悬案 `questions/13-形势与政策2份作业.md`（课程已结课停办）
+
+- 《形势与政策》已于一个月前结课考结案，原拟入库的 `作业一`（`taskrefId=56955857`）与 `作业二`（`taskrefId=56955927`）两份旧作业无入库价值；GitHub [issue #43](https://github.com/ArchivalEra/S26-1_202609/issues/43) 已于 2026-11-25 标为 `Not planned` 关闭。
+- 按本仓「推翻悬案扫进 `HISTORY.md`」惯例，将决策记录归档于本条，并删除 `questions/13-形势与政策2份作业.md` 及 `.gitignore` 对应白名单行（`/mnt/hdd/study/形势与政策/原始资料/学习通抓取-20261125/` 下已抓原件保留在本地，不入站）。

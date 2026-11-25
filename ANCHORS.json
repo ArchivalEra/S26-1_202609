@@ -65,12 +65,6 @@
       "sha256": "fcf16118ec9f2bb1296aaef80c7344e8bd18fd9dec4c2523acdda6c79b399813",
       "status": "resolved"
     },
-    "questions/13-形势与政策2份作业.md": {
-      "body_sha256": "ebfa7b108c24799b1bfc267bd0528e50e72e40dbb103d7a1430413ae53dff79b",
-      "settling": "`python3 -c \"import os;fs=['作业一.md','作业二.md'];d='课程总览/形势与政策/作业';lst=open('站点/页面清单.mjs',encoding='utf-8').read();miss=sum(1 for f in fs if not os.path.isfile(os.path.join(d,f)) or f not in lst);raise SystemExit(0 if miss==0 else 1)\"` -- rc=0 => A (形势与政策两份作业落盘并接入站点清单); rc!=0 => B (尚未入库完成)",
-      "sha256": "b7a08f68e0a77c9d8c725423a91d38259625d8f64e535be6f3e592988ed64952",
-      "status": "ready-for-agent"
-    },
     "questions/14-退役学习助手仅保留WebMCP.md": {
       "body_sha256": "4b8353537b6dc78f020becb12e4342b4d0040098085e55d73e6f2f6fc4f5a650",
       "settling": "`python3 -c \"import os;rm=['站点/plugins/chat-panel.mjs','站点/plugins/chat-panel.test.mjs','站点/plugins/chat-render.mjs','站点/plugins/chat-render.test.mjs'];keep=['站点/plugins/webmcp-tools.mjs','站点/plugins/webmcp-shim.mjs','站点/plugins/webmcp-loader.mjs','站点/assets/vendor/webmcp/widget.html'];b=open('站点/build.mjs',encoding='utf-8').read();c=open('站点/assets/theme/shirone-reader.css',encoding='utf-8').read();w=open('.github/workflows/deploy.yml',encoding='utf-8').read();bad=any(os.path.exists(p) for p in rm) or any(not os.path.isfile(p) for p in keep) or any(k in b for k in ('assistant-toggle','chat-panel','data-assistant-key','--assistant-secrets')) or ('assistant-toggle' in c or '.hand-btn' in c) or ('ASSISTANT_SECRETS' in w or '--assistant-secrets' in w);raise SystemExit(1 if bad else 0)\"` -- rc=0 => A (学习助手全栈已彻底切除且浏览器 WebMCP 核心保留完整); rc!=0 => B (学习助手残留仍在或 WebMCP 核心文件缺失)",
