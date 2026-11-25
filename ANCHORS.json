@@ -56,8 +56,8 @@
     "questions/11-电子技术11-23作业.md": {
       "body_sha256": "196f9d8ad0ee6023435e3d2386d2364bc5a217490d220eeb48355dea9101bd8a",
       "settling": "`python3 -c \"import os;p='课程总览/电子技术/作业/2026-11-23作业.md';ok=os.path.isfile(p) and 'issue #44' in open(p,encoding='utf-8').read() and '2026-11-23作业.md' in open('站点/页面清单.mjs',encoding='utf-8').read() and '2026-11-23作业.md' in open('课程总览/电子技术/Walkthrough.md',encoding='utf-8').read();raise SystemExit(0 if ok else 1)\"` -- rc=0 => A (2026-11-23作业落盘含issue #44且已接入清单与Walkthrough); rc!=0 => B (尚未入库闭环)",
-      "sha256": "5ce94752ae8d26aaa54bb87c3410403631747e9d8c6ad4414f78c3a309d2e604",
-      "status": "ready-for-agent"
+      "sha256": "cbe4e2d08703f1b06b146bf68beeb07c7230dc51fdcb92f38086eb0ed32cf6d6",
+      "status": "resolved"
     },
     "questions/12-电机学9份客观题.md": {
       "body_sha256": "492f0b781cdeb07f3d6c4a9a5e1a4bc0d810918f1d79ddbfa41472d82090bf1b",
