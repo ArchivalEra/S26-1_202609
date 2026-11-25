@@ -1,5 +1,5 @@
 /**
- * 渲染 adapter 契约 + MathLive 实现。
+ * 渲染 adapter 契约 + KaTeX 实现。
  *
  * ## 这一层唯一的职责
  *
@@ -9,11 +9,11 @@
  * ## 为什么可以换引擎而不用改别的
  *
  * 实测两件事（2026-10-29）：
- *   ① MathLive 认 `\htmlData{term=x}{…}`，产物是 `<span data-term="x">`
- *      ——与 KaTeX 的机制同名同形；
- *   ② 两者都**不产** `<a>` 锚点（MathLive 的 `\href` 还拒绝相对锚点）。
- * 因此锚点由本模块统一包裹，与引擎无关——这正是「标注不寄生在渲染器语法上」。
+ *   ① 渲染器认 `\htmlData{term=x}{…}`，产物是 `<span data-term="x">`；
+ *   ② 引擎不负责生成最终站内 `<a>` 锚点，所以锚点由本模块统一调 `formatSymbolAnchor` 包裹。
  */
+
+import { formatSymbolAnchor } from '../symbols/contracts.mjs';
 
 /**
  * 把 IR 编回 TeX。**这是唯一生成 `\htmlData` 的地方**。
@@ -433,9 +433,13 @@ export function decorateAnchors(html, opts) {
       continue;
     }
     decorated += 1;
-    const label = escapeAttr(hit.label || key);
     out.push(html.slice(last, start));
-    out.push(`<a class="sym-gloss" data-term="${escapeAttr(key)}" href="${escapeAttr(hit.href)}" aria-label="${label}">${inner}</a>`);
+    out.push(formatSymbolAnchor({
+      key,
+      href: hit.href,
+      label: hit.label || key,
+      innerHtml: inner,
+    }));
     last = end;
     openRe.lastIndex = end;
   }

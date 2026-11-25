@@ -84,8 +84,8 @@
  *  **没有闭合行**——图没有正文，块体永远为空。
  *  `(.+?)` 允许只写 `:::figure`（后面什么都没有）以走到「缺少图元 id」那条明确报错，
  *  而不是被正则静默漏掉、当成普通文本留在页面上。 */
-// 「什么是一个符号」的唯一真相住在 站点/plugins/symbol-selector.mjs。
-// 本文件自包含（无 import），这里复写一份；parity 闸门比对复写与真源。
+// 「什么是一个符号」的唯一真相与锚点构造住在 站点/symbols/contracts.mjs。
+import { SYMBOL_SELECTOR, formatSymbolAnchor } from '../symbols/index.mjs';
 const FIGURE_RE = /^[\t ]{0,3}:{3,}[\t ]*figure(?:[\t ]+(.*?))?[\t ]*$/i;
 const FENCE_RE = /^[\t ]{0,3}(`{3,}|~{3,})/;
 /** 占位符：不可能被 Markdown 语法误伤。
@@ -2189,7 +2189,6 @@ export function renderStructureTable(ir) {
  * @param {(key:string, entry:object)=>void} [opts.onHit] 命中回调
  *        图内符号必须在这里并进宿主的「本页命中集」——气泡词典是按页烘焙的
  *        实际命中集，晚于烘焙就只剩一条点了没反应的空锚点（实测踩过）。
- * @param {string} [opts.glossHref]  词条详解页的相对 href 前缀
  * @returns {{ source: string, figures: object[], warnings: string[] }}
  */
 export function renderFigures(source, opts = {}) {
@@ -2197,7 +2196,7 @@ export function renderFigures(source, opts = {}) {
   if (!source.includes(':::figure')) return { source, figures: [], warnings: [] };
 
   const { lib = new Map(), libName = 'figures.txt', pagePath = '',
-    lookupGloss = null, onHit = null, glossHref = '' } = opts;
+    lookupGloss = null, onHit = null } = opts;
   const lines = source.split(/\r?\n/);
   const out = [];
   const figures = [];
@@ -2327,13 +2326,14 @@ export function restoreFigures(html, figures) {
 
   const buildSymbolAnchor = (label, entry, inner) => {
     if (!entry) return inner;
-    // ⚠️ SVG 的 <a> 只能包 <tspan> 等图形元素，**不能直接包裸文本**——
-    // 实测过：`<text><a>B</a></text>` 在浏览器里容错能显示，但文本布局、
-    // 主题化与读屏都会出问题。所以纯文本标签也要裹一层 <tspan>。
+    // ⚠️ SVG 的 <a> 只能包 <tspan> 等图形元素，**不能直接包裸文本**
     const wrapped = inner.startsWith('<tspan') ? inner : `<tspan>${inner}</tspan>`;
-    return (
-      `<a class="sym-gloss" data-term="${attrEsc(entry.key)}" href="${attrEsc(entry.href || `${glossHref}#${entry.key}`)}"` +
-      ` aria-label="${attrEsc(label)}">${wrapped}</a>`);
+    return formatSymbolAnchor({
+      key: entry.key,
+      href: entry.href || `#${entry.id || entry.key}`,
+      label,
+      innerHtml: wrapped,
+    });
   };
 
   const drawOne = (ir) => {
@@ -2416,8 +2416,8 @@ export function restoreFigures(html, figures) {
  * 「点符号既弹气泡又选中元件」的双重反应。
  */
 export const FIGURES_JS = String.raw`(function () {
-  var SYMBOL_SELECTOR = "a.sym-gloss, .ML__latex [data-term], .katex [data-term]";
   "use strict";
+  var SYMBOL_SELECTOR = ${JSON.stringify(SYMBOL_SELECTOR)};
   var SVG_NS = "http://www.w3.org/2000/svg";
 
   function clearSelection(fig) {

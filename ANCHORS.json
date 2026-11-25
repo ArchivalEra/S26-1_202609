@@ -69,14 +69,20 @@
     "questions/14-退役学习助手仅保留WebMCP.md": {
       "body_sha256": "4b8353537b6dc78f020becb12e4342b4d0040098085e55d73e6f2f6fc4f5a650",
       "settling": "`python3 -c \"import os;rm=['站点/plugins/chat-panel.mjs','站点/plugins/chat-panel.test.mjs','站点/plugins/chat-render.mjs','站点/plugins/chat-render.test.mjs'];keep=['站点/plugins/webmcp-tools.mjs','站点/plugins/webmcp-shim.mjs','站点/plugins/webmcp-loader.mjs','站点/assets/vendor/webmcp/widget.html'];b=open('站点/build.mjs',encoding='utf-8').read();c=open('站点/assets/theme/shirone-reader.css',encoding='utf-8').read();w=open('.github/workflows/deploy.yml',encoding='utf-8').read();bad=any(os.path.exists(p) for p in rm) or any(not os.path.isfile(p) for p in keep) or any(k in b for k in ('assistant-toggle','chat-panel','data-assistant-key','--assistant-secrets')) or ('assistant-toggle' in c or '.hand-btn' in c) or ('ASSISTANT_SECRETS' in w or '--assistant-secrets' in w);raise SystemExit(1 if bad else 0)\"` -- rc=0 => A (学习助手全栈已彻底切除且浏览器 WebMCP 核心保留完整); rc!=0 => B (学习助手残留仍在或 WebMCP 核心文件缺失)",
-      "sha256": "f4732fa52ffa1e84b6f749f2f3815a71600a11a9edc8515735607d16bfb92deb",
-      "status": "ready-for-agent"
+      "sha256": "7955aba0dc848efeaef9165a1ecd38be7ab4953b51a78e111754ca2afe01d216",
+      "status": "resolved"
     },
     "questions/15-重写README与WebMCP交互Skill.md": {
       "body_sha256": "88813f32a0d3f06c066cfbe96c0d2e5e66f57cd6e86f92bff56d0aff1f7259c3",
       "settling": "`python3 -c \"r=open('README.md',encoding='utf-8').read();s=open('站点/Skill.md',encoding='utf-8').read();ok_r=('COURSE-STATUS:START' in r and 'AUTO-CATALOG:START' in r and '/machine/Birthright.html' in r and 'Skill.md' in r and '学习助手' not in r);ok_s=('site_search，query=' not in s and ('WebSocket' in s or 'ws://' in s) and chr(96)*3 in s and 'site_' in s and 'relay' in s.lower());raise SystemExit(0 if (ok_r and ok_s) else 1)\"` -- rc=0 => A (README三种交互入口与Skill.md及WS转发器示例均已重写就绪); rc!=0 => B (README或Skill.md仍为旧版或缺少WS转发器/链接)",
-      "sha256": "72b298553cad17baa94e77e9c88fd0c0095089c3030cc2d91bb2a476f70cc860",
-      "status": "ready-for-agent"
+      "sha256": "653675faec70fdbd938cafb0a61a2bc8fa30ee690df948134290fd62add08091",
+      "status": "resolved"
+    },
+    "questions/16-全站符号系统收口为深模块.md": {
+      "body_sha256": "c326961debe03a976689a9123871aac88295d2d94737c4ed1129ce5d29f6126e",
+      "settling": "`python3 -c \"import os;req=['站点/symbols/index.mjs','站点/dist/machine/symbols/index.json'];miss=[p for p in req if not os.path.isfile(p)];b=open('站点/build.mjs',encoding='utf-8').read();t=open('站点/math/terms.mjs',encoding='utf-8').read();f=open('站点/plugins/figures.mjs',encoding='utf-8').read();w=open('站点/plugins/webmcp-tools.mjs',encoding='utf-8').read();ps=open('工具/mcp-端点/lib/packs-source.mjs',encoding='utf-8').read();rc=open('工具/mcp-端点/lib/read-core.mjs',encoding='utf-8').read();bh=open('站点/dist/machine/Birthright.html',encoding='utf-8').read() if os.path.isfile('站点/dist/machine/Birthright.html') else '';bad=(bool(miss) or 'syncMathHits' in b or 'glossaryPacksForPage' in b or 'math-glossary.js' in b or 'forceTerm: {}' in b or '{ pack: direct, entry: direct' in t or 'glossHref' in f or '站点/symbols/' not in ps or '站点/symbols/' not in rc or 'S.glossaryJson' not in w or 'machine/symbols/index.json' not in bh);raise SystemExit(1 if bad else 0)\"` -- rc=0 => A (深核心站点/symbols与HTML/machine/WebMCP/本地MCP四适配器收口完成且四处潜伏断链已修复); rc!=0 => B (尚未按深核心+四适配器收口完成或存在断链/旧胶水残留)",
+      "sha256": "6e38501a7a36b07d551691d3a3d30ff06c2d4819d6e390972d9c0ec1a3683e4e",
+      "status": "ready-for-human"
     }
   },
   "questions_dir": "questions",

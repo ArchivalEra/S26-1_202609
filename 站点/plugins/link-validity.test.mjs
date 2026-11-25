@@ -145,10 +145,23 @@ test('machine/：镜像含整篇源文（TeX 原文 + 图片绝对 URL），Birt
   const relImg = imgs.filter((u) => !u.startsWith('https://'));
   assert.deepEqual(relImg.slice(0, 5), [], '图片必须换成完整 URL');
 
-  // ③ Birthright.html：每条是完整绝对链接、指向真实镜像、总数 = 页面数。
+  // ②b machine/ 镜像附带符号上下文且不污染 body；/machine/symbols/ 存在完整导出
+  assert.ok(sample.symbols && typeof sample.symbols.ctx === 'string' && Array.isArray(sample.symbols.termKeys),
+    '单页镜像应附带轻量 symbols 上下文');
+  const symIdxPath = path.join(machDir, 'symbols', 'index.json');
+  assert.ok(existsSync(symIdxPath), 'dist/machine/symbols/index.json 不存在');
+  const symIdx = JSON.parse(readFileSync(symIdxPath, 'utf8'));
+  assert.ok(symIdx.packs && Object.keys(symIdx.packs).length >= 5, '符号包目录应覆盖全部符号包');
+  for (const pInfo of Object.values(symIdx.packs)) {
+    assert.ok(existsSync(path.join(machDir, 'symbols', pInfo.file)), `缺符号包导出：${pInfo.file}`);
+  }
+
+  // ③ Birthright.html：树里每条页面链接 + 符号总目录直达入口
   const html = readFileSync(catFile, 'utf8');
   assert.ok(/<title>Birthright<\/title>/.test(html), '<title> 必须是 Birthright');
-  const links = [...new Set([...html.matchAll(/https:\/\/[^<\s"]+\.json/g)].map((m) => m[0]))];
+  assert.ok(html.includes(`${MACHINE_BASE}symbols/index.json`), 'Birthright.html 应包含符号目录入口');
+  const treeHtml = (/<pre>([\s\S]*?)<\/pre>/.exec(html) || ['', ''])[1];
+  const links = [...new Set([...treeHtml.matchAll(/https:\/\/[^<\s"]+\.json/g)].map((m) => m[0]))];
   assert.equal(links.length, sitePages.length,
     `链接数 ${links.length} ≠ 页面数 ${sitePages.length}`);
   const badLinks = links.filter((u) => !u.startsWith(MACHINE_BASE)

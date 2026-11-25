@@ -153,15 +153,29 @@ export function createResolver(dictionary, cfg = {}) {
     packs,
     /** 判定一个节点是不是符号。返回 `{pack, entry, rule}` 或 null。 */
     decide(node, src) {
-      // ① 作者显式指定（按节点的源文本形状匹配）
-      if (node.span) {
-        const direct = force[src.slice(node.span[0], node.span[1])];
-        if (direct) return { pack: direct, entry: direct, rule: 'force' };
+      const nodeShape = shapeKey(node);
+      // ① 作者显式指定（frontmatter「符号强制: {词条id: 包名}」，最高优先，不受排除影响）
+      for (const [entryId, targetPack] of Object.entries(force)) {
+        if (!targetPack) continue;
+        if (dictionary.packs[targetPack]?.get(nodeShape) === entryId) {
+          return { pack: targetPack, entry: entryId, rule: 'force' };
+        }
+        if (node.span) {
+          const slice = src.slice(node.span[0], node.span[1]);
+          for (const p of dictionary.patterns[targetPack] || []) {
+            if (p.entry !== entryId) continue;
+            p.re.lastIndex = 0;
+            const m = p.re.exec(slice);
+            if (m?.index === 0 && m[0].length === slice.length) {
+              return { pack: targetPack, entry: entryId, rule: 'force' };
+            }
+          }
+        }
       }
       // ② 排除表：只否决 auto 通道
       //（在 ③ 命中后判断，这样 `exclude` 能精确到「这个词条在这类位置不自动取词」）
       // ③ 自动：形状键
-      const byShape = lookupShape(shapeKey(node));
+      const byShape = lookupShape(nodeShape);
       if (byShape) {
         if (denyTex.has(byShape.entry)) return { ...byShape, rule: 'excluded' };
         return { ...byShape, rule: 'atom' };

@@ -20,7 +20,7 @@
 // 工具自动作用于新页面，注册一次永久有效。这是「不重载」的核心收益。
 //
 // ## 三个 reset 钩子（换页后必须调）
-//   __glossaryReset()   math-glossary 的 dict 缓存按页烘焙，换页要清
+//   __glossaryReset()   站点/symbols/ 的 dict 缓存按页烘焙，换页要清
 //   __readerRescan()    shirone-reader 启动时缓存 headings/tocLinks，换页要重扫
 //   __disclosureOpen()  disclosure-anchor 只在 DOMContentLoaded/hashchange 跑，换页手动调
 //

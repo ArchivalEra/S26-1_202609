@@ -80,8 +80,8 @@ test('SPA 换页清单：注释里列的块数与代码实际替换的一致', (
 });
 
 test('三个插件真的暴露了 reset 钩子（构建产物检查）', () => {
-  const g = fs.readFileSync(path.join(HERE, '../dist/assets/plugins/math-glossary.js'), 'utf8');
-  assert.ok(g.includes('__glossaryReset'), 'math-glossary 暴露 __glossaryReset');
+  const g = fs.readFileSync(path.join(HERE, '../dist/assets/plugins/symbols-bubble.js'), 'utf8');
+  assert.ok(g.includes('__glossaryReset'), 'symbols-bubble 暴露 __glossaryReset');
   const d = fs.readFileSync(path.join(HERE, '../dist/assets/plugins/disclosure-anchor.js'), 'utf8');
   assert.ok(d.includes('__disclosureOpen'), 'disclosure-anchor 暴露 __disclosureOpen');
   const t = fs.readFileSync(path.join(HERE, '../dist/assets/theme/shirone-reader.js'), 'utf8');

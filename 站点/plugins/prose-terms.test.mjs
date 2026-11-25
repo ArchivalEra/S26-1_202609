@@ -265,9 +265,9 @@ describe("glossary：客户端气泡脚本契约", () => {
   });
 
   it("点击目标同时认正文令牌与 KaTeX 内部取词符号", () => {
-    // 2026-10-29 换引擎：公式容器类名是 .ML__latex（旧 .katex 保留兼容）
-    assert.ok(GLOSSARY_JS.includes('.ML__latex [data-term]'));
+    assert.ok(GLOSSARY_JS.includes('.katex [data-term]'));
     assert.ok(GLOSSARY_JS.includes('a.sym-gloss'));
+    assert.ok(!GLOSSARY_JS.includes('.ML__latex [data-term]'));
   });
 
   it("公式内命中漂移有几何回退：点在公式容器里就按元素栈重挑最小盒", () => {
@@ -295,7 +295,7 @@ describe("glossary：客户端气泡脚本契约", () => {
   });
 
   it("气泡里有「详细」链接指向词条锚点", () => {
-    assert.ok(GLOSSARY_JS.includes('entry.href + "#" + term'));
+    assert.ok(GLOSSARY_JS.includes('entry.href + "#" + anchorId'));
   });
 
   it("标题与正文都按构建期 HTML 插入（标题里也能写公式）", () => {

@@ -569,6 +569,14 @@
 !/站点/plugins/symbol-gaps.test.mjs
 !/站点/plugins/symbol-parity.test.mjs
 !/站点/plugins/symbol-selector.mjs
+!/站点/plugins/symbol-system.test.mjs
+!/站点/symbols/catalog.mjs
+!/站点/symbols/contracts.mjs
+!/站点/symbols/fences.mjs
+!/站点/symbols/frontmatter.mjs
+!/站点/symbols/index.mjs
+!/站点/symbols/prose.mjs
+!/站点/symbols/runtime.mjs
 !/站点/plugins/table-responsive.test.mjs
 !/站点/plugins/template-backtick.test.mjs
 !/站点/plugins/to-octave.test.mjs

@@ -37,11 +37,8 @@
 // ════════════════════════════════════════════════════════════════
 
 /** 站点主题的选择器与发布文案（**改主题只改这里**）。 */
-// 「什么是一个符号」的唯一真相住在 站点/plugins/symbol-selector.mjs。
-// 本文件是**自包含**的（测试用 toString() 派生浏览器副本，不能带 import），
-// 所以这里只能**复写**一份。parity 闸门（symbol-parity.test.mjs）会比对
-// 这份复写与真源是否逐字一致 —— 漂移即红。
-const SYMBOL_SELECTOR = "a.sym-gloss, .ML__latex [data-term], .katex [data-term]";
+// 「什么是一个符号」的唯一真相住在 站点/symbols/contracts.mjs。
+import { SYMBOL_SELECTOR, SYMBOL_JSON_SCRIPT_ID } from '../symbols/index.mjs';
 
 export const PAGE_SELECTORS = {
   article: '.article-content',
@@ -51,14 +48,9 @@ export const PAGE_SELECTORS = {
   articleImages: '.article-content img',
   courseChip: '.meta-chip',
   details: 'details',
-  // 符号可点元素：公式里的（.katex 内）与正文里的（a.sym-gloss）**两处都要认**
-  // 公式里的符号（`.katex` 是 2026-10-29 换引擎前的旧容器类名，保留兼容）
-  glossaryTerm: SYMBOL_SELECTOR,   // ← 唯一真相（底部 const），与冒泡/强调色同一份
-  // 气泡的真实类名是 .sym-gloss-pop（2026-10-19 修：旧值 '.glossary-bubble, [class*=bubble]'
-  // 与真实 DOM 完全不匹配，导致 site_show_symbol 的 bubble 字段恒为空——测试用假 DOM
-  // 里的 class="glossary-bubble" 掩盖了这个 bug）
+  glossaryTerm: SYMBOL_SELECTOR,
   glossaryBubble: '.sym-gloss-pop',
-  glossaryJson: 'sym-glossary-json',
+  glossaryJson: SYMBOL_JSON_SCRIPT_ID,
   searchPanel: 'search-panel',
   searchInput: 'search-input',
   searchResults: 'search-results',
@@ -651,6 +643,41 @@ export function createPageView(doc, loc, winOverride) {
     };
   }
 
+  /** 读页内烘焙的符号词典 JSON（#sym-glossary-json），不经 DOM 气泡。 */
+  function glossaryData() {
+    const tag = byId(S.glossaryJson);
+    if (!tag) return null;
+    try {
+      const data = JSON.parse(tag.textContent || '');
+      if (!data || typeof data !== 'object' || !data.terms) return null;
+      return data;
+    } catch (e) { return null; }
+  }
+
+  /** 从 #sym-glossary-json 按规范 key / 裸 id / 标题精确或模糊查一条词条。 */
+  function findGlossaryEntry(needle) {
+    const n = String(needle || '').trim();
+    if (!n) return null;
+    const data = glossaryData();
+    const terms = data?.terms;
+    if (!terms) return null;
+    if (Object.hasOwn(terms, n)) return { key: n, entry: terms[n], data };
+    const entries = Object.entries(terms);
+    for (const [k, e] of entries) {
+      if (e.id === n || k.endsWith(':' + n)) return { key: k, entry: e, data };
+    }
+    for (const [k, e] of entries) {
+      const head = String(e.titleText || e.title || '').split(/[：:]/)[0].trim();
+      if (head && head === n) return { key: k, entry: e, data };
+    }
+    for (const [k, e] of entries) {
+      if (k.indexOf(n) >= 0 || String(e.titleText || e.title || '').indexOf(n) >= 0) {
+        return { key: k, entry: e, data };
+      }
+    }
+    return null;
+  }
+
   /** 页面上首个匹配某符号的可点元素（没命中返回 null）。 */
   function findSymbol(needle) {
     const n = String(needle).trim();
@@ -662,15 +689,29 @@ export function createPageView(doc, loc, winOverride) {
       || null;
   }
 
-  /** 页面上全部符号（供模型知道能查什么）。 */
+  /** 页面上全部符号（优先合并 #sym-glossary-json 的结构化元数据）。 */
   function listSymbols(limit) {
     const seen = {};
     const out = [];
+    const terms = glossaryData()?.terms || {};
     for (const x of all(S.glossaryTerm)) {
       const id = x.getAttribute ? String(x.getAttribute('data-term') || '') : '';
       if (!id || seen[id]) continue;
       seen[id] = 1;
-      out.push({ id, text: textOf(x) });
+      const meta = terms[id];
+      const rec = { id, text: textOf(x) };
+      if (meta?.titleText) rec.titleText = meta.titleText;
+      if (meta?.pack) rec.pack = meta.pack;
+      out.push(rec);
+      if (limit && out.length >= limit) return out;
+    }
+    for (const [id, meta] of Object.entries(terms)) {
+      if (seen[id]) continue;
+      seen[id] = 1;
+      const rec = { id, text: meta.titleText || meta.id || id };
+      if (meta.titleText) rec.titleText = meta.titleText;
+      if (meta.pack) rec.pack = meta.pack;
+      out.push(rec);
       if (limit && out.length >= limit) break;
     }
     return out;
@@ -1983,7 +2024,7 @@ export function createPageView(doc, loc, winOverride) {
   }
 
   return {
-    headings, pageInfo, openSection, togglePanels, findSymbol, listSymbols,
+    headings, pageInfo, openSection, togglePanels, findSymbol, listSymbols, glossaryData, findGlossaryEntry,
     // 测试钩子：标题匹配规则（精确优先 + 全部命中）需要单独测，不经过 DOM
     __matchHeadings: matchHeadings,
     searchResults, captureView,
@@ -2113,19 +2154,74 @@ export function buildToolDefs(doc, win) {
     {
       name: 'site_show_symbol',
       label: '查符号释义',
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-      description: '查本页某个符号的含义：点开它的气泡，返回标题、解释、全部义项（当前语境标 is-here）与「详细」链接。给 term 可用符号 id（如 sym-U）或显示文字（如 U）。',
-      inputSchema: { type: 'object', properties: { term: { type: 'string' } }, required: ['term'] },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      description: '查本页某个符号的含义：直读页面烘焙的符号词典（#sym-glossary-json），返回标题、一句话释义、全部义项与所属语境 ctx、详细链接；给 popup=true 时同步在页面弹出视觉气泡。给 term 可用规范键（如 通用:sym-U）、符号 id（如 sym-U）或显示文字（如 U）。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          term: { type: 'string' },
+          popup: { type: 'boolean', description: '可选：true 时同时在页面上点开视觉气泡' },
+        },
+        required: ['term'],
+      },
       execute: (a) => {
         const needle = String((a?.term) || '').trim();
         if (!needle) return { ok: false, reason: 'empty_term' };
+        const firstSentence = (t, cap) => {
+          const flat = String(t || '').replace(/\s+/g, ' ').trim();
+          const m = /^[^。；;]{1,200}[。；;]?/.exec(flat);
+          const one = (m ? m[0] : flat).trim();
+          return one.length > cap ? one.slice(0, cap) + '…' : one;
+        };
+        const wantPopup = a?.popup === true;
+        const jsonHit = view.findGlossaryEntry ? view.findGlossaryEntry(needle) : null;
+
         const el = view.findSymbol(needle);
+        if (wantPopup && el) {
+          try { el.scrollIntoView({ block: 'center' }); } catch (e) { /* 无滚动不影响点击 */ }
+          const win2 = w || {};
+          const ClickEvent = win2.MouseEvent || (typeof MouseEvent !== 'undefined' ? MouseEvent : null);
+          if (ClickEvent) {
+            el.dispatchEvent(new ClickEvent('click', { bubbles: true, cancelable: true, view: win2 }));
+          } else if (el.click) {
+            el.click();
+          }
+        }
+
+        if (jsonHit) {
+          const { key, entry, data } = jsonHit;
+          const rawTitle = entry.titleText || entry.title || '';
+          const rawText = entry.plainText || entry.text || '';
+          const senses = Array.isArray(entry.senses) && entry.senses.length
+            ? entry.senses.map((s) => ({
+                ctx: s.ctx,
+                brief: firstSentence(s.plainText || s.text || '', 80),
+                here: s.here === true || (!!entry.ctx && s.ctx === entry.ctx),
+              }))
+            : undefined;
+          const id = entry.id || (key.indexOf(':') >= 0 ? key.slice(key.indexOf(':') + 1) : key);
+          const pack = entry.pack || (key.indexOf(':') >= 0 ? key.slice(0, key.indexOf(':')) : undefined);
+          return {
+            ok: true,
+            term: key,
+            id,
+            pack,
+            title: rawTitle,
+            brief: firstSentence((rawTitle ? rawTitle + '：' : '') + rawText, 120),
+            senses,
+            ctx: entry.ctx || data?.ctx || undefined,
+            detailHref: entry.href || undefined,
+            source: 'sym-glossary-json',
+            hint: '要看全文就 site_read 那个 detailHref 指向的页面（用 what=section 或 what=page）',
+          };
+        }
+
         if (!el) {
           const all = view.listSymbols(200);
           return { ok: false, reason: 'symbol_not_on_page', total: all.length, available: all.slice(0, 40) };
         }
         try { el.scrollIntoView({ block: 'center' }); } catch (e) { /* 无滚动不影响点击 */ }
-        // 走与真人点击同一条路径（气泡脚本监听 click）。
+        // 兼容无 #sym-glossary-json 的极简夹具：回退到点击 + 气泡 DOM 读取
         const win2 = w || {};
         const ClickEvent = win2.MouseEvent || (typeof MouseEvent !== 'undefined' ? MouseEvent : null);
         if (ClickEvent) {
@@ -2133,9 +2229,6 @@ export function buildToolDefs(doc, win) {
         } else if (el.click) {
           el.click();
         }
-        // **气泡是异步渲染的**（点击后下一拍才进 DOM）——同步读会恒空。
-        // 用 renderMarkdown 而不是 textContent：气泡里也嵌 KaTeX，
-        // textContent 会给出三份副本（实测「BBB：磁通密度…B=μHB=\mu HB=μH」）。
         const read = () => {
           let bubble = null;
           try { bubble = doc.querySelector(PAGE_SELECTORS.glossaryBubble); } catch (e) { /* 假 DOM */ }
@@ -2148,17 +2241,6 @@ export function buildToolDefs(doc, win) {
             } catch (e) { /* 无子查询 */ }
           }
           const more = bubble?.querySelector ? bubble.querySelector('a') : null;
-          // ⚠️ 2026-10-29：**一次别给太多**。原来 `bubble` 字段是整个气泡的
-          // Markdown（上限 1200 字），再叠上 `senses` 全部义项——模型记不住，
-          // 而且多数问题只需要「这个符号是什么」，不需要整段原理。
-          // 改成分层：一句话释义 + 全部义项的「首句」+ 详情链接。
-          // 需要全文时模型自己去读 detailHref 指向的那页（site_read 能读）。
-          const firstSentence = (t, cap) => {
-            const flat = String(t || '').replace(/\s+/g, ' ').trim();
-            const m = /^[^。；;]{1,200}[。；;]?/.exec(flat);
-            const one = (m ? m[0] : flat).trim();
-            return one.length > cap ? one.slice(0, cap) + '…' : one;
-          };
           const fullText = bubble ? renderMarkdown(bubble) : '';
           return {
             ok: true,

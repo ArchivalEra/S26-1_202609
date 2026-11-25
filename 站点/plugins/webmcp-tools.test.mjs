@@ -1767,3 +1767,48 @@ test('读面：结果框自带的 `=` 不能与读面的 `=` 叠成 `= =`', () =
   assert.ok(!/= =/.test(md), `结果出现双等号：${md}`);
   assert.match(md, /=\s*2/, '结果丢了');
 });
+
+test('site_show_symbol：存在 #sym-glossary-json 时零点击直读并返回完整 ctx 义项（Q16）', async () => {
+  const doc = fakeDoc();
+  let clicked = false;
+  const symEl = doc.querySelector('.katex [data-term]');
+  const origDispatch = symEl.dispatchEvent;
+  symEl.dispatchEvent = (ev) => { clicked = true; return origDispatch.call(symEl, ev); };
+
+  const jsonTag = el('script', JSON.stringify({
+    env: '通用+电路原理',
+    ctx: '电路原理',
+    terms: {
+      '电路原理:sym-Z': {
+        pack: '电路原理',
+        id: 'sym-Z',
+        title: '<span>Z</span>',
+        titleText: 'Z：阻抗 / 槽数',
+        text: '<p>总述</p>',
+        plainText: '同一个 Z 在不同语境下是两样东西',
+        href: '../符号入门.html#sym-Z',
+        ctx: '电路原理',
+        senses: [
+          { ctx: '电路原理', text: '<span>阻抗</span>', plainText: '阻抗 Z=R+jX', here: true },
+          { ctx: '电机学', text: '<span>槽数</span>', plainText: '电机槽数', here: false },
+        ],
+      },
+    },
+  }), { id: 'sym-glossary-json' });
+  const prevById = doc.getElementById;
+  doc.getElementById = (id) => (id === 'sym-glossary-json' ? jsonTag : prevById.call(doc, id));
+
+  const defs = buildToolDefs(doc);
+  const symTool = defs.find((d) => d.name === 'site_show_symbol');
+  assert.equal(symTool.annotations.readOnlyHint, true, '直读模式应声明只读');
+  const r = await symTool.execute({ term: 'sym-Z' });
+  assert.equal(r.ok, true);
+  assert.equal(r.source, 'sym-glossary-json');
+  assert.equal(r.term, '电路原理:sym-Z');
+  assert.equal(r.pack, '电路原理');
+  assert.equal(r.ctx, '电路原理');
+  assert.equal(clicked, false, '直读模式不应触发 DOM 点击副作用');
+  assert.equal(r.senses.length, 2);
+  assert.equal(r.senses[0].ctx, '电路原理');
+  assert.equal(r.senses[0].here, true);
+});

@@ -1,63 +1,24 @@
-// symbol-parity.test.mjs —— **强调色判定 == 冒泡判定** 的奇偶校验（2026-11-01 站长定案）。
-//
-// ## 站长原话与为什么是「一个测试」
-//
-// 「先回到老生常谈的符号系统冒不了泡问题，我认为你应该让强调色的判定与
-//  是否冒泡合并为一个测试」。
-//
-// 「符号系统冒不了泡」反复发作的**根因**不是某一个 bug，是**「什么是一个符号」
-// 在全站有 5 处消费、4 种写法**：
-//
-//   消费处                | 语义               | 漂移后果
-//   ----------------------|--------------------|---------------------------
-//   prose-terms（点击）    | 点谁能冒泡          | 亮了点不出泡
-//   webmcp（MCP 读面）     | 助手看到谁是符号    | 模型看到的符号集与读者不同
-//   formula-cells（编辑）  | 点符号不进编辑      | 点符号进了编辑框
-//   figures（让路）×3      | 图里点符号不抢事件  | 图元处理器抢走点击
-//   CSS（强调色）          | 谁看着像符号        | 看着能点其实点不出泡
-//
-// 任何两处漂移就是一次「冒不了泡」。所以唯一真相收进
-// `symbol-selector.mjs`（SYMBOL_SELECTORS / SYMBOL_SELECTOR），
-// 本文件用**一个测试**守住：五个消费处 + CSS 着色，选出的集合必须与真源一致。
-//
-// ## 为什么 CSS 也进这个测试
-//
-// CSS 不能 import JS —— 它是唯一的「复写后无法用模块系统锁住」的消费方。
-// 但强调色判定恰恰是 CSS 在做的（`.katex [data-term] { color: symbol }`）。
-// 所以测试里把 CSS 的着色选择器**解析出来**与真源比对：不是逐字符比对
-// （CSS 有作用域前缀，是同一集合的合法展开），而是比对**形状集合**。
+// symbol-parity.test.mjs —— 强调色判定 == 冒泡判定 == 各适配器运行时契约的奇偶校验。
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SYMBOL_SELECTORS, SYMBOL_SELECTOR } from './symbol-selector.mjs';
+import { SYMBOL_SELECTORS, SYMBOL_SELECTOR, SYMBOL_RUNTIME_ASSET } from '../symbols/index.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+const DIST = path.join(HERE, '../dist');
 const CSS = fs.readFileSync(path.join(HERE, '../assets/theme/shirone-reader.css'), 'utf8');
-const PROSE = fs.readFileSync(path.join(HERE, 'prose-terms.mjs'), 'utf8');
+const RUNTIME = fs.readFileSync(path.join(HERE, '../symbols/runtime.mjs'), 'utf8');
 const CELLS = fs.readFileSync(path.join(HERE, 'formula-cells.mjs'), 'utf8');
 const FIGS = fs.readFileSync(path.join(HERE, 'figures.mjs'), 'utf8');
 const WEBMCP = fs.readFileSync(path.join(HERE, 'webmcp-tools.mjs'), 'utf8');
 
-/** 去掉 CSS 注释（断言不想被说明文字里的选择器误伤）。 */
 function stripCssComments(src) {
   return src.replace(/\/\*[\s\S]*?\*\//g, '');
 }
 
-/**
- * 从 CSS 里抽出「着色符号」的选择器形状集合。
- *
- * 判据：规则体里含 `color: var(--md-sys-color-symbol)`（强调色令牌）或
- * `color: var(--md-sys-color-symbol-hover)`（hover）的规则，其选择器列表
- * 按逗号拆开、剥掉作用域前缀后归一化。
- *
- * 剥作用域前缀的规则：`.article-content a.sym-gloss` / `.custom-md a.sym-gloss`
- * 都是 `a.sym-gloss` 的**同一集合的合法展开**（不同容器下的同一元素），
- * 所以归一化时去掉前导的类/容器前缀，只留**形状**：
- *   a.sym-gloss | .ML__latex [data-term] | .katex [data-term]
- */
 function cssSymbolShapes(css) {
   const code = stripCssComments(css);
   const shapes = new Set();
@@ -69,52 +30,63 @@ function cssSymbolShapes(css) {
     for (let sel of m[1].split(',')) {
       sel = sel.trim();
       if (!sel) continue;
-      // 剥作用域前缀：取「最后一个能确定形状」的部分
       if (sel.includes('a.sym-gloss')) shapes.add('a.sym-gloss');
-      else if (/\.ML__latex\s+\[data-term\]/.test(sel)) shapes.add('.ML__latex [data-term]');
       else if (/\.katex\s+\[data-term\]/.test(sel)) shapes.add('.katex [data-term]');
-      else if (/\[data-term\]/.test(sel)) shapes.add(sel);   // 未知形状：原样记，让断言点名
+      else if (/\[data-term\]/.test(sel)) shapes.add(sel);
     }
   }
   return shapes;
 }
 
-test('符号奇偶校验：强调色（CSS 着色）与冒泡（点击）选的是同一个集合', () => {
-  // ── 真源 ──
-  assert.equal(SYMBOL_SELECTORS.length, 3, '符号形状应有三条（正文/公式现役/公式兼容）');
-  assert.match(SYMBOL_SELECTOR, /^a\.sym-gloss, \.ML__latex \[data-term\], \.katex \[data-term\]$/);
+test('符号奇偶校验：强调色（CSS 着色）与冒泡/守卫/WebMCP 使用同一单一真相', () => {
+  // ── 真源：已清理退场 .ML__latex [data-term]，只留两条现役形状 ──
+  assert.deepEqual(SYMBOL_SELECTORS, ['a.sym-gloss', '.katex [data-term]']);
+  assert.equal(SYMBOL_SELECTOR, 'a.sym-gloss, .katex [data-term]');
 
-  // ── 冒泡侧：prose-terms 的点击委托必须用真源（插值进 GLOSSARY_JS）──
-  assert.match(PROSE, /e\.target\.closest\("\$\{SYMBOL_SELECTOR\}"\)/,
-    'prose-terms 的点击判定没用 SYMBOL_SELECTOR —— 它还是自己写的一份');
+  // ── 冒泡侧：symbols/runtime.mjs 必须用真源插值 ──
+  assert.match(RUNTIME, /e\.target\.closest\("\$\{SYMBOL_SELECTOR\}"\)/,
+    'symbols/runtime.mjs 的点击判定没用 SYMBOL_SELECTOR');
 
-  // ── 强调色侧：CSS 着色的形状集合必须与真源一致 ──
+  // ── 强调色侧：CSS 着色的形状集合必须与真源逐项一致 ──
   const shapes = cssSymbolShapes(CSS);
   for (const s of SYMBOL_SELECTORS) {
-    assert.ok(shapes.has(s), `CSS 强调色缺形状「${s}」—— 它看着不像符号，但点了必须冒泡`);
+    assert.ok(shapes.has(s), `CSS 强调色缺形状「${s}」`);
   }
-  // 反向：CSS 里不许出现**真源之外**的符号着色形状（那就是新的漂移点）
   for (const s of shapes) {
     assert.ok(SYMBOL_SELECTORS.includes(s),
-      `CSS 强调色多出真源之外的形状「${s}」—— 要么进 symbol-selector.mjs，要么这不是符号`);
+      `CSS 强调色多出真源之外的形状「${s}」`);
   }
+  assert.ok(!/\.ML__latex\s+\[data-term\]/.test(stripCssComments(CSS)),
+    'shirone-reader.css 应已清理退场的 .ML__latex [data-term]');
 
-  // ── 其余三个消费处 ──
-  // MCP 读面：webmcp-tools 是自包含文件（测试用 toString 派生浏览器副本），
-  // 它本地复写了一份 —— 断言复写与真源**逐字一致**。
-  const m = WEBMCP.match(/const SYMBOL_SELECTOR = ("[^"]+")/);
-  assert.ok(m, 'webmcp-tools 缺本地复写的 SYMBOL_SELECTOR');
-  assert.equal(JSON.parse(m[1]), SYMBOL_SELECTOR, 'webmcp 的复写与真源漂移了');
-
-  // 编辑守卫：formula-cells 点符号不进编辑，也用同一份（本地复写）
-  const c = CELLS.match(/const SYMBOL_SELECTOR = ("[^"]+")/);
-  assert.ok(c, 'formula-cells 缺本地复写的 SYMBOL_SELECTOR');
-  assert.equal(JSON.parse(c[1]), SYMBOL_SELECTOR, 'formula-cells 的复写与真源漂移了');
-  assert.match(CELLS, /closest\(SYMBOL_SELECTOR\)/, 'formula-cells 守卫没用常量');
-
-  // figures 让路守卫 ×3：全部用同一份（图里公式符号曾被抢点击）
+  // ── 其余三个源码适配器：一律直接 import symbols/index.mjs，不再手工复写 ──
+  for (const [label, src] of [
+    ['webmcp-tools', WEBMCP],
+    ['formula-cells', CELLS],
+    ['figures', FIGS],
+  ]) {
+    assert.match(src, /from ['"]\.\.\/symbols\/index\.mjs['"]/,
+      `${label} 必须直接从 ../symbols/index.mjs 导入真源`);
+    assert.ok(!/"a\.sym-gloss,/.test(src),
+      `${label} 不应再手工硬编码选择器副本`);
+  }
+  assert.match(CELLS, /closest\(SYMBOL_SELECTOR\)/, 'formula-cells 守卫没用 SYMBOL_SELECTOR');
   const guards = (FIGS.match(/closest\(SYMBOL_SELECTOR\)/g) || []).length;
-  assert.ok(guards >= 3, `figures 的让路守卫应至少 3 处用常量，实际 ${guards}`);
-  assert.ok(!/closest\("a\.sym-gloss"\)/.test(FIGS),
-    'figures 还有写死的 a.sym-gloss 让路守卫 —— 图里公式符号会被抢点击');
+  assert.ok(guards >= 3, `figures 的让路守卫应至少 3 处用 SYMBOL_SELECTOR，实际 ${guards}`);
+
+  // ── 构建产物端一致性（dist 存在时一并核验） ──
+  if (fs.existsSync(DIST)) {
+    const bubbleJs = fs.readFileSync(path.join(DIST, SYMBOL_RUNTIME_ASSET), 'utf8');
+    const cellsJs = fs.readFileSync(path.join(DIST, 'assets/plugins/formula-cells.js'), 'utf8');
+    const figsJs = fs.readFileSync(path.join(DIST, 'assets/plugins/figures.js'), 'utf8');
+    const webmcpJs = fs.readFileSync(path.join(DIST, 'assets/plugins/webmcp-tools.js'), 'utf8');
+    for (const [name, js] of [
+      [SYMBOL_RUNTIME_ASSET, bubbleJs],
+      ['formula-cells.js', cellsJs],
+      ['figures.js', figsJs],
+      ['webmcp-tools.js', webmcpJs],
+    ]) {
+      assert.ok(js.includes(SYMBOL_SELECTOR), `dist/${name} 未注入一致的 SYMBOL_SELECTOR`);
+    }
+  }
 });

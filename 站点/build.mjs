@@ -9,7 +9,6 @@ import { marked, yaml } from './vendor.mjs';
 // 现在解析成树、判定一次、渲染与标注都是同一棵树的投影。见 站点/math/。
 import { parse as parseMath } from './math/parser.mjs';
 import { compile as compileMath, render as renderMathDoc, probeRenderer } from './math/index.mjs';
-import { compileDictionary } from './math/terms.mjs';
 import { createKatexRenderer, decorateAnchors, DIALECTS } from './math/render.mjs';
 // 构建期判定「这条公式能不能算」：把 IR 喂给转译器，能转出代码才给播放按钮。
 // 为什么在构建期判而不是运行时：一页 283 条公式里多数含裸变量（a₁₁、D_j），
@@ -26,10 +25,17 @@ import katex from './assets/katex/katex.mjs';
 import { renderCollapse } from './plugins/collapse.mjs';
 import { parseFigureLib, renderFigures, restoreFigures, buildFigureIndex, FIGURES_CSS, FIGURES_JS } from './plugins/figures.mjs';
 import { DISCLOSURE_ANCHOR_JS } from './plugins/disclosure-anchor.mjs';
-// 正文符号取词（2026-10-29 从 math-glossary.mjs 拆出）：公式内部的符号归 站点/math/，
-// 这里只管**正文**里的 `B`、`p_Fe` 这类文本形式（不是 TeX，靠文本匹配）。
-import { parseGlossaryDict, parseGlossaryMatch, renderGlossary, applySymbolExclusions, GLOSSARY_JS } from './plugins/prose-terms.mjs';
-import { SYMBOL_PACKS, COURSE_ENV, BUILD_PHASES } from './符号环境.mjs';
+// 符号深核心（2026-11-25 收口）：加载/编译/查词/页面会话/运行时全部收进 站点/symbols/。
+import {
+  createSymbolCatalog,
+  parseFrontmatter,
+  SYMBOL_SELECTOR,
+  SYMBOL_RUNTIME_ASSET,
+  SYMBOL_JSON_SCRIPT_ID,
+  SYMBOLS_BUBBLE_JS,
+  escHtml,
+  plainBubbleText,
+} from './symbols/index.mjs';
 import { extractSearchDoc, buildSearchBundle, SEARCH_JS, SEARCH_CSS } from './plugins/site-search.mjs';
 import { WEBMCP_LOADER_JS, WEBMCP_RELAY_JS } from './plugins/webmcp-loader.mjs';
 import { SPA_ROUTER_JS } from './plugins/spa-router.mjs';
@@ -179,160 +185,56 @@ fs.writeFileSync(figuresCssDist, FIGURES_CSS);
 const figuresJsDist = path.join(DIST_DIR, 'assets', 'plugins', 'figures.js');
 fs.writeFileSync(figuresJsDist, FIGURES_JS);
 
-// 符号包：构建期环境变量包络的「定义集」。每包 = 一页 :::glossary-dict / :::glossary-match
-// 围栏（内容侧维护），包注册表与课程环境表见 站点/符号环境.mjs。三层显式锚定
-// （符号级 > 段级 > 课程级）、零回退：页面解析永远只看被锚定的那个包，查不到的 id
-// 原样保留 + 构建期警告。实现见 站点/plugins/math-glossary.mjs（独立可拆卸模块：
-// 删掉本段、Step 2.6 与页面模板里对应 <script> 即回退，令牌恢复成字面文本）。
-const glossaryPacks = {};
-const glossaryWarn = new Set();
-for (const [packName, packPage] of Object.entries(SYMBOL_PACKS)) {
-  const abs = path.join(ROOT, packPage);
-  if (!fs.existsSync(abs)) {
-    glossaryWarn.add(`包「${packName}」的页面不在仓库里：${packPage}`);
-    continue;
-  }
-  const source = fs.readFileSync(abs, 'utf-8');
-  const entries = parseGlossaryDict(source);
-  const matches = parseGlossaryMatch(source);
-  // 形式声明的**静默失效**防线（2026-10-12 实弹）：match 行按「、,，」切分列表，
-  // 所以 TeX 字段写成 /…/ 正则时**不能含这三个字面字符**——含了会被切成几段，
-  // 段首不成对斜杠 ⇒ 被当字面原子，规则**从未生效且无人报错**
-  // （实弹：通用包 sym-C 的 `(?![A-Za-z0-9.．、。，])` 被切碎，电容 C 全站零包裹）。
-  // 判据：段里既有 `/` 又不以 `/` 起头且含正则元字符 ⇒ 明确警告，要求改用 \uXXXX 转义。
-  for (const [id, m] of Object.entries(matches)) {
-    for (const form of [...(m.prose || []), ...(m.tex || [])]) {
-      if (!form.includes("/")) continue;
-      if (form.startsWith("/") && /^\/(.+)\/([a-z]*)$/s.test(form)) continue; // 规规矩矩的 /…/ 正则
-      glossaryWarn.add(
-        `包「${packName}」的 ${id} 声明「${form}」像被列表分隔符切碎的正则——若确要整条正则，`
-        + `请把「、。，」写成 \\u3001\\u3002\\uff0c 转义（否则该声明静默失效）`,
-      );
-    }
-  }
-  const dict = {};
-  for (const [id, e] of Object.entries(entries)) dict[id] = { ...e, bubble: true };
-  // 形式声明（match）并入词条；只声明了形式、没有词条内容的（bubble=false）
-  // **不参与取词**——没有气泡内容的上色是骗人。旧版把这类声明静默丢弃，现在显式警告。
-  for (const [id, m] of Object.entries(matches)) {
-    if (dict[id]) dict[id] = { ...dict[id], prose: m.prose, tex: m.tex };
-    else glossaryWarn.add(`包「${packName}」的 ${id} 只声明了形式、没有词条内容——自动取词不生效`);
-  }
-  glossaryPacks[packName] = { page: packPage, dict };
+// 符号深核心：加载全部符号包、校验 match 正则防呆、编译数学词典（统一规范键 `包:词条`）。
+const symbolCatalog = createSymbolCatalog({ root: ROOT, parseMath });
+for (const w of symbolCatalog.warnings) console.warn(`[符号] ${w}`);
+for (const p of symbolCatalog.dictProblems) {
+  if (p.severity === 'error') console.error(`[数学] 词典：${p.message}`);
+  else console.warn(`[数学] 词典：${p.message}`);
 }
-for (const w of glossaryWarn) console.warn(`[符号] ${w}`);
-// ⚠️ 逐页警告是在**下面两个页面循环里**才 `add` 进这个 Set 的，循环结束后
-// （本文件末尾）必须再打印一次。旧版只在这里打印 —— 于是「令牌原样保留」
-// 「符号包未注册」「符号排除指向坏词条」全部被静默丢弃，构建日志一条都不出。
-// 这正是站长说的「符号冒不了泡，并且我们无法统计」的根因（2026-11-05 定案）。
-const symbolPackWarnCount = glossaryWarn.size;
-console.log(`[符号] 包：${Object.entries(glossaryPacks).map(([n, p]) => `${n}(${Object.keys(p.dict).length} 条)`).join('、')}`);
+console.log(`[符号] 包：${Object.entries(symbolCatalog.packs).map(([n, p]) => `${n}(${Object.keys(p.dict).length} 条)`).join('、')}`);
+
 /**
  * 渲染一条公式：编译（解析 + 唯一一次符号判定）→ 渲染 → 包锚点。
  *
- * **这是全站唯一一处渲染数学的地方**。旧实现有六处各自调渲染器，每处各自决定
- * 「要不要取词、错了怎么办、降级成什么」——六个副本就是六个 bug 面。
+ * **这是全站唯一一处渲染数学的地方**。
  *
  * @param {string} src     公式源（不含 `$`）
  * @param {'inline'|'display'} mode
  * @param {string} relPath 页面路径（诊断定位）
- * @param {object} env     本页数学环境（词典 + 包 + 排除）
- * @param {Map}    hits    本页命中集（累加，供气泡 JSON）
+ * @param {object} symSession 本页符号解析会话（来自 symbolCatalog.openPage）
  * @param {{calc?: boolean}} [o] calc=true 时**手动标记**这条公式可算
  * @returns {{rendered: string, plain: string}}
  */
-/**
- * 渲染一条公式。
- *
- * @param {string} src      LaTeX 源
- * @param {'display'|'inline'} mode
- * @param {string} relPath  源 Markdown 路径（错误信息要用）
- * @param {*} env, hits     符号环境与本页命中集
- * @param {{calc?: boolean}} [o]  calc=true 时**手动标记**这条公式可算
- */
-function renderOneMath(src, mode, relPath, env, hits, o = {}) {
-  const bubbledLabels = o.bubbledLabels;
+function renderOneMath(src, mode, relPath, symSession, o = {}) {
+  const env = o.record === false
+    ? { dictionary: symbolCatalog.mathDictionary, packs: [] }
+    : symSession.mathEnv();
   const compiled = compileMath({ blocks: [{ raw: src, mode }] }, env);
   const doc = compiled.docs[0];
 
-  // 诊断：错误计数、警告记下。**不嗅探产物字符串**——错误是返回值里的数据。
-  // ⚠️ 2026-10-31 删掉一个只赋值不读取的 `hasError`：它原本参与
-  // `hasError ? rendered : rendered` 这个两分支同值的返回，后来那行被换成了
-  // 可算性判定，这个变量就变成了死变量（GitRoll 与读者都会以为「错误有被处理」）。
-  // 真正的错误处理是 `formulaErrors++` 与下面的 console.warn。
   for (const prob of compiled.problems) {
     if (prob.severity === 'error') {
       formulaErrors++;
       console.warn(`[build] ⚠ 公式渲染失败 ${relPath}：${prob.message}｜${src.slice(0, 60)}`);
     } else if (prob.code !== 'term-excluded') {
-      // term-excluded 会非常多（每页几十处正常排除），不逐条打印
       console.warn(`[build] ⚠ ${relPath}：${prob.message}`);
     }
   }
 
-  // 命中记账：只记真正绑上的（旧实现在插宏时就记，所以「插了但渲染器不认」的词条
-  // 会进气泡 JSON 却没有锚点——那是空气泡的来源）。
-  //
-  // 2026-11-06 增记 **matched 源文本**：符号缺口闸要回答「这个**词形**在本页冒过泡
-  // 没有」，只靠 `data-term` 键不够——`sym-V_a` 与裸 `V` 是两条词条，
-  // 用键做模糊匹配会把裸 `V`（实测 46 次）误判成已覆盖。decisions[].matched
-  // 是判定器亲手切下的源字符串，是唯一不漂移的 label。
-  for (const d of doc.decisions || []) {
-    if (d.matched && d.ref) bubbledLabels.add(d.matched.trim());
-  }
-  for (const t of doc.terms) {
-    const key = `${t.ref.pack}:${t.ref.entry}`;
-    if (!hits.has(key)) {
-      const pack = glossaryPacks[t.ref.pack];
-      const entry = pack?.dict?.[t.ref.entry];
-      if (entry) {
-        hits.set(key, {
-          key,
-          pack: t.ref.pack,
-          entry: t.ref.entry,
-          href: encodeURI(
-            path.relative(path.dirname(path.join(ROOT, relPath)),
-              path.join(ROOT, pack.page)).replace(/\\/g, '/').replace(/\.md$/, '.html'),
-          ) + '#' + t.ref.entry,
-          title: entry.title,
-          text: entry.text,
-          senses: entry.senses,
-        });
-      }
-    }
-  }
+  if (o.record !== false) symSession.recordMathDoc(doc);
 
   const out = renderMathDoc(doc, mathRenderer, {
     decorateAnchors,
-    resolveHref: (key) => {
-      const hit = hits.get(key);
-      return hit ? { href: hit.href, label: hit.title } : null;
-    },
+    resolveHref: (key) => symSession.resolveHref(key),
   });
   for (const prob of out.problems) {
     if (prob.severity === 'error') {
-      // `term-href-missing` 2026-11-05 升为 error：公式里认出了符号却包不成链接，
-      // 点了没反应——与「标了 {:calc} 却算不了」同类硬错。计入 formulaErrors 打印；
-      // 同时它会以裸 <span data-term> 留在产物里，被符号覆盖闸门抓成 uncovered。
       formulaErrors++;
       console.warn(`[build] ⚠ ${relPath}：${prob.message}`);
     }
   }
 
-  // ── 可算性：**只认手动标记**（2026-11-01 站长定案）────────────────────
-  //
-  // 之前三轮都试过「自动判哪条公式能算」，结论是这条路不通：判据堆到第十条
-  // 还在冒新形态（题号前缀、隐含乘法、单位、百分号、坐标记法、希腊字母…），
-  // 而且每加一条就可能误伤（矩阵乘法曾因 `] [` 被整批误杀）。
-  // 站长原话「自动匹配效果太好笑了」——观察到的就是这样：真正想算的矩阵
-  // 没按钮，旁边一个孤立的 `1` 反倒有按钮、点开得到 `= 1`。
-  //
-  // 所以改成**作者显式标记**：md 里写 `$$…$$ {:calc}` 才挂播放按钮。
-  // 标记是**声明**不是提示：标了就必须能转译、必须语法合法，
-  // 否则**构建期直接抛错**（不静默降级成一个坏按钮）。
-  //
-  // 为什么报错要响亮：一个标错的公式在页面上表现为「读者点一下吃一屏红字」，
-  // 而构建日志啥都不说 —— 那是最坏的组合（错的东西能上线，且没人知道）。
   const calcMarked = o.calc === true;
   let computeCode = '';
   if (calcMarked) {
@@ -355,9 +257,6 @@ function renderOneMath(src, mode, relPath, env, hits, o = {}) {
 
   let htmlOut = out.html;
   if (calcMarked) {
-    // 只给「标了 calc 的」那个 <span class="katex"> 加上标记（与 data-math-tex 同一层）。
-    // 转义就地做，不复用 escAttr —— 那个 const 定义在文件后段（921 行），
-    // 而本函数在 289 行就被调用了（TDZ 会抛 ReferenceError，实测踩到）。
     const codeAttr = String(computeCode)
       .replace(/&/g, '&amp;').replace(/"/g, '&quot;')
       .replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -371,44 +270,22 @@ function renderOneMath(src, mode, relPath, env, hits, o = {}) {
   }
 
   const rendered = mode === 'display'
-    // 容器类名：`math-display` 是语义中立的正式名；`katex-scroll-container`
-    // 保留为兼容别名（主题 CSS 与 webmcp 工具还在认它），等两处都改完再删。
     ? `<div class="math-display katex-scroll-container">${htmlOut}</div>`
     : htmlOut;
   return { rendered, plain: doc.plain };
 }
 
-const mathGlossaryDist = path.join(DIST_DIR, 'assets', 'plugins', 'math-glossary.js');
-fs.mkdirSync(path.dirname(mathGlossaryDist), { recursive: true });
-fs.writeFileSync(mathGlossaryDist, GLOSSARY_JS);
-
-// ── 数学引擎（2026-10-29 重构）────────────────────────────────────────────
-// 词典在这里编译一次：把每个词条的 `tex` 形式解析成**形状键**（结构等价类），
-// 于是 `R_L` 与 `R_{L}` 自动同键——旧实现在字符串上比对，写哪个就漏另一个。
-const { dictionary: mathDictionary, problems: dictProblems } = compileDictionary(
-  Object.fromEntries(Object.entries(glossaryPacks).map(([name, pack]) => [name, {
-    page: pack.page,
-    entries: Object.entries(pack.dict).map(([id, e]) => ({
-      id,
-      tex: e.tex || [],
-      bubble: e.bubble !== false,
-    })),
-  }])),
-  { parse: parseMath },
-);
-for (const p of dictProblems) {
-  if (p.severity === 'error') console.error(`[数学] 词典：${p.message}`);
-  else console.warn(`[数学] 词典：${p.message}`);
-}
+const symbolBubbleDist = path.join(DIST_DIR, SYMBOL_RUNTIME_ASSET);
+fs.mkdirSync(path.dirname(symbolBubbleDist), { recursive: true });
+fs.writeFileSync(symbolBubbleDist, SYMBOLS_BUBBLE_JS);
 
 // 渲染器 + 启动期自检：契约不成立就别开工。
-// 这替代了旧实现「每条公式嗅产物里有没有 katex-error」——检查一次协议，不是嗅一万次。
 const mathRenderer = createKatexRenderer(katex);
 const probeProblems = probeRenderer(mathRenderer);
 if (probeProblems.some((p) => p.severity === 'error')) {
   throw new Error(`[数学] 渲染器自检失败：${probeProblems[0].message}`);
 }
-console.log(`[数学] 展示引擎 ${mathRenderer.id}；词典 ${Object.keys(mathDictionary.packs).length} 包；` +
+console.log(`[数学] 展示引擎 ${mathRenderer.id}；词典 ${Object.keys(symbolCatalog.mathDictionary.packs).length} 包；` +
   `方言已知差异 ${DIALECTS[mathRenderer.id].unsupported.length} 项`);
 
 // 全站搜索：构建期生成倒排索引，浏览器端零依赖。实现与设计理由见
@@ -494,7 +371,9 @@ const capabilitySrc = fs.readFileSync(path.join(SITE_DIR, 'plugins', 'capability
 fs.writeFileSync(path.join(webmcpDir, 'capability-pack.js'), capabilitySrc);
 // 公式单元格模块（2026-10-31）：装配层用 import() 取它，所以同样要带版本戳。
 // 这个文件里没有任何 node 专有 API —— 它只碰 DOM，浏览器直接能 import。
-const cellsSrc = fs.readFileSync(path.join(SITE_DIR, 'plugins', 'formula-cells.mjs'), 'utf8');
+const cellsSrc = fs.readFileSync(path.join(SITE_DIR, 'plugins', 'formula-cells.mjs'), 'utf8')
+  .replace(/import\s+\{\s*SYMBOL_SELECTOR\s*\}\s+from\s+['"]\.\.\/symbols\/index\.mjs['"];?/,
+    `const SYMBOL_SELECTOR = ${JSON.stringify(SYMBOL_SELECTOR)};`);
 fs.writeFileSync(path.join(webmcpDir, 'formula-cells.js'), cellsSrc);
 // Static-Contract 客户端（2026-11-06）：装配层 import() 取它去拉 Octave 分块。
 // 同样是纯浏览器模块（fetch / crypto.subtle / DecompressionStream），原样落地 + 版本戳。
@@ -591,20 +470,14 @@ for (const relPath of TARGET_FILES) {
   let title = path.basename(relPath, '.md');
   let frontmatter = {};
 
-  const fmMatch = /^---\r?\n([\s\S]+?)\r?\n---/.exec(content);
-  if (fmMatch) {
-    // frontmatter 解析失败 = 硬失败（2026-10-22 悬案 Q1 结算）：这里曾用 console.warn
-    // 静默吞掉，字段全空、页面照常生成、全部闸门绿——2026-10-12 实弹：frontmatter 写进
-    // 非 YAML 行（注：…），「符号排除」清单静默失效，只有浏览器里逐页点才看得出来。
-    // 构建（node build.mjs）对 课程总览/**/*.md 与其余全部目标文件逐个走到这里，
-    // 坏 YAML 使构建 rc≠0 并指出文件（裸抛只给 vendor 栈，不带文件名——所以要包一层）。
-    try {
-      frontmatter = yaml.load(fmMatch[1]) || {};
-    } catch (e) {
-      throw new Error(`frontmatter 解析失败（元数据遍） ${relPath}: ${e.message}`);
-    }
-    if (frontmatter.name) title = frontmatter.name;
-  } else {
+  const { meta: parsedFm, hasFrontmatter } = parseFrontmatter(content, {
+    strict: true,
+    filePath: `${relPath}（元数据遍）`,
+  });
+  frontmatter = parsedFm;
+  if (hasFrontmatter && frontmatter.name) {
+    title = frontmatter.name;
+  } else if (!hasFrontmatter) {
     // Check first H1
     const h1Match = /^#\s+(.+)$/m.exec(content);
     if (h1Match) title = h1Match[1];
@@ -1273,22 +1146,15 @@ const missingFigureRefs = new Set();
 /** machine/ 映射：每页的结构化数据（公式 TeX + 配图），构建期从管线现成数据收集。 */
 const machinePages = [];
 
+const symbolPageWarns = [];
 for (const relPath of TARGET_FILES) {
   const fullPath = path.join(ROOT, relPath);
   if (!fs.existsSync(fullPath)) continue;
-
-  // 逐页符号警告快照：本页循环里 `add` 进 glossaryWarn 的，页尾（产物写盘处）
-  // 按这条分界线切出来交给 diagnosePage，并在构建末尾统一打印。
-  const pageWarnStart = glossaryWarn.size;
 
   let raw = fs.readFileSync(fullPath, 'utf-8');
   const pageMeta = pageMetaMap.get(relPath);
 
   const courseOf = (p) => String(p).split('/')[1] || '';
-  const notationHrefOf = (id, entry) => encodeURI(
-    path.relative(path.dirname(fullPath), path.join(ROOT, entry.page))
-      .replace(/\\/g, '/').replace(/\.md$/, '.html') + '#' + id
-  );
   const here = courseOf(relPath || path.relative(ROOT, fullPath));
 
   // 气泡文本在构建期处理好：① 先转义 HTML；② 把 $…$ 渲染成 KaTeX（词条里就能写真分式
@@ -1324,7 +1190,7 @@ for (const relPath of TARGET_FILES) {
     // ① 抽走公式 → 占位符（\u0000 不会出现在正常文本里，也不会被正则的 * ` $ 匹配到）
     let text = String(s).replace(/\$([^$\n]+)\$/g, (m, tex) => {
       const out = compileMath({ blocks: [{ raw: tex, mode: 'inline' }] },
-        { dictionary: mathDictionary, packs: [] });
+        { dictionary: symbolCatalog.mathDictionary, packs: [] });
       const bad = out.problems.filter((x) => x.severity === 'error');
       let html;
       if (bad.length) {
@@ -1345,93 +1211,18 @@ for (const relPath of TARGET_FILES) {
     // ③ 公式插回
     return text.replace(/\u0000M(\d+)\u0000/g, (m, i) => pieces[Number(i)] ?? '');
   };
-  // 同一段文字的**纯文本**版（读屏用）：只脱掉 $ 与 TeX 的反斜杠花括号，够读即可——
-  // 标题的 aria-label 不该念出「美元号、反斜杠、下划线」。
-  const plainBubbleText = (s) =>
-    String(s).replace(/\$([^$\n]+)\$/g, (m, tex) => tex.replace(/\\/g, '').replace(/[{}]/g, ''));
 
-  // Strip frontmatter
-  let frontmatter = {};
-  const fmMatch = /^---\r?\n([\s\S]+?)\r?\n---/.exec(raw);
-  if (fmMatch) {
-    // 同 Step 3 的 frontmatter 硬失败（悬案 Q1）：此处曾 catch(_){} 全静默，
-    // 字段全空导致「符号强制/符号排除」等行为悄悄失效。同一份解析在 Step 3 已
-    // 校验过一次，这里再显式抛出带文件名的错误——不依赖两个循环间的隐式不变量。
-    try {
-      frontmatter = yaml.load(fmMatch[1]) || {};
-    } catch (e) {
-      throw new Error(`frontmatter 解析失败（渲染遍） ${relPath}: ${e.message}`);
-    }
-    raw = raw.slice(fmMatch[0].length).trim();
-  }
+  const fmParsed = parseFrontmatter(raw, { strict: true, filePath: `${relPath}（渲染遍）` });
+  const frontmatter = fmParsed.meta;
+  raw = fmParsed.body.trim();
 
   // Strip HTML comments (like AUTO-CATALOG)
   raw = raw.replace(/<!--[\s\S]*?-->/g, '');
   // 已结案的 issue ⇒ 构建期自动隐去「## 完成边界」栏
   raw = stripClosedBoundary(raw, ISSUE_STATES);
 
-  // 构建期符号环境解析（三层锚定，零回退）：段级（显式构建段）覆盖课程级（课程环境表），
-  // 符号级（frontmatter「符号强制」+ 令牌包限定）在渲染期最高优先。环境没设「符号」键
-  // = 本页零符号行为（围栏照剥）。
-  const envVars = {
-    ...(COURSE_ENV[here] || {}),
-    ...BUILD_PHASES.find((ph) => ph.pages?.includes(relPath))?.env || {},
-  };
-  const envPackName = envVars['符号'] || null;
-  // 多包叠加（v2，2026-10-11）：值可以是 `通用+电路原理`——按 `+` 拆开、**后者覆盖前者**。
-  // 通用符号只维护一份（站点/符号包/通用.md），各课只写自己的增量。零回退不变：
-  // 环境里任何一段包名没注册 ⇒ 明确警告，本页零符号行为。
-  const envPackNames = envPackName ? envPackName.split('+').map((s) => s.trim()).filter(Boolean) : [];
-  const envPacks = envPackNames.map((n) => glossaryPacks[n]);
-  for (const [i, n] of envPackNames.entries()) {
-    if (!envPacks[i]) glossaryWarn.add(`页面 ${relPath} 锚定的符号包「${n}」未注册——本页零符号行为`);
-  }
-  // 环境包词典（本页口径：词条带 href 与纯文本标题）；glossifyTex 与 autoWrapTerms 只看它。
-  // 叠加顺序 = 声明顺序，后面的包覆盖前面的同名词条。
-  const pageGlossaryDict = {};
-  for (const pack of envPacks) {
-    if (!pack) continue;
-    for (const [id, e] of Object.entries(pack.dict)) {
-      pageGlossaryDict[id] = {
-        ...e,
-        href: notationHrefOf(id, { page: pack.page }),
-        titleText: plainBubbleText(e.title),
-      };
-    }
-  }
-  // 全部包的当页形态（符号级强制令牌用）：hrefBase 不带锚点，按词条补。
-  const glossaryPacksForPage = Object.fromEntries(
-    Object.entries(glossaryPacks).map(([name, pack]) => [
-      name,
-      {
-        hrefBase: encodeURI(
-          path.relative(path.dirname(fullPath), path.join(ROOT, pack.page))
-            .replace(/\\/g, '/').replace(/\.md$/, '.html')
-        ),
-        dict: Object.fromEntries(Object.entries(pack.dict).map(([id, e]) => [
-          id, { ...e, titleText: plainBubbleText(e.title) },
-        ])),
-      },
-    ])
-  );
-  const glossaryPins = frontmatter['符号强制'] || {};
-  // 符号排除（2026-10-12）：页面级显式收窄「宽覆盖包」的自动取词——撞车场合
-  // （选项标号、单位、人名缩写、绝缘等级）用 frontmatter 指定禁包，手写令牌照常。
-  // 两个键分别管正文（符号排除）与公式（符号排除公式）；都写 = 完全禁自动取词。
-  const asIdList = (v) => {
-  const arr = Array.isArray(v) ? v : v ? [v] : [];
-  return arr.map((s) => String(s).trim()).filter(Boolean);
-};
-  const symbolExclusions = {
-    noProse: asIdList(frontmatter['符号排除']),
-    noTex: asIdList(frontmatter['符号排除公式']),
-  };
-  const { proseDict: pageProseDict, texDict: pageTexDict } = applySymbolExclusions(
-    pageGlossaryDict,
-    symbolExclusions,
-    (msg) => glossaryWarn.add(`${relPath}：${msg}`),
-  );
-  const glossaryHits = new Map(); // key → {title, text, href}（按需烘焙气泡 JSON）
+  // 打开本页符号会话（唯一环境装配 + 强制/排除 + 规范键包:词条）
+  const symSession = symbolCatalog.openPage({ relPath, frontmatter, course: here });
   const pageFigures = [];        // Step 2.4 解析出的图元 IR（Step 6.5 还原成 <figure>）
 
   // Step 1: Protect Code Fences
@@ -1452,87 +1243,34 @@ for (const relPath of TARGET_FILES) {
 
   // Step 2: Extract and Render Math
   const mathBlocks = [];
-  // 同步清空标题锚点用的中转表（下标与 mathBlocks 完全同构）
   usedHeadingIds.clear();
 
-  // ── 本页数学环境：解析 + 唯一一次符号判定（2026-10-29 重构）───────────
-  // 旧实现在这一步之后还有 Step 2.6 的 autoWrapTerms 与 glossifyTex 两轮取词，
-  // 各自在字符串上做正则；现在它们都不存在——判定只在这里发生一次，
-  // 结果写进 IR 的节点 term 字段，渲染与标注都是同一棵树的投影。
-  const pageMathEnv = {
-    dictionary: mathDictionary,
-    packs: envPackNames,
-    exclude: {
-      tex: symbolExclusions.noTex,
-      prose: symbolExclusions.noProse,
-    },
-    forceTerm: {},
-    page: relPath,
-  };
-  /** 本页的公式命中集（词条 id → 词条），供气泡 JSON 使用。 */
-  const pageMathHits = new Map();
-  /** 本页公式里**实际冒过泡的词形**（decisions[].matched），供符号缺口闸精确比对。 */
-  const pageBubbledLabels = new Set();
-  // ⚠️ 2026-10-29 修：公式命中必须**合并进** `glossaryHits`（气泡 JSON 的真相源）。
-  //
-  // 此前公式取词写进 `pageMathHits`、正文令牌写进 `glossaryHits`，而气泡 JSON 只读
-  // 后者 ⇒ **凡是在 `$…$` 里命中的符号，页面有锚点、气泡却查不到词条**，点了没反应。
-  // 用户实测「det 冒不了泡」正是这个：`\det` 只出现在公式里，从不走正文取词。
-  //
-  // 写成「每次 renderOneMath 之后同步一份」而不是「渲染完统一合并」：`renderOneMath`
-  // 内部已按 `hits.has(key)` 去重，合并本身幂等；统一合并还得记着所有调用点。
-  const syncMathHits = () => {
-    for (const [key, hit] of pageMathHits) {
-      if (!glossaryHits.has(key)) glossaryHits.set(key, hit);
-    }
-  };
-
   // 2.1 Display Math $$...$$
-  // 支持尾部手动标记 `{:calc}`（2026-11-01 站长定案：可算性**只认手动标记**）。
-  // 形态：`$$ … $$ {:calc}` —— 标记紧跟闭合的 `$$`，中间允许空白。
-  // 剥掉标记后再进渲染管线，所以公式本体看不见它。
   raw = raw.replace(/\$\$([\s\S]+?)\$\$([ \t]*\{:\s*calc\s*\})?/g, (whole, tex, mark) => {
     const id = mathBlocks.length;
     totalFormulasRendered++;
-    // 教材排版惯例把句末标点写进显示公式（$$….$$），在网页上独立成块后
-    // 看着像渲染出了一个多余的点（用户实测反馈）。渲染前剥掉**收尾的一个**
-    // 标点——只剥一个：万一公式真以省略号收尾不至于被整串误删。
     const src = tex.trim().replace(/[.。，、；;][ \t]*$/, '');
-    const { rendered, plain } = renderOneMath(src, 'display', relPath, pageMathEnv, pageMathHits, { calc: !!mark, bubbledLabels: pageBubbledLabels });
+    const { rendered, plain } = renderOneMath(src, 'display', relPath, symSession, { calc: !!mark });
     mathBlocks.push({ display: true, html: rendered, plain, tex: src });
     return `@@MATH_BLOCK_${id}@@`;
   });
 
-  // 2.2 Inline Math $...$
-  raw = raw.replace(/(?<!\$)\$(?!\$)((?:[^$\\\r\n]|\\.)+?)\$(?!\$)/g, (_, tex) => {
+  // 2.2 Inline Math $...$（位于显式符号令牌 `[$tex$]{#id}` 内的公式不计入默认环境 hits）
+  raw = raw.replace(/(?<!\$)\$(?!\$)((?:[^$\\\r\n]|\\.)+?)\$(?!\$)/g, (match, tex, offset, full) => {
+    const isExplicitToken = offset > 0 && full[offset - 1] === '['
+      && /^\]\{#(?:[^\]\n{}:]+:)?[A-Za-z_][A-Za-z0-9_-]*\}/.test(full.slice(offset + match.length));
     const id = mathBlocks.length;
     totalFormulasRendered++;
-    const { rendered, plain } = renderOneMath(tex.trim(), 'inline', relPath, pageMathEnv, pageMathHits, { bubbledLabels: pageBubbledLabels });
+    const { rendered, plain } = renderOneMath(tex.trim(), 'inline', relPath, symSession, { record: !isExplicitToken });
     mathBlocks.push({ display: false, html: rendered, plain, tex: tex.trim() });
     return `@@MATH_INLINE_${id}@@`;
   });
 
-  // Step 2.4: 图元 :::figure → @@FIGURE_n@@ 占位符（2026-10-28）
-  //
-  // 位置是刻意的：在公式提取（Step 2）**之后**、折叠块（Step 2.5）**之前**。
-  //   · 之后：图注里的 $…$ 已是单行占位符，本模块不必懂公式；
-  //   · 之前：解答层的图**就写在 :::collapse 面板里**（实测 17 张），
-  //     图先换成单行占位符，collapse 的裸 `:::` 深度计数就不会把
-  //     figure 的闭合当自己要配对的（块式围栏会打坏折叠块，实测过）。
-  //
-  // 为什么吐占位符而不是 raw HTML：Step 2.6 的 autoWrapTerms 会伸手进正文，
-  // 把 `<text>B</text>` 改成 `<text>[B]{#sym-B}</text>`，随后变成 `<a>` 直接
-  // 套在 `<text>` 里——SVG 的 `<a>` 不许包裸文本，是非法 SVG。占位符让 SVG
-  // 在 Step 6 之后才落地，从根上避开这一步。
-  //
-  // 图元定义住在 站点/图库/<课程>.figures.txt（改一处、三处引用全对）。
-  // 实现见 站点/plugins/figures.mjs（独立可拆卸：删文件 + 摘掉这几行即回退）。
+  // Step 2.4: 图元 :::figure → @@FIGURE_n@@ 占位符
   {
     const courseName = courseOf(relPath);
     const libFile = courseName ? `站点/图库/${courseName}.figures.txt` : null;
     const libPath = libFile ? path.join(ROOT, libFile) : null;
-    // 页面里写了 :::figure 但本课没有图库 / 图库读不到 ⇒ **硬错**，不许静默把指令
-    // 漏进正文（那会变成页面上的一行字面 `:::figure xxx`，读者与 AI 都当正文读）。
     if (raw.includes(':::figure')) {
       if (!courseName) {
         throw new Error(`${relPath}：页面里有 :::figure，但它不属于任何课程（无法定位图库）`);
@@ -1547,26 +1285,8 @@ for (const relPath of TARGET_FILES) {
         lib,
         libName: libFile,
         pagePath: relPath,
-        // 图内标签 → 词条：只查本页符号环境，零回退
-        // 返回值要给全：restore 只取 href，但 onHit 还要 title/text 才能烘出真气泡
-        lookupGloss: (label) => {
-          const entry = pageTexDict[label];
-          if (!entry || entry.bubble === false) return null;
-          return {
-            key: label,
-            href: entry.href || notationHrefOf(label, entry),
-            title: entry.title,
-            text: entry.text,
-            senses: entry.senses,
-          };
-        },
-        // 图内符号必须在这时并入 glossaryHits——气泡词典是按页烘焙的「实际命中集」，
-        // 晚于 Step 2.6 的烘焙就只剩一条空气泡（这本页 JSON 里没有该词条）。
-        onHit: (key, entry) => {
-          const hit = { title: entry.title, text: entry.text, href: entry.href };
-          if (entry.senses) hit.senses = entry.senses;
-          glossaryHits.set(key, hit);
-        },
+        lookupGloss: (label) => symSession.resolveFigureTerm(label),
+        onHit: (key, entry) => symSession.recordBubbleHit(key, entry),
       });
       raw = figOut.source;
       pageFigures.push(...figOut.figures);
@@ -1574,23 +1294,10 @@ for (const relPath of TARGET_FILES) {
     }
   }
 
-  // Step 2.5: 折叠块 :::collapse → 原生 <details>（零 JS）
-  //
-  // 位置是刻意的：必须在公式提取（Step 2）**之后**、链接降级（Step 3）**之前**。
-  //   - 之后：折叠块内的 $…$ 已变成单行占位符 @@MATH_*@@，模块不必懂公式语法；
-  //     代码围栏也已保护，`:::` 出现在代码里不会被误转。
-  //   - 之前：折叠块内的链接仍会被 Step 3/4 正常降级与重写。
-  // 实现见 站点/plugins/collapse.mjs（独立可拆卸：删文件 + 摘掉这一行即回退）。
+  // Step 2.5: 折叠块 :::collapse → 原生 <details>
   raw = renderCollapse(raw);
 
-  // Step 2.6: 符号气泡 [tex]{#term} → 可点击符号（渐进增强，零 JS 也可用）。
-  // 位置：公式提取之后（令牌内 TeX 不与 $…$ 冲突，且渲染回调走同一套
-  // wrapBareCJK）、链接降级（Step 3/4）之前（本步产物是 raw HTML，由
-  // marked 原样透传）。实现见 站点/plugins/math-glossary.mjs（独立可拆卸）。
-  // 词典（pageGlossaryDict）在本页处理开头就备好了——Step 2 也用它。
-  // `:::glossary-dict table` 的围栏（电机学符号入门页用的）渲染成**符号总表**：
-  // 每行以词条 id 作锚点，气泡里的「详细 ↗」才有精确落点。族面板只讲其中一部分符号，
-  // 光靠它们拿不到逐符号的锚点（130 个符号里有 100 个只出现在教材那张符号表里）。
+  // Step 2.6: 符号气泡与总表（委托给符号深核心页会话）
   const renderDictTable = (entries) =>
     [
       '<table>',
@@ -1605,80 +1312,24 @@ for (const relPath of TARGET_FILES) {
       '</table>',
     ].join('\n');
 
-  raw = renderGlossary(raw, {
-    // 正文用**排除后**的词典（被禁 id 的 prose 已清空）；手写令牌走同一份——
-    // 令牌要「显式优先于自动」，所以这里传全量 dict 作 tokenDict，正文取词只认 proseDict。
-    dict: pageProseDict,
-    tokenDict: pageGlossaryDict,
-    packs: glossaryPacksForPage,
-    pins: glossaryPins,
-    envName: envPackName,
-    onWarn: (msg) => glossaryWarn.add(`${relPath}：${msg}`),
-    onHit: (key, entry) => {
-      const hit = { title: entry.title, text: entry.text, href: entry.href };
-      if (entry.senses) hit.senses = entry.senses;   // v2 多义项：别在命中时丢掉
-      glossaryHits.set(key, hit);
-    },
-    // 总表的词条**按围栏给的顺序、但取模块级解析的原文**：围栏行里的 $…$ 在 Step 2 已经
-    // 被换成 MATH 占位符，还原出来的是**正文口径**的渲染（带自动取词的 \htmlData），
-    // 与气泡口径（renderBubbleText，不取词）不一致，而且会在 `\mathbf F` 这种
-    // 「命令 + 空格 + 参数」处把命令劈开（KaTeX 直接报错）。
-    dictTable: (entries) =>
-      renderDictTable(
-        entries.map(({ id }) => {
-          const e = pageGlossaryDict[id] || {};
-          return { id, title: e.title ?? id, text: e.text ?? '' };
-        }),
-      ),
-    renderTex: (tex) => {
-      // 令牌内部的 TeX 同样用**空词库**编译：令牌自己就是可点符号，
-      // 里面再套一层锚点就是嵌套 <a>（非法 DOM）。结构保证，不是约定。
-      //
-      // ⚠️ 2026-11-11 真 bug（issue #37）：令牌正文里的公式在 **Step 2 已经变成
-      // 数学占位符**（`[$J$]{#sym-J}` → `[@@MATH_INLINE_3@@]{#sym-J}`），Step 2.6
-      // 走到这里时拿到的 `tex` 是**占位符本身**，而不是 `J`。此前无条件
-      // `compileMath(tex)` 就把占位符当公式编了一遍——`_` 被当子标，页面上显示成
-      // `@@MATH` + 下标 `INLINE3` + `@@`，而构建与 31 项闸门全绿。
-      //
-      // 修法：认出占位符就**取回原始 TeX 重编**（口径与此处一致：空词库、不取词），
-      // 不能原样透传——那是错的，Step 6 会把带锚点的 `mathBlocks[id].html` 塞进
-      // 本 <a> 里，形成嵌套 `<a class="sym-gloss">`（`anchors-markup` 闸当场红）。
+  raw = symSession.resolveProse(raw, {
+    resolvePlaceholderTex: (tex) => {
       const ph = /^@@MATH_INLINE_(\d+)@@$/.exec(tex.trim());
-      const src = ph ? (mathBlocks[Number(ph[1])]?.tex ?? tex) : tex;
-      const out = compileMath({ blocks: [{ raw: src, mode: 'inline' }] },
-        { dictionary: mathDictionary, packs: [] });
+      return ph ? (mathBlocks[Number(ph[1])]?.tex ?? tex) : tex;
+    },
+    renderTex: (realTex) => {
+      const out = compileMath({ blocks: [{ raw: realTex, mode: 'inline' }] },
+        { dictionary: symbolCatalog.mathDictionary, packs: [] });
       if (out.problems.some((x) => x.severity === 'error')) {
-        return `<span class="math-fallback">${src.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))}</span>`;
+        return `<span class="math-fallback">${realTex.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))}</span>`;
       }
       return renderMathDoc(out.docs[0], mathRenderer).html;
     },
-    // 链接一律走词条自带的 href（多课程词典）；这个回退参数只作兜底
-    notationHref: '',
+    renderDictTable,
   });
-  // 气泡词典按页烘焙成 JSON——**只烘本页命中**的词条（令牌、自动取词、公式取词的
-  // 实际命中集），不再是全量词典：页面体积随使用增长，不随词典增长。
-  // 客户端模块从 #sym-glossary-json 读，不发任何请求。
-  //
-  // v2 多义项（2026-10-11）：词条可声明多个**义项**（同一个符号在不同课程下含义不同，
-  // 如 $Z$ = 阻抗 or 槽数）。这里把义项一并烘进 JSON，并带上 `ctx` = **本页所属课程**——
-  // 气泡列出全部义项、把本页语境那一条排在最前并标记（「实时能查到」）。
-  const pageCtx = here || '';
-  // 公式命中并入（见 `syncMathHits` 注释：不合并就会「有锚点、没气泡」）。
-  syncMathHits();
-  const glossaryJsonPayload = {
-    terms: Object.fromEntries(
-      [...glossaryHits.entries()]
-        .filter(([, e]) => e?.title !== undefined)
-        .map(([key, e]) => {
-          const item = { title: renderBubbleText(e.title), text: renderBubbleText(e.text), href: e.href };
-          if (e.senses && e.senses.length) {
-            item.senses = e.senses.map((s) => ({ ctx: s.ctx, text: renderBubbleText(s.text) }));
-            item.ctx = pageCtx;
-          }
-          return [key, item];
-        })
-    )
-  };
+
+  const symBundle = symSession.finalize({ renderBubbleText, plainBubbleText });
+  const glossaryJsonPayload = symBundle.glossaryJsonPayload;
 
   // Step 3: Degrade Non-MD resources (.jpg, .heic, .doc)
   raw = raw.replace(/\[([^\]]*)\]\(([^)]+\.(?:jpg|heic|doc))\)/gi, (_, text, filePath) => {
@@ -1844,11 +1495,21 @@ for (const relPath of TARGET_FILES) {
     //   ③ 页脚 <script id="figure-index-json">（MCP 的图索引）
     // ①②在下面的 figure 块替换里一并处理；③ 由模板调 buildFigureIndex 现算，
     // 所以那边直接对**已经填好的 caption** 取（见模板处的 figureIndexMath）。
-    const fillMath = (s) => s.replace(
+    const fillHtmlMath = (s) => s.replace(
       /@@MATH_INLINE_(\d+)@@/g,
-      (_, id) => mathBlocks[parseInt(id)]?.html || '');
-    htmlContent = htmlContent.replace(
-      /<figure class="fig"[\s\S]*?<\/figure>/g, fillMath);
+      (_, id) => mathBlocks[parseInt(id, 10)]?.html || '');
+    const fillAttrMath = (s) => s.replace(
+      /@@MATH_INLINE_(\d+)@@/g,
+      (_, id) => escHtml(mathBlocks[parseInt(id, 10)]?.plain || ''));
+    const fillJsonMath = (s) => s.replace(
+      /@@MATH_INLINE_(\d+)@@/g,
+      (_, id) => JSON.stringify(mathBlocks[parseInt(id, 10)]?.plain || '').slice(1, -1).replace(/<\//g, '<\\/'));
+    htmlContent = htmlContent.replace(/<figure class="fig"[\s\S]*?<\/figure>/g, (fig) =>
+      fig
+        .replace(/<svg\b[^>]*>/g, fillAttrMath)
+        .replace(/<script type="application\/json" class="fig-data">[\s\S]*?<\/script>/g, fillJsonMath)
+        .replace(/<figcaption>[\s\S]*?<\/figcaption>/g, fillHtmlMath)
+        .replace(/@@MATH_INLINE_(\d+)@@/g, (_, id) => mathBlocks[parseInt(id, 10)]?.html || ''));
   }
 
   // Extract TOC headings —— **必须在公式还原之后**。
@@ -2575,11 +2236,11 @@ for (const relPath of TARGET_FILES) {
   <script src="${rootRel}${assetUrl('assets/theme/shirone-reader.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/disclosure-anchor.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/figures.js')}" defer></script>
-  <script type="application/json" id="sym-glossary-json">${JSON.stringify(glossaryJsonPayload).replace(/<\//g, '<\\/')}</script>
+  <script type="application/json" id="${SYMBOL_JSON_SCRIPT_ID}">${JSON.stringify(glossaryJsonPayload).replace(/<\//g, '<\\/')}</script>
   <!-- 图元索引烘焙（2026-10-28）：本页所有图的 IR 汇总。
        三个消费者读同一份——页面交互、site_figure 工具、构建期提到的静态结构表。
        与 sym-glossary-json / nav-structure-json 同一个范式：构建期烘、客户端不发请求。 -->
-  <script type="application/json" id="figure-index-json">${JSON.stringify(buildFigureIndex(pageFigures)).replace(/<\//g, '<\\/').replace(/@@MATH_INLINE_(\d+)@@/g, (_, i) => mathBlocks[parseInt(i)]?.html || '')}</script>
+  <script type="application/json" id="figure-index-json">${JSON.stringify(buildFigureIndex(pageFigures)).replace(/<\//g, '<\\/').replace(/@@MATH_INLINE_(\d+)@@/g, (_, i) => JSON.stringify(mathBlocks[parseInt(i, 10)]?.plain || '').slice(1, -1).replace(/<\//g, '<\\/'))}</script>
   <!-- 侧栏形状烘焙（阶段一）：nav-structure.mjs（buildNavModel）产出的归一化树 + 判定结果。
        site_index / site_navigate / drawer-sync 三个消费者都读这一份，不再爬侧栏 DOM。 -->
   <script type="application/json" id="nav-structure-json">${JSON.stringify(navJsonPayload).replace(/<\//g, '<\\/')}</script>
@@ -2588,7 +2249,7 @@ for (const relPath of TARGET_FILES) {
        index.html」，于是模型拼错层级的路径（少了课程层）也能通过，SPA fetch 撞 404。
        注意它是**产物清单**不是导航清单：README / 符号包都在内。 -->
   <script type="application/json" id="site-pages-json">${JSON.stringify(SITE_PAGE_PATHS).replace(/<\//g, '<\\/')}</script>
-  <script src="${rootRel}${assetUrl('assets/plugins/math-glossary.js')}" defer></script>
+  <script src="${rootRel}${assetUrl(SYMBOL_RUNTIME_ASSET)}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/site-search.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/webmcp-loader.js')}" defer></script>
   <!-- relay 连接器**不带 defer**：它要在解析期用 document.write 插入 vendor 的 embed.js，
@@ -2985,16 +2646,12 @@ for (const relPath of TARGET_FILES) {
   // diagnosePage 按词条 id 去重：一个坏令牌会同时触发 glossaryWarn 与字面残留。
   const pageCoverage = measurePage(htmlWithVers);
   totalSymbolsBubbled += pageCoverage.anchors;
-  // 2026-11-06：另记**符号缺口**——公式里出现但本页词条没覆盖的形状。
-  // 这是「习题册一大堆符号不冒泡」的真因（V/A/T/N/B/M 从没被声明过），
-  // 前两道闸都只看「判定之后」的事，抓不到它。
   const shapeStats = measureFormulaShapes(htmlWithVers);
-  const { uncovered: shapeGaps } = coverageOf(shapeStats, pageBubbledLabels);
-  const pageWarns = [...glossaryWarn].slice(pageWarnStart)
-    .map((w) => (w.startsWith(`${relPath}：`) ? w.slice(`${relPath}：`.length) : w));
+  const { uncovered: shapeGaps } = coverageOf(shapeStats, symBundle.matchedForms);
+  for (const w of symBundle.warnings) symbolPageWarns.push(`${relPath}：${w}`);
   const pageUncovered = diagnosePage({
     relPath,
-    pageWarns,
+    pageWarns: symBundle.warnings,
     literalTokens: pageCoverage.literalTokens,
     bareSpans: pageCoverage.bareSpans,
   });
@@ -3080,6 +2737,7 @@ for (const relPath of TARGET_FILES) {
     title: pageMeta.title,
     body: bodyMd,
     sections: sliced,
+    symbols: symBundle.machineSummary,
   });
 
   // Also create README.html at root if it's README.md
@@ -3094,13 +2752,6 @@ for (const relPath of TARGET_FILES) {
   // 35 张图里 33 张加载失败）。站点与 EdgeOne 都支持中文路径，站内链接也一律写中文。
 }
 
-// ── 符号覆盖账本（2026-11-05 站长定案）───────────────────────────────────
-//
-// 先把**逐页警告**打印掉——它们是在上面的页面循环里 `add` 进 glossaryWarn 的，
-// 而文件开头（symbolPackWarnCount 之前）那一次打印永远轮不到它们。
-// 旧版只打开头那次 ⇒ 「令牌原样保留 / 符号包未注册」构建日志一条不剩，
-// 这就是「符号冒不了泡，并且我们无法统计」的直接根因。
-const symbolPageWarns = [...glossaryWarn].slice(symbolPackWarnCount);
 for (const w of symbolPageWarns) console.warn(`[符号·逐页] ${w}`);
 
 // 账本落盘：FACTS 的 symbols_bubbled / symbols_uncovered 与
@@ -3183,10 +2834,7 @@ if (symbolUncovered.length > 0) {
 
   const index = [];
   const MAX_BODY = 5000;
-  const writeBodyPieces = (firstPath, text, heading, url, title) => {
-    // 把一段正文切成 ≤MAX_BODY 的片。首片写 firstPath，续片命名规则由调用方
-    // 通过 `stem` 前缀给出（如 `foo/piece-`）。每片（除最后一片）尾部追加
-    // 「剩余见<下一片完整网址>」，读的人顺着链接就能继续。
+  const writeBodyPieces = (firstPath, text, heading, url, title, symbols) => {
     const pieces = [];
     let rest = text;
     while (Buffer.byteLength(rest) > MAX_BODY) {
@@ -3205,8 +2853,10 @@ if (symbolUncovered.length > 0) {
       fs.mkdirSync(path.dirname(outAbs), { recursive: true });
       let out = body;
       if (nextRel) out += `\n\n剩余见${machineBase}${nextRel}`;
+      const payload = { url, title, section: heading, body: out };
+      if (i === 0 && symbols) payload.symbols = symbols;
       fs.writeFileSync(path.join(machineDir, rel),
-        JSON.stringify({ url, title, section: heading, body: out }) + '\n', 'utf-8');
+        JSON.stringify(payload) + '\n', 'utf-8');
     });
     return pieces.length;
   };
@@ -3220,12 +2870,9 @@ if (symbolUncovered.length > 0) {
     let pagePieces = 1;
     if (Buffer.byteLength(m.body) <= MAX_BODY) {
       fs.writeFileSync(path.join(machineDir, mirror),
-        JSON.stringify({ url: m.url, title: m.title, section: '', body: m.body }) + '\n', 'utf-8');
+        JSON.stringify({ url: m.url, title: m.title, section: '', body: m.body, symbols: m.symbols }) + '\n', 'utf-8');
     } else {
-      // 续片路径列表：piece-2..piece-N（首片 = mirror）
-      const restBytes = Buffer.byteLength(m.body) - MAX_BODY;
-      // 首片 = 整页镜像本身（mirror），续片 = <stem>-piece-N.json。
-      pagePieces = writeBodyPieces(mirror, m.body, '', m.url, m.title);
+      pagePieces = writeBodyPieces(mirror, m.body, '', m.url, m.title, m.symbols);
     }
 
     // ② 小节片：始终在 <stem>/ 下；超长小节续片名 <id>-piece-N.json。
@@ -3240,19 +2887,30 @@ if (symbolUncovered.length > 0) {
             JSON.stringify({ url: m.url, title: m.title, section: sec.heading,
               body: sec.text }) + '\n', 'utf-8');
         } else {
-          writeBodyPieces(`${pageStem}/${sec.id}`, sec.text, sec.heading, m.url, m.title);
+          writeBodyPieces(`${pageStem}/${sec.id}`, sec.text, sec.heading, m.url, m.title, null);
         }
         idxRows.push({ id: sec.id, heading: sec.heading,
           chars: byteLen, file: `${sec.id}.json` });
       }
       fs.writeFileSync(path.join(secDir, '_index.json'), JSON.stringify({
         url: m.url, title: m.title,
+        symbols: m.symbols,
         howToUse: '整页太大就按这里挑一片取：<本目录>/<file>；片尾有「剩余见…」就接着取',
         sections: idxRows,
       }) + '\n', 'utf-8');
     }
     index.push({ page: m.url, mirror, pieces: pagePieces });
   }
+
+  // ③ 符号系统结构化导出：/machine/symbols/index.json + /machine/symbols/<pack>.json
+  const symMachDir = path.join(machineDir, 'symbols');
+  fs.mkdirSync(symMachDir, { recursive: true });
+  const { indexJson: symMachIndex, packFiles: symMachPacks } = symbolCatalog.machineCatalog({ machineBase });
+  fs.writeFileSync(path.join(symMachDir, 'index.json'), JSON.stringify(symMachIndex, null, 2) + '\n', 'utf-8');
+  for (const [packName, packPayload] of Object.entries(symMachPacks)) {
+    fs.writeFileSync(path.join(symMachDir, `${packName}.json`), JSON.stringify(packPayload, null, 2) + '\n', 'utf-8');
+  }
+  console.log(`[machine/symbols] 1 份总目录 + ${Object.keys(symMachPacks).length} 个包导出 → dist/machine/symbols/`);
 
   // 覆盖自证：镜像数 = 页面数，且每个镜像文件真的存在。
   if (index.length !== SITE_PAGE_PATHS.length) {
@@ -3327,6 +2985,7 @@ a:hover{text-decoration:underline}
 <h1>Birthright · S26-1 课程知识库 /machine/ 镜像目录</h1>
 <p>每条都是完整网址，直接可取。整页 JSON 里是渲染前的源文（正文 + TeX 原文 + 图片完整 URL）。</p>
 <p>页面太大取不全时，改取同名的目录下的 <code>_index.json</code>：它按小节列出每片（heading / 字数 / 文件名），挑中哪片就取 <code>&lt;页面&gt;/&lt;file&gt;</code>。</p>
+<p>符号词典与课程包链规则见 <a href="${machineBase}symbols/index.json">${machineBase}symbols/index.json</a>（每页 JSON 亦附带本页生效 <code>symbols</code> 上下文）。</p>
 <pre>${treeText.replace(/&lt;/, '&lt;')}</pre>
 </body>
 </html>

@@ -40,10 +40,8 @@
 // ③ **只在公式真的变了才重算**：同一串 LaTeX 不重复算。
 // ④ **编辑态单一真相**：见上，`data-fcell-state` + `setState` 唯一写入点。
 
-// 「什么是一个符号」的唯一真相住在 站点/plugins/symbol-selector.mjs。
-// 本文件是**自包含**的（测试用 toString() 派生浏览器副本，不能带 import），
-// 这里复写一份；parity 闸门（symbol-parity.test.mjs）比对复写与真源是否一致。
-const SYMBOL_SELECTOR = "a.sym-gloss, .ML__latex [data-term], .katex [data-term]";
+// 「什么是一个符号」的唯一真相住在 站点/symbols/contracts.mjs。
+import { SYMBOL_SELECTOR } from '../symbols/index.mjs';
 
 const WRAP_CLASS = 'fcell';
 const RESULT_CLASS = 'fcell-result';

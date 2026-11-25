@@ -299,3 +299,20 @@ test('compile：collectTerms 从 IR 读，不依赖渲染', () => {
   // 形状键也在命中记录里，供回归比对
   assert.equal(typeof terms[0].shape, 'string');
 });
+
+test('判定：forceTerm 按「词条id: 包名」跨包强制锚定，并绕过 exclude（Q16 修复）', () => {
+  const { dictionary } = compileDictionary({
+    通用: { page: 'a.md', entries: [{ id: 'sym-B', tex: ['B'] }] },
+    电机学: { page: 'b.md', entries: [{ id: 'sym-B', tex: ['B'] }] },
+  }, { parse });
+  const res = createResolver(dictionary, {
+    packs: ['通用'],
+    exclude: { tex: ['sym-B'] },
+    forceTerm: { 'sym-B': '电机学' },
+  });
+  const { decisions } = bindTerms(parse('B=1').expr, res);
+  assert.equal(decisions.length, 1);
+  assert.equal(decisions[0].rule, 'force');
+  assert.equal(decisions[0].ref.pack, '电机学');
+  assert.equal(decisions[0].ref.entry, 'sym-B');
+});

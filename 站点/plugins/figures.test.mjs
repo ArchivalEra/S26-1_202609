@@ -1098,8 +1098,8 @@ test('交互层：客户端脚本含四个必需能力（选中 / 高亮 / 面�
   // 2026-11-01 起让路守卫统一走 SYMBOL_SELECTOR（图里也可能有公式符号，
   // 只认 a.sym-gloss 会漏）—— 断言跟着换，并查常量定义在场。
   assert.match(FIGURES_JS, /closest\(SYMBOL_SELECTOR\)\s*\)\s*return/, '符号点击未被让出');
-  assert.match(FIGURES_JS, /SYMBOL_SELECTOR\s*=\s*"a\.sym-gloss, \.ML__latex \[data-term\], \.katex \[data-term\]"/,
-    '让路守卫的常量定义缺失（应与 symbol-selector.mjs 真源逐字一致）');
+  assert.match(FIGURES_JS, /SYMBOL_SELECTOR\s*=\s*"a\.sym-gloss, \.katex \[data-term\]"/,
+    '让路守卫的常量定义缺失（应与 symbols 真源逐字一致）');
   // 键盘可达
   assert.match(FIGURES_JS, /keydown/, '缺键盘处理');
   assert.match(FIGURES_JS, /setAttribute\("tabindex"/, '元件不可 Tab 聚焦');

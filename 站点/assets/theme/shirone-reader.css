@@ -1690,9 +1690,9 @@ pre code {
   scroll-margin-top: calc(var(--header-height) + 0.75rem);
 }
 
-/* 符号气泡（math-glossary.mjs）：术语符号上**强调色**，无下划线、无链接框——
+/* 符号气泡（站点/symbols/）：术语符号上**强调色**，无下划线、无链接框——
  * 是「术语高亮」的样子，不是「链接」的样子。正文令牌（a.sym-gloss）与
- * KaTeX 公式内部的取词符号（[data-term]，由 glossifyTex 写入）同一套配色。
+ * KaTeX 公式内部的取词符号（[data-term]）同一套配色。
  * 选择器带 .article-content 前缀：它的通用链接样式（虚线下划线）特异性
  * 为 (0,1,1)，裸 a.sym-gloss (0,1,0) 压不住——这里必须 (0,2,0) 以上。
  * 无 JS 时令牌就是普通链接，点击直达符号入门页锚点。 */
@@ -1716,16 +1716,12 @@ a.sym-gloss:hover {
  * 于是分式、积分、上下标堆叠的公式里，点在符号正中间会被上层结构盒接走（2026-10-12 用户实测
  * 「公式框里符号点击范围严重漂移、几乎点不了」；量化：14 个堆叠公式 104 个符号里 25 个点不动）。
  * 修法＝把带 data-term 的符号自己提一层：position:relative 脱离静态层，z-index 压过同层结构盒。 */
-/* 公式里的符号锚点（.ML__latex 是 2026-10-29 换引擎后的公式容器；
-   .katex 保留兼容——旧产物与聊天面板里可能还有）。 */
-.ML__latex [data-term],
 .katex [data-term] {
   color: var(--md-sys-color-symbol);
   cursor: pointer;
   position: relative;
   z-index: 1;
 }
-.ML__latex [data-term]:hover,
 .katex [data-term]:hover {
   color: var(--md-sys-color-symbol-hover);
 }
@@ -1753,6 +1749,25 @@ a.sym-gloss:hover {
 }
 .sym-gloss-pop__more:hover {
   text-decoration: underline;
+}
+.sym-gloss-pop__senses {
+  list-style: none;
+  margin: 0.35rem 0 0.45rem;
+  padding: 0.35rem 0 0;
+  border-top: 1px dashed var(--md-sys-color-outline-variant);
+  font-size: 0.84rem;
+}
+.sym-gloss-pop__senses li {
+  margin: 0.22rem 0;
+  color: var(--md-sys-color-on-surface-variant);
+}
+.sym-gloss-pop__senses li.is-here {
+  color: var(--md-sys-color-on-surface);
+  font-weight: 500;
+}
+.sym-gloss-pop__senses em {
+  font-style: normal;
+  color: var(--md-sys-color-primary);
 }
 
 /* 页脚：版权 / 许可 / 归属声明（全站每页文章末尾） */
