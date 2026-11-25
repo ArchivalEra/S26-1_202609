@@ -102,13 +102,15 @@ export function isActive(node, target, htmlSpace) {
 }
 
 /**
- * 自身 active 或任一后代 active（组节点据此展开）。
+ * 自身 active 或任一后代 active（组节点据此展开），
+ * 且顶层「课程总览」（depth=0）默认保持展开，让首页访客首屏即可看见全部课程列表。
  * @param {object} node
  * @param {string} target
  * @param {boolean} [htmlSpace=false]
  */
 export function isExpanded(node, target, htmlSpace) {
   if (!node) return false;
+  if (node.depth === 0 && node.label === '课程总览') return true;
   if (isActive(node, target, htmlSpace)) return true;
   if (node.children) return node.children.some((c) => isExpanded(c, target, htmlSpace));
   return false;

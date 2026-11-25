@@ -215,6 +215,29 @@ test('T5b-③ 组标题链接在应有处出现、在重复 path 组处不出现
   assert.ok(!/<a[\s>]/.test(ch1[0]), '重复 path 组标题区不得渲染 <a>（纯标题）');
 });
 
+test('T5b-③b 首页默认展开「课程总览」，构建期 HTML 与运行时 collectActive 一致（不闪烁合拢）', () => {
+  const { nodes, json } = buildNavModel([
+    {
+      label: '课程总览',
+      path: '课程总览/index.md',
+      children: [
+        { label: '工程数学', path: '课程总览/工程数学/index.md', children: [{ label: 'Walkthrough', path: '课程总览/工程数学/Walkthrough.md' }] },
+      ],
+    },
+  ], 'README.md');
+  assert.deepEqual(json.expandedIds, ['课程总览/'], '首页仅顶层「课程总览」展开，子课程保持收起');
+  assert.equal(isExpanded(nodes[0].children[0], '', true), false, '子课程节点首页不展开');
+
+  const homeHtml = needDist('index.html');
+  assert.match(homeHtml, /<li class="drawer-nav-group\s+expanded" data-node-id="课程总览\/">/,
+    '首页 HTML 中「课程总览」组初始必须是 expanded');
+  const homeJson = navJsonOf(homeHtml);
+  assert.ok(homeJson.expandedIds.includes('课程总览/'), 'nav JSON 的 expandedIds 必须包含「课程总览/」');
+  const runtimeState = collectActive(homeJson.nodes, '', true);
+  assert.deepEqual(runtimeState.expandedIds, ['课程总览/'],
+    '运行时 collectActive(nodes, "", true) 必须保持「课程总览/」展开，否则 DOMContentLoaded 会强行合拢');
+});
+
 test('T5b-④ drawer-sync 产物靠 nav JSON 判定，不再有 data-path 全等收集循环', () => {
   const js = needDist('assets/plugins/drawer-sync.js');
 

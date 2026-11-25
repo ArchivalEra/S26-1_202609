@@ -2030,13 +2030,12 @@ for (const relPath of TARGET_FILES) {
   // Render Sidebar Tree HTML with Collapsible Groups
   // 每个 <li> 带 data-node-id（归一化节点 id）：SPA 换页后 drawer-sync 据此对齐 active。
   const attrEsc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-  function renderNav(nodes, depth = 0) {
+  function renderNav(nodes) {
     let out = '<ul class="drawer-nav-list">';
     for (const node of nodes) {
       const hasChildren = node.children && node.children.length > 0;
       const nodeActive = isActive(node, relPath);
-      const nodeExpanded = isExpanded(node, relPath)
-        || (depth === 0 && node.label === "课程总览");
+      const nodeExpanded = isExpanded(node, relPath);
 
       // 有子节点的组节点（票 B，2026-10-22 回归 530427c 始冀形态）：
       // · 有索引页（indexHref 非空）→ 标题本身就是 drawer-nav-link 链接（点击进索引页），
@@ -2065,7 +2064,7 @@ for (const relPath of TARGET_FILES) {
           </div>
           <div class="nav-nested-wrapper">
             <div class="nav-nested">
-              ${renderNav(node.children, depth + 1)}
+              ${renderNav(node.children)}
             </div>
           </div>
         </li>`;
