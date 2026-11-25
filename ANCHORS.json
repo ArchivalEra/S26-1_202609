@@ -28,12 +28,6 @@
     "principles_md_sha256": "a5f0866535a44864e79a4922c40ea6747a02df199fbfaba4e19432bad523757d"
   },
   "questions": {
-    "questions/06-学习通未入库作业.md": {
-      "body_sha256": "feb5027f5a7e656aed4c9e6c44907c8951db73ffc86e16a11472d6ead6590c83",
-      "settling": "`python3 -c \"import os;m=sum(1 for c,ns in [('电机学',['3.1.1 旋转电机及交流绕组','客观题--变压器（只供训练用','2.3.3 变压器瞬态过程','2.2.2 变压器参数测定','2.2.1-1 变压器空载','2.2.1-2 变压器负载','2.1 变压器认识','1概述部分']),('电子技术',['2026-11-09作业','2026-11-04作业'])] for n in ns if not any(n in f for f in os.listdir(f'课程总览/{c}/作业/')));raise SystemExit(1 if m else 0)\"` -- rc=0 => A (全部补齐入库); rc!=0 => B (仍有缺口)",
-      "sha256": "2c9e1192d6ad6a9d8981f76826a1ecf5224c988b28cfe52e03ff8ab928098221",
-      "status": "ready-for-agent"
-    },
     "questions/07-通用电气重写-模块一数学矩阵.md": {
       "body_sha256": "9ca276814288ae2f941d68d59cc2faf00d142b0f189ca3b8617b0e48cfc55053",
       "settling": "`python3 -c \"import os;fs=['01-电路矩阵与消元判解.md','02-行最简形与通解结构.md'];d='课程总览/通用电气/交叉内容';m=sum(1 for f in fs if not os.path.isfile(os.path.join(d,f)) or '## 依赖' not in open(os.path.join(d,f),encoding='utf-8').read());bad=sum(1 for f in fs if os.path.isfile(os.path.join(d,f)) and any(k in open(os.path.join(d,f),encoding='utf-8').read() for k in ('自由响应','受迫响应')));lst=open('站点/页面清单.mjs',encoding='utf-8').read();wt=open('课程总览/通用电气/Walkthrough.md',encoding='utf-8').read();miss=sum(1 for f in fs if f not in lst or f not in wt);raise SystemExit(0 if (m+bad+miss)==0 else 1)\"` -- rc=0 => A (模块一两篇落盘、含依赖闭环、无伪映射且已接入清单与Walkthrough); rc!=0 => B (模块一尚未改写完成或未接闭环)",

@@ -1047,3 +1047,8 @@ sh gates-selftest.sh                             # 每道闸门先证明自己�
 
 - 此前 `.git/hooks/pre-push` 经 `reflect-local/hook.py push` 调用 `_push_readmes_together()`，会绕过 `knobs.json` 中已停用的 `check_readme_sync.py` 强制要求同批修改 `README.md` 导致推送被拒；同时 `pre-commit` 已完整执行 `zreflect`（含 `plugin_tests`、`hooktests`、站点插件与白名单全套校验）与 `start-of-work` 闸门。
 - 移除本地 `.git/hooks/pre-push`，并将 `reflect-local/hook.py` 的 `PHASE_OF` 收敛为仅安装 `pre-commit`（且若手动触发 `push`，`_push_readmes_together()` 遵守 `REFLECT_OFF_GATES` 里的 `check_readme_sync.py` 停用配置；`.githooks/pre-push` 仅作 `test-update-readme.py` 测试夹具保留在 `.githooks/`，默认不接入 `.git/hooks/`）。
+
+### 5. 归档并移除悬案 `questions/06-学习通未入库作业.md`（外包缺件迁至 GitHub Issue）
+
+- 按 `2026-11-23` 学习通实拉 47 条作业清单与全仓 `课程总览/*/作业/*.md` 逐项复盘：原 `questions/06` 所列 `电机学`（`3.1.1`、`变压器训练用56题`、期中考卷解析）、`电子技术`（`11-04`、`11-09`）及 `工程数学`（`作业 1~5`）均已入库；`电子技术` 实验一~六与 `劳动教育` 4 项为非习题提交通道。
+- 真正缺题面原件（需外部补图或重新导出）的缺口收敛至 GitHub Issue（`#42` 电机学 8 份章节客观题缺失，`#43` 形势与政策 2 份已完成作业缺题面），从 `questions/` 移除 `06-学习通未入库作业.md`。
