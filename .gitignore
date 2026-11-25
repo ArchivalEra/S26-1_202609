@@ -12,53 +12,7 @@
 # 电子技术：标准五类
 # 符号气泡（正文符号点击出解释气泡；词典在符号入门页的 :::glossary-dict 围栏里）
 # 工程数学既有资料
-!/工具/查学习通作业.md
-!/工具/归档-pretext门户/pretext-feed.mjs
-!/工具/归档-pretext门户/pretext-feed.test.mjs
-!/工具/归档-pretext门户/README.md
-!/工具/归档-pretext门户/vendor/analysis.js
-!/工具/归档-pretext门户/vendor/bidi.js
-!/工具/归档-pretext门户/vendor/generated/bidi-data.js
-!/工具/归档-pretext门户/vendor/layout.js
-!/工具/归档-pretext门户/vendor/line-break.js
-!/工具/归档-pretext门户/vendor/line-text.js
-!/工具/归档-pretext门户/vendor/measurement.js
-!/工具/归档-pretext门户/vendor/README.md
-!/工具/教材复现/工程数学MATLAB复现.m
-# 工具清单（给学习通助手读的 Skill.md；build.mjs 原样复制到 dist 根，
-!/工具/扫可算候选.mjs
-!/工具/收件口/README.md
-!/工具/收件口/recv_server.py
-!/工具/数学动画/给网页GPT的咨询提纲.md
-!/工具/数学动画/归档-动画路/build.sh
-!/工具/数学动画/归档-动画路/det2_transform.m
-!/工具/数学动画/归档-动画路/README.md
-!/工具/数学动画/归档-动画路/t1_probe.m
-!/工具/mcp-端点/lib/检索核心.mjs
-!/工具/mcp-端点/lib/切块.mjs
-!/工具/mcp-端点/lib/catalog-source.mjs
-!/工具/mcp-端点/lib/corpus-dist.mjs
-!/工具/mcp-端点/lib/endpoint-direct.mjs
-!/工具/mcp-端点/lib/endpoint-stdio.mjs
-!/工具/mcp-端点/lib/packs-source.mjs
-!/工具/mcp-端点/lib/read-core.mjs
-!/工具/mcp-端点/lib/site-url.mjs
-!/工具/mcp-端点/lib/tool-catalog.mjs
-!/工具/mcp-端点/README.md
-!/工具/mcp-端点/server.mjs
-!/工具/mcp-端点/test/检索核心.test.mjs
-!/工具/mcp-端点/test/锚点反推.test.mjs
-!/工具/录音检索.py
-!/工具/学习通爬题.mjs
-!/工具/mcp-端点/test/切块.test.mjs
-!/工具/mcp-端点/test/endpoint.test.mjs
-!/工具/mcp-端点/test/parity-assert.mjs
-!/工具/mcp-端点/test/parity-browser.mjs
-!/工具/mcp-端点/test/parity-browser.snapshot.json
-!/工具/mcp-端点/test/parity.mjs
-!/工具/mcp-端点/test/read-core.test.mjs
-!/工具/mcp-端点/test/site-url.test.mjs
-!/工具/mcp-端点/tools-prompt.mjs
+# 2026-11-25 撤出工具/全部白名单：工具/ 整目录退仓为本地不追踪工作区（线上站点与浏览器端 WebMCP 不依赖它）
 # （构建期走 katex.mjs、聊天面板走 katex.min.js），MathLive 只服务能力包的
 # 归档：pretext 资料门户试验（活体已拆除；结论与复活步骤见归档 README）
 # 教材复现工具：本机用 GNU Octave 复跑教材里的 MATLAB 输出
@@ -619,7 +573,6 @@
 !/.kimi-code/hooks/einfacht-next.sh
 !/.kimi-code/hooks/selftest.sh
 !/.githooks/check-markdown.py
-!/工具/提取-doc转写.py
 !/.githooks/flip-photo.py
 !/.githooks/hook_lib.py
 !/.githooks/pre-commit
@@ -653,6 +606,7 @@
 !/tmp-fake-whitelist-probe.md
 !/reflect-local/check_doc_paths.py
 !/reflect-local/check_study.py
+!/reflect-local/check_tools_untracked.py
 !/reflect-local/check_transcript_privacy.py
 !/reflect-local/check_headings.py
 !/reflect-local/check_walkthrough.py

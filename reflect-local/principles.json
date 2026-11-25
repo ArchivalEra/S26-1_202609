@@ -31,6 +31,11 @@
       "cmd": "python3 -c \"import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_study.py'))\""
     },
     {
+      "id": "no_tracked_tools",
+      "text": "本地工具目录（工具/）整目录不入 git（禁止 git add 追踪或写入 .gitignore 白名单），线上站点与浏览器端 WebMCP 工具不依赖它",
+      "cmd": "python3 -c \"import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_tools_untracked.py'))\""
+    },
+    {
       "id": "transcript_privacy",
       "text": "课堂转写隐私防线：受管文件不含 11 位手机号与未脱敏原文，仅在原始资料/index.md 按规范文件名登记（不抄 SHA-256）",
       "cmd": "python3 -c \"import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_transcript_privacy.py'))\""

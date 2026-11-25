@@ -5,11 +5,12 @@
     "reflect-local/check_doc_paths.py": "3eca4510e21f14a068a1ade47e69235c99af2c116c21938b033e227ad5198008",
     "reflect-local/check_headings.py": "582b5999c9e555fa30505141106f290f1014743c4d2083ade3c36ed697669915",
     "reflect-local/check_study.py": "753257e7fe22e7f3fdf0c0a4ac2b1ea192ba79832971369b066baefccfd15d24",
+    "reflect-local/check_tools_untracked.py": "378dcb7ba405b41c1a1e738d25c3e23d17b0d50388c7a06938a11b05f1c5baa8",
     "reflect-local/check_transcript_privacy.py": "3c9c29f237754a93d93633e3d3fff243b94e2864b7d58596ba862b3fd388a223",
     "reflect-local/check_walkthrough.py": "96218de8ade6c44b55d31d7532ca33a4a11cad5846aa002a8dff0b7e03bb1e70",
     "reflect-local/hook.py": "4568cf3e65329be4e70c323dabd90636da6c3c34df7b40b4ae07eaba8c7bfde8",
     "reflect-local/measure_edu.py": "ad5e06f5b91347e6eb6de52ef47ba2f56b4acaac591d1f68190051045ded2627",
-    "reflect-local/principles.json": "fd828b24b19c01f832ed3f1f4cff081d4ad868c90eedddd8d0e2a11afe754b50"
+    "reflect-local/principles.json": "284c8dfceb5dc6eac5e5ff69261fae308a5678ac70ead1eca01b5d4d4d0953ea"
   },
   "lock_core": true,
   "off_gates": [
@@ -25,7 +26,7 @@
   "principles": {
     "doc_py_sha256": "688513c088d62eaede5a1d3b42d87f836511b49fdf2df172218b073077d5bde2",
     "no_principles": false,
-    "principles_md_sha256": "a5f0866535a44864e79a4922c40ea6747a02df199fbfaba4e19432bad523757d"
+    "principles_md_sha256": "6bbbc3ff4a16074b3d2ce6e32063ac97488c956454273651175890b22372316b"
   },
   "questions": {
     "questions/07-通用电气重写-模块一数学矩阵.md": {

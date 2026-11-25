@@ -23,6 +23,7 @@
 | `machine_rows` | machine rows are defined in one place (`i18n.ROWS`) for both producers and consumers | `python3 -c "import sys;sys.path.insert(0,'zreflect');import i18n;print('rows=%d' % len(i18n.ROWS));sys.exit(0 if i18n.ROWS else 1)"` |
 | `markdown_wellformed` | Markdown 结构与数学规范：标题不跳级、围栏与数学定界符闭合、数学模式中文用 \\text{} 包裹、折叠面板标题裸词 | `python3 .githooks/check-markdown.py` |
 | `no_retired_names` | retired names must not appear as current state; sha provenance and age are checkable | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_stale.py'))"` |
+| `no_tracked_tools` | 本地工具目录（工具/）整目录不入 git（禁止 git add 追踪或写入 .gitignore 白名单），线上站点与浏览器端 WebMCP 工具不依赖它 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_tools_untracked.py'))"` |
 | `no_untracked_study` | 课堂转写原件与教材照片原件不入 git（原件存 /mnt/hdd/study/<课>/原始资料/），待办区根层不散落文件 | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_study.py'))"` |
 | `number_once` | each number is produced once and re-reconciled every commit: documents cite it as `[[key]]`, never hand-copy it | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_facts.py'))"` |
 | `only_measured` | numbers/behavior trust measurement only; every fact must carry a re-run command | `python3 -c "import json,sys;sys.path.insert(0,'zreflect');import knobs;d=json.load(open(knobs.repo_path('REFLECT_FACTS'),encoding='utf-8'))['facts'];bad=[k for k,v in d.items() if not (isinstance(v,dict) and str(v.get('cmd','')).strip())];print('facts_without_cmd=%d' % len(bad));sys.exit(1 if bad else 0)"` |
@@ -38,5 +39,5 @@
 | `whitelist_and_site_sync` | 精确白名单禁通配符、课程 status 仅「开课/结课」两档、资料与各级索引同进同出、侧栏标签等于 H1 且在宽度预算内、站点与构建清单一致 | `python3 -c "import sys;sys.path.insert(0,'.githooks');import hook_lib;f=hook_lib.snapshot(worktree=True);hook_lib.validate(f);print('validated_files=%d' % len(f))"` |
 | `zero_language` | zero language in the core: user-visible messages go through M(code); machine contracts are untranslatable by construction | `python3 -c "import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_i18n.py'))"` |
 
-28 principles -- each with a judging command that **really runs**.
+29 principles -- each with a judging command that **really runs**.
 <!-- /AUTO:RULES -->
