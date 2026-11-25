@@ -38,20 +38,20 @@
     "questions/08-通用电气重写-模块二电路五章.md": {
       "body_sha256": "94dedc519a9c65f514572009993a2b3646e7be132b00ecd6555f99230c10a5f8",
       "settling": "`python3 -c \"import os;fs=['03-正弦量、有效值与相量.md','04-微积分变乘除与复阻抗.md','05-相量加减与仪表读数.md','06-交流功率与电容补偿.md','07-谐振与最大功率匹配.md'];d='课程总览/通用电气/交叉内容';m=sum(1 for f in fs if not os.path.isfile(os.path.join(d,f)) or '## 依赖' not in open(os.path.join(d,f),encoding='utf-8').read());bad=sum(1 for f in fs if os.path.isfile(os.path.join(d,f)) and any(k in open(os.path.join(d,f),encoding='utf-8').read() for k in ('三张脸','照片不是本人')));lst=open('站点/页面清单.mjs',encoding='utf-8').read();wt=open('课程总览/通用电气/Walkthrough.md',encoding='utf-8').read();miss=sum(1 for f in fs if f not in lst or f not in wt);raise SystemExit(0 if (m+bad+miss)==0 else 1)\"` -- rc=0 => A (模块二五篇落盘、含依赖与自足推导且已接入清单与Walkthrough); rc!=0 => B (模块二尚未改写完成)",
-      "sha256": "08f15c2e815849492fde934548e1c32fc33316f30a1f87ee8a56b8ba34b79e0c",
-      "status": "ready-for-agent"
+      "sha256": "eb9b2f97eac73c533d59795ec384e6e5178249857a9e322411e89ee6dbc5698a",
+      "status": "resolved"
     },
     "questions/09-通用电气重写-模块三模电接轨.md": {
       "body_sha256": "1f762a20c67b4f37532b6a171a73562e5ebd2716fc53f913a1ac45095627a138",
       "settling": "`python3 -c \"import os;fs=['08-非线性器件与Q点隔离.md','09-小信号线性化与级间加载.md','10-差分放大与功率输出级.md','11-理想运放与负反馈判别.md'];d='课程总览/通用电气/交叉内容';m=sum(1 for f in fs if not os.path.isfile(os.path.join(d,f)) or '## 依赖' not in open(os.path.join(d,f),encoding='utf-8').read());bad=sum(1 for f in fs if os.path.isfile(os.path.join(d,f)) and '在相量世界里' in open(os.path.join(d,f),encoding='utf-8').read());lst=open('站点/页面清单.mjs',encoding='utf-8').read();wt=open('课程总览/通用电气/Walkthrough.md',encoding='utf-8').read();miss=sum(1 for f in fs if f not in lst or f not in wt);raise SystemExit(0 if (m+bad+miss)==0 else 1)\"` -- rc=0 => A (模块三四篇落盘、含依赖与双锚定、已接入清单与Walkthrough); rc!=0 => B (模块三尚未改写完成)",
-      "sha256": "3d07a2477fe149a2647a17af6e3f34b42e31a01969f9cb705d2c032afb1eaa6a",
-      "status": "ready-for-agent"
+      "sha256": "e47d8f8455b9eb57278417acfd5768617adfd8a436177753d57460f7eb073556",
+      "status": "resolved"
     },
     "questions/10-通用电气重写-模块四电机救火.md": {
       "body_sha256": "d14d54e7febdc8295978e6c1a20790a656ddfdfdbbe58bf5feb691b2b61b8ddc",
       "settling": "`python3 -c \"import os,re;d='课程总览/通用电气/交叉内容';fs=['12-磁路规律与电磁感应.md','13-变压器电路化与归算.md','14-试验标幺值与效率变化率.md','15-三相换算与联结组时钟法.md','16-对称分量与三次谐波.md','17-变压器并联与瞬态过程.md','18-交流绕组与电动势打折.md','19-脉振分解与圆形旋转磁场.md'];all19=sorted(f for f in os.listdir(d) if re.match(r'^(0[1-9]|1[0-9])-.*\\.md$',f));m=sum(1 for f in fs if not os.path.isfile(os.path.join(d,f)) or '## 依赖' not in open(os.path.join(d,f),encoding='utf-8').read());lst=open('站点/页面清单.mjs',encoding='utf-8').read();wt=open('课程总览/通用电气/Walkthrough.md',encoding='utf-8').read();miss=sum(1 for f in fs if f not in lst or f not in wt);raise SystemExit(0 if (len(all19)==19 and m==0 and miss==0 and '初中生' not in open('课程总览/通用电气/index.md',encoding='utf-8').read()) else 1)\"` -- rc=0 => A (模块四八篇与全套 19 篇落盘、退场旧定位且全数接入清单与Walkthrough); rc!=0 => B (模块四或全栏收口尚未完成)",
-      "sha256": "db4dd35f788cc2db98768df9bf83246feff8e29ac6144cc84fdda4dfb3a4a3de",
-      "status": "ready-for-agent"
+      "sha256": "53d579d8d317405aeb5acc93584f7aea63e16d59e1aae57369d7a035215da610",
+      "status": "resolved"
     },
     "questions/11-电子技术11-23作业.md": {
       "body_sha256": "196f9d8ad0ee6023435e3d2386d2364bc5a217490d220eeb48355dea9101bd8a",
@@ -62,13 +62,25 @@
     "questions/12-电机学9份客观题.md": {
       "body_sha256": "492f0b781cdeb07f3d6c4a9a5e1a4bc0d810918f1d79ddbfa41472d82090bf1b",
       "settling": "`python3 -c \"import os;fs=['3.2.1异步电动机运行分析.md','1概述部分客观题.md','2.1变压器认识与生产.md','2.2.1-1变压器空载运行.md','2.2.1-2变压器负载运行.md','2.2.2变压器参数测定及计算.md','2.3.3变压器瞬态过程.md','3.1.2交流绕组电动势.md','3.1.3交流绕组磁动势.md'];d='课程总览/电机学/作业';lst=open('站点/页面清单.mjs',encoding='utf-8').read();wt=open('课程总览/电机学/Walkthrough.md',encoding='utf-8').read();miss=sum(1 for f in fs if not os.path.isfile(os.path.join(d,f)) or f not in lst or f not in wt);raise SystemExit(0 if miss==0 else 1)\"` -- rc=0 => A (电机学9份客观题全部落盘并接入清单与Walkthrough); rc!=0 => B (仍有篇目未入库或未接入)",
-      "sha256": "d1bfa90e8d9ed3a4d0c8f6f19b6c5e529d2e5f1e5775586df9e211cd0fa8588b",
-      "status": "ready-for-agent"
+      "sha256": "fcf16118ec9f2bb1296aaef80c7344e8bd18fd9dec4c2523acdda6c79b399813",
+      "status": "resolved"
     },
     "questions/13-形势与政策2份作业.md": {
       "body_sha256": "ebfa7b108c24799b1bfc267bd0528e50e72e40dbb103d7a1430413ae53dff79b",
       "settling": "`python3 -c \"import os;fs=['作业一.md','作业二.md'];d='课程总览/形势与政策/作业';lst=open('站点/页面清单.mjs',encoding='utf-8').read();miss=sum(1 for f in fs if not os.path.isfile(os.path.join(d,f)) or f not in lst);raise SystemExit(0 if miss==0 else 1)\"` -- rc=0 => A (形势与政策两份作业落盘并接入站点清单); rc!=0 => B (尚未入库完成)",
       "sha256": "b7a08f68e0a77c9d8c725423a91d38259625d8f64e535be6f3e592988ed64952",
+      "status": "ready-for-agent"
+    },
+    "questions/14-退役学习助手仅保留WebMCP.md": {
+      "body_sha256": "4b8353537b6dc78f020becb12e4342b4d0040098085e55d73e6f2f6fc4f5a650",
+      "settling": "`python3 -c \"import os;rm=['站点/plugins/chat-panel.mjs','站点/plugins/chat-panel.test.mjs','站点/plugins/chat-render.mjs','站点/plugins/chat-render.test.mjs'];keep=['站点/plugins/webmcp-tools.mjs','站点/plugins/webmcp-shim.mjs','站点/plugins/webmcp-loader.mjs','站点/assets/vendor/webmcp/widget.html'];b=open('站点/build.mjs',encoding='utf-8').read();c=open('站点/assets/theme/shirone-reader.css',encoding='utf-8').read();w=open('.github/workflows/deploy.yml',encoding='utf-8').read();bad=any(os.path.exists(p) for p in rm) or any(not os.path.isfile(p) for p in keep) or any(k in b for k in ('assistant-toggle','chat-panel','data-assistant-key','--assistant-secrets')) or ('assistant-toggle' in c or '.hand-btn' in c) or ('ASSISTANT_SECRETS' in w or '--assistant-secrets' in w);raise SystemExit(1 if bad else 0)\"` -- rc=0 => A (学习助手全栈已彻底切除且浏览器 WebMCP 核心保留完整); rc!=0 => B (学习助手残留仍在或 WebMCP 核心文件缺失)",
+      "sha256": "f4732fa52ffa1e84b6f749f2f3815a71600a11a9edc8515735607d16bfb92deb",
+      "status": "ready-for-agent"
+    },
+    "questions/15-重写README与WebMCP交互Skill.md": {
+      "body_sha256": "88813f32a0d3f06c066cfbe96c0d2e5e66f57cd6e86f92bff56d0aff1f7259c3",
+      "settling": "`python3 -c \"r=open('README.md',encoding='utf-8').read();s=open('站点/Skill.md',encoding='utf-8').read();ok_r=('COURSE-STATUS:START' in r and 'AUTO-CATALOG:START' in r and '/machine/Birthright.html' in r and 'Skill.md' in r and '学习助手' not in r);ok_s=('site_search，query=' not in s and ('WebSocket' in s or 'ws://' in s) and chr(96)*3 in s and 'site_' in s and 'relay' in s.lower());raise SystemExit(0 if (ok_r and ok_s) else 1)\"` -- rc=0 => A (README三种交互入口与Skill.md及WS转发器示例均已重写就绪); rc!=0 => B (README或Skill.md仍为旧版或缺少WS转发器/链接)",
+      "sha256": "72b298553cad17baa94e77e9c88fd0c0095089c3030cc2d91bb2a476f70cc860",
       "status": "ready-for-agent"
     }
   },
