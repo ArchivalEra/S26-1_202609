@@ -81,7 +81,13 @@
     "questions/16-全站符号系统收口为深模块.md": {
       "body_sha256": "c326961debe03a976689a9123871aac88295d2d94737c4ed1129ce5d29f6126e",
       "settling": "`python3 -c \"import os;req=['站点/symbols/index.mjs','站点/dist/machine/symbols/index.json'];miss=[p for p in req if not os.path.isfile(p)];b=open('站点/build.mjs',encoding='utf-8').read();t=open('站点/math/terms.mjs',encoding='utf-8').read();f=open('站点/plugins/figures.mjs',encoding='utf-8').read();w=open('站点/plugins/webmcp-tools.mjs',encoding='utf-8').read();ps=open('工具/mcp-端点/lib/packs-source.mjs',encoding='utf-8').read();rc=open('工具/mcp-端点/lib/read-core.mjs',encoding='utf-8').read();bh=open('站点/dist/machine/Birthright.html',encoding='utf-8').read() if os.path.isfile('站点/dist/machine/Birthright.html') else '';bad=(bool(miss) or 'syncMathHits' in b or 'glossaryPacksForPage' in b or 'math-glossary.js' in b or 'forceTerm: {}' in b or '{ pack: direct, entry: direct' in t or 'glossHref' in f or '站点/symbols/' not in ps or '站点/symbols/' not in rc or 'S.glossaryJson' not in w or 'machine/symbols/index.json' not in bh);raise SystemExit(1 if bad else 0)\"` -- rc=0 => A (深核心站点/symbols与HTML/machine/WebMCP/本地MCP四适配器收口完成且四处潜伏断链已修复); rc!=0 => B (尚未按深核心+四适配器收口完成或存在断链/旧胶水残留)",
-      "sha256": "6e38501a7a36b07d551691d3a3d30ff06c2d4819d6e390972d9c0ec1a3683e4e",
+      "sha256": "96278c30083774d387c2834793ba5f2b63b271984f7b775bb37c84972bf94d5b",
+      "status": "resolved"
+    },
+    "questions/17-退役能力胶囊并外包Octave站.md": {
+      "body_sha256": "0bdbdd0c34fcfab741492235b47e1f27af751a663194852e65631577383bdd31",
+      "settling": "`python3 -c \"import os;rm=['站点/plugins/capability-pack.mjs','站点/plugins/pack-runtime.mjs','站点/plugins/formula-cells.mjs','站点/plugins/static-release.mjs','站点/assets/mathlive/mathlive-browser.min.js'];keep=['站点/symbols/index.mjs','站点/plugins/webmcp-tools.mjs','站点/plugins/figures.mjs','站点/math/parser.mjs'];b=open('站点/build.mjs',encoding='utf-8').read();c=open('站点/assets/theme/shirone-reader.css',encoding='utf-8').read();sp=open('站点/plugins/spa-router.mjs',encoding='utf-8').read();bad=any(os.path.exists(p) for p in rm) or any(not os.path.isfile(p) for p in keep) or any(k in b for k in ('pack-capsule','pack-popover','notebook-popover','pack-runtime','formula-cells','static-release','data-octave-code')) or any(k in c for k in ('.pack-capsule','.pack-popover','.notebook-popover','.fcell')) or '__packCellsReset' in sp;raise SystemExit(1 if bad else 0)\"` -- rc=0 => A (能力胶囊、OPFS、MathLive 与站内求值全栈已彻底切除且核心符号/阅读/WebMCP 保留完整); rc!=0 => B (能力胶囊或站内求值残留仍在或核心文件缺失)",
+      "sha256": "9699027eda44f42beed8e34cb22c43d1b67508675dd9146ac1b14455a251f395",
       "status": "ready-for-human"
     }
   },
