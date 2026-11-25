@@ -18,4 +18,4 @@
 
 **Settling:** `python3 -c "import os;rm=['站点/plugins/chat-panel.mjs','站点/plugins/chat-panel.test.mjs','站点/plugins/chat-render.mjs','站点/plugins/chat-render.test.mjs'];keep=['站点/plugins/webmcp-tools.mjs','站点/plugins/webmcp-shim.mjs','站点/plugins/webmcp-loader.mjs','站点/assets/vendor/webmcp/widget.html'];b=open('站点/build.mjs',encoding='utf-8').read();c=open('站点/assets/theme/shirone-reader.css',encoding='utf-8').read();w=open('.github/workflows/deploy.yml',encoding='utf-8').read();bad=any(os.path.exists(p) for p in rm) or any(not os.path.isfile(p) for p in keep) or any(k in b for k in ('assistant-toggle','chat-panel','data-assistant-key','--assistant-secrets')) or ('assistant-toggle' in c or '.hand-btn' in c) or ('ASSISTANT_SECRETS' in w or '--assistant-secrets' in w);raise SystemExit(1 if bad else 0)"` -- rc=0 => A (学习助手全栈已彻底切除且浏览器 WebMCP 核心保留完整); rc!=0 => B (学习助手残留仍在或 WebMCP 核心文件缺失)
 
-**Status:** ready-for-agent
+**Status:** resolved

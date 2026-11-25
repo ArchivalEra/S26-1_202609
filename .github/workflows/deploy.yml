@@ -43,22 +43,6 @@ jobs:
         if: ${{ env.ACT }}
         run: python3 -c "import fontTools, brotli" 2>/dev/null || pip3 install --break-system-packages -q fonttools brotli
 
-      - name: Materialize assistant secrets
-        # 学习助手激活材料（2026-10-20 单向锁模型）：构建期往每页埋 data-assistant-key。
-        # 站点只存这一把钥匙（32 字节随机数）；没有对应密文时它无处可用。
-        # 缺 secret 时构建自动退化为「不埋」。
-        env:
-          ASSISTANT_SECRETS: ${{ secrets.ASSISTANT_SECRETS }}
-        run: |
-          set -euo pipefail
-          if [ -n "${ASSISTANT_SECRETS:-}" ]; then
-            printf '%s' "$ASSISTANT_SECRETS" > "$RUNNER_TEMP/assistant-secrets.json"
-            echo "ASSISTANT_SECRETS_FILE=$RUNNER_TEMP/assistant-secrets.json" >> "$GITHUB_ENV"
-            echo "激活材料：已注入"
-          else
-            echo "激活材料：未配置 secret（站点将不带助手激活数据）"
-          fi
-
       - name: Build static site (含自持搜索索引)
         working-directory: 站点
         env:
@@ -67,12 +51,7 @@ jobs:
           set -euo pipefail
           # 零构建期依赖：搜索索引由 plugins/site-search.mjs 在 build.mjs 里直接产出
           # （此前用 pagefind，但它按单字索引中文，已弃用）。
-          # 激活材料：有 secret 就带参构建，没有就裸构建（不埋）。
-          if [ -n "${ASSISTANT_SECRETS_FILE:-}" ]; then
-            node build.mjs --canonical-root /repo/S26-1_202609/ --assistant-secrets "$ASSISTANT_SECRETS_FILE"
-          else
-            npm run build
-          fi
+          npm run build
           # 顺手跑一遍插件测试：搜索的折叠/短语校验逻辑一旦回归，这里会先炸
           npm test
           # 产物版权声明与副本一致性门禁（check_right）

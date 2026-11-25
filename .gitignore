@@ -523,10 +523,6 @@
 !/站点/plugins/calc-marker.test.mjs
 !/站点/plugins/capability-pack.mjs
 !/站点/plugins/capability-pack.test.mjs
-!/站点/plugins/chat-panel.mjs
-!/站点/plugins/chat-panel.test.mjs
-!/站点/plugins/chat-render.mjs
-!/站点/plugins/chat-render.test.mjs
 !/站点/plugins/collapse.mjs
 !/站点/plugins/collapse.test.mjs
 !/站点/plugins/completion-boundary.test.mjs
@@ -553,7 +549,6 @@
 !/站点/plugins/pack-fixes.test.mjs
 !/站点/plugins/pack-popover.test.mjs
 !/站点/plugins/pack-runtime.mjs
-!/站点/plugins/page-bridge.mjs
 !/站点/plugins/prose-terms.mjs
 !/站点/plugins/prose-terms.test.mjs
 !/站点/plugins/site-root.mjs

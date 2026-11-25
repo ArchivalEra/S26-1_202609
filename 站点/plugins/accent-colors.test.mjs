@@ -86,13 +86,15 @@ test('② 色相变量必须 mod(…, 360)（accent-4 最大到 hue+330 = 689）
   assert.ok(uses >= 4, `四档色相没都用 mod(…, 360) 环绕（实际 ${uses} 处）—— accent-4 = hue+330 会超 360`);
 });
 
-test('③ 五个入口按钮的展开态由同一条规则驱动', () => {
+test('③ 四个入口按钮的展开态由同一条规则驱动（学习助手已退役）', () => {
   const code = stripCssComments(CSS);
-  // 必须有一条 :is(...) 覆盖五个 id + aria-expanded 的规则
-  assert.match(code, /:is\(#pack-toggle,\s*#notebook-toggle,\s*#palette-toggle,\s*#search-toggle,\s*#assistant-toggle\)\[aria-expanded="true"\]/,
-    '五个入口没有走同一条展开态规则 —— 又会有一个按钮展开后不亮');
+  assert.doesNotMatch(code, /#assistant-toggle/, '学习助手按钮样式应已移除');
+  assert.doesNotMatch(code, /\.hand-btn/, '.hand-btn 样式应已移除');
+  // 必须有一条 :is(...) 覆盖四个 id + aria-expanded 的规则
+  assert.match(code, /:is\(#pack-toggle,\s*#notebook-toggle,\s*#palette-toggle,\s*#search-toggle\)\[aria-expanded="true"\]/,
+    '四个入口没有走同一条展开态规则 —— 又会有一个按钮展开后不亮');
   // 每档都要有自己的 --pack-accent
-  for (const id of ['#pack-toggle', '#notebook-toggle', '#palette-toggle', '#search-toggle', '#assistant-toggle']) {
+  for (const id of ['#pack-toggle', '#notebook-toggle', '#palette-toggle', '#search-toggle']) {
     assert.match(code, new RegExp(`${id}\\s*\\{[^}]*--pack-accent:`), `${id} 没有 --pack-accent`);
   }
 });

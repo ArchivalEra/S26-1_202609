@@ -32,8 +32,6 @@ import { parseGlossaryDict, parseGlossaryMatch, renderGlossary, applySymbolExclu
 import { SYMBOL_PACKS, COURSE_ENV, BUILD_PHASES } from './符号环境.mjs';
 import { extractSearchDoc, buildSearchBundle, SEARCH_JS, SEARCH_CSS } from './plugins/site-search.mjs';
 import { WEBMCP_LOADER_JS, WEBMCP_RELAY_JS } from './plugins/webmcp-loader.mjs';
-import { PAGE_BRIDGE_JS } from './plugins/page-bridge.mjs';
-import { CHAT_JS, CHAT_CSS } from './plugins/chat-panel.mjs';
 import { SPA_ROUTER_JS } from './plugins/spa-router.mjs';
 // SW 根除（2026-10-23）：一次性反注册脚本——见下方写盘段注释
 import { SW_KILL_JS } from './plugins/sw-kill.mjs';
@@ -70,33 +68,14 @@ if (argvCanonical) {
   CANONICAL_ROOT = argvCanonical.endsWith('/') ? argvCanonical : argvCanonical + '/';
 }
 
-// 学习助手激活材料（2026-10-27 单向锁模型，设计见 .kimi-code/设计-加解密模块-20261026.md）：
-//   <html data-assistant-key> = K_page，32 字节随机数的 base64url
-// 站点**只埋这一件**。它单独无处可用：没有插件内置的 C_upstream 密文，K_page
-// 这串随机字节打不开任何东西；反过来 C_upstream 没有这把钥匙也解不出上游配置。
-// 两件合体才出 material（见 .kimi-code/userscript/vault.mjs）。
-//
-// ⚠️ 不传 --assistant-secrets 时**不埋**：本机构建与 CI 未配 secret 都落这一档，
-// 页面没有钥匙 ⇒ 插件探测到无钥匙 ⇒ 永久休眠。这是特性不是遗漏（设计文档 §八）。
-// 传法：--assistant-secrets <secrets.json>，文件形如 {kPage, cUpstream}。
-// 只校验 kPage（站点要埋的那件）；cUpstream 是插件产物，站点侧不需要。
-const argvSecrets = process.argv.includes('--assistant-secrets')
-  ? process.argv[process.argv.indexOf('--assistant-secrets') + 1] : null;
 const argvIssueStates = process.argv.includes('--issue-states')
   ? process.argv[process.argv.indexOf('--issue-states') + 1] : null;
 const ISSUE_STATES = await loadIssueStates({ statesFile: argvIssueStates });
-let ASSISTANT_KEY = null;      // K_page 钥匙（base64url）
-if (argvSecrets) {
-  const sec = JSON.parse(fs.readFileSync(argvSecrets, 'utf8'));
-  if (!sec.kPage) throw new Error('--assistant-secrets 文件缺 kPage');
-  ASSISTANT_KEY = sec.kPage;
-}
 
 console.log(`[build] Starting static site generation...`);
 console.log(`[build] Repo Root: ${ROOT}`);
 console.log(`[build] Output: ${DIST_DIR}`);
 console.log(`[build] Canonical Root: ${CANONICAL_ROOT}`);
-console.log(`[build] Assistant: ${ASSISTANT_KEY ? '埋入页面钥匙' : '未埋（无 --assistant-secrets）'}`);
 
 // 1. 页面清单：唯一真相源在 ./页面清单.mjs（build 与 MCP 读层共用），此处 import
 
@@ -150,11 +129,10 @@ function copySiteAssets(src, dest) {
 copySiteAssets(path.join(SITE_DIR, 'assets'), path.join(DIST_DIR, 'assets'));
 console.log(`[build] Copied offline assets to dist/assets/ (octave/pyodide 改由 Static-Contract 远程拉)`);
 
-// 工具清单（2026-10-22）：给学习通助手读的 Skill.md，原样复制到 dist 根。
-// 为什么复制而不是渲染：它是**纯文本契约**，给模型读的，不是给人看的页面——
+// WebMCP 交互契约（Skill.md），原样复制到 dist 根。
+// 为什么复制而不是渲染：它是**纯文本契约**，给外部 Agent 与小模型读的，不是给人看的页面——
 // 走 markdown 渲染管线反而会加导航/样式噪音。线上地址 /repo/.../Skill.md。
-// 可拆卸：删掉本段与 .gitignore 的那行白名单即回退（提示词里的 URL 会 404，
-// 但提示词本身仍内联工具名，功能降级不中断）。
+// 可拆卸：删掉本段与 .gitignore 的那行白名单即回退。
 {
   const skillSrc = path.join(SITE_DIR, 'Skill.md');
   if (fs.existsSync(skillSrc)) {
@@ -475,23 +453,16 @@ fs.mkdirSync(webmcpDir, { recursive: true });
 // 顺序必须是这样（先写被注入方、后写注入方），否则哈希算的是上一轮的旧内容。
 fs.writeFileSync(path.join(webmcpDir, 'webmcp-shim.js'), WEBMCP_SHIM_JS);
 fs.writeFileSync(path.join(webmcpDir, 'webmcp-tools.js'), WEBMCP_TOOLS_JS);
-// 页面桥（2026-10-19 植入）：也由 loader 动态注入，所以必须在这算哈希之前写盘。
-fs.writeFileSync(path.join(webmcpDir, 'webmcp-bridge.js'), PAGE_BRIDGE_JS);
 {
   const shimVer = assetVersion('assets/plugins/webmcp-shim.js');
   const toolsVer = assetVersion('assets/plugins/webmcp-tools.js');
-  const bridgeVer = assetVersion('assets/plugins/webmcp-bridge.js');
   const loaderSrc = WEBMCP_LOADER_JS
     .split('__SHIM_VER__').join(shimVer)
     .split('__TOOLS_VER__').join(toolsVer)
-    .split('__BRIDGE_VER__').join(bridgeVer)
     .split('__POLYFILL_VER__').join(assetVersion('assets/vendor/webmcp/polyfill.iife.js'));
   fs.writeFileSync(path.join(webmcpDir, 'webmcp-loader.js'), loaderSrc);
 }
 fs.writeFileSync(path.join(webmcpDir, 'webmcp-relay.js'), WEBMCP_RELAY_JS);
-// 学习助手面板（2026-10-19）：JS + CSS 都是构建期写盘，SW 会自动预缓存
-fs.writeFileSync(path.join(webmcpDir, 'chat-panel.js'), CHAT_JS);
-fs.writeFileSync(path.join(webmcpDir, 'chat-panel.css'), CHAT_CSS);
 // 部署根探测（2026-10-20）：修「无前缀入口下相对链接退到域名根」的线上 404。
 // 原样拷贝源文件（内含全局暴露，模板里同步加载并立即调用 fixSiteRoot()）。
 fs.writeFileSync(path.join(webmcpDir, 'site-root.js'), fs.readFileSync(path.join(SITE_DIR, 'plugins', 'site-root.mjs'), 'utf8'));
@@ -2191,7 +2162,7 @@ for (const relPath of TARGET_FILES) {
 
   // Final HTML Document
   const finalHtml = `<!DOCTYPE html>
-<html lang="zh-CN" data-depth="${rootRel === './' ? 0 : rootRel.split('../').length - 1}" data-root="${rootRel}" data-canonical-root="${CANONICAL_ROOT}"${ASSISTANT_KEY ? ` data-assistant-key="${ASSISTANT_KEY}"` : ''}>
+<html lang="zh-CN" data-depth="${rootRel === './' ? 0 : rootRel.split('../').length - 1}" data-root="${rootRel}" data-canonical-root="${CANONICAL_ROOT}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2227,7 +2198,6 @@ for (const relPath of TARGET_FILES) {
   <link rel="stylesheet" href="${rootRel}${assetUrl('assets/katex/katex.min.css')}">
   <link rel="stylesheet" href="${rootRel}${assetUrl('assets/theme/shirone-reader.css')}">
   <link rel="stylesheet" href="${rootRel}${assetUrl('assets/plugins/site-search.css')}">
-  <link rel="stylesheet" href="${rootRel}${assetUrl('assets/plugins/chat-panel.css')}">
   <link rel="stylesheet" href="${rootRel}${assetUrl('assets/plugins/figures.css')}">
   <!-- 站点图标：动画 GIF 为主（Chrome/Firefox/Edge 会动），静态 PNG 作不支持动画时的回退 -->
   <link rel="icon" type="image/gif" href="${rootRel}assets/favicon/favicon.gif">
@@ -2549,27 +2519,6 @@ for (const relPath of TARGET_FILES) {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
           </button>
 
-          <!-- 学习助手入口：图标简化自 r-906《In My Hands》封面的左手。
-               识别特征保留：四指分开向上、碎片白缝、拇指外撇、掌心圆洞、分离的腕部。 -->
-          <button class="m3-icon-btn hand-btn" id="assistant-toggle" aria-label="学习助手" title="学习助手" aria-expanded="false">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-              <!-- 四指：指缝留 0.8px 以上，22px 下才不糊成一坨 -->
-              <rect x="6.2" y="3.4" width="2.3" height="9.2" rx="1.15"/>
-              <rect x="9.3" y="2.2" width="2.3" height="10.4" rx="1.15"/>
-              <rect x="12.4" y="3.0" width="2.3" height="9.6" rx="1.15"/>
-              <rect x="15.5" y="5.6" width="2.2" height="7.0" rx="1.1"/>
-              <!-- 掌部 -->
-              <path d="M6.1 11.4h11.8v4.4a2.3 2.3 0 0 1-2.3 2.3H8.4a2.3 2.3 0 0 1-2.3-2.3z"/>
-              <!-- 拇指：外撇，与掌留白缝 -->
-              <path d="M6.0 12.4 3.9 14.5a1.3 1.3 0 1 0 1.84 1.84l2.1-2.1z"/>
-              <!-- 掌心空洞 -->
-              <circle cx="11.5" cy="14.0" r="1.3" fill="#fff"/>
-              <!-- 腕部：分离的一截 -->
-              <path d="M8.6 19.4h6.8v1.3a1.6 1.6 0 0 1-1.6 1.6h-3.6a1.6 1.6 0 0 1-1.6-1.6z"/>
-            </svg>
-          </button>
-
-
         </div>
       </header>
 
@@ -2648,13 +2597,12 @@ for (const relPath of TARGET_FILES) {
        defer 脚本执行时 readyState 已是 interactive，document.write 会毁掉文档。 -->
   <script src="${rootRel}${assetUrl('assets/plugins/webmcp-relay.js')}"></script>
   <!-- site-root：部署根探测与链接修正。同步执行、先于一切读 data-root 的脚本
-       （drawer-sync / spa-router / chat-panel / loader），否则它们拿到错误的相对根。 -->
+       （drawer-sync / spa-router / loader），否则它们拿到错误的相对根。 -->
   <script src="${rootRel}${assetUrl('assets/plugins/site-root.js')}"></script>
   <script>try { fixSiteRoot(); } catch (e) { /* 探测失败保持构建期相对路径 */ }</script>
   <!-- 侧栏形状运行时：先于 drawer-sync，暴露 window.__navStructure（读 JSON + 共享判定）。 -->
   <script src="${rootRel}${assetUrl('assets/plugins/nav-structure.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/drawer-sync.js')}" defer></script>
-  <script src="${rootRel}${assetUrl('assets/plugins/chat-panel.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/spa-router.js')}" defer></script>
   <!-- 能力包（2026-10-30）：装配层 + 纯逻辑模块。
        **页面加载时不做任何事**——不查状态、不加载 824 KB 编辑器、不碰计算内核（三件套改由 Static-Contract 分块下载到 OPFS）。

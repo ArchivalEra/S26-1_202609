@@ -47,7 +47,7 @@ export const PAGE_SELECTORS = {
   article: '.article-content',
   articleHeadings: '.article-content h2, .article-content h3, .article-content h4',
   articleTitle: '.article-content h1',
-  // 正文配图（本站是 webp；学习通只收 jpg/png，所以要能列出来再转码）
+  // 正文配图（本站主要是 webp；外部视觉客户端通常只接收 jpg/png，所以要能列出来再转码）
   articleImages: '.article-content img',
   courseChip: '.meta-chip',
   details: 'details',
@@ -1832,7 +1832,7 @@ export function createPageView(doc, loc, winOverride) {
 
   /**
    * 列出本页图片（正文内的，不含站点头像）。
-   * 学习通只收 jpg/png，而本站配图是 webp——模型必须知道「这页有哪些图、是什么格式」。
+   * 常见外部客户端通常只接收 jpg/png，而本站配图主要是 webp——模型需要知道格式并在必要时转码。
    */
   function listImages(o) {
     const opt = o || {};
@@ -1859,7 +1859,7 @@ export function createPageView(doc, loc, winOverride) {
         alt: el.getAttribute?.('alt') || '',
         natural: el.naturalWidth ? { w: el.naturalWidth, h: el.naturalHeight } : undefined,
         box: box || undefined,
-        // 学习通能直接收的格式；webp/jxl/avif/gif 都要先转
+        // 常见客户端能直接接收的格式；webp/jxl/avif/gif 等需先转码
         uploadable: /^(jpe?g|png)$/i.test(ext),
       });
       if (out.length >= max) break;
@@ -1868,23 +1868,22 @@ export function createPageView(doc, loc, winOverride) {
     return {
       ok: true, total: out.length, needConvert, images: out,
       hint: needConvert
-        ? '有 ' + needConvert + ' 张不是 jpg/png（学习通只收这两种），先调 site_image 用 index 转成 jpeg 再上传'
-        : '全部可直接上传',
+        ? '有 ' + needConvert + ' 张不是 jpg/png，需要时先调 site_image 用 index 转成 jpeg'
+        : '全部为 jpg/png，可直接读取',
     };
   }
 
   /**
    * 把一张页面图片转成 JPEG/PNG 的 dataURL（浏览器 canvas 解码）。
    *
-   * 为什么必须在页面里做：本站配图是 webp（学习通不收），转换要在能解码 webp 的
-   * 环境里完成——浏览器原生支持，Node 侧还要装编码器。图片同源、无 CSP，
-   * canvas 不会被污染，toDataURL 可直接取像素。
+   * 为什么必须在页面里做：本站配图多为 webp，转换要在能原生解码的浏览器环境里完成。
+   * 图片同源、无 CSP，canvas 不会被污染，toDataURL 可直接取像素。
    *
    * @param {object} o
    * @param {number} [o.index]    listImages 的下标（与 src 二选一）
    * @param {string} [o.src]      图片地址（相对或绝对）
    * @param {string} [o.format]   'jpeg'（默认）| 'png'
-   * @param {number} [o.quality]  1-100，默认 82（学习通实测 59KB JPEG 稳过、266KB PNG 被拦）
+   * @param {number} [o.quality]  1-100，默认 82
    * @param {number} [o.maxWidth] 超过则等比缩小，默认 1400
    * @param {number} [o.maxBytes] 目标体积上限（默认 120000）——超了自动降质量重编
    */
@@ -2214,7 +2213,7 @@ export function buildToolDefs(doc, win) {
       name: 'site_list_images',
       label: '查找页面配图',
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-      description: '列出本页正文里的图片（下标、地址、格式、alt、尺寸、是否可直接上传）。本站配图是 webp，学习通只收 jpg/png——uploadable=false 的先用 site_image 转码。',
+      description: '列出本页正文里的图片（下标、地址、格式、alt、尺寸、是否可直接用于仅收 jpg/png 的接口）。本站配图多为 webp，uploadable=false 的可用 site_image 转码。',
       inputSchema: {
         type: 'object',
         properties: {
@@ -2285,90 +2284,30 @@ export function registerTools(doc, nav) {
 }
 
 /**
- * 在页面里执行一个已注册的工具（阶段二 T11 新增）。
+ * 在页面里执行一个已注册的工具。
  *
- * 这是站点侧工具循环的 `invoke` 实现——T10 搬来的 `createAssistantClient`
- * 需要它把模型的工具调用落到真实页面上。
- *
- * 为什么放在本模块：它和 `registerTools` 共用同一套 `createPageView` /
- * `buildToolDefs`，是同一个 module 的两面（注册 ↔ 执行）。放在别处会造成
- * 「注册用一套、执行用另一套」——那正是探察报告里 page-bridge / roleA /
- * 页面桥.js 三份重复的成因。
+ * 与 `registerTools` 共用同一套 `createPageView` / `buildToolDefs`，保持注册与执行一致。
  *
  * @param {Document} doc
  * @param {string} name  工具名（site_index 等）
  * @param {object} args  参数
  * @returns {Promise<{ok:boolean, value?:any, effect?:object, error?:string}>}
- *   恒 resolve——失败也回 `{ok:false, error}`，由工具循环按「失败也回喂」消费。
+ *   恒 resolve——失败也回 `{ok:false, error}`。
  */
 
 /**
- * 工具结果 → **可回喂的文本**（信封）。2026-10-26 站长定案：信封归 MCP 侧。
+ * 工具结果 → 可读文本（feed）。
  *
- * ## 为什么必须在这一侧（这是架构判断，不是偏好）
- * 知道「这个工具返回什么形状」的，只有工具自己。把它放在 node 侧的结果是：
- * `toolcycle.mjs` 里堆了一整套按工具名分叉的特判（site_read 截到 1100、
- * site_index 按课程压缩、site_list_images 只留 12 条…）——每加一个工具就要
- * 回去改那一处的分支。**接口泄漏**：工具的形状知识跑到了调用方。
- *
- * 现在这一侧产出 `feed`：一句「我是谁、成没成、关键元数据」，加正文。
- * node 侧只管把它塞进消息、按单条上限兜底，**不认识任何工具名**。
- *
- * ## 单条长度（硬约束，2026-10-26 实测）
- * 上游限制的是**单条消息的字符数**，实测 900 过 / 1100 过 / 1300 拒。
- * 取 950 为安全线（信封本身也占额度）。这不是「上下文预算」，是单条上限——
- * 豆包窗口 256K 与这条限制无关。
- *
- * @param {string} name 工具名
- * @param {object} args 调用参数
- * @param {{ok:boolean, value?:any, error?:string}} r runTool 的返回
- * @returns {string} 可直接作为一条消息发送的文本
+ * 产出紧凑、自描述的执行回执（含工具名、参数、成功/失败状态、元数据与正文），
+ * 并按 950 字符单条上限兜底。
  */
 /**
- * 工具结果的「抬头行」——**随机变体**（2026-10-27 站长定案）。
- *
- * ## 为什么不能是固定一句
- * 实测（2026-10-26 联合任务）：连续 8 次工具调用各发一条
- * `[工具返回：site_read | what=…]`，第 9 轮回喂后上游回
- * 「根据法律内容，涉及敏感词，我不能回复」。密集且机械重复的抬头
- * 被安全层判成了异常模式。
- *
- * ## 但抬头仍必须存在
- * 模型需要知道「这条是工具结果，不是用户说的话」。丢掉抬头会让它把回喂
- * 当成新指令。所以抬头保留，只把**措辞随机化**——每次换一种人话说法。
- *
- * ## 边界
- * 只换措辞，**不换语义**：工具名与参数照旧带上（模型要靠它对应回自己的调用）。
- * 任何变体都必须让人一眼看出「哪个工具、什么参数、成没成」。
- *
- * ⚠️ 2026-10-27（内联坑第三次）：词表**必须定义在函数内部**。
- * 模块级 `const`（哪怕是 `FEED_HEADS` 这种）不会被 `toString()` 带进产物，
- * 浏览器里就抛 `FEED_HEADS is not defined`。放进函数体，内联自动生效。
- *
- * 散列对「工具+参数」的**内容**敏感（不用 Math.random）：同样的调用得到
- * 同样的说法，便于复现；只看长度会让不同调用撞同一个变体。
+ * 工具结果的统一抬头行。
+ * 直接表明工具名、参数与成功/失败状态，不使用拟人寒暄或绕检变体。
  */
 function feedHead(tool, argStr, failed) {
-  // 成功与失败**两套词表**（2026-10-29 修）。原先共用一个词表，于是失败时会出现
-  // 「你要的东西在这里 · site_navigate（…） · 没成：原因：站点里没有这一页」——
-  // 抬头说东西在这、同一行说没成，自相矛盾。失败只该用「去试过了、没成」这类说法。
-  const OK_HEADS = [
-    '我帮你查了', '顺手查了一下', '这就去看了', '按你说的查了',
-    '我刚跑了一趟', '查回来了', '结果拿到了', '这个我看过了',
-    '帮你跑了一下', '我去翻了一遍', '已经查完', '你要的东西在这里',
-    '照着做了', '给你捞回来了', '刚查的', '跑完了',
-  ];
-  const FAIL_HEADS = [
-    '我去试了但没成', '这条走不通', '这个没办成', '试了一下，不行',
-    '没弄成', '这条路不通', '没跑成功', '不成',
-  ];
-  const HEADS = failed ? FAIL_HEADS : OK_HEADS;
-  const key = String(tool) + '|' + String(argStr || '') + '|' + (failed ? '0' : '1');
-  let seed = 0;
-  for (let i = 0; i < key.length; i++) seed = (seed * 31 + key.charCodeAt(i)) >>> 0;
-  const phrase = HEADS[seed % HEADS.length];
-  const detail = tool + (argStr ? '（' + argStr + '）' : '') + (failed ? ' · 没成' : '');
-  return phrase + ' · ' + detail + '：';
+  const detail = tool + (argStr ? '（' + argStr + '）' : '');
+  return failed ? '[工具失败] · ' + detail + ' · 没成：' : '[工具返回] · ' + detail + '：';
 }
 
 /**
@@ -2624,9 +2563,7 @@ var feedText = ${feedText.toString()};
 var runTool = ${runTool.toString()};
 registerTools(document, typeof navigator !== "undefined" ? navigator : null);
 
-// 阶段二 T11：把工具执行器暴露给站点侧协议栈（assistant-bundle.js 的 invoke）。
-// 为什么是 window：bundle 与 tools 是两个独立写盘的 IIFE，没有模块系统可共享。
-// 为什么只暴露 runTool：注册（modelContext）已有标准接口，执行才是站点侧需要的。
+// 暴露页面工具直接调用入口（与 WebMCP modelContext 共用同一份 buildToolDefs）。
 window.__mcpTools = {
   runTool: function (name, args) { return runTool(document, name, args); },
 };

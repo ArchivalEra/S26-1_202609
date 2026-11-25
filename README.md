@@ -1,18 +1,37 @@
 # S26-1 课程知识库
 
-2026 年秋季学期 · 九门课的学习记录。**[在线阅读站 →](https://isui.ren/repo/S26-1_202609/)**
+2026 年秋季学期 · 九门课的学习记录与静态阅读站。
 
-> 🤖 **机器 / bot / agent 看这里**：`https://isui.ren/repo/S26-1_202609/machine/Birthright.html`
-> —— 全站目录树，**每个叶子都是完整网址**（点开或复制即可，不需要按任何规则拼接）。
-> 每份镜像是渲染前**整篇源文**：正文 Markdown、公式 TeX 原文、图片完整 URL（页面上公式是 KaTeX 排版结果、
-> 符号会给术语加气泡，源码只在这里）。镜像路径与站内一一对应：把页面网址里 `.html` 换成 `.json`
-> 并加 `machine/` 前缀（`…/课程总览/工程数学/Walkthrough.html` → `…/machine/课程总览/工程数学/Walkthrough.json`）。
-> 整页太大取不全时，取同名的目录下的 `_index.json`（按小节列出 heading / 字数 / 文件名），
-> 挑中哪片就取 `<页面>/<file>`。
+## 三种交互方式
 
-站内速览：左侧导航树（可拖宽）· `/` 或 `Ctrl+K` 全站搜索 · 右侧目录跳转 · 调色盘与昼夜主题 · **能力包**（右上角 package 图标：可下载公式编辑器与计算内核，下载后公式能点击编辑、能当场用 Octave 求值；不下载就保持只读）。作业页的提示分层展开——先自己按提示做，卡住了再往下点。
+### 1. 人类自己导航（浏览器阅读站）
+
+**[进入在线阅读站 →](https://isui.ren/repo/S26-1_202609/)**
+
+顶栏与阅读控件说明：
+
+- **导航树（`#drawer-toggle`）**：左侧汉堡按钮展开/收起课程导航树（边界可拖宽），右侧附当前页小节目录跳转。
+- **全站搜索（`#search-toggle`）**：顶栏放大镜按钮（或快捷键 `/`、`Ctrl+K`）打开全站搜索面板，中文按字面子串精准匹配。
+- **调色盘与昼夜（`#palette-toggle`）**：切换主题强调色色相、明暗主题（昼夜/深浅）与正文字号。
+- **能力包与计算笔记本（`#pack-toggle` / `#notebook-toggle`）**：右上角胶囊左半可按需下载`公式编辑器`（MathLive）、`计算内核`（Octave / Pyodide）与公式渲染器，下载后可原地点击编辑公式并在页面内直接求值；右半为计算笔记本，不下载时全站保持只读。
+- **作业渐进提示**：作业页提示与解答分层折叠——先独立演算，卡住再逐层展开。
+
+### 2. 机器直读 `/machine/`（全站源文镜像）
+
+- **全站入口**：[`https://isui.ren/repo/S26-1_202609/machine/Birthright.html`](https://isui.ren/repo/S26-1_202609/machine/Birthright.html) —— 全站目录树，每个叶子节点均为完整 URL，点开或抓取即可，无需自行拼接规则。
+- **路径映射**：`.html` 页面与 `.json` 源文一一对应，将页面路径中的 `.html` 替换为 `.json` 并加 `machine/` 前缀（例如 `…/课程总览/工程数学/Walkthrough.html` → `…/machine/课程总览/工程数学/Walkthrough.json`），返回渲染前整篇源文（原始 Markdown、TeX 公式源码、图片完整 URL）。
+- **大页面分片**：整页过大时可读取同目录下的 `_index.json`（列出各小节的 `heading`、字数与文件名），按需抓取 `<页面>/<file>`。
+
+### 3. 客户端浏览器 WebMCP 接口（交互 + `Skill.md`）
+
+已打开站点页面时，可通过浏览器侧 WebMCP（`document.modelContext` / `navigator.modelContext`）直接操控页面导航、展开折叠解答、点开符号气泡、按图转码与截图：
+
+- **线上纯文本契约（推荐直接喂给 Agent / 小模型）**：[`https://isui.ren/repo/S26-1_202609/Skill.md`](https://isui.ren/repo/S26-1_202609/Skill.md)
+- **仓内源文件**：`./站点/Skill.md`（[GitHub 查看](https://github.com/ArchivalEra/S26-1_202609/blob/main/%E7%AB%99%E7%82%B9/Skill.md)）· 架构说明：`./站点/README-WebMCP.md`
+- **开启方式**：访问站点时在 URL 追加 `?relay=1`（或 `?webmcp=1`，亦可设 `localStorage.webmcp_relay = 'on'`），配合本机 `@mcp-b/webmcp-local-relay`（默认 `ws://127.0.0.1:9333`）或 `./站点/Skill.md` 附带的零依赖 WebSocket 转发器示例，即可列出并调用全部 11 个 `site_*` 工具。
 
 <!-- COURSE-STATUS:START -->
+
 ## 课程状态
 
 **本表是各课状态的唯一产地**：课程页与各资料页顶端的状态都从这里继承，不要在别处另写。
@@ -29,6 +48,7 @@
 | 劳动教育 | 开课 |
 | 电气前沿 | 开课 |
 | 通用电气 | 开课 |
+
 <!-- COURSE-STATUS:END -->
 
 <!-- AUTO-CATALOG:START -->
@@ -61,6 +81,6 @@
 
 ## 许可
 
-- 自研代码（`站点/`）与原创文字：AGPL-3.0，署名 ArchivalEra
+- 自研代码（`站点/`）与原创文字：AGPL-3.0-only，署名 ArchivalEra；完整成分与许可链接见 [`licenses.json`](https://isui.ren/repo/S26-1_202609/licenses.json)（仓内 `./站点/licenses.json`）
 - 教材题目与章节结构：归原书作者与出版社；本仓解析仅作学习用途引用
-- 站点主题 Shirone M3 Reader（MIT）；KaTeX、marked 等依其自身许可分发
+- 站点主题 Shirone M3 Reader（MIT）；KaTeX、MathLive、marked、js-yaml 等第三方库依其自身许可证分发

@@ -40,10 +40,9 @@ test('SPA_ROUTER_JS 源码形状：三个 reset 钩子调用与兜底都在', ()
   assert.ok(src.includes('location.href = url'), '失败兜底整页跳转');
 });
 
-test('SPA 路由必须支持 soft 模式（助手工具调用不许整页重载）', () => {
-  // 2026-10-29 站长原话：「什么叫优先走 spa，不走 spa 直接就会掐断学习助手连接啊」。
-  // 整页重载销毁 document ⇒ 助手面板与已注册的 site_* 工具一起没了。
-  // 工具循环必须传 soft=true，让路由任何失败都上报而不是换页。
+test('SPA 路由必须支持 soft 模式（WebMCP 工具调用不许整页重载）', () => {
+  // 整页重载会销毁 document，导致已注册的 WebMCP site_* 工具与连接中断。
+  // 站内导航工具调用传 soft=true，让路由任何失败都上报而不是整页跳转。
   const src = fs.readFileSync(path.join(HERE, 'spa-router.mjs'), 'utf8');
   assert.match(src, /function navigate\(rawUrl, hash, push, opts4\)/, 'navigate 要收第 4 参');
   assert.ok(src.includes('if (soft) throw err'), '路由失败时 soft 必须 reject');

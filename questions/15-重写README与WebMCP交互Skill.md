@@ -18,4 +18,4 @@
 
 **Settling:** `python3 -c "r=open('README.md',encoding='utf-8').read();s=open('站点/Skill.md',encoding='utf-8').read();ok_r=('COURSE-STATUS:START' in r and 'AUTO-CATALOG:START' in r and '/machine/Birthright.html' in r and 'Skill.md' in r and '学习助手' not in r);ok_s=('site_search，query=' not in s and ('WebSocket' in s or 'ws://' in s) and chr(96)*3 in s and 'site_' in s and 'relay' in s.lower());raise SystemExit(0 if (ok_r and ok_s) else 1)"` -- rc=0 => A (README三种交互入口与Skill.md及WS转发器示例均已重写就绪); rc!=0 => B (README或Skill.md仍为旧版或缺少WS转发器/链接)
 
-**Status:** ready-for-agent
+**Status:** resolved

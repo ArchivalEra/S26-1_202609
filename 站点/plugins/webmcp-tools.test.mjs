@@ -1533,11 +1533,8 @@ test('runTool：未知工具名报错不抛异常（恒 resolve 契约）', asyn
   assert.match(r.error, /site_no_such/);
 });
 
-// ── 回喂抬头随机化（2026-10-27 站长定案）─────────────────────
-//
-// 病灶：固定 `[工具返回：…]` 连发 8 条后，第 9 轮上游回「涉及敏感词」。
-// 修法：抬头换成十几个人话变体（语义不变——工具名与参数照旧带上）。
-test('feedText：抬头必须随机化，不许退回固定「[工具返回：」形态', () => {
+// ── 工具回执抬头（直白规范格式，不用绕检寒暄）─────────────────────────
+test('feedText：使用直白的 [工具返回] 抬头，不带拟人寒暄或绕检套话', () => {
   const r = { ok: true, value: { text: '- 首页 index' } };
   const feeds = [
     feedText('site_read', { what: 'outline' }, r),
@@ -1547,26 +1544,23 @@ test('feedText：抬头必须随机化，不许退回固定「[工具返回：�
     feedText('site_get_page_info', {}, r),
     feedText('site_read', { what: 'section', query: '已登记' }, r),
   ];
+  const BANNED = ['我帮你查了', '好的我给你查了', '顺手查了一下', '给你捞回来了', '你要的东西在这里', '按你说的查了', '帮你跑了一下'];
   for (const f of feeds) {
-    assert.doesNotMatch(f, /^\[工具返回：/, '不许回落固定抬头');
-    assert.match(f, /·\s*site_[a-z_]+/, '每条都必须点明工具名');
+    assert.match(f, /^\[工具返回\]\s*·\s*site_[a-z_]+/, '应使用标准 [工具返回] 抬头并点明工具名');
+    for (const bad of BANNED) {
+      assert.ok(!f.includes(bad), `不应再出现绕检套话「${bad}」：${f}`);
+    }
   }
-  const heads = feeds.map((f) => f.split(' · ')[0]);
-  assert.ok(new Set(heads).size >= 4, `抬头变体至少 4 种（实测 ${new Set(heads).size} 种）`);
 });
 
-test('feedText：失败信封的抬头也随机化且标注没成', () => {
+test('feedText：失败信封使用 [工具失败] 抬头且标注没成', () => {
   const f = feedText('site_read', { what: 'section' }, { ok: false, error: 'not_found' });
-  assert.doesNotMatch(f, /^\[工具返回：/);
-  assert.match(f, /·\s*site_read/, '工具名在场');
+  assert.match(f, /^\[工具失败\]\s*·\s*site_read/, '应使用 [工具失败] 并点明工具名');
   assert.match(f, /没成/, '失败要明示');
   assert.match(f, /原因：/, '失败带原因');
 });
 
-test('feedText：失败抬头不许说「东西在这里」（成功词表不许混进失败）', () => {
-  // 实测出现过：「你要的东西在这里 · site_navigate（…） · 没成：」——同一行自相矛盾。
-  const OK_ONLY = ['你要的东西在这里', '结果拿到了', '查回来了', '已经查完', '给你捞回来了'];
-  // 多组参数各测一次，覆盖散列能落到的多个抬头
+test('feedText：失败抬头不许混入成功措辞', () => {
   for (const [tool, args] of [
     ['site_navigate', { to: 'page', path: 'a.html' }],
     ['site_read', { what: 'page' }],
@@ -1575,9 +1569,7 @@ test('feedText：失败抬头不许说「东西在这里」（成功词表不许
     ['site_show_symbol', { term: 'U' }],
   ]) {
     const f = feedText(tool, args, { ok: false, value: { ok: false, reason: 'no_such_page' } });
-    for (const bad of OK_ONLY) {
-      assert.ok(!f.startsWith(bad), `${tool} 失败时抬头不可是「${bad}」：${f.split('\n')[0]}`);
-    }
+    assert.match(f, /^\[工具失败\]/, `${tool} 失败抬头应为 [工具失败]`);
     assert.match(f, /没成/, '失败仍要明示');
   }
 });
@@ -1637,9 +1629,8 @@ test('内联完整性：被内联函数之间的依赖不能断', () => {
   assert.ok(defined.has('reasonText'), 'reasonText 必须在内联清单里（feedText 的依赖）');
 });
 
-test('失败回喂：原因译成人话，不把机器码甩给模型', () => {
-  // 站长原话：「返回应该是『好的我给你查了……执行失败 这页不存在』是不是」。
-  // 模型会原样复述拿到的东西，`原因：no_such_page` 会被念成英文机器码。
+test('失败回喂：原因译成可读说明，不把机器码直接甩给模型', () => {
+  // 模型容易原样复述拿到的错误字段，因此文本层译为可读中文说明，结构化 reason 字段保留枚举。
   const r = feedText('site_navigate', { to: 'page', path: '教材解析/index.html' }, {
     ok: false,
     value: {
