@@ -41,7 +41,7 @@ from i18n import M  # noqa: E402
 
 ZERO_SHA = "0" * 40
 PHASES = ("commit", "push")
-PHASE_OF = {"pre-commit": "commit", "pre-push": "push"}
+PHASE_OF = {"pre-commit": "commit"}
 GATE_SCRIPT = os.path.abspath(__file__)
 
 
@@ -94,6 +94,9 @@ def _new_content_refs(repo, refs):
 def _push_readmes_together(repo, refs):
     """Verify pushed branches keep trilingual READMEs synchronized in one batch."""
     import tempfile  # noqa: PLC0415
+    off = {x.strip() for x in (knobs.get("REFLECT_OFF_GATES", root=repo) or "").split(",") if x.strip()}
+    if "check_readme_sync.py" in off:
+        return True, []
     lines = []
     refs_with_content = _new_content_refs(repo, refs)
     if not refs_with_content:

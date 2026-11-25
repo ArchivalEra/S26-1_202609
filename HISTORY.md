@@ -1042,3 +1042,8 @@ sh gates-selftest.sh                             # 每道闸门先证明自己�
 推翻此前 `2026-10-29 / 10-30` 定案（见上文 1009 行历史记录）：
 - 废除正文末尾 `## 双签`、`## 三签` 成节，废除 `## 完成边界` 的 `≤150 字` 摘要清单与「直接浓缩写进」「已解析」「已验证」「缺件关联 issue」等第二产地描述（记入 `retractions.json` `R-102`–`R-105`）。
 - 缺件、双签、三签三态统一由 GitHub Issue 唯一承载；页面仅可在文末保留 `## 完成边界` 与唯一链接 `- [issue #N](...)`，并由 `站点/plugins/issue-status.mjs` 在构建期实时读取开闭态（issue 关闭后自动隐藏整节）。
+
+### 4. 移除 `pre-push` 钩子（全部验收留在 `pre-commit`）
+
+- 此前 `.git/hooks/pre-push` 经 `reflect-local/hook.py push` 调用 `_push_readmes_together()`，会绕过 `knobs.json` 中已停用的 `check_readme_sync.py` 强制要求同批修改 `README.md` 导致推送被拒；同时 `pre-commit` 已完整执行 `zreflect`（含 `plugin_tests`、`hooktests`、站点插件与白名单全套校验）与 `start-of-work` 闸门。
+- 移除本地 `.git/hooks/pre-push`，并将 `reflect-local/hook.py` 的 `PHASE_OF` 收敛为仅安装 `pre-commit`（且若手动触发 `push`，`_push_readmes_together()` 遵守 `REFLECT_OFF_GATES` 里的 `check_readme_sync.py` 停用配置；`.githooks/pre-push` 仅作 `test-update-readme.py` 测试夹具保留在 `.githooks/`，默认不接入 `.git/hooks/`）。
