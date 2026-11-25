@@ -35,10 +35,10 @@
       "status": "ready-for-agent"
     },
     "questions/07-通用电气重写-模块一数学矩阵.md": {
-      "body_sha256": "f1fe211d36ec1e065c1e2fee6c51d0617f6c5a922a69a71b484624e8076af79a",
+      "body_sha256": "9ca276814288ae2f941d68d59cc2faf00d142b0f189ca3b8617b0e48cfc55053",
       "settling": "`python3 -c \"import os;fs=['01-电路矩阵与消元判解.md','02-行最简形与通解结构.md'];d='课程总览/通用电气/交叉内容';m=sum(1 for f in fs if not os.path.isfile(os.path.join(d,f)) or '## 依赖' not in open(os.path.join(d,f),encoding='utf-8').read());bad=sum(1 for f in fs if os.path.isfile(os.path.join(d,f)) and any(k in open(os.path.join(d,f),encoding='utf-8').read() for k in ('自由响应','受迫响应')));lst=open('站点/页面清单.mjs',encoding='utf-8').read();wt=open('课程总览/通用电气/Walkthrough.md',encoding='utf-8').read();miss=sum(1 for f in fs if f not in lst or f not in wt);raise SystemExit(0 if (m+bad+miss)==0 else 1)\"` -- rc=0 => A (模块一两篇落盘、含依赖闭环、无伪映射且已接入清单与Walkthrough); rc!=0 => B (模块一尚未改写完成或未接闭环)",
-      "sha256": "5a431b1b53681801d3d1506affd45f6d6fb24e319f976b952327be8d36415af6",
-      "status": "ready-for-agent"
+      "sha256": "ac3f15173fc3e7625687d9e7994c362e869057285d4e27ec3cc574e6577b02ad",
+      "status": "resolved"
     },
     "questions/08-通用电气重写-模块二电路五章.md": {
       "body_sha256": "94dedc519a9c65f514572009993a2b3646e7be132b00ecd6555f99230c10a5f8",
