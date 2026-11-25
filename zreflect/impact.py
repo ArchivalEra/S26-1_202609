@@ -98,16 +98,25 @@ def _knob_paths(knob_values=None):
             return str(knob_values.get(name) or knobs.REGISTRY.get(name, ("", "", ""))[1] or "")
         return str(knobs.get(name) or "") if name in knobs.REGISTRY else ""
     qdir = _norm(get("REFLECT_QUESTIONS") or "questions").rstrip("/")
+    hmode = "folder" if get("REFLECT_HISTORY_MODE").strip().lower() in knobs.HISTORY_FOLDER_MODES else "file"
+    raw_h = knob_values.get("REFLECT_HISTORY") if knob_values is not None else knobs.raw("REFLECT_HISTORY")
+    hpath = _norm(raw_h if (raw_h or "").strip() else ("HISTORY" if hmode == "folder" else knobs.REGISTRY["REFLECT_HISTORY"][1])).rstrip("/")
     return {
         "docs": set(_split_list(get("REFLECT_DOCS"))),
         "facts": _norm(get("REFLECT_FACTS") or "FACTS.json"),
         "retractions": _norm(get("REFLECT_RETRACTIONS") or "retractions.json"),
         "readmes": set(_split_list(get("REFLECT_READMES"))),
-        "history": _norm(get("REFLECT_HISTORY") or "HISTORY.md"),
+        "history": hpath,
+        "history_mode": hmode,
+        "history_prefix": (hpath + "/") if hpath else "",
         "questions_prefix": (qdir + "/") if qdir else "questions/",
         "secrets": _norm(get("REFLECT_SECRETS") or "secrets.json"),
         "lint_cfg": _norm(get("REFLECT_LINT_CONFIG") or "ruff.toml"),
     }
+
+
+def _is_history_rel(rel, kp):
+    return rel == kp["history"] or (kp["history_mode"] == "folder" and kp["history_prefix"] and rel.startswith(kp["history_prefix"]))
 
 
 def _matches_knob(rel, gate_knobs, kp):
@@ -118,13 +127,14 @@ def _matches_knob(rel, gate_knobs, kp):
     eq_knobs = (
         ("REFLECT_FACTS", kp["facts"]),
         ("REFLECT_RETRACTIONS", kp["retractions"]),
-        ("REFLECT_HISTORY", kp["history"]),
         ("REFLECT_SECRETS", kp["secrets"]),
         ("REFLECT_LINT_CONFIG", kp["lint_cfg"]),
     )
     if any(k in gate_knobs and rel in paths for k, paths in set_knobs):
         return True
     if any(k in gate_knobs and rel == path for k, path in eq_knobs):
+        return True
+    if ("REFLECT_HISTORY" in gate_knobs or "REFLECT_HISTORY_MODE" in gate_knobs) and _is_history_rel(rel, kp):
         return True
     return "REFLECT_QUESTIONS" in gate_knobs and rel.startswith(kp["questions_prefix"])
 
@@ -136,8 +146,8 @@ def _is_global_fallback(rel):
 def _match_by_knobs(rel, phase_gates, kp):
     matched: set[str] = set()
     known = False
-    is_secret_doc = (rel in kp["docs"] or rel.startswith(kp["questions_prefix"])
-                     or rel in kp["readmes"] or rel in (kp["history"], kp["retractions"], kp["facts"]))
+    is_secret_doc = (rel in kp["docs"] or rel.startswith(kp["questions_prefix"]) or _is_history_rel(rel, kp)
+                     or rel in kp["readmes"] or rel in (kp["retractions"], kp["facts"]))
     for g in phase_gates:
         gfile = g["file"]
         base = os.path.basename(gfile)

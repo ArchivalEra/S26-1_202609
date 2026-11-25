@@ -16,7 +16,7 @@
    "file_sha256": "0cf879d4f96936102137d349de1aacd59dd71d31da45ee29c8e7c1a3a0482efa"
   },
   "zreflect/check_history.py": {
-   "file_sha256": "af6c2d45c818d9667794dd0dbbc813dbe9068804b20d6651b80782ca6b3c806f"
+   "file_sha256": "740b38a1d508690f93f1846972d87279243b9b51e9133ec44f8c5d9179e436fc"
   },
   "zreflect/check_i18n.py": {
    "file_sha256": "49b8a3bf3c09c0ce8068dcccc2343e7c643ca845b14a58b03194a7c42fce2636"
@@ -37,13 +37,16 @@
    "file_sha256": "b8900f96830718dc332db3f4b2e1ed38ec73bb1b980da97185df16e033d0dd28"
   },
   "zreflect/check_questions.py": {
-   "file_sha256": "59db3632fe9d004c6f8b7dcc7ad653c7dcd469ff14f09689a34e1d818553c99f"
+   "file_sha256": "5de6d058eb02306e6cde978d8de68ae2f287db1ff3b56828909e77a95251f5f9"
   },
   "zreflect/check_readme_sync.py": {
    "file_sha256": "8bd2092ab170b0474667546fa272ff38a9032654dfc90db0a1eb2a6c7f3a434e"
   },
   "zreflect/check_retractions.py": {
    "file_sha256": "2e6aeea21f1eb288b17cd1d3cbc992f56340adbb97fd9229008784d450d0b28a"
+  },
+  "zreflect/check_right.py": {
+   "file_sha256": "e0a55682e312d725189492d13562099fbd8e89f3cf26aaeadb9a92ba9c378f92"
   },
   "zreflect/check_secrets.py": {
    "file_sha256": "9b81e5d608234f59d03264d71728868b591ba49a43e2fd7006584a9bebdaa25a"
@@ -58,7 +61,7 @@
    "file_sha256": "aad59ed3823601470d5d48d8abd2363b3e36080a7a9feb7996ee5e8eb182eb86"
   },
   "zreflect/doc.py": {
-   "file_sha256": "688513c088d62eaede5a1d3b42d87f836511b49fdf2df172218b073077d5bde2"
+   "file_sha256": "adab25026da89f7c63709984fe91fafec2b42a9230a04a6de9c4e5151f669ac2"
   },
   "zreflect/doctor.py": {
    "file_sha256": "faed92b68541f76cc5f085924c7705f4952749939610e052c222554443b1b1c1"
@@ -67,10 +70,10 @@
    "file_sha256": "44123f40ef3c29c54589afc323341b65fe343f02841424d21c71eb302076084c"
   },
   "zreflect/facts.py": {
-   "file_sha256": "edd11b3c4046fc564fee48bd190dac5d3551a927284f2c9afb05473c75b96f0b"
+   "file_sha256": "b0488b69542fec94ca0d2a9d8ccd28b6fe53759a7e0d29b98c1f3f31bf8a6e19"
   },
   "zreflect/gate.py": {
-   "file_sha256": "433cfac4a225789b408f610b0d3145b701cafef582ab421a58ca1e01f279c930"
+   "file_sha256": "24e47344fa229fb35d14a30c5a195cb4501d036a7d9c07799a909379f070af51"
   },
   "zreflect/harness.py": {
    "file_sha256": "1c4b194c142090193764c2b6b827566a1fb8d36d514a58caa967afeaa1ab0218"
@@ -79,35 +82,35 @@
    "file_sha256": "57b8bdf28864175b692f8c20ec454b04085ebea2a02e2ae972462e578bd49205"
   },
   "zreflect/impact.py": {
-   "file_sha256": "840321b33bd5118286f115be6eaeb9889c52ad314ef3e4a8a891415c98da0bdd"
+   "file_sha256": "3ea34fe19324cd9e3e160bd2f38bde0a0e8ce7fd2a3aa2b7e65bf835cdd7fd6f"
   },
   "zreflect/knobs.py": {
-   "file_sha256": "4ea4f634077cd8931e022f17f60663d92aa074fbec5208365eb188eab6f03be9"
+   "file_sha256": "ba860f7e7e85184a487a8c57776b73086d7c66772f197d103877c4e7ed39f4ae"
   },
   "zreflect/lang/de.json": {
-   "file_sha256": "8d29868254a1708021a9564919268ea13f3d1e34c85339cc0a8b6accd4c3c1c2"
+   "file_sha256": "da0a3c97391c01a186bfd36586200ab778032d76b5830c1201bcdd8ae3824bcf"
   },
   "zreflect/lang/en.json": {
-   "file_sha256": "4d23371852a5b7f6ab989bf9593cad5c94a1d648dbdea8b45541931d73341a18"
+   "file_sha256": "a04c7419e91635b871614bfab38f90b33cc575bd4b34d4fc77b921b1fc5163f1"
   },
   "zreflect/lang/zh.json": {
-   "file_sha256": "2c3a1fc3be77f08a90eaa0bb26696e83e4bddfecdd2dc77e1ecb6f3f6c21e09d"
+   "file_sha256": "9ae8ce91bc097b0c23bc01a5e66df3ed16783fbc04eb2e093fe9e98db062530e"
   },
   "zreflect/next.py": {
    "file_sha256": "5baad73b3e2e65ad16b65c1351f5e35a27ce7b7c762a511be6f68d22bf605d83"
   },
   "zreflect/registry.py": {
-   "file_sha256": "8f0c8e8e458ed95aecf348bfd95a2ac84d668156c6adff3a556b2c7512a96e82"
+   "file_sha256": "83cd0b94778cd123fd3d28b9ea3077fc27256b07d889106a5a325adb4dfa04a3"
   },
   "zreflect/trust.py": {
-   "file_sha256": "721a9fccb029589b11293014985465100b94e146d42c2d0d406b763d7cf9db11"
+   "file_sha256": "45bbfc83d85228e5d7e9ce3f54b98ccd991747fe6d311141ce00704f0c5f05ee"
   },
   "zreflect/trust_core.py": {
-   "file_sha256": "27f00d6043136a931f3567ee240d6aedfe4ed60b13ae13bf0a16987728134326"
+   "file_sha256": "8d025a471fad1035eb098aa52ff9ffec76c89696be26086720e1a98828f93cf2"
   }
  },
  "schema": 2,
- "suite_seq": 1,
- "tree_sha256": "141b6dabaa12f53b95bc46a6f477dd247d901a0dd905c94dee905e09bf984e3d",
+ "suite_seq": 9,
+ "tree_sha256": "637510831d103bf28ecf7921b7638eccde7aded008baff59ac5403f265522b22",
  "upstream_repo": "ArchivalEra/Einfacht"
 }

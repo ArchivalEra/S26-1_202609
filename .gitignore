@@ -513,8 +513,10 @@
 !/站点/math/render.mjs
 !/站点/math/terms.mjs
 !/站点/math/to-octave.mjs
+!/站点/licenses.json
 !/站点/package.json
 !/站点/package-lock.json
+!/站点/right-dist.json
 !/站点/plugins/accent-colors.test.mjs
 !/站点/plugins/anchors-markup.test.mjs
 !/站点/plugins/build-asset-version.test.mjs
@@ -634,6 +636,7 @@
 !/questions/14-退役学习助手仅保留WebMCP.md
 !/questions/15-重写README与WebMCP交互Skill.md
 !/README.md
+!/right.json
 !/retractions.json
 !/STATE.md
 # SW 已根除（2026-10-23）：sw-template.js 退役，换成一次性清老用户的 sw-kill.mjs
@@ -663,6 +666,7 @@
 !/zreflect/check_questions.py
 !/zreflect/check_readme_sync.py
 !/zreflect/check_retractions.py
+!/zreflect/check_right.py
 !/zreflect/check_secrets.py
 !/zreflect/check_snapshots.py
 !/zreflect/check_stale.py

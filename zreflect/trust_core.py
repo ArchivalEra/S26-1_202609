@@ -54,10 +54,23 @@ def compute_tree_sha(files_map):
     return sha256_bytes(canonical_json(files_map or {}))
 
 
+def safe_int(val, default=0):
+    """Parse strict integer or return `None` when malformed."""
+    if isinstance(val, (bool, float)):
+        return None
+    try:
+        return int(default if val is None else val)
+    except (TypeError, ValueError):
+        return None
+
+
 def parse_iso(ts):
     """Parse ISO-8601 string or numeric timestamp into UTC `datetime` (or `None`)."""
     if isinstance(ts, (int, float)):
-        return datetime.fromtimestamp(ts, tz=timezone.utc)
+        try:
+            return datetime.fromtimestamp(ts, tz=timezone.utc)
+        except (ValueError, OverflowError, OSError):
+            return None
     try:
         dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
         return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
@@ -65,20 +78,24 @@ def parse_iso(ts):
         return None
 
 
+_SETTLING_HDR_RE = re.compile(r"(?i)^\*{0,2}(Status|Settling)\*{0,2}\s*:\s*\*{0,2}")
+_FIELD_STOP_RE = re.compile(r"^\s*(?:\*\*)?(?!https?:)[A-Za-z][A-Za-z0-9_-]*(?:\*\*)?\s*:")
+
+
 def strip_status_settling(text):
-    """Strip `Status:` and `Settling:` fields from a question markdown body."""
+    """Strip `Status:` and `Settling:` fields from a question markdown body (column-0 match)."""
     lines = (text or "").splitlines()
     out = []
     skip_cont = False
     for ln in lines:
-        if re.match(r"(?i)^\*{0,2}(Status|Settling)\*{0,2}\s*:\s*\*{0,2}", ln.strip()):
-            skip_cont = ln.strip().lstrip("*").lower().startswith("settling")
+        if _SETTLING_HDR_RE.match(ln):
+            skip_cont = ln.lstrip("*").lower().startswith("settling")
             continue
-        if skip_cont and (ln.startswith(("  ", "\t")) or not ln.strip()):
-            if not ln.strip():
+        if skip_cont:
+            if not ln.strip() or ln.lstrip().startswith("#") or _FIELD_STOP_RE.match(ln):
                 skip_cont = False
-            continue
-        skip_cont = False
+            else:
+                continue
         out.append(ln)
     return "\n".join(out).strip()
 
@@ -99,17 +116,37 @@ def question_snapshot(text, status, settling):
     }
 
 
+_TRIAGE_STATUSES = ("ready-for-human", "ready-for-agent")
+
+
+def _question_transition_exempt(old_status, old_settling, old_body_sha,
+                                new_status, new_settling, new_body_sha):
+    if not old_body_sha or new_body_sha != old_body_sha:
+        return False
+    if (new_settling or "").strip() != (old_settling or "").strip():
+        return False
+    old_st, new_st = (old_status or "").lower(), (new_status or "").lower()
+    if new_st == "resolved":
+        return not is_none_like(old_settling) and not is_none_like(new_settling)
+    return old_st in _TRIAGE_STATUSES and new_st in _TRIAGE_STATUSES and old_st != new_st
+
+
 def is_legal_settlement(new_status, new_settling, new_text, prev_entry):
     """True iff question transitioned to `resolved` without altering body or settling."""
-    if not isinstance(prev_entry, dict):
+    if not isinstance(prev_entry, dict) or (new_status or "").lower() != "resolved":
         return False
-    if (new_status or "").lower() != "resolved":
+    return _question_transition_exempt(
+        prev_entry.get("status"), prev_entry.get("settling"), prev_entry.get("body_sha256"),
+        new_status, new_settling, sha256_text(strip_status_settling(new_text)))
+
+
+def is_legal_status_triage(new_status, new_settling, new_text, prev_entry):
+    """True iff an open question swaps `ready-for-human` <-> `ready-for-agent` with identical body and settling."""
+    if not isinstance(prev_entry, dict) or (new_status or "").lower() not in _TRIAGE_STATUSES:
         return False
-    if is_none_like(prev_entry.get("settling")) or is_none_like(new_settling):
-        return False
-    if sha256_text(strip_status_settling(new_text)) != prev_entry.get("body_sha256"):
-        return False
-    return (new_settling or "").strip() == (prev_entry.get("settling") or "").strip()
+    return _question_transition_exempt(
+        prev_entry.get("status"), prev_entry.get("settling"), prev_entry.get("body_sha256"),
+        new_status, new_settling, sha256_text(strip_status_settling(new_text)))
 
 
 def select_receipt(receipt, *, action, target, target_sha256):
@@ -131,7 +168,30 @@ def select_receipt(receipt, *, action, target, target_sha256):
     return items[0] if len(items) == 1 else None
 
 
-def _check_sig_result(ok, err, target):
+TRUSTED_UPSTREAM_REPO = "ArchivalEra/Einfacht"
+
+
+def _verify_envelope_meta(rec, *, repo_name, action, target, pub_b64, revoked_ids, now):
+    if not isinstance(rec, dict) or not pub_b64:
+        return None, [M("approval.receipt_required", action=action, target=target)]
+    body = receipt_body(rec)
+    rid = str(body.get("id") or body.get("receipt_id") or "")
+    did = str(body.get("delegation_id") or "")
+    rev_set = set(revoked_ids or ())
+    if (rid and rid in rev_set) or (did and did in rev_set):
+        return None, [M("approval.revoked", id=did or rid)]
+    exp = parse_iso(body.get("expires_at"))
+    if exp is None or exp <= (now or datetime.now(timezone.utc)):
+        return None, [M("approval.expired", id=rid)]
+    if body.get("repo") != repo_name or body.get("action") != action or (body.get("target") or body.get("target_path")) != target:
+        return None, [M("approval.scope_mismatch", action=action, target=target)]
+    return body, []
+
+
+def _verify_sig(rec, *, pub_b64, target, verify_sig_fn):
+    if verify_sig_fn is None:
+        return [M("approval.crypto_unavailable", target=target)]
+    ok, err = verify_sig_fn(canonical_payload(rec), str(rec.get("sig") or ""), pub_b64)
     if ok:
         return []
     if err == "crypto_unavailable":
@@ -143,46 +203,35 @@ def verify_receipt(receipt, *, repo_name, action, target, prev_sha256, target_sh
                    pub_b64, revoked_ids=(), now=None, verify_sig_fn=None):
     """Verify an Ed25519 approval receipt purely via `verify_sig_fn(payload, sig_b64, pub_b64)`."""
     picked = select_receipt(receipt, action=action, target=target, target_sha256=target_sha256)
-    if not isinstance(picked, dict) or not pub_b64:
-        return [M("approval.receipt_required", action=action, target=target)]
-    body = receipt_body(picked)
-    rec_id = str(body.get("id") or body.get("receipt_id") or "")
-    deleg_id = str(body.get("delegation_id") or "")
-    if rec_id in set(revoked_ids) or (deleg_id and deleg_id in set(revoked_ids)):
-        return [M("approval.revoked", id=deleg_id or rec_id)]
-    exp = parse_iso(body.get("expires_at"))
-    if exp is None or exp <= (now or datetime.now(timezone.utc)):
-        return [M("approval.expired", id=rec_id)]
-    if body.get("repo") != repo_name or body.get("action") != action or (body.get("target") or body.get("target_path")) != target:
-        return [M("approval.scope_mismatch", action=action, target=target)]
+    body, probs = _verify_envelope_meta(
+        picked, repo_name=repo_name, action=action, target=target,
+        pub_b64=pub_b64, revoked_ids=revoked_ids, now=now)
+    if probs or body is None:
+        return probs
     if body.get("prev_sha256") != prev_sha256 or body.get("target_sha256") != target_sha256:
         return [M("approval.hash_mismatch", target=target)]
-    if verify_sig_fn is None:
-        return [M("approval.crypto_unavailable", target=target)]
-    ok, err = verify_sig_fn(canonical_payload(picked), str(picked.get("sig") or ""), pub_b64)
-    return _check_sig_result(ok, err, target)
+    return _verify_sig(picked, pub_b64=pub_b64, target=target, verify_sig_fn=verify_sig_fn)
 
 
-def verify_suite_sig(seal_data, suite_sig, *, pub_b64, now=None, verify_sig_fn=None):
-    """Verify `suite.release` signature binding `(upstream_repo, suite_seq, tree_sha256)`."""
+def verify_suite_sig(seal_data, suite_sig, *, pub_b64, upstream_repo=TRUSTED_UPSTREAM_REPO,
+                     revoked_ids=(), now=None, verify_sig_fn=None):
+    """Verify `suite.release` signature binding pinned `(upstream_repo, suite_seq, tree_sha256)`."""
     target = "zreflect/SEAL.json"
-    if not isinstance(seal_data, dict) or not isinstance(suite_sig, dict) or not pub_b64:
+    if not isinstance(seal_data, dict):
         return [M("approval.receipt_required", action="suite.release", target=target)]
-    body = receipt_body(suite_sig)
-    exp = parse_iso(body.get("expires_at"))
-    if exp is not None and exp <= (now or datetime.now(timezone.utc)):
-        return [M("approval.expired", id=str(body.get("id") or body.get("receipt_id") or ""))]
-    up_repo = seal_data.get("upstream_repo") or "ArchivalEra/Einfacht"
-    if body.get("repo") != up_repo or body.get("action") != "suite.release" or (body.get("target") or body.get("target_path")) != target:
+    body, probs = _verify_envelope_meta(
+        suite_sig, repo_name=upstream_repo, action="suite.release", target=target,
+        pub_b64=pub_b64, revoked_ids=revoked_ids, now=now)
+    if probs or body is None:
+        return probs
+    seal_up = seal_data.get("upstream_repo")
+    if seal_up and seal_up != upstream_repo:
         return [M("approval.scope_mismatch", action="suite.release", target=target)]
-    if body.get("target_sha256") != seal_data.get("tree_sha256"):
+    rec_seq, seal_seq = safe_int(body.get("suite_seq"), None), safe_int(seal_data.get("suite_seq"), 0)
+    seq_ok = body.get("suite_seq") is not None and rec_seq is not None and seal_seq is not None and rec_seq == seal_seq
+    if body.get("target_sha256") != seal_data.get("tree_sha256") or not seq_ok:
         return [M("approval.hash_mismatch", target=target)]
-    if body.get("suite_seq") is not None and int(body["suite_seq"]) != int(seal_data.get("suite_seq") or 0):
-        return [M("approval.hash_mismatch", target=target)]
-    if verify_sig_fn is None:
-        return [M("approval.crypto_unavailable", target=target)]
-    ok, err = verify_sig_fn(canonical_payload(suite_sig), str(suite_sig.get("sig") or ""), pub_b64)
-    return _check_sig_result(ok, err, target)
+    return _verify_sig(suite_sig, pub_b64=pub_b64, target=target, verify_sig_fn=verify_sig_fn)
 
 
 def migrate_anchors(raw, *, local_scripts=None, suite_seq=None, suite_tree_sha=None):
@@ -190,10 +239,12 @@ def migrate_anchors(raw, *, local_scripts=None, suite_seq=None, suite_tree_sha=N
     if not isinstance(raw, dict) or not isinstance(raw.get("repo"), str) or not raw.get("repo"):
         return None, [M("approval.anchors_broken")]
     old_schema = raw.get("schema", 1)
-    if not isinstance(old_schema, int) or old_schema < 1 or old_schema > ANCHOR_SCHEMA:
+    if not isinstance(old_schema, int) or isinstance(old_schema, bool) or old_schema < 1 or old_schema > ANCHOR_SCHEMA:
         return None, [M("approval.anchors_broken")]
-    old_seq = int(raw.get("suite_seq") or 0)
-    new_seq = int(suite_seq) if suite_seq is not None else old_seq
+    old_seq = safe_int(raw.get("suite_seq"), 0)
+    new_seq = safe_int(suite_seq, 0) if suite_seq is not None else old_seq
+    if old_seq is None or new_seq is None:
+        return None, [M("approval.anchors_broken")]
     if new_seq < old_seq:
         return None, [M("trust.suite_downgrade", old_seq=old_seq, new_seq=new_seq)]
     merged_local = {}
@@ -268,7 +319,8 @@ def _local_map(anc):
     return None
 
 
-def _eval_principles_anchor(head_anc, cur_anc, *, receipt, repo_name, pub, revoked, verify_sig_fn):
+def _eval_principles_anchor(head_anc, cur_anc, *, receipt, repo_name, pub, revoked, verify_sig_fn,
+                            suite_doc_sha=None, suite_principles_md_sha=None):
     h_pr = head_anc.get("principles") or {}
     c_pr = cur_anc.get("principles") or {}
     if not h_pr:
@@ -279,13 +331,18 @@ def _eval_principles_anchor(head_anc, cur_anc, *, receipt, repo_name, pub, revok
             receipt, repo_name=repo_name, action="principles.disable", target="REFLECT_NO_PRINCIPLES",
             prev_sha256="false", target_sha256="true", pub_b64=pub, revoked_ids=revoked,
             verify_sig_fn=verify_sig_fn)
-    if c_pr.get("principles_md_sha256") != h_pr.get("principles_md_sha256"):
+    suite_md_ok = (
+        (suite_principles_md_sha and c_pr.get("principles_md_sha256") == suite_principles_md_sha)
+        or (c_pr.get("no_principles") and not c_pr.get("principles_md_sha256"))
+    )
+    suite_sync = bool(suite_doc_sha and c_pr.get("doc_py_sha256") == suite_doc_sha and suite_md_ok)
+    if c_pr.get("principles_md_sha256") != h_pr.get("principles_md_sha256") and not suite_sync:
         probs += verify_receipt(
             receipt, repo_name=repo_name, action="principles.edit", target="PRINCIPLES.md",
             prev_sha256=h_pr.get("principles_md_sha256") or "",
             target_sha256=c_pr.get("principles_md_sha256") or "DELETED",
             pub_b64=pub, revoked_ids=revoked, verify_sig_fn=verify_sig_fn)
-    if c_pr.get("doc_py_sha256") != h_pr.get("doc_py_sha256"):
+    if c_pr.get("doc_py_sha256") != h_pr.get("doc_py_sha256") and not suite_sync:
         probs += verify_receipt(
             receipt, repo_name=repo_name, action="seal.doc", target="zreflect/doc.py",
             prev_sha256=h_pr.get("doc_py_sha256") or "",
@@ -294,46 +351,49 @@ def _eval_principles_anchor(head_anc, cur_anc, *, receipt, repo_name, pub, revok
     return probs
 
 
-def _is_legal_snapshot_settlement(head_entry, cur_entry):
-    if not isinstance(head_entry, dict) or not isinstance(cur_entry, dict):
-        return False
-    if (cur_entry.get("status") or "").lower() != "resolved":
-        return False
-    if is_none_like(head_entry.get("settling")) or is_none_like(cur_entry.get("settling")):
-        return False
-    if not head_entry.get("body_sha256") or cur_entry.get("body_sha256") != head_entry.get("body_sha256"):
-        return False
-    return (cur_entry.get("settling") or "").strip() == (head_entry.get("settling") or "").strip()
+def _eval_question_anchor_entry(rel, prev, cur, *, receipt, repo_name, pub, revoked, verify_sig_fn):
+    if (prev is not None and not isinstance(prev, dict)) or (cur is not None and not isinstance(cur, dict)):
+        return [M("approval.anchors_broken")]
+    if prev is not None and cur is None:
+        return verify_receipt(
+            receipt, repo_name=repo_name, action="question.delete", target=rel,
+            prev_sha256=prev.get("sha256", ""), target_sha256="DELETED",
+            pub_b64=pub, revoked_ids=revoked, verify_sig_fn=verify_sig_fn)
+    if prev is None and cur is not None:
+        return verify_receipt(
+            receipt, repo_name=repo_name, action="question.create", target=rel,
+            prev_sha256="NONE", target_sha256=cur.get("sha256", ""),
+            pub_b64=pub, revoked_ids=revoked, verify_sig_fn=verify_sig_fn)
+    if prev is not None and cur is not None:
+        if cur.get("sha256") != prev.get("sha256"):
+            if not _question_transition_exempt(prev.get("status"), prev.get("settling"), prev.get("body_sha256"),
+                                               cur.get("status"), cur.get("settling"), cur.get("body_sha256")):
+                return verify_receipt(
+                    receipt, repo_name=repo_name, action="question.modify", target=rel,
+                    prev_sha256=prev.get("sha256", ""), target_sha256=cur.get("sha256", ""),
+                    pub_b64=pub, revoked_ids=revoked, verify_sig_fn=verify_sig_fn)
+        elif cur != prev:
+            return [M("approval.anchors_broken")]
+    return []
 
 
 def _eval_questions_anchor(head_anc, cur_anc, *, receipt, repo_name, pub, revoked, verify_sig_fn):
     h_q = head_anc.get("questions") or {}
     c_q = cur_anc.get("questions") or {}
+    if not isinstance(h_q, dict) or not isinstance(c_q, dict):
+        return [M("approval.anchors_broken")]
     probs = []
     for rel in sorted(set(h_q) | set(c_q)):
-        prev, cur = h_q.get(rel), c_q.get(rel)
-        if prev is not None and cur is None:
-            probs += verify_receipt(
-                receipt, repo_name=repo_name, action="question.delete", target=rel,
-                prev_sha256=prev.get("sha256", ""), target_sha256="DELETED",
-                pub_b64=pub, revoked_ids=revoked, verify_sig_fn=verify_sig_fn)
-        elif prev is None and cur is not None:
-            probs += verify_receipt(
-                receipt, repo_name=repo_name, action="question.create", target=rel,
-                prev_sha256="NONE", target_sha256=cur.get("sha256", ""),
-                pub_b64=pub, revoked_ids=revoked, verify_sig_fn=verify_sig_fn)
-        elif (isinstance(prev, dict) and isinstance(cur, dict)
-              and cur.get("sha256") != prev.get("sha256")
-              and not _is_legal_snapshot_settlement(prev, cur)):
-            probs += verify_receipt(
-                receipt, repo_name=repo_name, action="question.modify", target=rel,
-                prev_sha256=prev.get("sha256", ""), target_sha256=cur.get("sha256", ""),
-                pub_b64=pub, revoked_ids=revoked, verify_sig_fn=verify_sig_fn)
+        probs += _eval_question_anchor_entry(
+            rel, h_q.get(rel), c_q.get(rel), receipt=receipt, repo_name=repo_name,
+            pub=pub, revoked=revoked, verify_sig_fn=verify_sig_fn)
     return probs
 
 
 def _anchors_header_probs(head_anchors, cur_anchors):
     if not isinstance(head_anchors, dict) or not isinstance(cur_anchors, dict):
+        return [M("approval.anchors_broken")]
+    if (cur_anchors.get("repo") or "") != (head_anchors.get("repo") or ""):
         return [M("approval.anchors_broken")]
     pub = head_anchors.get("approver_pub")
     if cur_anchors.get("approver_pub") != pub or (head_anchors.get("lock_core") and not cur_anchors.get("lock_core")):
@@ -342,13 +402,16 @@ def _anchors_header_probs(head_anchors, cur_anchors):
         return [M("approval.anchors_broken")]
     if (cur_anchors.get("questions_dir") or "questions") != (head_anchors.get("questions_dir") or "questions"):
         return [M("approval.anchors_broken")]
-    old_seq, new_seq = int(head_anchors.get("suite_seq") or 0), int(cur_anchors.get("suite_seq") or 0)
+    old_seq, new_seq = safe_int(head_anchors.get("suite_seq"), 0), safe_int(cur_anchors.get("suite_seq"), 0)
+    if old_seq is None or new_seq is None:
+        return [M("approval.anchors_broken")]
     if new_seq < old_seq:
         return [M("trust.suite_downgrade", old_seq=old_seq, new_seq=new_seq)]
     return []
 
 
-def eval_anchors_integrity(head_anchors, cur_anchors, *, receipt, repo_name, verify_sig_fn=None):
+def eval_anchors_integrity(head_anchors, cur_anchors, *, receipt, repo_name, verify_sig_fn=None,
+                           suite_doc_sha=None, suite_principles_md_sha=None):
     """Verify `ANCHORS.json` was not weakened relative to `HEAD:ANCHORS.json`."""
     if head_anchors is None:
         return []
@@ -372,7 +435,8 @@ def eval_anchors_integrity(head_anchors, cur_anchors, *, receipt, repo_name, ver
         out += eval_local_scripts(hl, cl or {}, lock_core=True, receipt=receipt, repo_name=repo_name,
                                   pub_b64=pub, revoked_ids=revoked, verify_sig_fn=verify_sig_fn)
     out += _eval_principles_anchor(head_anchors, cur_anchors, receipt=receipt, repo_name=repo_name,
-                                   pub=pub, revoked=revoked, verify_sig_fn=verify_sig_fn)
+                                   pub=pub, revoked=revoked, verify_sig_fn=verify_sig_fn,
+                                   suite_doc_sha=suite_doc_sha, suite_principles_md_sha=suite_principles_md_sha)
     out += _eval_questions_anchor(head_anchors, cur_anchors, receipt=receipt, repo_name=repo_name,
                                   pub=pub, revoked=revoked, verify_sig_fn=verify_sig_fn)
     return out
@@ -405,6 +469,40 @@ def _selftest_migration():
     return bad is None and bool(p_bad) and p_bad[0].code == "approval.anchors_broken"
 
 
+def _selftest_receipt_checks(ok_sig):
+    r_pay = {"id": "rec-1", "delegation_id": "del-1", "repo": "org/r", "action": "gate.off",
+             "target_path": "knobs.json", "prev_sha256": "a", "target_sha256": "b",
+             "expires_at": "2099-01-01T00:00:00+00:00"}
+    r_args = {"repo_name": "org/r", "action": "gate.off", "target": "knobs.json",
+              "prev_sha256": "a", "target_sha256": "b", "pub_b64": "PUB", "verify_sig_fn": ok_sig}
+    if [p.code for p in verify_receipt({"payload": r_pay, "sig": "ok"}, revoked_ids=["del-1"], **r_args)] != ["approval.revoked"]:
+        return False
+    if [p.code for p in verify_receipt({"payload": {**r_pay, "expires_at": "2000-01-01T00:00:00+00:00"}, "sig": "ok"}, **r_args)] != ["approval.expired"]:
+        return False
+    return [p.code for p in verify_receipt({"payload": r_pay, "sig": "ok"}, verify_sig_fn=lambda *_: (False, "bad"),
+                                           **{k: v for k, v in r_args.items() if k != "verify_sig_fn"})] == ["approval.signature_invalid"]
+
+
+def _selftest_suite_sig_checks(tree, ok_sig):
+    seal_d = {"upstream_repo": "ArchivalEra/Einfacht", "suite_seq": 3, "tree_sha256": tree}
+    payload_dict = {"id": "rec-suite-1", "repo": "ArchivalEra/Einfacht", "action": "suite.release",
+                    "target_path": "zreflect/SEAL.json", "suite_seq": 3, "target_sha256": tree,
+                    "expires_at": "2099-01-01T00:00:00+00:00"}
+    sig = {"payload": payload_dict, "sig": "ok"}
+    if verify_suite_sig(seal_d, sig, pub_b64="PUB", verify_sig_fn=ok_sig) != []:
+        return False
+    if [p.code for p in verify_suite_sig(seal_d, sig, pub_b64="PUB", revoked_ids=["rec-suite-1"], verify_sig_fn=ok_sig)] != ["approval.revoked"]:
+        return False
+    spoof = {"upstream_repo": "attacker/repo", "suite_seq": 3, "tree_sha256": tree}
+    if [p.code for p in verify_suite_sig(spoof, {"payload": {**payload_dict, "repo": "attacker/repo"}, "sig": "ok"}, pub_b64="PUB", verify_sig_fn=ok_sig)] != ["approval.scope_mismatch"]:
+        return False
+    no_exp = {"payload": {k: v for k, v in payload_dict.items() if k != "expires_at"}, "sig": "ok"}
+    if [p.code for p in verify_suite_sig(seal_d, no_exp, pub_b64="PUB", verify_sig_fn=ok_sig)] != ["approval.expired"]:
+        return False
+    bad_sig = {"payload": {**payload_dict, "suite_seq": 2}, "sig": "ok"}
+    return [p.code for p in verify_suite_sig(seal_d, bad_sig, pub_b64="PUB", verify_sig_fn=ok_sig)] == ["approval.hash_mismatch"]
+
+
 def _selftest_seal_and_receipt():
     files = {"zreflect/a.py": {"file_sha256": sha256_text("a")}}
     tree = compute_tree_sha(files)
@@ -415,14 +513,7 @@ def _selftest_seal_and_receipt():
     if [p.code for p in eval_seal_files(files, {"zreflect/a.py": sha256_text("a"), "zreflect/x.py": "1"}, tree)] != ["seal.unlisted_file"]:
         return False
     ok_sig = lambda _p, _s, _pub: (True, None)  # noqa: E731
-    seal_d = {"upstream_repo": "ArchivalEra/Einfacht", "suite_seq": 3, "tree_sha256": tree}
-    payload_dict = {"repo": "ArchivalEra/Einfacht", "action": "suite.release",
-                    "target_path": "zreflect/SEAL.json", "suite_seq": 3, "target_sha256": tree}
-    sig = {"payload": payload_dict, "sig": "ok"}
-    if verify_suite_sig(seal_d, sig, pub_b64="PUB", verify_sig_fn=ok_sig) != []:
-        return False
-    bad_sig = {"payload": {**payload_dict, "suite_seq": 2}, "sig": "ok"}
-    return [p.code for p in verify_suite_sig(seal_d, bad_sig, pub_b64="PUB", verify_sig_fn=ok_sig)] == ["approval.hash_mismatch"]
+    return _selftest_suite_sig_checks(tree, ok_sig) and _selftest_receipt_checks(ok_sig)
 
 
 def _selftest_anchors_integrity():
@@ -444,6 +535,13 @@ def _selftest_anchors_integrity():
     legal_q = dict(base, questions={"questions/01.md": {"sha256": "q2", "status": "resolved", "settling": "python3 x", "body_sha256": "b1"}})
     if eval_anchors_integrity(base, legal_q, receipt={"receipts": []}, repo_name="org/r") != []:
         return False
+    if parse_iso(1e30) is not None or safe_int("bad", 0) is not None or safe_int(True, 0) is not None or safe_int(1.5, 0) is not None:
+        return False
+    if [p.code for p in eval_anchors_integrity(base, dict(base, repo="other/repo"), receipt={"receipts": []}, repo_name="other/repo")] != ["approval.anchors_broken"]:
+        return False
+    same_sha_tamper = dict(base, questions={"questions/01.md": {"sha256": "q1", "status": "resolved", "settling": "true", "body_sha256": "other"}})
+    if [p.code for p in eval_anchors_integrity(base, same_sha_tamper, receipt={"receipts": []}, repo_name="org/r")] != ["approval.anchors_broken"]:
+        return False
     shrunk_rev = dict(base, revoked_ids=[])
     return [p.code for p in eval_anchors_integrity(base, shrunk_rev, receipt={"receipts": []}, repo_name="org/r")] == ["approval.anchors_broken"]
 
@@ -458,6 +556,19 @@ def _cases():
                                      {"body_sha256": sha256_text("Body"), "settling": "python3 x"})
          and not is_legal_settlement("resolved", "python3 y", "Body\n**Status:** resolved\n**Settling:** python3 y\n",
                                      {"body_sha256": sha256_text("Body"), "settling": "python3 x"})),
+        ("★ trust_core.status_triage_guard",
+         lambda: is_legal_status_triage("ready-for-human", "python3 x", "Body\n**Status:** ready-for-human\n**Settling:** python3 x\n",
+                                        {"status": "ready-for-agent", "body_sha256": sha256_text("Body"), "settling": "python3 x"})
+         and is_legal_status_triage("ready-for-agent", "python3 x", "Body\n**Status:** ready-for-agent\n**Settling:** python3 x\n",
+                                    {"status": "ready-for-human", "body_sha256": sha256_text("Body"), "settling": "python3 x"})
+         and not is_legal_status_triage("ready-for-human", "python3 x", "Body\n  Status: spoof\n**Status:** ready-for-human\n**Settling:** python3 x\n",
+                                        {"status": "ready-for-agent", "body_sha256": sha256_text("Body"), "settling": "python3 x"})
+         and not is_legal_status_triage("ready-for-human", "python3 x", "Body\n**Status:** ready-for-human\n**Settling:** python3 x\n",
+                                        {"status": "ready-for-human", "body_sha256": sha256_text("Body"), "settling": "python3 x"})
+         and not is_legal_status_triage("ready-for-agent", "python3 x", "Body\n**Status:** ready-for-agent\n**Settling:** python3 x\n",
+                                        {"status": "resolved", "body_sha256": sha256_text("Body"), "settling": "python3 x"})
+         and not is_legal_status_triage("ready-for-human", "python3 x", "Changed\n**Status:** ready-for-human\n**Settling:** python3 x\n",
+                                        {"status": "ready-for-agent", "body_sha256": sha256_text("Body"), "settling": "python3 x"})),
     ]
 
 

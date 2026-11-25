@@ -10,23 +10,23 @@
 
 | key | value | measured at | replay cmd |
 |---|---|---|---|
-| `core_seal` | `141b6dabaa12f53b...` | 2026-11-25T17:11:24+0800 | `python3 zreflect/registry.py --verify-seal` |
-| `courses` | **9** | 2026-11-25T17:11:05+0800 | `ls -d 课程总览/*/ | wc -l` |
-| `figures` | **174** | 2026-11-25T17:11:05+0800 | `ls 课程总览/电路原理/作业/figures/ | wc -l` |
-| `glossary_entries` | **227** | 2026-11-25T17:11:05+0800 | `awk '/^:::glossary-dict/{f=1;next} /^:::/{f=0} f&&/^sym-/{n++} END{print n}' 站点/符号包/通用.md 课程总览/*/教材解析/符号入门.md` |
-| `history_state_claims` | **0** | 2026-11-25T17:11:24+0800 | `grep -cE '\*\*(当前|目前|如今)\*\*|^当前|^目前' HISTORY.md || true` |
-| `homework` | **46** | 2026-11-25T17:11:05+0800 | `find 课程总览 -path '*/作业/*.md' ! -name 'index.md' | wc -l` |
-| `hooktests` | **26** | 2026-11-25T17:11:16+0800 | `python3 .githooks/test-update-readme.py 2>&1 | grep -oE 'Ran [0-9]+ tests' | awk '{print $2}'` |
-| `lab_tests` | **74** | 2026-11-25T17:11:07+0800 | `cd .kimi-code/学习通API && node --test chaoxing.test.mjs 判据.test.mjs bridge.test.mjs 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2=="tests"||$2=="fail"||$2=="cancelled") {v[$2]=$3} END {t=v["tests"]; f=v["fail"]+0; c=v["cancelled"]+0; if (t=="") {print "lab_tests：没读到 tests 汇总行" > "/dev/stderr"; exit 1} print t; if (f+c>0) {print "lab_tests：fail=" f " cancelled=" c " ⇒ 红测试，非零退出" > "/dev/stderr"; exit 1}}'` |
-| `md_files` | **246** | 2026-11-25T17:11:07+0800 | `git ls-files '*.md' | wc -l` |
-| `notes` | **70** | 2026-11-25T17:11:05+0800 | `find 课程总览 -path '*/课堂笔记/*.md' ! -name 'index.md' | wc -l` |
-| `plugin_tests` | **1016** | 2026-11-25T17:11:24+0800 | `cd 站点 && node --test plugins/ 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2=="tests"||$2=="fail"||$2=="cancelled") {v[$2]=$3} END {t=v["tests"]; f=v["fail"]+0; c=v["cancelled"]+0; if (t=="") {print "plugin_tests：没读到 tests 汇总行（node --test 没跑完？）" > "/dev/stderr"; exit 1} print t; if (f+c>0) {print "plugin_tests：fail=" f " cancelled=" c " (chr(8658)+chr(32)+chr(32418)+chr(27979)+chr(35797)+chr(65292)+chr(38750)+chr(38646)+chr(36864)+chr(20986)) (chr(65288)+chr(105)+chr(115)+chr(115)+chr(117)+chr(101)+chr(32)+chr(35)+chr(49)+chr(56)+chr(32)+chr(20915)+chr(31574)+chr(32)+chr(35)+chr(55)+chr(65289)) " > "/dev/stderr"; exit 1}}'` |
-| `problems` | **278** | 2026-11-25T17:11:05+0800 | `python3 -c "import re,glob;print(sum(len(re.findall(r'[0-9]+',s)) for f in glob.glob('课程总览/电路原理/作业/习题册第*.md') for ln in open(f,encoding='utf-8') if ln.startswith('### ') for s in re.findall(r'(?:选|填|计|判|画图)\s*([0-9][0-9、,\s]*)', re.sub(r'（[^）]*）','',ln[4:]))))"` |
-| `sitepages` | **220** | 2026-11-25T17:11:07+0800 | `sed -n '/^export const TARGET_FILES = \[/,/^\];/p' 站点/页面清单.mjs | grep -c "^  '"` |
-| `symbol_packs` | **5** | 2026-11-25T17:11:05+0800 | `grep -cE "^  '[^']+': '[^']+.md',$" 站点/符号环境.mjs` |
-| `symbols_bubbled` | **23690** | 2026-11-25T17:11:24+0800 | `python3 -c "import json;print(json.load(open('站点/dist/symbol-coverage.json'))['symbols_bubbled'])"` |
-| `symbols_uncovered` | **0** | 2026-11-25T17:11:24+0800 | `python3 -c "import json;print(json.load(open('站点/dist/symbol-coverage.json'))['symbols_uncovered'])"` |
-| `textbook` | **31** | 2026-11-25T17:11:05+0800 | `find 课程总览 -path '*/教材解析/*.md' ! -name 'index.md' | wc -l` |
+| `core_seal` | `637510831d103bf2...` | 2026-11-25T18:02:38+0800 | `python3 zreflect/registry.py --verify-seal` |
+| `courses` | **9** | 2026-11-25T18:02:19+0800 | `ls -d 课程总览/*/ | wc -l` |
+| `figures` | **174** | 2026-11-25T18:02:19+0800 | `ls 课程总览/电路原理/作业/figures/ | wc -l` |
+| `glossary_entries` | **227** | 2026-11-25T18:02:19+0800 | `awk '/^:::glossary-dict/{f=1;next} /^:::/{f=0} f&&/^sym-/{n++} END{print n}' 站点/符号包/通用.md 课程总览/*/教材解析/符号入门.md` |
+| `history_state_claims` | **0** | 2026-11-25T18:02:38+0800 | `grep -cE '\*\*(当前|目前|如今)\*\*|^当前|^目前' HISTORY.md || true` |
+| `homework` | **46** | 2026-11-25T18:02:19+0800 | `find 课程总览 -path '*/作业/*.md' ! -name 'index.md' | wc -l` |
+| `hooktests` | **26** | 2026-11-25T18:02:29+0800 | `python3 .githooks/test-update-readme.py 2>&1 | grep -oE 'Ran [0-9]+ tests' | awk '{print $2}'` |
+| `lab_tests` | **74** | 2026-11-25T18:02:21+0800 | `cd .kimi-code/学习通API && node --test chaoxing.test.mjs 判据.test.mjs bridge.test.mjs 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2=="tests"||$2=="fail"||$2=="cancelled") {v[$2]=$3} END {t=v["tests"]; f=v["fail"]+0; c=v["cancelled"]+0; if (t=="") {print "lab_tests：没读到 tests 汇总行" > "/dev/stderr"; exit 1} print t; if (f+c>0) {print "lab_tests：fail=" f " cancelled=" c " ⇒ 红测试，非零退出" > "/dev/stderr"; exit 1}}'` |
+| `md_files` | **246** | 2026-11-25T18:02:21+0800 | `git ls-files '*.md' | wc -l` |
+| `notes` | **70** | 2026-11-25T18:02:19+0800 | `find 课程总览 -path '*/课堂笔记/*.md' ! -name 'index.md' | wc -l` |
+| `plugin_tests` | **1016** | 2026-11-25T18:02:38+0800 | `cd 站点 && node --test plugins/ 2>&1 | awk 'NF==3 && $3 ~ /^[0-9]+$/ && ($2=="tests"||$2=="fail"||$2=="cancelled") {v[$2]=$3} END {t=v["tests"]; f=v["fail"]+0; c=v["cancelled"]+0; if (t=="") {print "plugin_tests：没读到 tests 汇总行（node --test 没跑完？）" > "/dev/stderr"; exit 1} print t; if (f+c>0) {print "plugin_tests：fail=" f " cancelled=" c " (chr(8658)+chr(32)+chr(32418)+chr(27979)+chr(35797)+chr(65292)+chr(38750)+chr(38646)+chr(36864)+chr(20986)) (chr(65288)+chr(105)+chr(115)+chr(115)+chr(117)+chr(101)+chr(32)+chr(35)+chr(49)+chr(56)+chr(32)+chr(20915)+chr(31574)+chr(32)+chr(35)+chr(55)+chr(65289)) " > "/dev/stderr"; exit 1}}'` |
+| `problems` | **278** | 2026-11-25T18:02:19+0800 | `python3 -c "import re,glob;print(sum(len(re.findall(r'[0-9]+',s)) for f in glob.glob('课程总览/电路原理/作业/习题册第*.md') for ln in open(f,encoding='utf-8') if ln.startswith('### ') for s in re.findall(r'(?:选|填|计|判|画图)\s*([0-9][0-9、,\s]*)', re.sub(r'（[^）]*）','',ln[4:]))))"` |
+| `sitepages` | **220** | 2026-11-25T18:02:21+0800 | `sed -n '/^export const TARGET_FILES = \[/,/^\];/p' 站点/页面清单.mjs | grep -c "^  '"` |
+| `symbol_packs` | **5** | 2026-11-25T18:02:19+0800 | `grep -cE "^  '[^']+': '[^']+.md',$" 站点/符号环境.mjs` |
+| `symbols_bubbled` | **23690** | 2026-11-25T18:02:38+0800 | `python3 -c "import json;print(json.load(open('站点/dist/symbol-coverage.json'))['symbols_bubbled'])"` |
+| `symbols_uncovered` | **0** | 2026-11-25T18:02:38+0800 | `python3 -c "import json;print(json.load(open('站点/dist/symbol-coverage.json'))['symbols_uncovered'])"` |
+| `textbook` | **31** | 2026-11-25T18:02:19+0800 | `find 课程总览 -path '*/教材解析/*.md' ! -name 'index.md' | wc -l` |
 
 17 facts.
 <!-- /AUTO:FACTS -->
@@ -55,14 +55,15 @@
 | `check_questions.py`（Question ledger gate） | commit | an unresolved question must carry a runnable settler | `REFLECT_QUESTIONS` | -- |
 | `check_readme_sync.py`（Trilingual README gate） | commit | language versions are three copies of one assertion: structural cross-links + same-batch on every push | `REFLECT_READMES` | a repo that sets REFLECT_READMES to an empty list states it has no README group; unset is different and uses the registry default |
 | `check_retractions.py`（Retraction-resurfacing check） | commit | a retracted assertion may not quietly return as the current state | `REFLECT_RETRACTIONS`, `REFLECT_DOCS`, `REFLECT_HISTORY_SECS` | -- |
+| `check_right.py`（Rights consistency gate） | commit | structured declarations (JSON/TOML) and distributed copy consistency | `REFLECT_RIGHTS` | repos without a rights spec do not need it: spec unset => explicitly not enabled |
 | `check_secrets.py`（Secrets gate） | commit | plain-text credential detection with explicit paths and justified exact exemptions | `REFLECT_SECRETS` | a repo that declares no credential-scanning spec keeps this gate off; a spec named explicitly but absent is a configuration error, never a disable |
 | `check_snapshots.py`（module-level snapshot gate） | commit | a mutable global imported across modules is a value copy (stale snapshot): switch to importing the module and reading the attribute | `REFLECT_SNAPSHOT_ROOT` | -- |
 | `check_stale.py`（Stale-assertion gate） | commit | sha provenance / retired names / age check | `REFLECT_DOCS`, `REFLECT_FACTS`, `REFLECT_HISTORY_SECS`, `REFLECT_RETIRED`, `REFLECT_STALE_DAYS` | -- |
 | `check_world.py`（world gate） | commit | declarative validation target: world reconciliation of a multi-line repo's shared validation environment | `REFLECT_WORLD`, `REFLECT_WORLD_LINE` | a single-line repo does not need it: spec not configured => state it is off |
-| `hook.py`（Hook entry） | start-of-work | the single mouth called by other hook systems: commit re-renders + runs gates; push verifies only + trilingual READMEs; --chain/--uninstall | `REFLECT_DOC` | the hook entry is invoked by git, not attached to the pre-commit phase |
+| `hook.py`（Hook entry） | start-of-work | the single mouth called by other hook systems: commit re-renders, verifies staged READMEs and runs commit+start-of-work gates; --chain/--uninstall | `REFLECT_DOC` | the hook entry is invoked by git, not attached to the pre-commit phase |
 | `check_explain.py`（Comment discipline） | start-of-work | strict: no docstrings; mismatch: explanation chars within AST complexity budget | `REFLECT_COMMENTS` | only disabled when REFLECT_COMMENTS=off is explicitly set |
-| `check_history.py`（History document） | start-of-work | the one carrier where prose is allowed: it must exist and must stay off every scan surface | `REFLECT_HISTORY`, `REFLECT_DOCS`, `REFLECT_READMES`, `REFLECT_QUESTIONS`, `REFLECT_FACTS` | a repo that keeps no history document states so by pointing REFLECT_HISTORY at nothing; the exemption then has no subject |
+| `check_history.py`（History document） | start-of-work | the one carrier where prose is allowed: single file or fold directory must exist and stay off every scan surface | `REFLECT_HISTORY`, `REFLECT_HISTORY_MODE`, `REFLECT_DOCS`, `REFLECT_READMES`, `REFLECT_QUESTIONS`, `REFLECT_FACTS` | a repo that keeps no history document states so by pointing REFLECT_HISTORY at nothing; the exemption then has no subject |
 | `doctor.py`（start-of-work doctor） | start-of-work | process / port liveness (probes things that can die => runs_at=start-of-work, not in pre-commit) | `REFLECT_DOCTOR`, `REFLECT_DOCTOR_TIMEOUT` | this repo has no doctor.json spec: no process/port liveness is checked => state it is off |
 
-26 gates; 14 may be disabled.
+27 gates; 15 may be disabled.
 <!-- /AUTO:GATES -->

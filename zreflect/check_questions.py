@@ -89,10 +89,10 @@ def field(text, name):
             continue
         val = [m.group(1).strip()]
         for nxt in lines[i + 1:]:
-            if re.match(r"^\s*(?:\*\*)?(?!https?:)[A-Za-z][A-Za-z0-9_-]*(?:\*\*)?\s*:", nxt):
-                break                    # next field starts
-            if nxt.strip():
-                val.append(nxt.strip())
+            if (not nxt.strip() or nxt.lstrip().startswith("#")
+                    or re.match(r"^\s*(?:\*\*)?(?!https?:)[A-Za-z][A-Za-z0-9_-]*(?:\*\*)?\s*:", nxt)):
+                break                    # blank line, heading, or next field stops continuation
+            val.append(nxt.strip())
         return " ".join(v for v in val if v) or None
     return None
 
@@ -342,9 +342,7 @@ def _resolved_targets_to_verify(_qdir, files, _all_resolved, depth=0):
     targets = {k for k, v in files.items() if status_of(v) == "resolved"}
     if depth <= 0:
         return targets
-    reentrant: tuple[str, ...] = ("check_questions.py", "registry.py --run", "harness.py")
-    if depth >= 2:
-        reentrant += ("check_retractions.py",)
+    reentrant = ("check_questions.py", "registry.py --run", "harness.py", "check_retractions.py")
     return {k for k in targets if not any(tok in _settling_cmd(field(files[k], "Settling") or "") for tok in reentrant)}
 
 
@@ -363,8 +361,8 @@ def collect(d=None, root=None):
     if os.path.isdir(base):
         for f in sorted(os.listdir(base), key=sort_key):
             if f.endswith(".md"):
-                files["%s/%s" % (d, f)] = open(os.path.join(base, f), encoding="utf-8",
-                                               errors="replace").read()
+                with open(os.path.join(base, f), encoding="utf-8", errors="replace") as fh:
+                    files["%s/%s" % (d, f)] = fh.read()
     return files
 
 
@@ -381,7 +379,8 @@ def run(argv):
     import trust  # noqa: PLC0415
     targets = _resolved_targets_to_verify(qdir, files, all_res, depth=depth)
     probs = gate.with_run_cache(lambda: problems(files, verify_resolved=targets))
-    probs += trust.check_questions_against_anchor(files, qdir=qdir)
+    if not probs:
+        probs += trust.check_questions_against_anchor(files, qdir=qdir)
     n_open = sum(1 for t in files.values() if not is_resolved(t))
     return finish(M("questions.title"), probs,
                   M("questions.ok", count=len(files), open=n_open))
@@ -421,6 +420,10 @@ def _cases():
             and "questions/04.md" not in _resolved_targets_to_verify(
                 "questions",
                 {"questions/04.md": _q(status="resolved", settling="python3 zreflect/check_questions.py -- rc=0 => ok; rc=1 => bad")},
+                False, depth=1)
+            and "questions/05.md" not in _resolved_targets_to_verify(
+                "questions",
+                {"questions/05.md": _q(status="resolved", settling="python3 zreflect/check_retractions.py -- rc=0 => ok; rc=1 => bad")},
                 False, depth=1))),
         ("★ questions.closed_status_table", lambda:
             is_resolved(_q(status="resolved")) is True
@@ -458,6 +461,14 @@ def _cases():
         ("questions.settling_wrapped",
          lambda: "rc=7" in (field("**Status:** x\n**Settling:** run:\nrc=0 => A；"
                                  "rc=7 => B\n", "Settling") or "")),
+        ("★ questions.field_stops_at_blank_or_heading",
+         lambda: field("**Status:** open\n**Settling:** python3 x\n\n## Conclusion\nprose\n", "Settling") == "python3 x"
+         and field("**Status:** open\n**Settling:** python3 x\n## Conclusion\nprose\n", "Settling") == "python3 x"
+         and field("  Status: spoof\n**Status:** ready-for-human\n", "Status") == "ready-for-human"
+         and not problems({"questions/14.md": _q(status="ready-for-human") + "**Parallel:** false\n"},
+                          exists=lambda p: True)
+         and [p.code for p in problems({"questions/15.md": _q() + "**Status:** ready-for-human\n"},
+                                       exists=lambda p: True)] == ["questions.duplicate_field"]),
         ("★ questions.empty",
          lambda: [p.code for p in problems({}, exists=lambda p: True)]
          == ["questions.empty"]),

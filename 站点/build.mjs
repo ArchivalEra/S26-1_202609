@@ -161,6 +161,14 @@ console.log(`[build] Copied offline assets to dist/assets/ (octave/pyodide 改�
     copyFileAtomic(skillSrc, path.join(DIST_DIR, 'Skill.md'));
     console.log(`[build] Copied Skill.md to dist/Skill.md`);
   }
+  const licJsonSrc = path.join(SITE_DIR, 'licenses.json');
+  if (fs.existsSync(licJsonSrc)) {
+    copyFileAtomic(licJsonSrc, path.join(DIST_DIR, 'licenses.json'));
+  }
+  const rootLicSrc = path.join(ROOT, 'LICENSE');
+  if (fs.existsSync(rootLicSrc)) {
+    copyFileAtomic(rootLicSrc, path.join(DIST_DIR, 'LICENSE'));
+  }
 }
 
 // 课程目录内的配图目录（figures/）原样拷进 dist，路径保持相对仓库根。
@@ -2600,7 +2608,7 @@ for (const relPath of TARGET_FILES) {
               <p class="site-footer__legal">
                 © 2026 ArchivalEra · 本站自研代码与解析文字以
                 <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="license noopener">AGPL-3.0</a>
-                许可发布 · <a href="https://github.com/ArchivalEra/S26-1_202609" target="_blank" rel="noopener">仓库源码</a>
+                许可发布 · <a href="${rootRel}licenses.json" target="_blank" rel="noopener">许可清单</a> · <a href="https://github.com/ArchivalEra/S26-1_202609" target="_blank" rel="noopener">仓库源码</a>
               </p>
               <p class="site-footer__disclaimer">
                 本站涉及的教材题目原文与章节结构，版权归各原书作者与出版社所有，本站解析为个人学习笔记；

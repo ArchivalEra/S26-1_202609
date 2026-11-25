@@ -6,7 +6,6 @@ silently disables husky/lefthook/pre-commit). Exposes a single command entry
 that external hook managers can call or install as a reversible chain wrapper:
 
     python3 <repo>/reflect-local/hook.py commit "$(git rev-parse --show-toplevel)"
-    python3 <repo>/reflect-local/hook.py push   "$(git rev-parse --show-toplevel)"
     python3 <repo>/reflect-local/hook.py --chain [target repo]
     python3 <repo>/reflect-local/hook.py --uninstall [target repo]
     python3 <repo>/reflect-local/hook.py --instructions
@@ -39,17 +38,17 @@ import knobs  # noqa: E402
 from gate import activate_or_fatal, meta  # noqa: E402
 from i18n import M  # noqa: E402
 
-ZERO_SHA = "0" * 40
-PHASES = ("commit", "push")
+PHASES = ("commit",)
 PHASE_OF = {"pre-commit": "commit"}
+LEGACY_HOOKS = ("pre-push",)
 GATE_SCRIPT = os.path.abspath(__file__)
 
 
-def _sh(cmd, stdin=None, cwd=None):
+def _sh(cmd, stdin=None, cwd=None, env=None):
     """Run one command, return `(rc, merged output)`."""
     try:
         p = subprocess.run(
-            cmd, capture_output=True, text=True, input=stdin, cwd=cwd,
+            cmd, capture_output=True, text=True, input=stdin, cwd=cwd, env=env,
             encoding="utf-8", errors="replace",
         )
     except (OSError, subprocess.SubprocessError) as e:
@@ -66,74 +65,39 @@ def _usage():
     return 0
 
 
-def _refs_from_stdin():
-    """Parse git pre-push stdin lines: `<lref> <lsha> <rref> <rsha>`."""
-    try:
-        raw = sys.stdin.read() if not sys.stdin.isatty() else ""
-    except (OSError, ValueError):
-        return []
-    return [tuple(ln.split()) for ln in raw.splitlines() if len(ln.split()) == 4]
-
-
-def _new_content_refs(repo, refs):
-    """Filter ref-protocol lines to non-tag, non-delete branch updates."""
-    out = []
-    for lref, lsha, _rref, rsha in refs:
-        if lref.startswith("refs/tags/") or lsha == ZERO_SHA:
-            continue
-        if rsha == ZERO_SHA:
-            rc, revs = _git(repo, "rev-list", lsha, "--not", "--remotes")
-            revs = revs.strip() if rc == 0 else ""
-        else:
-            rc, _o = _git(repo, "rev-list", "%s..%s" % (rsha, lsha))
-            revs = "%s..%s" % (rsha, lsha) if rc == 0 else lsha
-        out.append((lref, revs.strip()))
-    return out
-
-
-def _push_readmes_together(repo, refs):
-    """Verify pushed branches keep trilingual READMEs synchronized in one batch."""
+def _check_staged_readmes(repo, staged):
     import tempfile  # noqa: PLC0415
-    off = {x.strip() for x in (knobs.get("REFLECT_OFF_GATES", root=repo) or "").split(",") if x.strip()}
+    fd, path = tempfile.mkstemp()
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(staged) + "\n")
+        rc, out = _sh([
+            sys.executable, os.path.join(repo, "zreflect", "check_readme_sync.py"),
+            "--changed", path,
+        ], cwd=repo, env=dict(os.environ, GATE_REPO=repo))
+        if rc == 0:
+            return False
+        print(str(M("hookgate.commit_readmes_not_together")), file=sys.stderr)
+        for ln in (out or "").splitlines()[:5]:
+            print(ln, file=sys.stderr)
+        return True
+    finally:
+        os.unlink(path)
+
+
+def _commit_readmes_together(repo):
+    """Verify staged commits updating any README update all declared READMEs together."""
+    off = {os.path.basename(x.strip()) for x in (knobs.get("REFLECT_OFF_GATES", root=repo) or "").split(",") if x.strip()}
     if "check_readme_sync.py" in off:
-        return True, []
-    lines = []
-    refs_with_content = _new_content_refs(repo, refs)
-    if not refs_with_content:
-        lines.append(str(M("hookgate.push_nothing_to_check")))
-        return True, lines
-    checked = 0
-    for lref, revs in refs_with_content:
-        if not revs:
-            lines.append(str(M("hookgate.ref_has_nothing", ref=lref)))
-            checked += 1
-            continue
-        rev_args = [r for r in revs.splitlines() if r.strip()]
-        log_args = ["log", "--name-only", "--pretty=format:"]
-        if all(".." not in r for r in rev_args):
-            log_args.append("--no-walk")
-        rc_log, log = _git(repo, *log_args, *rev_args)
-        if rc_log != 0:
-            lines.append(str(M("hookgate.push_readmes_not_together", ref=lref)))
-            return False, lines
-        changed = [ln for ln in (log or "").splitlines() if ln.strip()]
-        fd, path = tempfile.mkstemp()
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                fh.write("\n".join(changed) + "\n")
-            rc, out = _sh([
-                sys.executable, os.path.join(repo, "zreflect", "check_readme_sync.py"),
-                "--changed", path,
-            ], cwd=repo)
-            if rc != 0:
-                lines.append(str(M("hookgate.push_readmes_not_together", ref=lref)))
-                lines.extend(ln for ln in (out or "").splitlines()[:5])
-                return False, lines
-        finally:
-            os.unlink(path)
-        checked += 1
-    lines.append(str(M("hookgate.push_readmes_ok", count=checked)))
-    return True, lines
+        return False
+    readmes = set(knobs.readme_names(repo))
+    if not readmes:
+        return False
+    rc, diff_out = _git(repo, "diff", "--cached", "--name-only")
+    staged = [ln.strip() for ln in (diff_out or "").splitlines() if ln.strip()]
+    if rc != 0 or not (readmes & set(staged)):
+        return False
+    return _check_staged_readmes(repo, staged)
 
 
 def _has_unstaged_facts(repo):
@@ -160,38 +124,22 @@ def _stage_rendered_docs(repo, doc):
     return False
 
 
-def _prepare(phase, repo, doc):
-    """Commit re-renders and stages blocks; push checks freshness without edits."""
+def _prepare(repo, doc):
+    """Render and stage machine-block docs before running commit gates."""
     facts = os.path.join(repo, "zreflect", "facts.py")
-    if phase == "commit":
-        unstaged, facts_rel = _has_unstaged_facts(repo)
-        if unstaged:
-            print(str(M("hookgate.unstaged_facts", path=facts_rel)), file=sys.stderr)
+    unstaged, facts_rel = _has_unstaged_facts(repo)
+    if unstaged:
+        print(str(M("hookgate.unstaged_facts", path=facts_rel)), file=sys.stderr)
+        return True
+    if os.path.isfile(os.path.join(repo, doc)):
+        rc, out = _sh([sys.executable, facts, "--render-doc"], cwd=repo)
+        if rc != 0:
+            if out:
+                print(out, file=sys.stderr)
             return True
-        if os.path.isfile(os.path.join(repo, doc)):
-            rc, out = _sh([sys.executable, facts, "--render-doc"], cwd=repo)
-            if rc != 0:
-                if out:
-                    print(out, file=sys.stderr)
-                return True
-            if _stage_rendered_docs(repo, doc):
-                return True
-        return False
-    rc, out = _sh([sys.executable, facts, "--check"], cwd=repo)
-    if rc == 0:
-        return False
-    print(str(M("hookgate.blocks_stale", detail=(out or "").strip()[:400])), file=sys.stderr)
-    return True
-
-
-def _resolve_push_refs(repo, stdin_rows):
-    if stdin_rows:
-        return stdin_rows, None
-    rc_h, lsha = _git(repo, "rev-parse", "HEAD")
-    rc_u, rsha = _git(repo, "rev-parse", "@{u}")
-    if rc_h == 0 and rc_u == 0 and lsha.strip() and rsha.strip():
-        return [("refs/heads/HEAD", lsha.strip(), "refs/remotes/upstream", rsha.strip())], None
-    return [], M("hookgate.push_empty_stdin")
+        if _stage_rendered_docs(repo, doc):
+            return True
+    return False
 
 
 def _run_repo_gates(target_repo):
@@ -204,50 +152,8 @@ def _run_repo_gates(target_repo):
     return 0
 
 
-def _verify_push_commit(repo, lsha):
-    import shutil  # noqa: PLC0415
-    import tempfile  # noqa: PLC0415
-    rc_h, head = _git(repo, "rev-parse", "HEAD")
-    rc_s, st = _git(repo, "status", "--porcelain")
-    if rc_h == 0 and head.strip() == lsha and rc_s == 0 and not st.strip():
-        return 1 if _prepare("push", repo, knobs.get("REFLECT_DOC", root=repo)) else _run_repo_gates(repo)
-    tmp = tempfile.mkdtemp(prefix="einfacht-push-")
-    try:
-        rc_wt, out_wt = _git(repo, "worktree", "add", "--detach", tmp, lsha)
-        if rc_wt != 0:
-            print(out_wt, file=sys.stderr)
-            return 1
-        os.environ["GATE_REPO"] = tmp
-        try:
-            doc = knobs.get("REFLECT_DOC", root=tmp)
-            if _prepare("push", tmp, doc):
-                return 1
-            return _run_repo_gates(tmp)
-        finally:
-            os.environ["GATE_REPO"] = repo
-            _git(repo, "worktree", "remove", "--force", tmp)
-    finally:
-        shutil.rmtree(tmp, True)
-
-
-def _run_push(repo, stdin_rows):
-    refs, err = _resolve_push_refs(repo, stdin_rows or [])
-    if err is not None:
-        print(str(err), file=sys.stderr)
-        return 1
-    shas = [lsha for lref, lsha, _rref, _rsha in refs
-            if not lref.startswith("refs/tags/") and lsha != ZERO_SHA]
-    for sha in dict.fromkeys(shas):
-        if _verify_push_commit(repo, sha) != 0:
-            return 1
-    ok, lines = _push_readmes_together(repo, refs)
-    for ln in lines:
-        print(ln, file=sys.stderr)
-    return 0 if ok else 1
-
-
-def run(phase, repo, stdin_rows=None):
-    """Run one hook phase. Returns 0, 1, or 2."""
+def run(phase, repo):
+    """Run the commit hook phase (all commit + start-of-work checks). Returns 0, 1, or 2."""
     if phase not in PHASES:
         print(str(M("hookgate.unknown_phase", phase=phase)), file=sys.stderr)
         return 2
@@ -255,11 +161,11 @@ def run(phase, repo, stdin_rows=None):
         print(str(M("hookgate.repo_missing", repo=repo)), file=sys.stderr)
         return 2
     os.environ["GATE_REPO"] = repo
-    if phase == "commit":
-        if _prepare(phase, repo, knobs.get("REFLECT_DOC", root=repo)):
-            return 1
-        return _run_repo_gates(repo)
-    return _run_push(repo, stdin_rows)
+    if _prepare(repo, knobs.get("REFLECT_DOC", root=repo)):
+        return 1
+    if _commit_readmes_together(repo):
+        return 1
+    return _run_repo_gates(repo)
 
 
 def _chmod_x(path):
@@ -307,8 +213,22 @@ def _read_hook(path):
         return ""
 
 
+def _remove_einfacht_hook(hooks, name):
+    lines = []
+    target = os.path.join(hooks, name)
+    prev = target + ".einfacht-prev"
+    removed = os.path.isfile(target) and _is_einfacht_hook(_read_hook(target))
+    if removed:
+        os.unlink(target)
+        lines.append(str(M("install.chain_removed", name=name)))
+    if os.path.isfile(prev) and (removed or not os.path.exists(target)):
+        os.replace(prev, target)
+        lines.append(str(M("install.restored_original", name=name)))
+    return lines
+
+
 def install_chain(repo):
-    """Install chained wrappers into `.git/hooks/` unless `core.hooksPath` is set."""
+    """Install chained `pre-commit` wrapper into `.git/hooks/` and clean stale Einfacht `pre-push` wrappers."""
     hooks = _hooks_dir(repo)
     if not os.path.isdir(hooks):
         return 2, [str(M("install.no_hooks_dir", path=hooks))]
@@ -326,6 +246,8 @@ def install_chain(repo):
             fh.write(_wrapper_body(name, phase))
         _chmod_x(target)
         lines.append(str(M("install.installed_chain", name=name)))
+    for legacy_name in LEGACY_HOOKS:
+        lines.extend(_remove_einfacht_hook(hooks, legacy_name))
     lines.append(str(M("install.chain_done")))
     return 0, lines
 
@@ -337,15 +259,8 @@ def uninstall(repo):
     lines.append(str(M("install.legacy_removed")) if rc == 0
                  else str(M("install.legacy_was_not_set")))
     hooks = _hooks_dir(repo)
-    for name in PHASE_OF:
-        target = os.path.join(hooks, name)
-        prev = target + ".einfacht-prev"
-        if os.path.isfile(target) and _is_einfacht_hook(_read_hook(target)):
-            os.unlink(target)
-            lines.append(str(M("install.chain_removed", name=name)))
-        if os.path.isfile(prev):
-            os.replace(prev, target)
-            lines.append(str(M("install.restored_original", name=name)))
+    for name in (*PHASE_OF, *LEGACY_HOOKS):
+        lines.extend(_remove_einfacht_hook(hooks, name))
     return 0, lines
 
 
@@ -357,8 +272,8 @@ def usage_lines():
 def instructions():
     """Return human-readable wiring instructions (writes no files)."""
     return [str(M("install.intro")), str(M("install.example_commit", gate=GATE_SCRIPT)),
-            str(M("install.example_push", gate=GATE_SCRIPT)), str(M("install.chain_hint")),
-            str(M("install.uninstall_hint")), str(M("install.why_not_hookspath"))]
+            str(M("install.chain_hint")), str(M("install.uninstall_hint")),
+            str(M("install.why_not_hookspath"))]
 
 
 def _validate(argv, say):
@@ -421,7 +336,7 @@ def _run_cli(argv, quiet=False):
     rc = _validate(argv, _say)
     if rc is not None:
         return rc
-    return run(argv[0], argv[1], _refs_from_stdin())
+    return run(argv[0], argv[1])
 
 
 def _t_unstaged(d):
@@ -445,10 +360,14 @@ def _t_instructions(d):
 
 def _t_chain(d):
     pre = os.path.join(_hooks_dir(d), "pre-commit")
+    push_h = os.path.join(_hooks_dir(d), "pre-push")
     open(pre, "w", encoding="utf-8").write("#!/bin/sh\necho mine\n")
+    open(push_h, "w", encoding="utf-8").write("#!/bin/sh\nexec python3 reflect-local/hook.py push .\n")
     _chmod_x(pre)
+    _chmod_x(push_h)
     rc, _l = install_chain(d)
-    return rc == 0 and os.path.isfile(pre + ".einfacht-prev") and "hook.py" in _read_hook(pre)
+    return (rc == 0 and os.path.isfile(pre + ".einfacht-prev")
+            and "hook.py" in _read_hook(pre) and not os.path.exists(push_h))
 
 
 def _t_uninstall(d):
@@ -466,6 +385,25 @@ def _t_blocked(d):
     rc, _l = install_chain(d)
     wrapper = os.path.join(_hooks_dir(d), "pre-commit")
     return rc == 2 and "hook.py" not in _read_hook(wrapper)
+
+
+def _t_staged_readmes(d):
+    import shutil  # noqa: PLC0415
+    _git(d, "config", "user.email", "a@b")
+    _git(d, "config", "user.name", "a")
+    shutil.copytree(os.path.join(TOOL_REPO, "zreflect"), os.path.join(d, "zreflect"),
+                    dirs_exist_ok=True, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    if os.path.isfile(os.path.join(TOOL_REPO, "ruff.toml")):
+        shutil.copy2(os.path.join(TOOL_REPO, "ruff.toml"), os.path.join(d, "ruff.toml"))
+    open(os.path.join(d, "knobs.json"), "w", encoding="utf-8").write(
+        '{"REFLECT_READMES": "README.md,README.zh.md,README.de.md"}\n')
+    for fn in ("README.md", "README.zh.md", "README.de.md"):
+        open(os.path.join(d, fn), "w", encoding="utf-8").write(f"# {fn}\nREADME.md README.zh.md README.de.md\n")
+    _git(d, "add", "README.md")
+    if not _commit_readmes_together(d):
+        return False
+    _git(d, "add", "README.zh.md", "README.de.md")
+    return not _commit_readmes_together(d)
 
 
 def _cases():
@@ -492,6 +430,7 @@ def _cases():
         ("hookgate.no_args_prints_usage", lambda: _run_cli([], quiet=True) == 0),
         ("★ hookgate.unstaged_facts_rejected", lambda: with_repo(_t_unstaged)),
         ("★ hookgate.unknown_phase_is_2", lambda: _run_cli(["bogus", "/tmp"], quiet=True) == 2),
+        ("★ hookgate.push_phase_removed_is_2", lambda: _run_cli(["push", "/tmp"], quiet=True) == 2),
         ("★ hookgate.missing_repo_is_2",
          lambda: _run_cli(["commit", "/nonexistent-xyz"], quiet=True) == 2),
         ("★ hookgate.missing_root_is_2", lambda: _run_cli(["commit"], quiet=True) == 2),
@@ -500,11 +439,7 @@ def _cases():
         ("★ hookgate.summary_shape_can_red",
          lambda: i18n.is_summary("=== 3 PASS / 0 FAIL ===")
          and not i18n.is_summary("=== 3 PASS / 0 fail ===")),
-        ("★ hookgate.refs_skip_deletions",
-         lambda: _new_content_refs(".", [("refs/heads/main", ZERO_SHA, "refs/heads/main", ZERO_SHA)])
-         == []),
-        ("★ hookgate.push_empty_stdin_rejected",
-         lambda: with_repo(lambda d: _resolve_push_refs(d, [])[1] is not None)),
+        ("★ hookgate.staged_readmes_checked_at_commit", lambda: with_repo(_t_staged_readmes, False)),
         ("install.no_args_prints_only", lambda: with_repo(_t_instructions)),
         ("★ install.unknown_mode_is_2", lambda: _run_cli(["--bogus"], quiet=True) == 2),
         ("★ install.not_a_repo_is_2",
@@ -528,8 +463,8 @@ def _main(argv):
 
 GATE = meta(
     "Hook entry",
-    "the single mouth called by other hook systems: commit re-renders + "
-    "runs gates; push verifies only + trilingual READMEs; --chain/--uninstall",
+    "the single mouth called by other hook systems: commit re-renders, verifies staged READMEs "
+    "and runs commit+start-of-work gates; --chain/--uninstall",
     knobs=("REFLECT_DOC",),
     runs_at="start-of-work",
     off_reason="the hook entry is invoked by git, not attached to the pre-commit phase",

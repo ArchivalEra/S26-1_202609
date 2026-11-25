@@ -89,7 +89,8 @@ def _eval_call_decl(call, func, rel):
 
 def _declaration(path, rel, attr="GATE", func="meta"):
     try:
-        tree = ast.parse(open(path, encoding="utf-8").read())
+        with open(path, encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
     except (OSError, SyntaxError):
         return None
     for node in tree.body:
@@ -140,7 +141,8 @@ def selftest_modules(zdir=None):
     for m in declared:
         if not m.get("selftest"):
             continue
-        text = open(os.path.join(d, os.path.basename(m["file"])), encoding="utf-8").read()
+        with open(os.path.join(d, os.path.basename(m["file"])), encoding="utf-8") as fh:
+            text = fh.read()
         if _has_selftest_code(text):
             mods.append(m["file"])
         else:
@@ -252,7 +254,8 @@ def plugins(hooks_dir=None):
         if not n.endswith(".py"):
             continue
         try:
-            text = open(os.path.join(d, n), encoding="utf-8", errors="replace").read()
+            with open(os.path.join(d, n), encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
         except OSError:
             continue
         if _has_selftest_code(text):
@@ -423,7 +426,7 @@ def _main_seal(argv):
     hit = [a for a in argv if a.startswith("--reseal=")]
     if hit:
         targets = [t.strip() for t in hit[0][len("--reseal="):].split(",") if t.strip()]
-        tree, err = trust.reseal(targets, force_all="--force" in argv)
+        tree, err = trust.reseal(targets, force_all="--force" in argv, bump_seq="--bump-seq" in argv)
         if err:
             return fatal(err)
         print(M("seal.resealed", tree=tree, count=len(targets)))
@@ -476,7 +479,8 @@ def _main_selftest_mods():
 
 _KNOWN_FLAGS = frozenset({
     "--red-need", "--runnable", "--all-runnable", "--plugins", "--fixture-renames",
-    "--verify-seal", "--force", "--run", "--affected", "--all", "--selftest-modules", "--gates", "--selftest",
+    "--verify-seal", "--force", "--bump-seq", "--run", "--affected", "--all",
+    "--selftest-modules", "--gates", "--selftest",
 })
 
 

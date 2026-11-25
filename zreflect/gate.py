@@ -29,6 +29,7 @@ EXEC_PREFIXES = (
 _OUTCOME_SEP = re.compile(r"\s+(?:——|—|----|--)\s+")
 _PROSE_CHARS = re.compile(r"[\u4e00-\u9fff（）【】；：，。]")
 _QUOTED = re.compile(r'"([^"]*)"|(\S+)')
+_QUOTED_SPAN = re.compile(r"('[^']*'|\"(?:\\.|[^\"\\])*\")")
 _PY_CMD = re.compile(r"(?:^|(?<=[\s;&]))python3?(?=\s)")
 _TOOL_REL = re.compile(r"(?<!\w)(zreflect/[A-Za-z_][A-Za-z0-9_]*\.py)")
 _NEEDS_QUOTING = re.compile(r"""[\s\\$`"'|&;<>()*?{}\[\]#~]""")
@@ -351,8 +352,11 @@ def _quote_for_shell(path):
 
 def _python_of(cmd):
     interp = _quote_for_shell(sys.executable)
-    out = _PY_CMD.sub(lambda _m: interp, cmd)
-    return _TOOL_REL.sub(lambda m: _quote_for_shell(os.path.join(tool_repo(), m.group(1))), out)
+    parts = _QUOTED_SPAN.split(cmd)
+    for idx in range(0, len(parts), 2):
+        seg = _PY_CMD.sub(lambda _m: interp, parts[idx])
+        parts[idx] = _TOOL_REL.sub(lambda m: _quote_for_shell(os.path.join(tool_repo(), m.group(1))), seg)
+    return "".join(parts)
 
 
 def _shell_argv(cmd):
@@ -822,6 +826,21 @@ def _case_inproc_selftest_and_hmac():
     return with_run_cache(_inner)
 
 
+def _case_python_of_quoted():
+    orig_tool_repo = globals()["tool_repo"]
+    globals()["tool_repo"] = lambda: "/tmp/dir with space"
+    try:
+        out = _python_of("python3 -c \"print('zreflect/gate.py')\" && python3 zreflect/facts.py")
+        expected = "'%s'" % os.path.join("/tmp/dir with space", "zreflect/facts.py")
+        return (
+            "\"print('zreflect/gate.py')\"" in out
+            and expected in out
+            and _python_of('python3 -c \'open("zreflect/gate.py")\'').endswith('\'open("zreflect/gate.py")\'')
+        )
+    finally:
+        globals()["tool_repo"] = orig_tool_repo
+
+
 def _cases():
     return [
         ("★ gate.empty_input_fatals", lambda: raises(lambda: require_nonempty("x", []))),
@@ -859,6 +878,7 @@ def _cases():
          lambda: resolve_spec(["--spec=foo.json"], "", "d.json") == ("foo.json", True)),
         ("★ gate.forged_run_cache_and_depth_ignored", _case_forged_cache_and_depth),
         ("★ gate.inproc_selftest_and_hmac_cache", _case_inproc_selftest_and_hmac),
+        ("★ gate.python_of_preserves_quoted_strings", _case_python_of_quoted),
     ]
 
 

@@ -641,9 +641,8 @@ def cmd_get(argv):
 def _init_skeleton(root, state):
     import doc  # noqa: PLC0415
     retract_name = knobs.get("REFLECT_RETRACTIONS")
-    history_name = knobs.get("REFLECT_HISTORY")
     readme_name = (knobs.readme_names() or ["README.md"])[0]
-    return {
+    sk = {
         state: ("# " + state + "\n\n"
                 "> live state: cite ledger values with double brackets (keys from FACTS.json) "
                 "here in the intro blockquote.\n"
@@ -653,9 +652,6 @@ def _init_skeleton(root, state):
         doc.PRINCIPLES: ("# PRINCIPLES\n\n"
                          "> design rules rendered by `facts.py --render-doc`.\n\n"
                          + doc.RULES_BEGIN + "\n" + doc.RULES_END + "\n"),
-        history_name: ("# " + history_name + "\n\n"
-                       "> Append-only provenance narrative (kept off every scan surface).\n\n"
-                       "## Entries\n"),
         retract_name: '{"schema": 1, "retractions": []}\n',
         knobs.get("REFLECT_SECRETS"): json.dumps({
             "paths": ["."],
@@ -674,9 +670,16 @@ def _init_skeleton(root, state):
         knobs.CONFIG_NAME: json.dumps({
             "REFLECT_MEASURE_MODULE": "measure_example",
             "REFLECT_OFF_GATES": ("check_ab.py,check_instruments.py,check_invariants.py,"
-                                  "check_locks.py,check_pins.py,check_world.py,doctor.py"),
+                                  "check_locks.py,check_pins.py,check_right.py,check_world.py,doctor.py"),
+            **({"REFLECT_HISTORY_MODE": "fold"} if knobs.history_mode(root) == "folder" else {}),
         }, indent=2) + "\n",
     }
+    if knobs.history_mode(root) != "folder":
+        history_name = knobs.history_target_name(root) or knobs.REGISTRY["REFLECT_HISTORY"][1]
+        sk[history_name] = ("# " + history_name + "\n\n"
+                            "> Append-only provenance narrative (kept off every scan surface).\n\n"
+                            "## Entries\n")
+    return sk
 
 
 def _create_missing(root, files):
@@ -704,6 +707,20 @@ def _init_questions_dir(root):
                  "Template open question (replace or add new `NN-slug.md` files as needed).\n")
 
 
+def _init_history_dir(root):
+    if knobs.history_mode(root) != "folder":
+        return
+    rel = knobs.history_target_name(root)
+    hdir = os.path.join(root, rel)
+    if not os.path.isdir(hdir):
+        os.makedirs(hdir, exist_ok=True)
+        print(str(M("facts.init_created", name=rel.rstrip("/") + "/")))
+    if [n for n in os.listdir(hdir) if n.lower().endswith(".md")]:
+        return
+    with open(os.path.join(hdir, "01-history.md"), "w", encoding="utf-8") as fh:
+        fh.write("# HISTORY\n\n> Append-only provenance narrative (kept off every scan surface).\n")
+
+
 def cmd_init(argv):
     _ = argv
     import doc  # noqa: PLC0415
@@ -717,6 +734,7 @@ def cmd_init(argv):
             and write_doc(doc.PRINCIPLES, {"schema": 1, "facts": {}}) != 0):
         return 2
     _init_questions_dir(root)
+    _init_history_dir(root)
     import shutil  # noqa: PLC0415
 
     import trust  # noqa: PLC0415

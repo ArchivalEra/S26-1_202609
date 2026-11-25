@@ -44,7 +44,8 @@ def enforced_by(script):
 
 def _read_json_checked(path):
     try:
-        data = json.loads(open(path, encoding="utf-8").read())
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
         return (data if isinstance(data, dict) else {}), None
     except (OSError, ValueError) as exc:
         return None, str(exc)
@@ -58,7 +59,8 @@ def _question_exec_problems(qdir):
     if not qdir or not os.path.isdir(qdir):
         return out
     for qp in sorted(glob.glob(os.path.join(qdir, "*.md")), key=check_questions.sort_key):
-        body = open(qp, encoding="utf-8", errors="replace").read()
+        with open(qp, encoding="utf-8", errors="replace") as fh:
+            body = fh.read()
         sv = check_questions.field(body, "Settling")
         if sv and not sv.strip().lower().startswith(check_questions.NONE_LIKE):
             out += gate.prose_in_exec_problems(os.path.basename(qp), "Settling", sv)
@@ -232,7 +234,8 @@ def _load_local_rules(root=None):
     if not os.path.isfile(p):
         return (), [i18n.M("doc.corrupt_json", path=rel, error="not a file")]
     try:
-        data = json.loads(open(p, encoding="utf-8").read())
+        with open(p, encoding="utf-8") as fh:
+            data = json.load(fh)
     except (OSError, ValueError) as exc:
         return (), [i18n.M("doc.corrupt_json", path=rel, error=str(exc))]
     return parse_local_rules(data, rel=rel)
@@ -325,7 +328,8 @@ def _accepts_principles_ok():
     with tempfile.TemporaryDirectory() as root:
         if accepts_principles(root):
             return False
-        open(os.path.join(root, PRINCIPLES), "w", encoding="utf-8").write("# PRINCIPLES\n")
+        with open(os.path.join(root, PRINCIPLES), "w", encoding="utf-8") as fh:
+            fh.write("# PRINCIPLES\n")
         saved = os.environ.pop("REFLECT_NO_PRINCIPLES", None)
         try:
             if not accepts_principles(root):
@@ -363,8 +367,8 @@ def _local_rules_ok():
         return False
     with tempfile.TemporaryDirectory() as d:
         os.makedirs(os.path.join(d, "reflect-local"))
-        open(os.path.join(d, "reflect-local", LOCAL_PRINCIPLES_NAME), "w", encoding="utf-8").write(
-            json.dumps([{"id": "disk_arr", "text": "t", "cmd": "python3 -c 'pass'"}]))
+        with open(os.path.join(d, "reflect-local", LOCAL_PRINCIPLES_NAME), "w", encoding="utf-8") as fh:
+            fh.write(json.dumps([{"id": "disk_arr", "text": "t", "cmd": "python3 -c 'pass'"}]))
         disk_rows, disk_err = _load_local_rules(d)
         return not disk_err and len(disk_rows) == 1 and disk_rows[0].id == "disk_arr"
 

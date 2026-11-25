@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "default_equals": "AGPL-3.0-only",
+  "declarations": [
+    {"path": "站点/dist/licenses.json", "format": "json", "field": "license", "spdx": true}
+  ],
+  "copies": [
+    {"src": "LICENSE", "dst": "站点/dist/LICENSE"},
+    {"src": "站点/licenses.json", "dst": "站点/dist/licenses.json"},
+    {"src": "站点/assets/katex/LICENSE", "dst": "站点/dist/assets/katex/LICENSE"},
+    {"src": "站点/assets/mathlive/LICENSE.txt", "dst": "站点/dist/assets/mathlive/LICENSE.txt"}
+  ]
+}

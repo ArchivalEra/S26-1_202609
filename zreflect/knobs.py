@@ -38,7 +38,8 @@ REGISTRY = {
     "REFLECT_READMES": ("list", "README.md", _Semantic("knobs.sem.reflect_readmes")),
     "REFLECT_RETRACTIONS": ("file", "retractions.json", _Semantic("knobs.sem.reflect_retractions")),
     "REFLECT_QUESTIONS": ("dir", "questions", _Semantic("knobs.sem.reflect_questions")),
-    "REFLECT_HISTORY": ("file", "HISTORY.md", _Semantic("knobs.sem.reflect_history")),
+    "REFLECT_HISTORY": ("path", "HISTORY.md", _Semantic("knobs.sem.reflect_history")),
+    "REFLECT_HISTORY_MODE": ("value", "file", _Semantic("knobs.sem.reflect_history_mode")),
     "REFLECT_INVARIANTS": ("file", "", _Semantic("knobs.sem.reflect_invariants")),
     "REFLECT_INSTRUMENTS": ("file", "", _Semantic("knobs.sem.reflect_instruments")),
     "REFLECT_INSTRUMENT_DAYS": ("number", "", _Semantic("knobs.sem.reflect_instrument_days")),
@@ -49,6 +50,7 @@ REGISTRY = {
     "REFLECT_AB": ("file", "ab.json", _Semantic("knobs.sem.reflect_ab")),
     "REFLECT_PINS": ("file", "pins.json", _Semantic("knobs.sem.reflect_pins")),
     "REFLECT_LOCKS": ("file", "upstream-lock.json", _Semantic("knobs.sem.reflect_locks")),
+    "REFLECT_RIGHTS": ("file", "right.json", _Semantic("knobs.sem.reflect_rights")),
     "REFLECT_LOCAL_DIR": ("dir", "reflect-local", _Semantic("knobs.sem.reflect_local_dir")),
     "REFLECT_MEASURE_MODULE": ("value", "", _Semantic("knobs.sem.reflect_measure_module")),
     "REFLECT_PHASES": ("value", "", _Semantic("knobs.sem.reflect_phases")),
@@ -64,10 +66,14 @@ REGISTRY = {
     "REFLECT_OFF_GATES": ("list", "", _Semantic("knobs.sem.reflect_off_gates")),
 }
 
-KINDS = ("file", "list", "dir", "number", "flag", "value")
+KINDS = ("file", "list", "dir", "path", "number", "flag", "value")
 CONFIG_NAME = "knobs.json"
 FLAG_TRUTHY = ("1", "true", "yes", "on")
 FLAG_FALSY = ("0", "false", "no", "off")
+HISTORY_FILE_MODES = ("file",)
+HISTORY_FOLDER_MODES = ("fold", "folder")
+HISTORY_MODES = HISTORY_FILE_MODES + HISTORY_FOLDER_MODES
+_HISTORY_FOLDER_DEFAULT = "HISTORY"
 
 
 def _tool_root():
@@ -193,6 +199,46 @@ def history_secs(root=None):
                  if s.strip())
 
 
+def history_mode_with_status(root=None):
+    """Return `(normalized_mode, bad_raw_value_or_None)` from `REFLECT_HISTORY_MODE`."""
+    val = (raw("REFLECT_HISTORY_MODE", root) or "").strip()
+    if not val:
+        return "file", None
+    low = val.lower()
+    if low in HISTORY_FOLDER_MODES:
+        return "folder", None
+    if low in HISTORY_FILE_MODES:
+        return "file", None
+    return "file", val
+
+
+def history_mode(root=None):
+    """Resolved history carrier mode: `'file'` (default) or `'folder'`."""
+    return history_mode_with_status(root)[0]
+
+
+def history_target_name(root=None):
+    """Relative history path (`REFLECT_HISTORY` or mode default; `''` if explicitly blanked)."""
+    raw_val = raw("REFLECT_HISTORY", root)
+    if raw_val is not None:
+        return raw_val.strip()
+    return _HISTORY_FOLDER_DEFAULT if history_mode(root) == "folder" else REGISTRY["REFLECT_HISTORY"][1]
+
+
+def _check_path_target(base, k, val, kind, msg):
+    target = os.path.join(base, val)
+    if kind == "file" and not os.path.isfile(target):
+        return [msg("knobs.config_missing_target", knob=k, target=val)]
+    if kind == "dir" and not os.path.isdir(target):
+        return [msg("knobs.config_missing_target", knob=k, target=val)]
+    if kind == "path":
+        want_dir = k == "REFLECT_HISTORY" and history_mode(base) == "folder"
+        ok = os.path.isdir(target) if want_dir else os.path.isfile(target)
+        if not ok:
+            return [msg("knobs.config_missing_target", knob=k, target=val)]
+    return []
+
+
 def _config_kind_problem(base, k, val, msg):
     import math  # noqa: PLC0415
     kind = REGISTRY[k][0]
@@ -204,10 +250,9 @@ def _config_kind_problem(base, k, val, msg):
         return [] if ok else [msg("knobs.config_invalid_value", knob=k)]
     if kind == "flag" and val.lower() not in FLAG_TRUTHY + FLAG_FALSY:
         return [msg("knobs.config_invalid_value", knob=k)]
-    if ((kind == "file" and not os.path.isfile(os.path.join(base, val)))
-            or (kind == "dir" and not os.path.isdir(os.path.join(base, val)))):
-        return [msg("knobs.config_missing_target", knob=k, target=val)]
-    return []
+    if k == "REFLECT_HISTORY_MODE" and val.lower() not in HISTORY_MODES:
+        return [msg("knobs.config_invalid_value", knob=k)]
+    return _check_path_target(base, k, val, kind, msg)
 
 
 def _config_entry_problems(base, k, v, msg):
@@ -429,6 +474,8 @@ def _cases():
          and isinstance(repo_config(), dict)
          and config_problems() == []
          and isinstance(history_secs(), tuple)
+         and history_mode() == "file"
+         and history_target_name() == REGISTRY["REFLECT_HISTORY"][1]
          and len(knobs_table().splitlines()) > 10),
     ]
 

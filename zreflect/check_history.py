@@ -44,9 +44,10 @@ from gate import main_selftest_or, meta, module_meta, off  # noqa: E402
 from i18n import M  # noqa: E402
 
 
-def location():
-    """Absolute path of the history document (`REFLECT_HISTORY`)."""
-    return gate.repo_path(knobs.get("REFLECT_HISTORY"))
+def location(root=None):
+    """Absolute path of the history file or directory (`REFLECT_HISTORY` / `REFLECT_HISTORY_MODE`)."""
+    rel = knobs.history_target_name(root) or knobs.REGISTRY["REFLECT_HISTORY"][1]
+    return gate.repo_path(rel) if root is None else os.path.join(root, rel)
 
 
 def surfaces():
@@ -66,13 +67,8 @@ def _norm(path):
 def is_exempt(path, known=None, root=None):
     """Whether `path` lies outside every scan surface.
 
-    A path is on a surface when it equals a declared document, or lies inside a
-    declared directory. Both forms appear in practice (`REFLECT_DOCS` lists
-    files, `REFLECT_QUESTIONS` names a directory).
-
-    Declared entries are resolved against `root` (default: the audited repo);
-    the selftest passes a fake root so the criterion is exercised without
-    touching this checkout.
+    A path is on a surface when it equals a declared document, lies inside a
+    declared directory, or (for a history folder) contains a declared surface.
     """
     base_root = root or gate.GATE_REPO
     target = _norm(path)
@@ -82,13 +78,7 @@ def is_exempt(path, known=None, root=None):
                 continue
             base = _norm(entry if os.path.isabs(entry)
                          else os.path.join(base_root, entry))
-            if target == base:
-                return False
-            # A **declared directory** contains everything beneath it. Deciding
-            # by `os.path.isdir` alone would make the answer depend on the
-            # filesystem; an entry with no suffix that is not a known file is a
-            # directory for this purpose.
-            if target.startswith(base + os.sep):
+            if target == base or target.startswith(base + os.sep) or base.startswith(target + os.sep):
                 return False
     return True
 
@@ -107,19 +97,52 @@ def _content_problems(target):
     return []
 
 
-def problems(known=None, path=None):
-    """The exemption's own criterion: history must exist and stay unscanned.
+def _file_problems(target):
+    if not os.path.exists(target):
+        return [M("history.missing", path=target)]
+    if os.path.isdir(target):
+        return [M("history.wrong_kind", path=target, expected="file")]
+    return _content_problems(target)
 
-    `path` is injectable so the selftest can exercise both branches without
-    depending on this checkout's own HISTORY.md.
-    """
+
+def _folder_entry_problems(dirpath, names, dirs):
+    out = []
+    count = 0
+    for d in sorted(dirs):
+        if os.path.islink(os.path.join(dirpath, d)):
+            out.append(M("history.empty_or_malformed", path=os.path.join(dirpath, d)))
+    for fname in sorted(names):
+        full = os.path.join(dirpath, fname)
+        count += 1
+        if os.path.islink(full) or not fname.lower().endswith(".md"):
+            out.append(M("history.empty_or_malformed", path=full))
+        else:
+            out += _content_problems(full)
+    return out, count
+
+
+def _folder_problems(target):
+    if not os.path.exists(target):
+        return [M("history.missing", path=target)]
+    if not os.path.isdir(target):
+        return [M("history.wrong_kind", path=target, expected="folder")]
+    out, total = [], 0
+    for dirpath, dirs, names in os.walk(target, followlinks=False):
+        dirs[:] = sorted(dirs)
+        probs, count = _folder_entry_problems(dirpath, names, dirs)
+        out += probs
+        total += count
+    if total == 0 and not out:
+        out.append(M("history.empty_or_malformed", path=target))
+    return out
+
+
+def problems(known=None, path=None, mode=None):
+    """The exemption's own criterion: history must exist, match format, and stay unscanned."""
     known = surfaces() if known is None else known
     target = location() if path is None else path
-    out = []
-    if not os.path.exists(target):
-        out.append(M("history.missing", path=target))
-    else:
-        out += _content_problems(target)
+    resolved_mode = knobs.history_mode() if mode is None else mode
+    out = _folder_problems(target) if resolved_mode == "folder" else _file_problems(target)
     if not is_exempt(target, known):
         out.append(M("history.on_scan_surface", path=target))
     return out
@@ -136,13 +159,16 @@ def is_configured():
 
 
 def run(argv=None):
-    """Gate entry: report a missing history document or one that got scanned."""
-    argv = list(sys.argv[1:] if argv is None else argv)
+    """Gate entry: report missing, malformed, wrong-kind, or scanned history."""
+    _ = list(sys.argv[1:] if argv is None else argv)
     if is_configured():
         return off(M("history.off"))
-    probs = problems()
-    return gate.finish(M("history.title"), probs,
-                       M("history.ok", path=os.path.basename(location())))
+    mode, bad_mode = knobs.history_mode_with_status()
+    if bad_mode is not None:
+        return gate.fatal(M("history.bad_mode", mode=bad_mode))
+    probs = problems(mode=mode)
+    label = os.path.basename(location().rstrip("/\\")) or location()
+    return gate.finish(M("history.title"), probs, M("history.ok", path=label))
 
 
 def _empty_case():
@@ -154,6 +180,34 @@ def _empty_case():
         return [c.code for c in problems({}, path=p)] == ["history.empty_or_malformed"]
     finally:
         os.unlink(p)
+
+
+def _fold_mode_case():
+    import tempfile  # noqa: PLC0415
+    with tempfile.TemporaryDirectory() as td:
+        hdir = os.path.join(td, "HISTORY")
+        os.makedirs(os.path.join(hdir, "2026"))
+        if [p.code for p in problems({}, path=hdir, mode="folder")] != ["history.empty_or_malformed"]:
+            return False
+        open(os.path.join(hdir, "01-init.md"), "w", encoding="utf-8").write("# Init\n\n> why\n")
+        open(os.path.join(hdir, "2026", "release-notes.md"), "w", encoding="utf-8").write("# Rel\n\nnote\n")
+        if problems({}, path=hdir, mode="folder") != []:
+            return False
+        if is_exempt(hdir, {"REFLECT_DOCS": [os.path.join(hdir, "01-init.md")]}, root=td):
+            return False
+        if not is_exempt(hdir, {"REFLECT_DOCS": [os.path.join(td, "HISTORY-x", "01.md")]}, root=td):
+            return False
+        bad = os.path.join(hdir, "broken.md")
+        open(bad, "w", encoding="utf-8").write("# Missing prose\n")
+        if [p.code for p in problems({}, path=hdir, mode="folder")] != ["history.empty_or_malformed"]:
+            return False
+        if [p.code for p in problems({}, path=hdir, mode="file")] != ["history.wrong_kind"]:
+            return False
+        if [p.code for p in problems({}, path=bad, mode="folder")] != ["history.wrong_kind"]:
+            return False
+        os.unlink(bad)
+        open(os.path.join(hdir, "raw.txt"), "w", encoding="utf-8").write("# Non-md\n\ntext\n")
+        return [p.code for p in problems({}, path=hdir, mode="folder")] == ["history.empty_or_malformed"]
 
 
 def _cases():
@@ -174,15 +228,16 @@ def _cases():
          lambda: [p.code for p in problems({}, path="/nonexistent/HISTORY.md")]
          == ["history.missing"]),
         ("\u2605 history.empty_or_malformed", _empty_case),
+        ("\u2605 history.fold_mode_folder_exemption_and_format", _fold_mode_case),
         ("history.this_repo_is_exempt",
          lambda: problems() == []),
     ]
 
 
 GATE = meta("History document",
-            "the one carrier where prose is allowed: it must exist and must stay off every scan surface",
-            knobs=("REFLECT_HISTORY", "REFLECT_DOCS", "REFLECT_READMES",
-                   "REFLECT_QUESTIONS", "REFLECT_FACTS"),
+            "the one carrier where prose is allowed: single file or fold directory must exist and stay off every scan surface",
+            knobs=("REFLECT_HISTORY", "REFLECT_HISTORY_MODE", "REFLECT_DOCS",
+                   "REFLECT_READMES", "REFLECT_QUESTIONS", "REFLECT_FACTS"),
             runs_at="start-of-work",
             off_reason="a repo that keeps no history document states so by "
                        "pointing REFLECT_HISTORY at nothing; the exemption then "

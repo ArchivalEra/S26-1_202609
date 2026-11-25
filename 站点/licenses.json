@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "name": "S26-1_202609",
+  "license": "AGPL-3.0-only",
+  "licenseUrl": "https://www.gnu.org/licenses/agpl-3.0.html",
+  "localLicense": "LICENSE",
+  "components": {
+    "site_code": {
+      "name": "S26-1 站点自研代码与原创学习笔记",
+      "license": "AGPL-3.0-only",
+      "licenseUrl": "https://www.gnu.org/licenses/agpl-3.0.html",
+      "localLicense": "LICENSE"
+    },
+    "shirone_reader": {
+      "name": "Shirone Material 3 Reader 主题样式",
+      "license": "MIT",
+      "licenseUrl": "https://opensource.org/license/mit"
+    },
+    "katex": {
+      "name": "KaTeX",
+      "license": "MIT",
+      "licenseUrl": "https://github.com/KaTeX/KaTeX/blob/main/LICENSE",
+      "localLicense": "assets/katex/LICENSE"
+    },
+    "mathlive": {
+      "name": "MathLive",
+      "license": "MIT",
+      "licenseUrl": "https://github.com/arnog/mathlive/blob/main/LICENSE.txt",
+      "localLicense": "assets/mathlive/LICENSE.txt"
+    },
+    "marked": {
+      "name": "marked",
+      "license": "MIT",
+      "licenseUrl": "https://github.com/markedjs/marked/blob/master/LICENSE.md"
+    },
+    "js_yaml": {
+      "name": "js-yaml",
+      "license": "MIT",
+      "licenseUrl": "https://github.com/nodeca/js-yaml/blob/master/LICENSE"
+    }
+  }
+}

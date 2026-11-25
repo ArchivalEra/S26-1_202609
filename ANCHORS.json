@@ -1,6 +1,6 @@
 {
   "approver_pub": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAvf9ckQEI6CkK30ookgtqjT6I3H0PXzo6ov25212pyDQ=\n-----END PUBLIC KEY-----\n",
-  "knobs_sha256": "a4ad8de4f61213fe64226fead88672c10cff2d8d29ad1ff896d1c776aa3cd4f2",
+  "knobs_sha256": "45ed82723a886c6352bd8c5fa46f38964f8c54fa1dac8ea7d59de004fd91ef6b",
   "local_scripts": {
     "reflect-local/check_doc_paths.py": "3eca4510e21f14a068a1ade47e69235c99af2c116c21938b033e227ad5198008",
     "reflect-local/check_headings.py": "582b5999c9e555fa30505141106f290f1014743c4d2083ade3c36ed697669915",
@@ -8,7 +8,7 @@
     "reflect-local/check_tools_untracked.py": "378dcb7ba405b41c1a1e738d25c3e23d17b0d50388c7a06938a11b05f1c5baa8",
     "reflect-local/check_transcript_privacy.py": "3c9c29f237754a93d93633e3d3fff243b94e2864b7d58596ba862b3fd388a223",
     "reflect-local/check_walkthrough.py": "96218de8ade6c44b55d31d7532ca33a4a11cad5846aa002a8dff0b7e03bb1e70",
-    "reflect-local/hook.py": "4568cf3e65329be4e70c323dabd90636da6c3c34df7b40b4ae07eaba8c7bfde8",
+    "reflect-local/hook.py": "e37dc7910569dbb9d717498ee11d4623cb37c923a892b941b0480258da33056c",
     "reflect-local/measure_edu.py": "ad5e06f5b91347e6eb6de52ef47ba2f56b4acaac591d1f68190051045ded2627",
     "reflect-local/principles.json": "284c8dfceb5dc6eac5e5ff69261fae308a5678ac70ead1eca01b5d4d4d0953ea"
   },
@@ -19,12 +19,13 @@
     "check_locks.py",
     "check_pins.py",
     "check_readme_sync.py",
+    "check_right.py",
     "check_secrets.py",
     "check_world.py",
     "doctor.py"
   ],
   "principles": {
-    "doc_py_sha256": "688513c088d62eaede5a1d3b42d87f836511b49fdf2df172218b073077d5bde2",
+    "doc_py_sha256": "adab25026da89f7c63709984fe91fafec2b42a9230a04a6de9c4e5151f669ac2",
     "no_principles": false,
     "principles_md_sha256": "6bbbc3ff4a16074b3d2ce6e32063ac97488c956454273651175890b22372316b"
   },
@@ -82,6 +83,6 @@
   "repo": "ArchivalEra/S26-1_202609",
   "revoked_ids": [],
   "schema": 2,
-  "suite_seq": 1,
-  "suite_tree_sha256": "141b6dabaa12f53b95bc46a6f477dd247d901a0dd905c94dee905e09bf984e3d"
+  "suite_seq": 9,
+  "suite_tree_sha256": "637510831d103bf28ecf7921b7638eccde7aded008baff59ac5403f265522b22"
 }

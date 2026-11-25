@@ -75,6 +75,8 @@ jobs:
           fi
           # 顺手跑一遍插件测试：搜索的折叠/短语校验逻辑一旦回归，这里会先炸
           npm test
+          # 产物版权声明与副本一致性门禁（check_right）
+          python3 ../zreflect/check_right.py --spec right-dist.json
 
       - name: Deploy to isui.ren-heart@deploy
         if: ${{ !env.ACT }}
