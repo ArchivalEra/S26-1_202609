@@ -87,8 +87,8 @@
     "questions/17-退役能力胶囊并外包Octave站.md": {
       "body_sha256": "0bdbdd0c34fcfab741492235b47e1f27af751a663194852e65631577383bdd31",
       "settling": "`python3 -c \"import os;rm=['站点/plugins/capability-pack.mjs','站点/plugins/pack-runtime.mjs','站点/plugins/formula-cells.mjs','站点/plugins/static-release.mjs','站点/assets/mathlive/mathlive-browser.min.js'];keep=['站点/symbols/index.mjs','站点/plugins/webmcp-tools.mjs','站点/plugins/figures.mjs','站点/math/parser.mjs'];b=open('站点/build.mjs',encoding='utf-8').read();c=open('站点/assets/theme/shirone-reader.css',encoding='utf-8').read();sp=open('站点/plugins/spa-router.mjs',encoding='utf-8').read();bad=any(os.path.exists(p) for p in rm) or any(not os.path.isfile(p) for p in keep) or any(k in b for k in ('pack-capsule','pack-popover','notebook-popover','pack-runtime','formula-cells','static-release','data-octave-code')) or any(k in c for k in ('.pack-capsule','.pack-popover','.notebook-popover','.fcell')) or '__packCellsReset' in sp;raise SystemExit(1 if bad else 0)\"` -- rc=0 => A (能力胶囊、OPFS、MathLive 与站内求值全栈已彻底切除且核心符号/阅读/WebMCP 保留完整); rc!=0 => B (能力胶囊或站内求值残留仍在或核心文件缺失)",
-      "sha256": "9699027eda44f42beed8e34cb22c43d1b67508675dd9146ac1b14455a251f395",
-      "status": "ready-for-human"
+      "sha256": "0f5a667d589d2bec513c6b40939c9f7302ba161a6ea266c7d0bbffe8c27d08cf",
+      "status": "resolved"
     }
   },
   "questions_dir": "questions",

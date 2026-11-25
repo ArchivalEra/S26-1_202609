@@ -24,4 +24,4 @@
 
 **Settling:** `python3 -c "import os;rm=['站点/plugins/capability-pack.mjs','站点/plugins/pack-runtime.mjs','站点/plugins/formula-cells.mjs','站点/plugins/static-release.mjs','站点/assets/mathlive/mathlive-browser.min.js'];keep=['站点/symbols/index.mjs','站点/plugins/webmcp-tools.mjs','站点/plugins/figures.mjs','站点/math/parser.mjs'];b=open('站点/build.mjs',encoding='utf-8').read();c=open('站点/assets/theme/shirone-reader.css',encoding='utf-8').read();sp=open('站点/plugins/spa-router.mjs',encoding='utf-8').read();bad=any(os.path.exists(p) for p in rm) or any(not os.path.isfile(p) for p in keep) or any(k in b for k in ('pack-capsule','pack-popover','notebook-popover','pack-runtime','formula-cells','static-release','data-octave-code')) or any(k in c for k in ('.pack-capsule','.pack-popover','.notebook-popover','.fcell')) or '__packCellsReset' in sp;raise SystemExit(1 if bad else 0)"` -- rc=0 => A (能力胶囊、OPFS、MathLive 与站内求值全栈已彻底切除且核心符号/阅读/WebMCP 保留完整); rc!=0 => B (能力胶囊或站内求值残留仍在或核心文件缺失)
 
-**Status:** ready-for-human
+**Status:** resolved

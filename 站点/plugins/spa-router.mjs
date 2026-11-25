@@ -134,8 +134,8 @@ function navigate(rawUrl, hash, push, opts4) {
     //     （如 电路原理:sym-Tperiod）查不到词条，点了弹不出气泡。
     //   figure-index-json：图元索引（图内符号与交互读它）。
     // 整块 script 元素替换。必须逐块换——漏一块就是一类功能在新页静默失效。
-    // 排序要求：必须排在 __glossaryReset / __packCellsReset / __readerRescan
-    // 之前，那些钩子会立刻重新读这些块。
+    // 排序要求：必须排在 __glossaryReset / __readerRescan 之前，
+    // 那些钩子会立刻重新读这些块。
     var PER_PAGE_JSON_IDS = ["sym-glossary-json", "figure-index-json"];
     for (var pi = 0; pi < PER_PAGE_JSON_IDS.length; pi += 1) {
       var pid = PER_PAGE_JSON_IDS[pi];
@@ -171,9 +171,6 @@ function navigate(rawUrl, hash, push, opts4) {
     try { if (window.__glossaryReset) window.__glossaryReset(); } catch (e) {}
     try { if (window.__readerRescan) window.__readerRescan(); } catch (e) {}
     try { if (window.__disclosureOpen) window.__disclosureOpen(hash); } catch (e) {}
-    // 能力包的公式单元格（2026-10-31）：换页后正文是全新的 DOM，要重新挂单元格；
-    // 旧的那些节点已随 .article-content 一起消失，必须先在换页前 detach（防泄漏）。
-    try { if (window.__packCellsReset) window.__packCellsReset(); } catch (e) {}
   }).catch(function (err) {
     inflight = null;
     if (err?.name === "AbortError") return;

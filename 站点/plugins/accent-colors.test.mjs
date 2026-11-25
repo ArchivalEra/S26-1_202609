@@ -40,70 +40,61 @@ function stripCssComments(src) {
   return src.replace(/\/\*[\s\S]*?\*\//g, '');
 }
 
-test('① 四档色走 oklch（感知亮度），不用 hsl 定死 L', () => {
+test('① 两档色走 oklch（感知亮度），不用 hsl 定死 L', () => {
   const code = stripCssComments(CSS);
-  // 四个 accent 色相变量都必须存在且由 --hue 派生
-  for (const n of [1, 2, 3, 4]) {
+  // 两个现役顶栏入口色相变量都必须存在且由 --hue 派生
+  for (const n of [1, 2]) {
     assert.match(code, new RegExp(`--accent-${n}-h:\\s*calc\\(var\\(--hue\\)\\s*\\+`),
       `第 ${n} 档色相没有由 --hue 派生 —— 换调色盘时它不会跟着变`);
     assert.match(code, new RegExp(`--accent-${n}-l:`), `第 ${n} 档没有 oklch 亮度变量`);
   }
   // 使用处必须是 oklch（hsl 会把黄色档压到 2.6:1）
-  const use = code.slice(code.indexOf('#pack-toggle {'), code.indexOf(':is(#pack-toggle'));
-  assert.ok(use.length > 100, '找不到四档的消费处');
-  assert.match(use, /oklch\(/, '四档没有用 oklch —— hsl 下黄色档的对比度会掉到 2.6:1');
-  assert.ok(!/hsl\(/.test(use), '四档又用 hsl 了');
+  const use = code.slice(code.indexOf('#palette-toggle {'), code.indexOf(':is(#palette-toggle'));
+  assert.ok(use.length > 50, '找不到两档的消费处');
+  assert.match(use, /oklch\(/, '两档没有用 oklch —— hsl 下黄色档的对比度会掉到 2.6:1');
+  assert.ok(!/hsl\(/.test(use), '两档又用 hsl 了');
 });
 
-test('① 四档的色相是等距偏移（任意 hue 下都均匀分布）', () => {
+test('① 两档的色相从 --hue 均匀偏移（240/330）', () => {
   const code = stripCssComments(CSS);
-  // 90° 一档：+60 / +150 / +240 / +330
-  const m = [...code.matchAll(/--accent-([1-4])-h:\s*calc\(var\(--hue\)\s*\+\s*(\d+)\)/g)]
+  const m = [...code.matchAll(/--accent-([12])-h:\s*calc\(var\(--hue\)\s*\+\s*(\d+)\)/g)]
     .map((x) => ({ n: Number(x[1]), off: Number(x[2]) }));
-  assert.equal(m.length, 4, '四档色相变量不全');
+  assert.equal(m.length, 2, '两档色相变量不全');
   const offs = m.sort((a, b) => a.n - b.n).map((x) => x.off);
-  assert.deepEqual(offs, [60, 150, 240, 330],
-    `四档偏移应为等距的 60/150/240/330（每 90° 一档），实际 ${offs.join('/')}`);
+  assert.deepEqual(offs, [240, 330],
+    `两档偏移应为 240/330，实际 ${offs.join('/')}`);
 });
 
 test('② 透明底用 oklab 混合或 alpha，绝不用 srgb 混合 oklch（会产生负值）', () => {
   const code = stripCssComments(CSS);
-  // 实测 bug：color-mix(in srgb, oklch(…) 20%, transparent) →
-  //   color(srgb -0.255691 0.358937 0.497507 / 0.2)  ← 负值
   assert.ok(!/color-mix\(in\s+srgb,\s*var\(--pack-accent\)/i.test(code),
-    '用 srgb 空间混合 oklch 变体 —— Chromium 会跳过色域映射产出负值（实测抓到的真 bug）');
-  // 必须有 oklab 混合（或 oklch alpha 形式）
+    '用 srgb 空间混合 oklch 变体 —— Chromium 会跳过色域映射产出负值');
   assert.match(code, /color-mix\(in\s+oklab,\s*var\(--pack-accent\)/,
-    '没有 oklab 混合 —— 请改用 color-mix(in oklab, …) 或 oklch(… / alpha)');
+    '没有 oklab 混合 —— 请改用 color-mix(in oklab, …)');
 });
 
-test('② 色相变量必须 mod(…, 360)（accent-4 最大到 hue+330 = 689）', () => {
+test('② 色相变量必须 mod(…, 360)（accent-2 最大到 hue+330 = 689）', () => {
   const code = stripCssComments(CSS);
-  const use = code.slice(code.indexOf('#pack-toggle {'), code.indexOf(':is(#pack-toggle'));
-  // 消费处必须环绕（虽然 oklch 自己会取模，但显式 mod 让产物可读、也避免
-  // 某些引擎在 calc 里把 >360 当字面值处理）
+  const use = code.slice(code.indexOf('#palette-toggle {'), code.indexOf(':is(#palette-toggle'));
   const uses = (use.match(/mod\(var\(--accent-/g) || []).length;
-  assert.ok(uses >= 4, `四档色相没都用 mod(…, 360) 环绕（实际 ${uses} 处）—— accent-4 = hue+330 会超 360`);
+  assert.ok(uses >= 2, `两档色相没都用 mod(…, 360) 环绕（实际 ${uses} 处）`);
 });
 
-test('③ 四个入口按钮的展开态由同一条规则驱动（学习助手已退役）', () => {
+test('③ 现役两个入口按钮的展开态由同一条规则驱动（胶囊与学习助手均已退役）', () => {
   const code = stripCssComments(CSS);
   assert.doesNotMatch(code, /#assistant-toggle/, '学习助手按钮样式应已移除');
   assert.doesNotMatch(code, /\.hand-btn/, '.hand-btn 样式应已移除');
-  // 必须有一条 :is(...) 覆盖四个 id + aria-expanded 的规则
-  assert.match(code, /:is\(#pack-toggle,\s*#notebook-toggle,\s*#palette-toggle,\s*#search-toggle\)\[aria-expanded="true"\]/,
-    '四个入口没有走同一条展开态规则 —— 又会有一个按钮展开后不亮');
-  // 每档都要有自己的 --pack-accent
-  for (const id of ['#pack-toggle', '#notebook-toggle', '#palette-toggle', '#search-toggle']) {
+  assert.doesNotMatch(code, /#pack-toggle|#notebook-toggle|\.pack-capsule/, '能力胶囊样式应已移除');
+  assert.match(code, /:is\(#palette-toggle,\s*#search-toggle\)\[aria-expanded="true"\]/,
+    '两个现役入口没有走同一条展开态规则');
+  for (const id of ['#palette-toggle', '#search-toggle']) {
     assert.match(code, new RegExp(`${id}\\s*\\{[^}]*--pack-accent:`), `${id} 没有 --pack-accent`);
   }
 });
 
 test('③ 调色盘与搜索都会置 aria-expanded（否则按钮永远不亮）', () => {
-  // 调色盘：原来只切 .open 类
   assert.match(THEME_JS, /paletteToggleBtn\.setAttribute\(["']aria-expanded["']/,
     '调色盘没置 aria-expanded —— 展开后按钮不会亮');
-  // 搜索：原来什么都不切
   assert.match(SEARCH, /toggleBtn\.setAttribute\(["']aria-expanded["'],\s*["']true["']\)/,
     '搜索打开时没置 aria-expanded');
   assert.match(SEARCH, /toggleBtn\.setAttribute\(["']aria-expanded["'],\s*["']false["']\)/,

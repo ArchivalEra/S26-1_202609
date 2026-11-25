@@ -586,10 +586,14 @@ function loadText(id) {
 }
 
 function openPanel() {
+  var pal = document.getElementById("palette-popover");
+  var palBtn = document.getElementById("palette-toggle");
+  if (pal) pal.classList.remove("open");
+  if (palBtn) palBtn.setAttribute("aria-expanded", "false");
   panel.hidden = false;
   document.body.classList.add("search-open");
   // aria-expanded 是顶栏按钮「展开态高亮」的判据（2026-11-01 统一）：
-  // 五个入口按钮都靠这个属性点亮，搜索不能漏。
+  // 入口按钮靠这个属性点亮，搜索不能漏。
   if (toggleBtn) toggleBtn.setAttribute("aria-expanded", "true");
   input.focus();
 }
@@ -810,16 +814,6 @@ input.addEventListener("keydown", (e) => {
 });
 
 toggleBtn.addEventListener("click", () => {
-  // ⚠️ 顶栏四个面板**互斥**（2026-11-01 站长报「调色盘与这个会互相遮挡」）。
-  // 统一入口是 pack-runtime 暴露的 window.__panelToggle。
-  // 它没装配好时（能力包整体失败）退回本地开关，搜索自己至少能用。
-  const bridge = window.__panelToggle;
-  if (bridge && typeof bridge.toggle === "function") {
-    const willOpen = panel.hidden;
-    bridge.toggle("search");
-    if (willOpen) { input.focus(); }
-    return;
-  }
   if (panel.hidden) openPanel(); else closePanel();
 });
 if (closeBtn) closeBtn.addEventListener("click", closePanel);

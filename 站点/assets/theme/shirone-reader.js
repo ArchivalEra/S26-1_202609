@@ -262,21 +262,21 @@
 
   if (paletteToggleBtn && palettePopover) {
     // aria-expanded 是顶栏按钮「展开态高亮」的判据（2026-11-01 统一）：
-    // 五个入口按钮都靠这个属性点亮，调色盘不能只切 .open 类。
+    // 入口按钮都靠这个属性点亮，调色盘不能只切 .open 类。
     const setExpanded = (open) => paletteToggleBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    const closeSearchIfOpen = () => {
+      const sp = document.getElementById("search-panel");
+      const sb = document.getElementById("search-toggle");
+      if (sp && !sp.hidden) sp.hidden = true;
+      document.body.classList.remove("search-open");
+      if (sb) sb.setAttribute("aria-expanded", "false");
+    };
     paletteToggleBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      // ⚠️ 顶栏四个面板**互斥**（2026-11-01 站长报「调色盘与这个会互相遮挡」）。
-      // 统一入口是 pack-runtime 暴露的 window.__panelToggle；它还没装配好时
-      // （例如能力包整体失败）退回本地开关，保证调色盘自己至少能用。
-      const bridge = window.__panelToggle;
-      if (bridge && typeof bridge.toggle === "function") {
-        bridge.toggle("palette");
-        setExpanded(palettePopover.classList.contains("open"));
-        return;
-      }
-      palettePopover.classList.toggle("open");
-      setExpanded(palettePopover.classList.contains("open"));
+      const willOpen = !palettePopover.classList.contains("open");
+      if (willOpen) closeSearchIfOpen();
+      palettePopover.classList.toggle("open", willOpen);
+      setExpanded(willOpen);
     });
 
     palettePopover.addEventListener("click", (e) => {
@@ -284,8 +284,6 @@
     });
 
     document.addEventListener("click", () => {
-      const bridge = window.__panelToggle;
-      if (bridge && typeof bridge.close === "function") { bridge.close("palette"); setExpanded(false); return; }
       palettePopover.classList.remove("open");
       setExpanded(false);
     });
@@ -338,8 +336,6 @@
     );
     nodes.forEach((k) => {
       k.classList.remove("katex-inline-scroll");
-      const fb = k.closest(".fcell-body");
-      if (fb) fb.classList.remove("katex-inline-scroll");
     });
     const artRight = art.getBoundingClientRect().right;
     const toScroll = [];
@@ -357,8 +353,6 @@
     }
     for (const k of toScroll) {
       k.classList.add("katex-inline-scroll");
-      const fb = k.closest(".fcell-body");
-      if (fb) fb.classList.add("katex-inline-scroll");
     }
   }
   function scheduleInlineMathOverflow() {

@@ -11,7 +11,6 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(HERE, '../dist');
 const CSS = fs.readFileSync(path.join(HERE, '../assets/theme/shirone-reader.css'), 'utf8');
 const RUNTIME = fs.readFileSync(path.join(HERE, '../symbols/runtime.mjs'), 'utf8');
-const CELLS = fs.readFileSync(path.join(HERE, 'formula-cells.mjs'), 'utf8');
 const FIGS = fs.readFileSync(path.join(HERE, 'figures.mjs'), 'utf8');
 const WEBMCP = fs.readFileSync(path.join(HERE, 'webmcp-tools.mjs'), 'utf8');
 
@@ -59,10 +58,9 @@ test('符号奇偶校验：强调色（CSS 着色）与冒泡/守卫/WebMCP 使�
   assert.ok(!/\.ML__latex\s+\[data-term\]/.test(stripCssComments(CSS)),
     'shirone-reader.css 应已清理退场的 .ML__latex [data-term]');
 
-  // ── 其余三个源码适配器：一律直接 import symbols/index.mjs，不再手工复写 ──
+  // ── 其余源码适配器：一律直接 import symbols/index.mjs，不再手工复写 ──
   for (const [label, src] of [
     ['webmcp-tools', WEBMCP],
-    ['formula-cells', CELLS],
     ['figures', FIGS],
   ]) {
     assert.match(src, /from ['"]\.\.\/symbols\/index\.mjs['"]/,
@@ -70,19 +68,16 @@ test('符号奇偶校验：强调色（CSS 着色）与冒泡/守卫/WebMCP 使�
     assert.ok(!/"a\.sym-gloss,/.test(src),
       `${label} 不应再手工硬编码选择器副本`);
   }
-  assert.match(CELLS, /closest\(SYMBOL_SELECTOR\)/, 'formula-cells 守卫没用 SYMBOL_SELECTOR');
   const guards = (FIGS.match(/closest\(SYMBOL_SELECTOR\)/g) || []).length;
   assert.ok(guards >= 3, `figures 的让路守卫应至少 3 处用 SYMBOL_SELECTOR，实际 ${guards}`);
 
   // ── 构建产物端一致性（dist 存在时一并核验） ──
   if (fs.existsSync(DIST)) {
     const bubbleJs = fs.readFileSync(path.join(DIST, SYMBOL_RUNTIME_ASSET), 'utf8');
-    const cellsJs = fs.readFileSync(path.join(DIST, 'assets/plugins/formula-cells.js'), 'utf8');
     const figsJs = fs.readFileSync(path.join(DIST, 'assets/plugins/figures.js'), 'utf8');
     const webmcpJs = fs.readFileSync(path.join(DIST, 'assets/plugins/webmcp-tools.js'), 'utf8');
     for (const [name, js] of [
       [SYMBOL_RUNTIME_ASSET, bubbleJs],
-      ['formula-cells.js', cellsJs],
       ['figures.js', figsJs],
       ['webmcp-tools.js', webmcpJs],
     ]) {

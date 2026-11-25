@@ -22,12 +22,6 @@
       "licenseUrl": "https://github.com/KaTeX/KaTeX/blob/main/LICENSE",
       "localLicense": "assets/katex/LICENSE"
     },
-    "mathlive": {
-      "name": "MathLive",
-      "license": "MIT",
-      "licenseUrl": "https://github.com/arnog/mathlive/blob/main/LICENSE.txt",
-      "localLicense": "assets/mathlive/LICENSE.txt"
-    },
     "marked": {
       "name": "marked",
       "license": "MIT",

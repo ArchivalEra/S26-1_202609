@@ -7,7 +7,6 @@
     {"path": "站点/licenses.json", "format": "json", "field": "components.site_code.license", "spdx": true},
     {"path": "站点/licenses.json", "format": "json", "field": "components.shirone_reader.license", "equals": "MIT", "spdx": true},
     {"path": "站点/licenses.json", "format": "json", "field": "components.katex.license", "equals": "MIT", "spdx": true},
-    {"path": "站点/licenses.json", "format": "json", "field": "components.mathlive.license", "equals": "MIT", "spdx": true},
     {"path": "站点/licenses.json", "format": "json", "field": "components.marked.license", "equals": "MIT", "spdx": true},
     {"path": "站点/licenses.json", "format": "json", "field": "components.js_yaml.license", "equals": "MIT", "spdx": true}
   ],

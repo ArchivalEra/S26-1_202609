@@ -10,11 +10,6 @@ import { marked, yaml } from './vendor.mjs';
 import { parse as parseMath } from './math/parser.mjs';
 import { compile as compileMath, render as renderMathDoc, probeRenderer } from './math/index.mjs';
 import { createKatexRenderer, decorateAnchors, DIALECTS } from './math/render.mjs';
-// 构建期判定「这条公式能不能算」：把 IR 喂给转译器，能转出代码才给播放按钮。
-// 为什么在构建期判而不是运行时：一页 283 条公式里多数含裸变量（a₁₁、D_j），
-// 运行时一个个试会白算一遍、还会把版面铺满报错。构建期判一次、烘成属性，
-// 运行时就只给能算的那些挂按钮。
-import { translate as translateToOctave } from './math/to-octave.mjs';
 // 展示引擎 = KaTeX（2026-10-30 站长定案）。理由：MathLive 的拉伸括号由 `⎛⎜⎝/⎞⎟⎠`
 // 小片拼成，接缝处有亚像素缝；KaTeX 用字形伸展机制没这个毛病。
 // 解析器与 IR 是我们自己的，这里只换最末端 adapter。
@@ -42,7 +37,6 @@ import { SPA_ROUTER_JS } from './plugins/spa-router.mjs';
 // SW 根除（2026-10-23）：一次性反注册脚本——见下方写盘段注释
 import { SW_KILL_JS } from './plugins/sw-kill.mjs';
 import { DRAWER_SYNC_JS } from './plugins/drawer-sync.mjs';
-import { PACK_RUNTIME_JS } from './plugins/pack-runtime.mjs';
 import { buildNavModel, isActive, isExpanded, htmlPathOf, filePathOf, NAV_STRUCTURE_JS } from './plugins/nav-structure.mjs';
 import { WEBMCP_SHIM_JS } from './plugins/webmcp-shim.mjs';
 import { WEBMCP_TOOLS_JS } from './plugins/webmcp-tools.mjs';
@@ -117,15 +111,11 @@ function copyFileAtomic(srcPath, destPath) {
   fs.renameSync(tmpPath, destPath);
 }
 
-// 2026-11-06 起 Octave / pyodide 的二进制**不再进 dist**：
-// EdgeOne Pages 单文件 25 MB 硬上限（octave.wasm 29.6 MB 超限），且它们从未在
-// 精确白名单里（CI 构建时本机若没有历史副本就会直接缺件）。改由装配层通过
-// static-release.mjs 从 Static-Contract 镜像分块拉（≤5 MiB/块）。
-// 这两个目录若还留在 站点/assets/ 下只是本地历史副本，构建时跳过。
+// 本地历史运行库目录（octave / pyodide，若残留在本地磁盘）不随纯静态站发布。
 function copySiteAssets(src, dest) {
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    if (entry.name === 'octave' || entry.name === 'pyodide') continue;   // ← 大包改远程拉
+    if (entry.name === 'octave' || entry.name === 'pyodide') continue;
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
     if (entry.isDirectory()) copySiteAssets(srcPath, destPath);
@@ -133,7 +123,7 @@ function copySiteAssets(src, dest) {
   }
 }
 copySiteAssets(path.join(SITE_DIR, 'assets'), path.join(DIST_DIR, 'assets'));
-console.log(`[build] Copied offline assets to dist/assets/ (octave/pyodide 改由 Static-Contract 远程拉)`);
+console.log(`[build] Copied offline assets to dist/assets/`);
 
 // WebMCP 交互契约（Skill.md），原样复制到 dist 根。
 // 为什么复制而不是渲染：它是**纯文本契约**，给外部 Agent 与小模型读的，不是给人看的页面——
@@ -203,7 +193,7 @@ console.log(`[符号] 包：${Object.entries(symbolCatalog.packs).map(([n, p]) =
  * @param {'inline'|'display'} mode
  * @param {string} relPath 页面路径（诊断定位）
  * @param {object} symSession 本页符号解析会话（来自 symbolCatalog.openPage）
- * @param {{calc?: boolean}} [o] calc=true 时**手动标记**这条公式可算
+ * @param {{record?: boolean}} [o]
  * @returns {{rendered: string, plain: string}}
  */
 function renderOneMath(src, mode, relPath, symSession, o = {}) {
@@ -235,43 +225,9 @@ function renderOneMath(src, mode, relPath, symSession, o = {}) {
     }
   }
 
-  const calcMarked = o.calc === true;
-  let computeCode = '';
-  if (calcMarked) {
-    let t = null;
-    try {
-      t = translateToOctave(doc.expr.root);
-    } catch (e) {
-      throw new Error(
-        `[build] 公式标了 {:calc} 但转译器抛错（${relPath}）：${e?.message || e}\n`
-        + `  公式：${src.slice(0, 120)}`);
-    }
-    if (!t.ok || !t.code) {
-      throw new Error(
-        `[build] 公式标了 {:calc} 但算不了（${relPath}）：${t.reason || '转译器没给出原因'}\n`
-        + `  公式：${src.slice(0, 120)}\n`
-        + `  处置：要么把公式改写成 Octave 能吃的形态，要么去掉 {:calc} 标记。`);
-    }
-    computeCode = t.code;
-  }
-
-  let htmlOut = out.html;
-  if (calcMarked) {
-    const codeAttr = String(computeCode)
-      .replace(/&/g, '&amp;').replace(/"/g, '&quot;')
-      .replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    if (!htmlOut.includes('<span class="katex"')) {
-      throw new Error(
-        `[build] 标了 {:calc} 的公式渲染产物里找不到 <span class="katex">（${relPath}）。`
-        + `渲染器可能换过产物形状，需要同步更新 build.mjs 的属性注入点。`);
-    }
-    htmlOut = htmlOut.replace('<span class="katex"',
-      `<span class="katex" data-computable="1" data-octave-code="${codeAttr}"`);
-  }
-
   const rendered = mode === 'display'
-    ? `<div class="math-display katex-scroll-container">${htmlOut}</div>`
-    : htmlOut;
+    ? `<div class="math-display katex-scroll-container">${out.html}</div>`
+    : out.html;
   return { rendered, plain: doc.plain };
 }
 
@@ -355,71 +311,6 @@ fs.writeFileSync(path.join(webmcpDir, 'spa-router.js'), SPA_ROUTER_JS);
 // 由 nav-structure.mjs 的真函数派生（浏览器跑的就是测试跑的）。drawer-sync 依赖它。
 fs.writeFileSync(path.join(webmcpDir, 'nav-structure.js'), NAV_STRUCTURE_JS);
 fs.writeFileSync(path.join(webmcpDir, 'drawer-sync.js'), DRAWER_SYNC_JS);
-// 能力包的**纯逻辑**模块：浏览器端要 import 它（装配层 pack-runtime.js 用它）。
-// 它与 pack-runtime.js 是「逻辑 / 装配」两层——逻辑那份 node 里可直接测，
-// 所以它必须原样落地、不能被内联改写。
-//
-// ⚠️ **必须带版本戳**（2026-10-31 修）：它是 ES 模块，靠 `import(root + 'assets/plugins/
-// capability-pack.mjs')` 动态加载——**模块 import 的 URL 不带查询串时浏览器永久缓存**，
-// 于是 pack-runtime.js 换版了、纯逻辑却还是几天前那份。症状极难看出：
-// 下载成功、OPFS 里文件大小也对，但 `deriveMode` 是旧版逻辑 ⇒ 状态永远停在「只读」，
-// 而装配层每一行都是新的。这与 webmcp-loader 的 __SHIM_VER__/__TOOLS_VER__ 同一类坑。
-// 做法照抄那边：先写盘、算内容哈希、再把哈希替换进装配层的 import 语句。
-// ⚠️ **顺序神圣**：必须先写 capability-pack.mjs（被哈希方），再算哈希，
-// 最后写 pack-runtime.js（哈希消费方）——反过来会把上一轮的哈希写进去。
-const capabilitySrc = fs.readFileSync(path.join(SITE_DIR, 'plugins', 'capability-pack.mjs'), 'utf8');
-fs.writeFileSync(path.join(webmcpDir, 'capability-pack.js'), capabilitySrc);
-// 公式单元格模块（2026-10-31）：装配层用 import() 取它，所以同样要带版本戳。
-// 这个文件里没有任何 node 专有 API —— 它只碰 DOM，浏览器直接能 import。
-const cellsSrc = fs.readFileSync(path.join(SITE_DIR, 'plugins', 'formula-cells.mjs'), 'utf8')
-  .replace(/import\s+\{\s*SYMBOL_SELECTOR\s*\}\s+from\s+['"]\.\.\/symbols\/index\.mjs['"];?/,
-    `const SYMBOL_SELECTOR = ${JSON.stringify(SYMBOL_SELECTOR)};`);
-fs.writeFileSync(path.join(webmcpDir, 'formula-cells.js'), cellsSrc);
-// Static-Contract 客户端（2026-11-06）：装配层 import() 取它去拉 Octave 分块。
-// 同样是纯浏览器模块（fetch / crypto.subtle / DecompressionStream），原样落地 + 版本戳。
-const staticReleaseSrc = fs.readFileSync(path.join(SITE_DIR, 'plugins', 'static-release.mjs'), 'utf8');
-fs.writeFileSync(path.join(webmcpDir, 'static-release.js'), staticReleaseSrc);
-const cellsVer = assetVersion('assets/plugins/formula-cells.js');
-const packVer = assetVersion('assets/plugins/capability-pack.js');
-const staticReleaseVer = assetVersion('assets/plugins/static-release.js');
-const packRuntimeVer = PACK_RUNTIME_JS
-  .split('__PACK_VER__').join(packVer)
-  .split('__CELLS_VER__').join(cellsVer)
-  .split('__STATIC_RELEASE_VER__').join(staticReleaseVer);
-fs.writeFileSync(path.join(webmcpDir, 'pack-runtime.js'), packRuntimeVer);
-
-// ── 数学模块的**浏览器可用子集**（2026-10-31）────────────────────────────
-//
-// 「运行」按钮要把用户编辑后的 LaTeX 转成 Octave 代码，转译器 `to-octave.mjs`
-// 吃的是解析器产出的 IR —— 所以解析器这一小支必须能被浏览器 import。
-//
-// ⚠️ 只拷**这一支**，不是整个 `站点/math/`：`index.mjs`（构建编排）、
-// `render.mjs`（渲染器，61 KB）在浏览器里用不上，拷过去是白重量。
-// 依赖闭包（逐个 grep 确认过）：
-//   to-octave.mjs → 无 import（纯函数，吃 IR）
-//   parser.mjs    → lexer.mjs + commands.mjs
-// 所以四件：to-octave / parser / lexer / commands。
-const mathDistDir = path.join(DIST_DIR, 'assets', 'math');
-fs.mkdirSync(mathDistDir, { recursive: true });
-// ⚠️ 拷成 **.js 而不是 .mjs**（2026-11-06 线上实测的真 bug）：
-// EdgeOne Pages 对 `.mjs` 回 `Content-Type: application/octet-stream`，而
-// `import()` 的 MIME 检查会**拒绝**非 JS 类型 ⇒ 「Failed to fetch dynamically
-// imported module」。整段装配脚本被 try/catch 吞掉、`__initPackRuntime` 永不调用，
-// 于是**胶囊 DOM 在、点不出面板**（线上实测：capability-pack.mjs 与
-// formula-cells.mjs 都是 octet-stream）。改后缀后 EdgeOne 按
-// `application/javascript` 发，浏览器才肯当模块加载。内部相互 import 一并改后缀。
-for (const f of ['to-octave.mjs', 'parser.mjs', 'lexer.mjs', 'commands.mjs']) {
-  const out = f.replace(/\.mjs$/, '.js');
-  const src = fs.readFileSync(path.join(SITE_DIR, 'math', f), 'utf8')
-    .replace(/from '\.\/([A-Za-z0-9_-]+)\.mjs'/g, "from './$1.js'")
-    .replace(/from "\.\/([A-Za-z0-9_-]+)\.mjs"/g, 'from "./$1.js"');
-  fs.writeFileSync(path.join(mathDistDir, out), src);
-}
-// 版本戳（内容哈希）：写盘后才能算，供页面模板里 math 模块的动态 import 用
-// （2026-11-07 线上实报的 404 之一就是无戳的 parser.js 撞上 EdgeOne 缓存旧副本）。
-const parserVer = assetVersion('assets/math/parser.js');
-const octaveVer = assetVersion('assets/math/to-octave.js');
-
 // SW 已根除（2026-10-23 用户定案：长任务要「永远新鲜的页面」，SW 的 SWR/预缓存
 // 与它正面冲突——页面先出旧缓存、后台静默更新、下次才生效，模型跳十几次页会拿到
 // 上一版 HTML；且 SW 修过两次版本错配/部署形态坑，是纯负资产。浏览器 HTTP 缓存 +
@@ -1246,11 +1137,11 @@ for (const relPath of TARGET_FILES) {
   usedHeadingIds.clear();
 
   // 2.1 Display Math $$...$$
-  raw = raw.replace(/\$\$([\s\S]+?)\$\$([ \t]*\{:\s*calc\s*\})?/g, (whole, tex, mark) => {
+  raw = raw.replace(/\$\$([\s\S]+?)\$\$(?:[ \t]*\{:\s*calc\s*\})?/g, (whole, tex) => {
     const id = mathBlocks.length;
     totalFormulasRendered++;
     const src = tex.trim().replace(/[.。，、；;][ \t]*$/, '');
-    const { rendered, plain } = renderOneMath(src, 'display', relPath, symSession, { calc: !!mark });
+    const { rendered, plain } = renderOneMath(src, 'display', relPath, symSession);
     mathBlocks.push({ display: true, html: rendered, plain, tex: src });
     return `@@MATH_BLOCK_${id}@@`;
   });
@@ -1916,32 +1807,6 @@ for (const relPath of TARGET_FILES) {
         </div>
 
         <div class="top-bar-right">
-          <!-- 能力入口胶囊（2026-11-01 站长定案）。
-               ⚠️ 形态是**一枚胶囊、两半**，中间一条斜线分割：
-                 · 左半加号：资源包面板（下载编辑器 / 计算内核）。**恒在**。
-                 · 右半减号：笔记本面板（可写 MATLAB 多行 / 可写公式当场算）。
-                   只有**本页存在可算公式**（class 上带 data-computable="1"）时才出现。
-               「没有可算的状态」⇒ 只有原来那颗圆按钮（就是左半单独一颗圆）。
-               有可算公式 ⇒ 动画向左延伸成胶囊（CSS transition，无 JS 动画）。
-               两半互斥：开一个面板会关掉另一个。
-
-               为什么 + / - 而不是两个图标按钮：站长原话「有点像以前那种
-               一边+一边-那种胶囊」，那是一个控件被斜线分成两块，不是两颗按钮
-               挨着放。所以用一个 div.pack-capsule 包住两个 button，
-               斜线画在容器上（::after），两半各自可点亮。 -->
-          <div class="pack-capsule" id="pack-capsule" data-has-calc="1">
-            <button class="m3-icon-btn pack-cap-plus" id="pack-toggle" aria-label="资源包" title="下载编辑器与计算内核" aria-expanded="false">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-                <line x1="12" y1="5" x2="12" y2="19"/>
-                <line x1="5" y1="12" x2="19" y2="12"/>
-              </svg>
-            </button>
-            <button class="m3-icon-btn pack-cap-minus" id="notebook-toggle" aria-label="计算笔记本" title="打开计算笔记本" aria-expanded="false">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-                <line x1="5" y1="12" x2="19" y2="12"/>
-              </svg>
-            </button>
-          </div>
           <button class="m3-icon-btn" id="palette-toggle" aria-label="调色盘" title="主题与调色盘" aria-expanded="false">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/>
@@ -1983,7 +1848,7 @@ for (const relPath of TARGET_FILES) {
             </div>
             <!-- 字号（2026-10-29 站长定案）：全站缩放。站内所有尺寸都用 rem，
                  所以改 html 的 font-size 一处即全站生效——正文、侧栏、代码块、
-                 连同公式（MathLive 字号继承）一起缩放。范围与默认值参照 Octave-UI 的
+                 连同公式字号一起缩放。范围与默认值参照 Octave-UI 的
                  ThemeManager（12–20px，默认 16）。 -->
             <div class="palette-slider-container">
               <span class="palette-slider-label">
@@ -2030,150 +1895,6 @@ for (const relPath of TARGET_FILES) {
               </div>
             </div>
           </div>
-
-          <!-- 能力包弹窗：两个**独立**下载按钮 + 各自的体积与状态 -->
-          <div class="palette-popover pack-popover" id="pack-popover" hidden>
-            <div class="palette-header">
-              <span class="palette-title">能力包</span>
-            </div>
-            <p class="pack-intro" id="pack-intro">下载后公式可以点击编辑、可以当场求值。缺任一件就保持现在的只读。</p>
-
-            <div class="pack-item" data-pack="editor">
-              <div class="pack-item-head">
-                <span class="pack-item-name">公式编辑器</span>
-                <span class="pack-item-size">824 KB</span>
-              </div>
-              <p class="pack-item-hint">公式可以点击、编辑、复制 LaTeX</p>
-              <div class="pack-item-actions">
-                <button class="pack-btn" data-pack-action="editor">下载</button>
-                <span class="pack-state" id="pack-state-editor">未下载</span>
-              </div>
-              <div class="pack-progress" id="pack-progress-editor" hidden><div class="pack-progress-bar"></div></div>
-            </div>
-
-            <div class="pack-item" data-pack="engine">
-              <div class="pack-item-head">
-                <span class="pack-item-name">计算内核</span>
-                <span class="pack-item-size">9.9 MB</span>
-              </div>
-              <p class="pack-item-hint">用 Octave 真算公式。体积较大，点「运行」时才加载到内存。</p>
-              <div class="pack-item-actions">
-                <button class="pack-btn" data-pack-action="engine">下载</button>
-                <span class="pack-state" id="pack-state-engine">未下载</span>
-              </div>
-              <div class="pack-progress" id="pack-progress-engine" hidden><div class="pack-progress-bar"></div></div>
-            </div>
-
-            <!-- 2026-11-06 站长定案：KaTeX 与 Pyodide 都进下载列表。
-                 KaTeX（277 KB）管「编辑完公式立刻重绘」——不下它也能改，
-                 只是退出编辑后显示刷新要重进页面。
-                 Pyodide 从 Static-Contract 的 supply 包拉（core+sympy+mpmath）。 -->
-            <div class="pack-item" data-pack="katex">
-              <div class="pack-item-head">
-                <span class="pack-item-name">公式渲染器</span>
-                <span class="pack-item-size">270 KB</span>
-              </div>
-              <p class="pack-item-hint">编辑过的公式立刻按新内容重绘（不下也能改，只是显示刷新要重进页面）。</p>
-              <div class="pack-item-actions">
-                <button class="pack-btn" data-pack-action="katex">下载</button>
-                <span class="pack-state" id="pack-state-katex">未下载</span>
-              </div>
-              <div class="pack-progress" id="pack-progress-katex" hidden><div class="pack-progress-bar"></div></div>
-            </div>
-
-            <div class="pack-item" data-pack="pyodide">
-              <div class="pack-item-head">
-                <span class="pack-item-name">Python 内核</span>
-                <span class="pack-item-size">13 MB</span>
-              </div>
-              <p class="pack-item-hint">用 Pyodide 做符号计算（sympy / mpmath）。从 Static-Contract 分块拉。</p>
-              <div class="pack-item-actions">
-                <button class="pack-btn" data-pack-action="pyodide">下载</button>
-                <span class="pack-state" id="pack-state-pyodide">未下载</span>
-              </div>
-              <div class="pack-progress" id="pack-progress-pyodide" hidden><div class="pack-progress-bar"></div></div>
-            </div>
-
-            <!-- 两个能力开关（2026-10-31）：iOS 风格滑块。
-                 状态存 localStorage —— 站长原话「我希望记忆功能发挥作用」。
-                 之前「两件都下载了还得点一下按钮才能编辑」就是因为没有持久状态。 -->
-            <div class="pack-switches">
-              <label class="pack-switch">
-                <span>
-                  允许编辑和计算
-                  <span class="pack-switch-hint">公式旁出播放按钮，点公式本体可原地编辑</span>
-                </span>
-                <input type="checkbox" id="pack-allow-edit">
-                <span class="pack-switch-track" aria-hidden="true"></span>
-              </label>
-              <label class="pack-switch">
-                <span>
-                  自动计算
-                  <span class="pack-switch-hint">可见的公式自动出结果（改完立刻重算）</span>
-                </span>
-                <input type="checkbox" id="pack-auto-compute">
-                <span class="pack-switch-track" aria-hidden="true"></span>
-              </label>
-            </div>
-
-            <!-- 诊断（2026-11-01 站长定案：正常态一个字都不显示）。
-                 上一版把五环状态（编辑器资产/内核资产/编辑器脚本/预览引擎/点击绑定）
-                 逐行摆出来，占了大半屏。站长原话：「本来就只需要下俩玩意开俩开关
-                 给你搞这么复杂干什么」——那一排是给**排障**用的，不该常驻。
-                 所以：全部环都正常 ⇒ 这块完全空；有一个不正常 ⇒ 只显示那一行
-                 （外加一行总述），正常的不报。细节进 console。 -->
-            <div class="pack-diag" id="pack-diag"></div>
-          </div>
-
-          <!-- 计算笔记本面板（2026-11-01 站长定案）：胶囊的减号那一半。
-               **两块**：
-                 · 上块「MATLAB」：自由输入多行 Octave 代码，直接跑（不经 LaTeX 翻译）。
-                 · 下块「公式」：写 LaTeX，走与页面公式同一条转译链，算同一个内核。
-               与资源包面板**互斥**（开一个关另一个）——它们是同一枚胶囊的两半。 -->
-          <div class="palette-popover notebook-popover" id="notebook-popover" hidden>
-            <div class="palette-header">
-              <span class="palette-title">计算笔记本</span>
-            </div>
-
-            <section class="nb-block">
-              <div class="nb-block-head">
-                <span class="nb-block-name">MATLAB</span>
-                <span class="nb-block-hint">直接写代码；矩阵用 disp(mat2str(A)) 才有结构</span>
-              </div>
-              <textarea class="nb-code" id="nb-code" spellcheck="false" rows="4"
-                placeholder="A = [1 2; 3 4];&#10;det(A)&#10;inv(A)"></textarea>
-              <div class="nb-actions">
-                <button class="pack-btn" id="nb-run-code" type="button">运行</button>
-                <span class="nb-hint" id="nb-code-hint">Ctrl/⌘ + Enter 也能运行</span>
-              </div>
-              <pre class="nb-out" id="nb-code-out" hidden></pre>
-            </section>
-
-            <section class="nb-block">
-              <div class="nb-block-head">
-                <span class="nb-block-name">公式</span>
-                <span class="nb-block-hint">所见即所得（MathLive），与页面公式同一条转译链</span>
-              </div>
-              <!-- 公式块用 <math-field>（MathLive 输入），不是 textarea。
-                   站长 2026-11-01：「面板里居然没有 mathlive 的选择器」——
-                   页面上的公式点开就是 MathLive，笔记本里却只有纯文本框，
-                   同一个能力两套输入体验说不过去。
-                   ⚠️ 虚拟键盘全站关闭（见 pack-runtime 的 configureMathField）。
-                   math-virtual-keyboard-policy="manual" 也在这里给一份，
-                   这样即使编辑器脚本没跑起来，键盘也不会冒出来。 -->
-              <math-field class="nb-mathfield" id="nb-tex"
-                math-virtual-keyboard-policy="manual"></math-field>
-              <div class="nb-actions">
-                <button class="pack-btn" id="nb-run-tex" type="button">计算</button>
-                <span class="nb-hint" id="nb-tex-hint">直接写公式；Ctrl/⌘ + Enter 也能算</span>
-              </div>
-              <pre class="nb-out" id="nb-tex-out" hidden></pre>
-            </section>
-
-            <!-- 笔记本自己的诊断位：与资源包面板同一个道理（正常态不显示） -->
-            <div class="pack-diag" id="nb-diag"></div>
-          </div>
-
 
           <button class="m3-icon-btn" id="search-toggle" aria-label="全站搜索" title="全站搜索">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
@@ -2264,326 +1985,6 @@ for (const relPath of TARGET_FILES) {
   <script src="${rootRel}${assetUrl('assets/plugins/nav-structure.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/drawer-sync.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/spa-router.js')}" defer></script>
-  <!-- 能力包（2026-10-30）：装配层 + 纯逻辑模块。
-       **页面加载时不做任何事**——不查状态、不加载 824 KB 编辑器、不碰计算内核（三件套改由 Static-Contract 分块下载到 OPFS）。
-       只有用户点右上角 package 图标时，装配层才查一次状态；下载/运行各按各的时机。 -->
-  <script src="${rootRel}${assetUrl('assets/plugins/pack-runtime.js')}" defer></script>
-  <script type="module">
-    // 装配：把纯逻辑模块接进装配层。
-    // ⚠️ 这里是全站唯一的「能力包接线点」，改接口只改这一处。
-    (async () => {
-      try {
-        // ⚠️ **不能在这里快照 rootRel**（2026-11-01 站长实测「进了页面算不了」）。
-        //
-        // 原写法是 const rootRel = document.documentElement.getAttribute('data-root')，
-        // 在**页面加载那一刻**读一次就再也不更新。SPA 换页时 spa-router 会把
-        // html[data-root] 换成新页的前缀（2026-10-31 的 ③b），但这里闭包住的
-        // 还是初页那个 './' —— 于是换到 课程总览/工程数学/作业/作业1.html 后，
-        // OCT_BASE 拼出 /课程总览/工程数学/作业/assets/octave/octave.js，404。
-        // 服务端日志实证：
-        //   GET /课程总览/工程数学/作业/assets/octave/octave.js  → 404
-        // 而直接打开同一页（不经过 SPA）是通的——所以这个 bug 只在 SPA 路径上露头。
-        //
-        // 修法：assetRoot() 每次调用都现读 data-root。import 语句各自 inline
-        // 调用（模块 URL 反正只加载一次，版本戳不变）；OCT_BASE 与 parser 的
-        // import 改成在函数里现取。
-        const assetRoot = () => document.documentElement.getAttribute('data-root') || './';
-        // ⚠️ 2026-11-07 站长线上实报「公式解析失败：error loading dynamically
-        // imported module: https://isui.ren/assets/math/parser.js」——URL **不带**
-        // /repo/S26-1_202609/ 前缀且 404（带前缀的那条实测 200）。
-        // 数学模块的动态 import 只在「点 ▶ 计算」那一刻才跑，晚于首屏；
-        // 若那一刻 data-root 仍是构建期的相对值（site-root 探测被跳过/失配，
-        // 或 SPA 换页竞态），相对解析就落在域名根 ⇒ 404。
-        // 资产是按「正式根 + 仓库相对路径」部署的，所以这类**运行期动态 import**
-        // 一律优先 canonical（构建期写死的绝对前缀，页面在哪个入口打开都成立）；
-        // canonical 缺失（老页面/裸构建）才退回 data-root。
-        const moduleRoot = () => {
-          const c = document.documentElement.getAttribute('data-canonical-root');
-          return (c && c !== '/') ? c : assetRoot();
-        };
-        const mod = await import(assetRoot() + 'assets/plugins/capability-pack.js?v=__PACK_VER__');
-        // Static-Contract 客户端：只在用户真的点了「下载计算内核」时才 import，
-        // 首屏零开销。releaseLoader 把「从哪个 release 取哪个 entry」交给纯逻辑层，
-        // 装配层只负责拼版本戳与缓存一次 openRelease（多处文件复用同一 manifest）。
-        // ⚠️ 2026-11-06 站长实测「pyodide 无法下载、无限冒重试按钮」：
-        // 这里原来**写死** Octave-Full-Wasm 一个 release，且只缓存一个 handle。
-        // pyodide 的三件（core/sympy/mpmath）在另一个 release
-        // （Octave-Extra-Content/supply-pyodide-314.0.7）里 ⇒ 去 octave 的
-        // manifest 里找必然找不到 ⇒ 每次都失败 ⇒ 界面无限回到「重试」。
-        // 修法：**按资产的 releaseId 分别取 handle**（Map 缓存，一个 release 一个），
-        // releaseId 由纯逻辑层在 ASSETS 里声明（engine / pyodide 各一个）。
-        let srPromise = null;
-        const releaseHandles = new Map();
-        const releaseLoader = async (f) => {
-          if (!srPromise) {
-            srPromise = import(assetRoot() + 'assets/plugins/static-release.js?v=__STATIC_RELEASE_VER__');
-          }
-          const sr = await srPromise;
-          const releaseId = f.releaseId || (f.source && f.source.releaseId);
-          if (!releaseId) throw new Error('资产缺 releaseId，无法定位 release：' + f.name);
-          let handle = releaseHandles.get(releaseId);
-          if (!handle) {
-            const ref = await sr.resolveCatalogueRelease(releaseId);
-            handle = await sr.openRelease(ref);
-            releaseHandles.set(releaseId, handle);
-          }
-          const key = f.source.product + '/' + f.source.name;
-          return handle.read(key);
-        };
-        // root 传**函数**而不是字符串：下载拼 URL 的那一刻才取前缀（见上）。
-        // store 单独建一份，ensureOctave 也要从它读已落地的三件（造 blob URL）。
-        const octStore = mod.createOpfsStore();
-        const pack = mod.createCapabilityPack({ store: octStore, root: assetRoot, releaseLoader });
-
-        // 公式单元格模块（2026-10-31）：暴露工厂函数，装配层（pack-runtime.js）
-        // 在需要时自己 createFormulaCells —— 两层分工：本层管 import 与版本戳，
-        // 装配层管「什么时候装、装在哪个容器上」。
-        try {
-          const cellsMod = await import(assetRoot() + 'assets/plugins/formula-cells.js?v=__CELLS_VER__');
-          window.__createFormulaCells = cellsMod.createFormulaCells;
-        } catch (e) {
-          console.warn('[pack] formula-cells 载入失败，页内单元格不可用', e);
-        }
-
-        // ── 计算适配器（2026-10-31，按上游 Octave-Full-Wasm 「mail/002」 实现）──
-        //
-        // 上游 「002」 给的完整答案：
-        //   ① 「OCTAVE({print, printErr, locateFile})」 建实例（locateFile 必须把
-        //      wasm/data 指到**同一档**的产物，否则报一个完全不提「加载错档」的
-        //      LinkError: imported global does not match the expected type。
-        //      2026-11-06 起这个职责由 OPFS blob URL 承担，不再拼站点目录前缀）；
-        //   ② **「M.execute_interp()」 启动解释器** —— 少了这一步，任何解释器调用
-        //      （同步异步一样）都抛 「RuntimeError: null function」；
-        //   ③ 「WebAssembly.promising(M._eval_wait)」 + 手搓 malloc/stringToUTF8
-        //      搬字符串，得到 「await」 可用的 eval；返回值是 **rc**，不是表达式值；
-        //   ④ stdout 的唯一通道是 「print」 回调（不要读 MEMFS）。
-        //
-        // 不需要 「octave-core.js」（那是整页宿主，要 9 个依赖）、不需要 Worker、
-        // 不需要 COOP/COEP 响应头（wasm32-final 是单线程档）。
-        //
-        // 2026-11-06 起三件套**从 OPFS 读**（用户点「下载计算内核」时才落盘），
-        // 不再从本站 assets/octave/ 取 —— 那些二进制已不进 dist。
-        // UMD 胶水用 blob URL 注入；wasm/data 用 blob URL 交给 locateFile。
-        // blob URL 只在本次会话有效，正好配合「浏览器不保证持久」的既有纪律：
-        // 下次进来若 OPFS 被清，pack.status() 会判 missing，用户再点一次下载即可。
-        let octPromise = null;
-
-        async function octBlobUrl(name) {
-          if (typeof octStore.readBytes !== 'function') {
-            throw new Error('OPFS store 不支持 readBytes，无法从能力包读 ' + name);
-          }
-          const buf = await octStore.readBytes(name);
-          if (!buf || !buf.byteLength) throw new Error('OPFS 里没有 ' + name + '（先点「下载计算内核」）');
-          const mime = name.endsWith('.js') ? 'text/javascript' : 'application/octet-stream';
-          return URL.createObjectURL(new Blob([buf], { type: mime }));
-        }
-
-        function ensureOctave() {
-          if (octPromise) return octPromise;
-          octPromise = (async () => {
-            // 胶水是 UMD，挂 window.OCTAVE（不是模块导出）
-            if (typeof window.OCTAVE !== 'function') {
-              const jsUrl = await octBlobUrl('octave.js');
-              await new Promise((res, rej) => {
-                const s = document.createElement('script');
-                s.src = jsUrl;
-                s.onload = res;
-                s.onerror = () => rej(new Error('octave.js 的 blob URL 加载失败'));
-                document.head.appendChild(s);
-              });
-            }
-            if (typeof window.OCTAVE !== 'function') {
-              throw new Error('octave.js 加载了但没挂上 window.OCTAVE');
-            }
-            // locateFile 必须给出 wasm/data 的 URL。两件都从 OPFS 造 blob URL。
-            const [wasmUrl, dataUrl] = await Promise.all([
-              octBlobUrl('octave.wasm'), octBlobUrl('octave.data'),
-            ]);
-            const locateFile = (f) => {
-              if (f === 'octave.wasm' || f.endsWith('.wasm')) return wasmUrl;
-              if (f === 'octave.data' || f.endsWith('.data')) return dataUrl;
-              return f;                       // 其余（若有）照原名，别猜
-            };
-            const out = { lines: [], errs: [] };
-            const M = await window.OCTAVE({
-              // 启动期 Octave 会往 stdout 打一句「Starting GNU Octave interpreter...」，
-              // 那是**引擎的自述**不是计算结果。它在我们清空 lines 之前就吐了，
-              // 所以清空救不了它 —— 直接在汇里滤掉这一句（只滤这一句，别的一律保留，
-              // 免得把读者的输出也吃掉）。
-              print: (t) => {
-                var str = String(t);
-                if (/^Starting GNU Octave interpreter[.]{3}[.]?\s*$/.test(str)) return;
-                out.lines.push(str);
-              },
-              // stderr 必须收下来（2026-10-31 站长实测报「Octave 返回 rc=2」，
-              // 界面上没有任何说明——因为这里原本把它整个丢掉了）。
-              // 上游 002 §3 坑③ 说启动期会有几条「fft.m shadows a built-in」
-              // 之类的 warning，不影响数值；所以我们不直接往 stdout 混，
-              // 而是**单独收集**，只在 rc≠0 时拼进错误消息。
-              printErr: (t) => { out.errs.push(String(t)); },
-              locateFile,
-            });
-            // ★ 上游 002 §3 坑①：必须先启动解释器，否则 null function
-            M.execute_interp();
-            const promised = WebAssembly.promising(M['_eval_wait']);
-            out.evalAsync = async (code) => {
-              const n = M.lengthBytesUTF8(code) + 1;
-              const ptr = M._malloc(n);
-              M.stringToUTF8(code, ptr, n);
-              try { return await promised(ptr); } finally { M._free(ptr); }
-            };
-            out.M = M;
-            return out;
-          })().catch((e) => { octPromise = null; throw e; });
-          return octPromise;
-        }
-
-        // 契约：「(latex) → {ok, output} | {ok:false, error}」。
-        // 转译失败（公式里有裸变量、求和、分段…）与执行失败分开报——前者是
-        // 「这条公式算不了」，后者是「Octave 报错」，读者要知道是哪一种。
-        window.__packCompute = async (latex) => {
-          const src = String(latex || '').trim();
-          if (!src) return { ok: false, error: '公式是空的' };
-
-          let code;
-          try {
-            // ⚠️ moduleRoot() + ?v=（2026-11-07）：绝对正式根 + 内容哈希。
-            // 裸 assetRoot()+…js 两个坑各踩过一次：相对前缀在镜像入口下落域名根
-            // 404（线上实报）；无戳则 EdgeOne 缓存旧副本（handoff §0.218 同类）。
-            const { parse } = await import(moduleRoot() + 'assets/math/parser.js?v=__PARSER_VER__');
-            const { translate } = await import(moduleRoot() + 'assets/math/to-octave.js?v=__OCTAVE_VER__');
-            const t = translate(parse(src).expr.root);
-            if (!t.ok) return { ok: false, error: t.reason };
-            code = t.code;
-          } catch (e) {
-            return { ok: false, error: '公式解析失败：' + ((e?.message) || e) };
-          }
-          if (!code) return { ok: false, error: '这条公式没有可计算的表达式' };
-
-          let eng;
-          try {
-            eng = await ensureOctave();
-          } catch (e) {
-            return { ok: false, error: '计算内核启动失败：' + ((e?.message) || e) };
-          }
-          eng.lines.length = 0;
-          eng.errs.length = 0;
-          try {
-            // ⚠️ 输出走 **mat2str**，不是 disp（2026-11-01 站长实报「矩阵计算
-            // 又没了，输出是纯数字排序」）。
-            //
-            // 两层坑：
-            //   ① printf 写 C 层 stdout，wasm 里不经过 Emscripten 的 print 回调
-            //      ⇒ rc=0 但 print 汇全空（2026-10-31 实测）。
-            //   ② disp 走 print 通道，但 **print 回调里的换行被吞掉** ——
-            //      实测 disp([1 2; 3 4]) 收到的字节是 49,32,32,32,50,…（十进制）
-            //      全是数字与空格，**没有一个换行符**。于是 3×3 矩阵显示成
-            //      1 0 0 0 1 0 0 0 0 一串数字，读者根本认不出那是个矩阵。
-            //
-            // mat2str 把矩阵**序列化成一个保留结构的字符串**：[1 2; 3 4]。
-            // 没有换行可吞，且形态与 Octave 代码一致（读者一眼看出是几乘几）。
-            // 标量也一样干净（5 而不是 ans = 5）。
-            //
-            // 保底：mat2str 对非数值（字符串、cell、struct）会抛错，那时退回
-            // disp —— 宁可显示成一行，也不能因为格式化失败就当「算不了」。
-            let rc = 0;
-            let out = '';
-            try {
-              rc = await eng.evalAsync('disp(mat2str(' + code + '))');
-              out = eng.lines.join('').trim();
-            } catch (e) {
-              rc = 1;                       // 落到下面的错误分支…不，这里要重试
-            }
-            if (rc !== 0) {
-              // mat2str 不吃的类型（字符串/cell/struct）⇒ 退回 disp 再试一次。
-              // 注意 evalAsync 的异常与 rc≠0 是两回事：前者是 JS 侧抛，后者是
-              // Octave 返回非零。两种都当作「mat2str 这条路不行」。
-              eng.lines.length = 0;
-              eng.errs.length = 0;
-              rc = await eng.evalAsync('disp(' + code + ')');
-              out = eng.lines.join('').trim();
-            }
-            if (rc !== 0) {
-              // rc≠0 时 Octave 的报错在 stderr 里（「error: ...」）。
-              // 把 stderr 摆出来，读者才知道是「语法错」「未定义函数」还是别的。
-              const err = eng.errs.join('').trim();
-              const msg = err || out || ('Octave 返回 rc=' + rc + '（没有给出错误信息）');
-              return { ok: false, error: msg, code, rc };
-            }
-            return { ok: true, output: out || '(无输出)', code };
-          } catch (e) {
-            return { ok: false, error: '执行失败：' + ((e?.message) || e), code };
-          }
-        };
-
-        // 契约：「(code) → {ok, output} | {ok:false, error}」——**原生 Octave 代码**。
-        //
-        // 与 __packCompute 的分工（2026-11-01 笔记本面板要两块）：
-        //   · __packCompute(latex)  吃 LaTeX，先过转译器，再 disp(译出的表达式)
-        //   · __packRunCode(code)   吃**已经是 Octave 语法**的多行代码，原样执行
-        //
-        // 后者不做 disp(...) 包裹：那个包裹只适合「一个表达式」的场景；
-        // 多行代码里读者可能写 A = ...;（无输出）、写 x = 1（Octave 的
-        // 无分号形式自带回显）。原样执行，让 Octave 自己的回显规则生效。
-        window.__packRunCode = async (code) => {
-          const src = String(code || '');
-          if (!src.trim()) return { ok: false, error: '代码是空的' };
-          let eng;
-          try {
-            eng = await ensureOctave();
-          } catch (e) {
-            return { ok: false, error: '计算内核启动失败：' + ((e?.message) || e) };
-          }
-          eng.lines.length = 0;
-          eng.errs.length = 0;
-          try {
-            // ⚠️ 用户写的多行代码原样执行（不能整个包 mat2str：那是给单表达式用的）。
-            // 但多行代码里「裸表达式」的回显同样会被 print 吞掉换行
-            // （实测 [1 2;3 4] 出来是 ans =   1   2   3   4）——
-            // 所以执行完再把 **ans** 用 mat2str 打一遍（只有它是矩阵/标量时才有意义）。
-            //
-            // 顺序：先跑用户代码（它自己的 disp/printf 输出先进汇），
-            // 再单独打 ans。这样「A = ...; det(A)」既有用户要的输出，
-            // 又不会因为上一条赋值的 ans 而被误当成最终结果（重新求值更不会）。
-            // ⚠️ 先清 ans（它是 Octave 全局变量，跨调用活着）——
-            // 不然下面的回显会读到上一次调用的结果。
-            try { await eng.evalAsync('clear ans'); } catch (e) {}
-            eng.lines.length = 0;
-            eng.errs.length = 0;
-            const rc = await eng.evalAsync(src);
-            const userOut = eng.lines.join('').trim();
-            if (rc !== 0) {
-              const err = eng.errs.join('').trim();
-              const msg = err || userOut || ('Octave 返回 rc=' + rc + '（没有给出错误信息）');
-              return { ok: false, error: msg, rc };
-            }
-            // ── 回显 ──────────────────────────────────────────────────
-            // 多行 MATLAB 代码**照原样输出**，不做结构化美化。
-            //
-            // 为什么不美化：Octave 的 print 回调一次就是一整行（实测
-            // disp([1 2;3 4]) 收到 1   2   3   4 一张串、没有换行），所以矩阵
-            // 在页面上会拍平成数字串 —— 这是 **Octave 自己的输出行为**。
-            // 想美化就得猜「用户最后想看哪个变量」，而赋值语句的结果进的是
-            // 变量名（A）不是 ans，猜不到也不该猜。
-            //
-            // 给读者的解法（写在面板提示里）：要看矩阵结构就自己写
-            // disp(mat2str(A))，那会输出 [1 2; 3 4]。
-            //
-            // 单条公式（__packCompute）走的是 mat2str，所以页面上点公式算出来
-            // 的矩阵是**有结构的**（[1 0 0;0 1 0;0 0 0]），不受这里影响。
-            return { ok: true, output: userOut || '(无输出)' };
-          } catch (e) {
-            return { ok: false, error: '执行失败：' + ((e?.message) || e) };
-          }
-        };
-
-        if (window.__initPackRuntime) window.__initPackRuntime(pack);
-      } catch (e) {
-        // 能力包不可用就当它不存在 —— 页面保持只读，这本来就是默认态。
-        console.warn('[pack] 装配失败，保持只读', e);
-      }
-    })();
-  </script>
   <!-- SW 已根除（2026-10-23）：只保留一次性清理，反注册老用户的旧 SW + 清 caches。
        localStorage 标记去重，清完一次后本脚本自动变 no-op。 -->
   <script src="${rootRel}${assetUrl('assets/plugins/sw-kill.js')}" defer></script>
@@ -2591,21 +1992,7 @@ for (const relPath of TARGET_FILES) {
 </html>`;
 
   const outFilePath = path.join(DIST_DIR, targetHtmlPath);
-  // 能力包版本戳：页面模板里写着 `__PACK_VER__` / `__CELLS_VER__` /
-  // `__STATIC_RELEASE_VER__`，到这里统一替换成对应模块的内容哈希。
-  // **必须在这里替换**——上面算 packVer 时页面还没渲染，而模板是逐页生成的字符串。
-  // 漏了这一步，产物里会留着字面 `?v=__PACK_VER__`，浏览器把它当版本号，模块永不更新。
-  //
-  // ⚠️ 每加一个新占位符都要补进这条链（已踩两次）：
-  //   · 2026-11-01 只替 PACK，CELLS 以字面量漏进产物；
-  //   · 2026-11-06 加了 STATIC_RELEASE 又忘了替，实测 `?v=__STATIC_RELEASE_VER__` 残留。
-  // 下面那道 `/__[A-Z]+_VER__/` 兜底断言就是防这个的，别把它删掉。
-  const htmlWithVers = finalHtml
-    .split('__PACK_VER__').join(packVer)
-    .split('__CELLS_VER__').join(cellsVer)
-    .split('__STATIC_RELEASE_VER__').join(staticReleaseVer)
-    .split('__PARSER_VER__').join(parserVer)
-    .split('__OCTAVE_VER__').join(octaveVer);
+  const htmlWithVers = finalHtml;
   // 构建期兜底：任何版本占位符残留都是 bug（上一条断言的就是这个形状，
   // 但它是人工约定的；这里硬拦，免得下次再加第三个占位符时又漏一个）。
   const leakedVer = /__[A-Z]+_VER__/.exec(htmlWithVers);
@@ -2792,7 +2179,7 @@ fs.writeFileSync(
 console.log(`[build] Completed! Rendered ${totalFormulasRendered} math formulas with ${formulaErrors} errors.`);
 
 if (symbolUncovered.length > 0) {
-  // 硬拦（跟 {:calc} 同一条纪律）：一个冒不了泡的符号，读者点的是字面文本。
+  // 硬拦：一个冒不了泡的符号，读者点的是字面文本。
   // 修法看每条 detail——补词条 / 修令牌 / 修排除；真修不了的归 issue 后放行。
   for (const u of symbolUncovered) {
     console.error(`[符号] 未解析：${u.page} · ${u.kind} · ${u.detail}`);

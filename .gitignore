@@ -453,8 +453,6 @@
 # 新增课程、笔记、原始资料或脚本时，先增加对应 !/完整相对路径。
 # 形势与政策：按课程声明豁免教材解析（COURSE_SKIPPED_KINDS），故无该目录
 # 学期与课程索引
-# 与 mathlive 的资产并存：**展示用 katex**（拉伸括号无接缝），**编辑用 mathlive**（<math-field>）。
-# 约 824 KB，**只在用户点「下载编辑器」后才拉**，首屏不用它。
 !/站点/符号包/通用.md
 !/站点/符号环境.mjs
 !/站点/前端交接词.md
@@ -493,9 +491,6 @@
 !/站点/assets/katex/katex.min.js
 !/站点/assets/katex/katex.mjs
 !/站点/assets/katex/LICENSE
-!/站点/assets/mathlive/LICENSE-browser.txt
-!/站点/assets/mathlive/LICENSE.txt
-!/站点/assets/mathlive/mathlive-browser.min.js
 !/站点/assets/theme/shirone-reader.css
 !/站点/assets/theme/shirone-reader.js
 !/站点/assets/vendor/webmcp/polyfill.iife.js
@@ -512,7 +507,6 @@
 !/站点/math/parser.mjs
 !/站点/math/render.mjs
 !/站点/math/terms.mjs
-!/站点/math/to-octave.mjs
 !/站点/licenses.json
 !/站点/package.json
 !/站点/package-lock.json
@@ -520,9 +514,6 @@
 !/站点/plugins/accent-colors.test.mjs
 !/站点/plugins/anchors-markup.test.mjs
 !/站点/plugins/build-asset-version.test.mjs
-!/站点/plugins/calc-marker.test.mjs
-!/站点/plugins/capability-pack.mjs
-!/站点/plugins/capability-pack.test.mjs
 !/站点/plugins/collapse.mjs
 !/站点/plugins/collapse.test.mjs
 !/站点/plugins/completion-boundary.test.mjs
@@ -530,25 +521,15 @@
 !/站点/plugins/disclosure-anchor.mjs
 !/站点/plugins/disclosure-anchor.test.mjs
 !/站点/plugins/drawer-sync.mjs
-!/站点/plugins/editor-contrast.test.mjs
-!/站点/plugins/edit-state.test.mjs
 !/站点/plugins/figures.mjs
 !/站点/plugins/figures.test.mjs
-!/站点/plugins/formula-cells.mjs
-!/站点/plugins/formula-cells.test.mjs
-!/站点/plugins/formula-editable.test.mjs
 !/站点/plugins/glossary-bubble.test.mjs
 !/站点/plugins/issue-status.mjs
 !/站点/plugins/link-validity.test.mjs
 !/站点/plugins/mathlive-css.test.mjs
-!/站点/plugins/module-mime.test.mjs
 !/站点/plugins/nav-structure.mjs
 !/站点/plugins/nav-structure.test.mjs
 !/站点/plugins/no-control-chars.test.mjs
-!/站点/plugins/pack-capsule.test.mjs
-!/站点/plugins/pack-fixes.test.mjs
-!/站点/plugins/pack-popover.test.mjs
-!/站点/plugins/pack-runtime.mjs
 !/站点/plugins/prose-terms.mjs
 !/站点/plugins/prose-terms.test.mjs
 !/站点/plugins/site-root.mjs
@@ -560,8 +541,6 @@
 !/站点/plugins/spa-perpage-json.test.mjs
 !/站点/plugins/spa-router.mjs
 !/站点/plugins/spa-router.test.mjs
-!/站点/plugins/static-release.mjs
-!/站点/plugins/static-release.test.mjs
 !/站点/plugins/sw-kill.mjs
 !/站点/plugins/symbol-coverage.mjs
 !/站点/plugins/symbol-coverage.test.mjs
@@ -579,7 +558,6 @@
 !/站点/symbols/runtime.mjs
 !/站点/plugins/table-responsive.test.mjs
 !/站点/plugins/template-backtick.test.mjs
-!/站点/plugins/to-octave.test.mjs
 !/站点/plugins/webmcp-loader.mjs
 !/站点/plugins/webmcp-loader.test.mjs
 !/站点/plugins/webmcp-shim.mjs
@@ -628,8 +606,6 @@
 !/knowledge/linear-algebra/index.md
 !/knowledge/topology/index.md
 !/LICENSE
-# math-field 编辑态。STIX Two Math 子集仍留在 assets/fonts/ 给编辑器用。
-# MathLive（vendored，MIT）：**只剩浏览器版**。
 !/questions/07-通用电气重写-模块一数学矩阵.md
 !/questions/08-通用电气重写-模块二电路五章.md
 !/questions/09-通用电气重写-模块三模电接轨.md
