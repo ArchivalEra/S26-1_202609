@@ -324,7 +324,57 @@
     if (save) {
       try { localStorage.setItem(FONT_KEY, String(n)); } catch (e) { /* 隐私模式 */ }
     }
+    if (typeof scheduleInlineMathOverflow === "function") scheduleInlineMathOverflow();
   }
+
+  // 窄屏超宽行内公式兜底：仅对单块 .base 仍超出所在行宽的 .katex 挂 .katex-inline-scroll，
+  // 使其就地横向可滑，避免被 .layout-container 的 overflow-x: clip 裁断，同时不动正常折行的公式。
+  let mathOverflowQueued = false;
+  function syncInlineMathOverflow() {
+    const art = document.querySelector(".article-content");
+    if (!art) return;
+    const nodes = Array.from(art.querySelectorAll(".katex")).filter(
+      (k) => !k.closest(".katex-scroll-container, thead")
+    );
+    nodes.forEach((k) => {
+      k.classList.remove("katex-inline-scroll");
+      const fb = k.closest(".fcell-body");
+      if (fb) fb.classList.remove("katex-inline-scroll");
+    });
+    const artRight = art.getBoundingClientRect().right;
+    const toScroll = [];
+    for (const k of nodes) {
+      const box = k.closest("td, th, blockquote, li, p, h1, h2, h3, h4") || art;
+      const cs = getComputedStyle(box);
+      const limitRight = Math.min(artRight, box.getBoundingClientRect().right - (parseFloat(cs.paddingRight) || 0));
+      const bases = k.querySelectorAll(".base");
+      for (const base of bases) {
+        if (base.getBoundingClientRect().right > limitRight + 1) {
+          toScroll.push(k);
+          break;
+        }
+      }
+    }
+    for (const k of toScroll) {
+      k.classList.add("katex-inline-scroll");
+      const fb = k.closest(".fcell-body");
+      if (fb) fb.classList.add("katex-inline-scroll");
+    }
+  }
+  function scheduleInlineMathOverflow() {
+    if (mathOverflowQueued) return;
+    mathOverflowQueued = true;
+    requestAnimationFrame(() => {
+      mathOverflowQueued = false;
+      syncInlineMathOverflow();
+    });
+  }
+  scheduleInlineMathOverflow();
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(scheduleInlineMathOverflow);
+  }
+  window.addEventListener("resize", scheduleInlineMathOverflow);
+  document.addEventListener("toggle", scheduleInlineMathOverflow, true);
 
   const savedFont = localStorage.getItem(FONT_KEY);
   applyFontSize(savedFont !== null ? savedFont : FONT_DEFAULT, false);
@@ -352,7 +402,8 @@
     tocLinks = document.querySelectorAll(".toc-item a");
     headings = Array.from(document.querySelectorAll(".article-content h2, .article-content h3"))
       .filter((h) => h.id);
-    onScroll();
+    if (typeof onScroll === "function") onScroll();
+    scheduleInlineMathOverflow();
   };
   if (tocLinks.length > 0) {
 

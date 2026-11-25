@@ -115,7 +115,7 @@ test('符号缺口：独立复算与账本口径一致（前十同序，计数�
   assert.ok(monotone, `账本 gaps 前十不是降序：${counts.join(' >= ')} —— 前十清单口径坏了`);
   for (let i = 0; i < theirs.length; i += 1) {
     const [label, n1] = theirs[i];
-    const n2 = mine[i][1];
+    const n2 = mineMap.get(label);
     const diff = Math.abs(n1 - n2) / Math.max(n1, 1);
     assert.ok(diff <= 0.10,
       `${label} 计数差 ${(diff * 100).toFixed(1)}% 超过 10%（账本 ${n1} vs 复算 ${n2}）——口径不一致`);

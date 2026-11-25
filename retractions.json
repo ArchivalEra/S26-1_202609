@@ -10,6 +10,48 @@
       "text": "150 张",
       "evidence": "python3 zreflect/facts.py --get figures",
       "fixed_in": "课程总览/电路原理/index.md 与 课程总览/电路原理/作业/index.md（2026-10-10 改为目录计数真值，R-101 已翻案；旧值 150 张不许无标记回到活状态文档）"
+    },
+    {
+      "id": "R-102",
+      "text": "直接浓缩写进",
+      "evidence": "python3 -c \"import subprocess,sys;sys.exit(subprocess.run(['node','--test','plugins/completion-boundary.test.mjs'],cwd='站点').returncode)\"",
+      "fixed_in": "AGENTS.md#固定课表与常驻红线 与 站点/plugins/completion-boundary.test.mjs"
+    },
+    {
+      "id": "R-103",
+      "text": "完成边界 ≤150 字",
+      "evidence": "python3 -c \"import subprocess,sys;sys.exit(subprocess.run(['node','--test','plugins/completion-boundary.test.mjs','plugins/solution-discipline.test.mjs'],cwd='站点').returncode)\"",
+      "fixed_in": "PRINCIPLES.md 与 站点/plugins/completion-boundary.test.mjs"
+    },
+    {
+      "id": "R-104",
+      "text": "## 双签",
+      "evidence": "python3 reflect-local/check_headings.py",
+      "fixed_in": "AGENTS.md 与 reflect-local/check_headings.py 与 HISTORY.md"
+    },
+    {
+      "id": "R-105",
+      "text": "## 三签",
+      "evidence": "python3 reflect-local/check_headings.py",
+      "fixed_in": "AGENTS.md 与 reflect-local/check_headings.py 与 HISTORY.md"
+    },
+    {
+      "id": "R-106",
+      "text": "不混用旧仓旧名",
+      "evidence": "python3 -c \"import json,os,sys;d=json.load(open('reflect-local/principles.json',encoding='utf-8'))['rules'];sys.exit(1 if any(r['id']=='identity_consistent' for r in d) or os.path.exists('reflect-local/check_identity.py') else 0)\"",
+      "fixed_in": "HISTORY.md（原 identity_consistent 原则与 reflect-local/check_identity.py 已退役）"
+    },
+    {
+      "id": "R-107",
+      "text": "助手协议术语唯一",
+      "evidence": "python3 -c \"import json,os,sys;d=json.load(open('reflect-local/principles.json',encoding='utf-8'))['rules'];sys.exit(1 if any(r['id']=='semantics_unique' for r in d) or os.path.exists('reflect-local/check_semantics.py') else 0)\"",
+      "fixed_in": "HISTORY.md（原 semantics_unique 原则与 reflect-local/check_semantics.py 已退役）"
+    },
+    {
+      "id": "R-108",
+      "text": "实验空活代码（.kimi-code/学习通API/）文件清单与回归测试完整",
+      "evidence": "python3 -c \"import json,os,sys;d=json.load(open('reflect-local/principles.json',encoding='utf-8'))['rules'];sys.exit(1 if any(r['id']=='lab_integrity' for r in d) or os.path.exists('reflect-local/check_lab_integrity.py') else 0)\"",
+      "fixed_in": "HISTORY.md（原 lab_integrity 原则与 reflect-local/check_lab_integrity.py 已退役）"
     }
   ]
 }

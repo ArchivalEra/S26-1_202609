@@ -10,8 +10,7 @@
 //     机械做法是本仓的标准写法，判它就是误伤）。
 //   · 题面引用教材图号 ⇒ 图必须画在题面里（:::figure / 内联 SVG / 图片）；
 //     题面明说「图缺」的（照「不猜补」走 issue）豁免——那是不猜补原则的合规形态。
-//   · 「## 完成边界」主列表 ≤150 字、`已解析` 与 `已验证` 两项在场。
-//     只对有该节的页面生效；历史页缺节走 issue，不在这里追认。
+//   · 「## 完成边界」规范已收口到 completion-boundary.test.mjs（只留唯一 issue 指针）。
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -96,14 +95,6 @@ function stemBlocks(text) {
   return out;
 }
 
-function boundaryMain(text) {
-  const m = /## 完成边界\n([\s\S]*?)(?=\n## |\n---\n|$)/.exec(text);
-  if (!m) return null;
-  const blk = m[1];
-  const cuts = [blk.indexOf('### '), blk.indexOf('\n---')].filter((x) => x !== -1);
-  return blk.slice(0, Math.min(...(cuts.length ? cuts : [blk.length])));
-}
-
 function runFile(f) {
   const rel = path.relative(ROOT, f);
   const text = readFileSync(f, 'utf8');
@@ -135,20 +126,5 @@ function runFile(f) {
       '这些题面引用了教材图号，但图没画在题面里——只读题面做不了题（2026-10-13 定案）：\n'
       + bad.map((x) => `  ${x}`).join('\n')
       + '\n  处置：图补进题面（:::figure / 内联 SVG / figures/ 下的 <img>）；原图真缺就写明「图缺」并归 issue。');
-  });
-
-  test(`解析纪律 · ${rel} · 完成边界 ≤150 字且已解析/已验证在场`, () => {
-    const main = boundaryMain(text);
-    if (main === null) return;               // 没有该节的页面不归本闸
-    const hasParsed = /已解析|已整理/.test(main);
-    const hasVerified = /已验证|已独立验算|双签|三签/.test(main);
-    const n = main.replace(/^[-*] /gm, '').replace(/\s/g, '').length;
-    const probs = [];
-    if (n > 150) probs.push(`主列表 ${n} 字 > 150`);
-    if (!hasParsed) probs.push('缺「已解析」项');
-    if (!hasVerified) probs.push('缺「已验证」项');
-    assert.deepEqual(probs, [],
-      '完成边界不合口径：\n  ' + probs.join('；')
-      + '\n  处置：压缩到 150 字内，四条固定项各一句；历史页补节或归 issue。');
   });
 }

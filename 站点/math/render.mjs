@@ -26,6 +26,7 @@ export function irToTex(node, opts = {}) {
   const { decorate = true, dialect = 'katex' } = opts;
   const dialectName = dialect;
   if (!node) return '';
+  const childOpts = opts._nested ? opts : { ...opts, _nested: true };
 
   const wrap = (inner) => {
     if (!decorate || !node.term) return inner;
@@ -49,14 +50,14 @@ export function irToTex(node, opts = {}) {
       // `\left(` / `\right)` 这类：tex 已含命令名
       return node.tex || wrap(node.glyph || '');
     case 'script': {
-      const base = irToTex(node.base, opts);
+      const base = irToTex(node.base, childOpts);
       let s = base;
-      if (node.sub) s += `_{${irToTex(node.sub, opts)}}`;
-      if (node.sup) s += `^{${irToTex(node.sup, opts)}}`;
+      if (node.sub) s += `_{${irToTex(node.sub, childOpts)}}`;
+      if (node.sup) s += `^{${irToTex(node.sup, childOpts)}}`;
       return wrap(s);
     }
     case 'frac':
-      return wrap(`\\${fracCommand(node.fractionStyle)}{${irToTex(node.num, opts)}}{${irToTex(node.den, opts)}}`);
+      return wrap(`\\${fracCommand(node.fractionStyle)}{${irToTex(node.num, childOpts)}}{${irToTex(node.den, childOpts)}}`);
     case 'group': {
       // ⚠️ 2026-10-30 真 bug（KaTeX 报 9 处 katex-error）：原先一律 `.join(' ')`，
       // 于是 `T''_{d3}` 的两个撇号被编成 `T ' '_{{d3}}` ——
@@ -67,7 +68,7 @@ export function irToTex(node, opts = {}) {
       const items = node.items || [];
       let inner = '';
       for (let k = 0; k < items.length; k += 1) {
-        const piece = irToTex(items[k], opts);
+        const piece = irToTex(items[k], childOpts);
         if (k > 0) {
           const prevTex = String(items[k - 1].tex || '').trim();
           const curTex = String(items[k].tex || '').trim();
@@ -78,10 +79,13 @@ export function irToTex(node, opts = {}) {
         inner += piece;
       }
       if (node.fence) return wrap(`${node.fence.open}${inner}${node.fence.close}`);
+      // 顶层透明组不包外层 `{…}`：包一层会把整条公式变成不可断行的单一 mathord，
+      // 导致手机端长行内公式无法在 `=`/`+` 处折行而被横向裁断。
+      if (!opts._nested) return wrap(inner);
       return wrap(`{${inner}}`);
     }
     case 'styled': {
-      const body = irToTex(node.body, opts);
+      const body = irToTex(node.body, childOpts);
       if (node.style === 'operator-name') return wrap(`\\operatorname{${body}}`);
       const cmd = { bold: 'mathbf', upright: 'mathrm', italic: 'mathit', cal: 'mathcal',
         'double-struck': 'mathbb', fraktur: 'mathfrak', sans: 'mathsf',
@@ -89,27 +93,27 @@ export function irToTex(node, opts = {}) {
       return wrap(`\\${cmd}{${body}}`);
     }
     case 'accent':
-      return wrap(`\\${node.accent}{${irToTex(node.body, opts)}}`);
+      return wrap(`\\${node.accent}{${irToTex(node.body, childOpts)}}`);
     case 'root': {
-      const idx = node.index ? `[${irToTex(node.index, opts)}]` : '';
-      return wrap(`\\sqrt${idx}{${irToTex(node.body, opts)}}`);
+      const idx = node.index ? `[${irToTex(node.index, childOpts)}]` : '';
+      return wrap(`\\sqrt${idx}{${irToTex(node.body, childOpts)}}`);
     }
     case 'arrow': {
-      const below = node.below ? `[${irToTex(node.below, opts)}]` : '';
+      const below = node.below ? `[${irToTex(node.below, childOpts)}]` : '';
       // node.tex 已是 `\\xrightarrow` 这种自带反斜杠的形式，不要再加一个
-      return wrap(`${node.tex}${below}{${irToTex(node.above, opts)}}`);
+      return wrap(`${node.tex}${below}{${irToTex(node.above, childOpts)}}`);
     }
     case 'stack': {
       if (node.stackKind === 'substack') {
-        const rows = (node.rows || []).map((r) => r.map((n) => irToTex(n, opts)).join(' ')).join(' \\\\ ');
+        const rows = (node.rows || []).map((r) => r.map((n) => irToTex(n, childOpts)).join(' ')).join(' \\\\ ');
         return wrap(`\\substack{${rows}}`);
       }
-      const rows = (node.rows || []).map((r) => r.map((n) => irToTex(n, opts)).join(' ')).join(' \\\\ ');
+      const rows = (node.rows || []).map((r) => r.map((n) => irToTex(n, childOpts)).join(' ')).join(' \\\\ ');
       return wrap(`\\begin{matrix}${rows}\\end{matrix}`);
     }
     case 'env': {
       const body = (node.rows || [])
-        .map((r) => r.map((c) => c.map((n) => irToTex(n, opts)).join(' ')).join(' & '))
+        .map((r) => r.map((c) => c.map((n) => irToTex(n, childOpts)).join(' ')).join(' & '))
         .join(' \\\\ ');
       const colSpec = node.columnSpec ? `{${node.columnSpec}}` : '';
       return wrap(`\\begin{${node.env}}${colSpec}${body}\\end{${node.env}}`);
@@ -121,7 +125,7 @@ export function irToTex(node, opts = {}) {
     case 'rowbreak':
       return ' \\\\ ';
     case 'phantom':
-      return `\\phantom{${irToTex(node.body, opts)}}`;
+      return `\\phantom{${irToTex(node.body, childOpts)}}`;
     case 'label': {
       // ⚠️ 2026-10-30 改：原来一律返回 ''（「网页上没有 equation 计数器」），
       // 于是 `\tag{1-31}` 被静默丢掉——而**丢掉比留着更糟**：
@@ -129,7 +133,7 @@ export function irToTex(node, opts = {}) {
       // KaTeX 原生支持 `\tag{}`（需 displayMode），所以按结点类型分派：
       //   · katex   → 编回 `\tag{…}`（编号显示在公式右侧）
       //   · 其他引擎 → 仍丢弃（MathLive 不支持）
-      const body = (node.text || []).map((n) => irToTex(n, opts)).join(' ');
+      const body = (node.text || []).map((n) => irToTex(n, childOpts)).join(' ');
       if (dialectName === 'katex') return `\\tag{${body}}`;
       return '';
     }

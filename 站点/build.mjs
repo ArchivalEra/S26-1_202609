@@ -52,6 +52,7 @@ import { measurePage, diagnosePage } from './plugins/symbol-coverage.mjs';
 // 前两道闸只看「判定之后」的事，抓不到「压根没被判定为符号」那一类——
 // 实测电路原理习题册 V/A/T/N/B/M 从没被声明过，构建日志一个字都不说。
 import { measureFormulaShapes, coverageOf } from './plugins/symbol-gaps.mjs';
+import { loadIssueStates, stripClosedBoundary } from './plugins/issue-status.mjs';
 
 const SITE_DIR = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = path.resolve(SITE_DIR, '..');
@@ -81,6 +82,9 @@ if (argvCanonical) {
 // 只校验 kPage（站点要埋的那件）；cUpstream 是插件产物，站点侧不需要。
 const argvSecrets = process.argv.includes('--assistant-secrets')
   ? process.argv[process.argv.indexOf('--assistant-secrets') + 1] : null;
+const argvIssueStates = process.argv.includes('--issue-states')
+  ? process.argv[process.argv.indexOf('--issue-states') + 1] : null;
+const ISSUE_STATES = await loadIssueStates({ statesFile: argvIssueStates });
 let ASSISTANT_KEY = null;      // K_page 钥匙（base64url）
 if (argvSecrets) {
   const sec = JSON.parse(fs.readFileSync(argvSecrets, 'utf8'));
@@ -976,13 +980,7 @@ const NAV_STRUCTURE = [
             label: "交叉内容",
             path: "课程总览/通用电气/交叉内容/index.md",
             children: [
-              { label: "01-正弦量的三张脸", path: "课程总览/通用电气/交叉内容/01-正弦量的三张脸.md" },
-              { label: "02-相量加减为什么变简单", path: "课程总览/通用电气/交叉内容/02-相量加减为什么变简单.md" },
-              { label: "03-微积分变成乘除法", path: "课程总览/通用电气/交叉内容/03-微积分变成乘除法.md" },
-              { label: "04-阻抗三角形", path: "课程总览/通用电气/交叉内容/04-阻抗三角形.md" },
-              { label: "05-三相对称分量", path: "课程总览/通用电气/交叉内容/05-三相对称分量.md" },
-              { label: "06-三次谐波为什么不守规矩", path: "课程总览/通用电气/交叉内容/06-三次谐波为什么不守规矩.md" },
-              { label: "07-大写算工作点小写算放大", path: "课程总览/通用电气/交叉内容/07-大写算工作点小写算放大.md" }
+              { label: "01-电路矩阵与消元判解", path: "课程总览/通用电气/交叉内容/01-电路矩阵与消元判解.md" }
             ]
           }
         ]
@@ -1362,6 +1360,8 @@ for (const relPath of TARGET_FILES) {
 
   // Strip HTML comments (like AUTO-CATALOG)
   raw = raw.replace(/<!--[\s\S]*?-->/g, '');
+  // 已结案的 issue ⇒ 构建期自动隐去「## 完成边界」栏
+  raw = stripClosedBoundary(raw, ISSUE_STATES);
 
   // 构建期符号环境解析（三层锚定，零回退）：段级（显式构建段）覆盖课程级（课程环境表），
   // 符号级（frontmatter「符号强制」+ 令牌包限定）在渲染期最高优先。环境没设「符号」键
@@ -3040,7 +3040,10 @@ for (const relPath of TARGET_FILES) {
   // 「还没进渲染管线」的那一份：正文照原样（Markdown）、公式保持 TeX 原文、
   // 图片路径换成完整 URL、符号保持原样（不冒泡——冒泡是给人页面的交互）。
   // frontmatter 去掉（那是台账字段，不是正文）。
-  const srcNoFm = fs.readFileSync(fullPath, 'utf-8').replace(/^---\r?\n[\s\S]+?\r?\n---\r?\n?/, '');
+  const srcNoFm = stripClosedBoundary(
+    fs.readFileSync(fullPath, 'utf-8').replace(/^---\r?\n[\s\S]+?\r?\n---\r?\n?/, ''),
+    ISSUE_STATES
+  );
   // 图片：源里的相对路径（figures/xxx.svg）→ 相对该页的绝对 URL。
   const siteBase = 'https://isui.ren/repo/S26-1_202609/';
   const pageDir = targetHtmlPath.replace(/[^/]+$/, '');

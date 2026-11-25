@@ -2,7 +2,7 @@
   "rules": [
     {
       "id": "solution_discipline",
-      "text": "解析纪律三原则：完整解答层零反人类词（试探/凑/巧妙看出）、题面引用教材图号必见图（或明说「图缺」）、完成边界 ≤150 字且含「已解析」与「已验证」",
+      "text": "解析纪律三原则：完整解答层零反人类词（试探/凑/巧妙看出）、题面引用教材图号必见图（或明说「图缺」）、完成边界只留单一 issue 指针且构建期随关态自动隐身",
       "cmd": "python3 -c \"import subprocess,sys;sys.exit(subprocess.run(['node','--test','plugins/solution-discipline.test.mjs','plugins/completion-boundary.test.mjs'],cwd='站点').returncode)\""
     },
     {
@@ -41,28 +41,13 @@
       "cmd": "python3 -c \"import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_doc_paths.py'))\""
     },
     {
-      "id": "identity_consistent",
-      "text": "仓库对外标识、作者与仓名只认唯一真相源，不混用旧仓旧名",
-      "cmd": "python3 -c \"import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_identity.py'))\""
-    },
-    {
-      "id": "semantics_unique",
-      "text": "助手协议术语唯一，按口径表查禁用别名（未配置或默认文件不在时明说 off）",
-      "cmd": "python3 -c \"import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_semantics.py'))\""
-    },
-    {
-      "id": "lab_integrity",
-      "text": "不入库的实验空活代码（.kimi-code/学习通API/）文件清单与回归测试完整（克隆无此目录时通过）",
-      "cmd": "python3 -c \"import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_lab_integrity.py'))\""
-    },
-    {
       "id": "walkthrough_covered",
       "text": "已建 Walkthrough.md 的课程，受管课堂笔记与作业必须在同课 Walkthrough.md 中有对应入口",
       "cmd": "python3 -c \"import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_walkthrough.py'))\""
     },
     {
       "id": "headings_allowed",
-      "text": "受管课堂笔记与作业仅允许白名单标题，「完成边界」居末且禁止「条件备注」「来源与边界」等已废板块",
+      "text": "受管课堂笔记与作业仅允许白名单标题，「完成边界」居末仅留单一 issue 指针且禁止「条件备注」「来源与边界」等已废板块",
       "cmd": "python3 -c \"import sys;sys.path.insert(0,'zreflect');import doc;sys.exit(doc.enforced_by('check_headings.py'))\""
     }
   ]

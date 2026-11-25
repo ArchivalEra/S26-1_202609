@@ -1018,3 +1018,27 @@ sh gates-selftest.sh                             # 每道闸门先证明自己�
 - **退役 `mail/` 与 `reflect-local/mail-read.py`**：T3 Code 支持跨线程直接沟通（`t3_thread_list` / `t3_thread_send`），不再需要基于 git 文件的跨仓收件箱，物理移除 `mail/`（历史往来保留在 Git 记录）及 `reflect-local/mail-read.py`。
 
 
+## 2026-11-25 · 归档已结悬案（`questions/01–05`）、退役 `.kimi-code/` 旧原则与「完成边界」旧规翻案
+
+### 1. 已结悬案归档（`questions/01–05`，从 `questions/` 移除）
+
+- **`questions/01-frontmatter-silent-failure.md`（2026-10-22 结案）**：针对 `站点/build.mjs` 两处 `yaml.load` 静默吞异常导致页面 `符号排除: [...]` 失效的问题，将 Step 3 元数据遍与 Step 4 渲染遍的 frontmatter 解析失败全部改为构建硬失败（非零退出并指出文件与错误信息）。
+- **`questions/02-实验空三件套改造.md`（2026-11-11 诚实结案）**：`.kimi-code/学习通API/` 完成 `chaoxing.mjs` / `对话.mjs` / `工具会话.mjs` / `判据.mjs` / `页面桥.js` 重构与回归测试、`实验/` 归档及 `lab` 相位闸门（14 个活文件）；2026-11-11 复核如实记明原计划的 `配方.mjs`（`buildFirstPrompt / cavemanize / toInterrogative`）从未落地，同时指出白名单式判据仅能证明白名单内文件在场、不能背书未列项。
+- **`questions/03-录音入库未写笔记.md`（2026-11-09 结案）**：全仓对账已入库转写与课堂笔记：补写电路原理 `10-19-第二章讲评与支路法.md`、三处连堂第二段转写（形势与政策 `09-21`、电机学 `09-24` 与 `10-08`）在 `原始资料/index.md` 补全「与第一段合一篇」及笔记链接、两份归档 mp3（`20260917_13301545.mp3`、`20260930_09501115.mp3`）按元数据与哈希登记进工程数学与电路原理 `原始资料/index.md`。
+- **`questions/04-缺录音课次统计.md`（2026-11-10 结案）**：建立 `工具/录音检索.py`（以 `yyyymmdd_hhmmhhmm` 为唯一主键，不读散文不输出转写正文）；核实 `10-29` 工程数学两段转写与笔记均在场，电子技术 `2026-09-30` 系站长请假无录音而非漏录；同日拆除过度发明的 `工具/校历.json` 与课表周律推断逻辑，`--missing` 清零结案。
+- **`questions/05-单语言包被迫三语.md`（2026-11-11 本仓侧结案）**：本仓只用 `REFLECT_LANG=zh`，但上游 `knobs.pack_coverage_problems()` 按 `zreflect/lang/*/` 目录要求 zh/en/de 三包齐键；本仓侧已补齐三包键使 `--gates` 全绿，将等待条件改为可跑三包覆盖率判据后结案，机制债务留记于上游 [ArchivalEra/Einfacht#35](https://github.com/ArchivalEra/Einfacht/issues/35)（OPEN）。
+
+### 2. `.kimi-code/` 实验期原则与闸门退役（同步进 `retractions.json`）
+
+因 `PRINCIPLES.md` 与 `retractions.json` 结构耦合（`check_retractions.py` 直接扫描 `REFLECT_DOCS` 防止死原则回流），将下列三条从 `reflect-local/principles.json` 退役、移除对应本地闸门脚本，并将特征串记入 `retractions.json`（`R-106`–`R-108`）：
+
+- **`identity_consistent` + `reflect-local/check_identity.py`（`R-106`）**：原则表文案曾错位写作「仓库对外标识、作者与仓名只认唯一真相源，不混用旧仓旧名」，实际脚本仅检查 `.kimi-code/会话语义/身份白名单.json` 中的协议 ID（`conversationId` 等）是否混入 `sessionKey` 等自造命名，属 2026-10-25~27 助手实验期专检。
+- **`semantics_unique` + `reflect-local/check_semantics.py`（`R-107`）**：仅在 `start-of-work` 相位扫描 `.kimi-code/会话语义/语义表.json` 禁用别名，同属助手实验期专检。
+- **`lab_integrity` + `reflect-local/check_lab_integrity.py`（`R-108`）**：仅在手动 `lab` 相位核对 `.kimi-code/学习通API/` 14 个活文件清单与测试（克隆环境无 `.kimi-code/` 时直接跳过，与 `questions/02` 同期历史遗留）。
+- **上游封印边界备忘**：`PRINCIPLES.md` 中的 `three_readmes` 声明位于受 `zreflect/SEAL.json` 保护的 `zreflect/doc.py` 内；本仓已通过 `knobs.json`（`REFLECT_OFF_GATES`）停用 `check_readme_sync.py` 与 `README.md` 自动改写，不直接修改封印内核。
+
+### 3. 翻案：`## 完成边界` 单一 Issue 指针与 `## 双签` / `## 三签` 退场（`R-102`–`R-105`）
+
+推翻此前 `2026-10-29 / 10-30` 定案（见上文 1009 行历史记录）：
+- 废除正文末尾 `## 双签`、`## 三签` 成节，废除 `## 完成边界` 的 `≤150 字` 摘要清单与「直接浓缩写进」「已解析」「已验证」「缺件关联 issue」等第二产地描述（记入 `retractions.json` `R-102`–`R-105`）。
+- 缺件、双签、三签三态统一由 GitHub Issue 唯一承载；页面仅可在文末保留 `## 完成边界` 与唯一链接 `- [issue #N](...)`，并由 `站点/plugins/issue-status.mjs` 在构建期实时读取开闭态（issue 关闭后自动隐藏整节）。

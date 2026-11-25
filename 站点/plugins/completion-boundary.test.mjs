@@ -1,31 +1,21 @@
-// 「完成边界」与「来源气泡」两道篇幅闸门（2026-10-30 站长定案）。
+// 「完成边界」唯一产地门禁 + 「来源气泡」篇幅门禁（2026-11-25 收敛定案）。
 //
-// ## 为什么要有
-//
-// 2026-10-29 定过「完成边界 ≤400 字」，实测 77 页里 71 页超、最长 1,072 字，
-// 累计 2.3 万字——读者要的是「这份资料能不能信」，不是施工日志。
-// 10-30 再定：**≤150 字**，且 `来源与口径` 一栏整条删除（出处已进 frontmatter 的
-// `sources` 气泡，正文再抄一遍是重复）。
-//
-// 同时 `sources` 本身也收紧到 **≤30 字**——它是页面顶部那颗气泡芯片的文本，
-// 写长了会把 chip 撑成一条横幅（实测 303 字那页）。
-//
-// ## 判据是「形态」不是「字数」
-//
-// 只数字数会漏掉真正的病：压缩时切在公式或括注中间（`$1.` / `（图 2.7`），
-// 页面渲染出半截。所以一并断言 `$`、括号、反引号必须成对。
+// 为什么只允许写单一 issue 指针：
+//   缺件、是否双签、是否三签的真实状态只住 GitHub Issue；
+//   以前在完成边界里抄一遍「缺 SVG / 挂 issue #31 / 尚未双签」，issue 结案后页面就腐烂成第二产地。
+//   现在正文 ## 完成边界 只留一个 issue 指针，构建期按 issue 开闭态自动显隐（已关则整节移除）。
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseBoundaryPointer, extractBoundaryIssueNumber, stripClosedBoundary } from './issue-status.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..', '..');
 const COURSES = path.join(ROOT, '课程总览');
 
-const WB_LIMIT = 150;
 const SRC_LIMIT = 30;
 
 function walkMd(dir, out = []) {
@@ -37,13 +27,10 @@ function walkMd(dir, out = []) {
   return out;
 }
 
-/** 取「## 完成边界」到下一个同级或更高级标题之间的正文。 */
-function wbBody(text) {
-  const i = text.indexOf('## 完成边界');
-  if (i < 0) return null;
-  const rest = text.slice(i + '## 完成边界'.length);
-  const m = /\n(#{2,3}) /.exec(rest);
-  return (m ? rest.slice(0, m.index) : rest).trim();
+/** 取「## 完成边界」到下一个同级标题（或文件末尾）之间的完整片段。 */
+function wbSection(text) {
+  const m = /(?:^|\n)## 完成边界[ \t]*\n([\s\S]*?)(?=\n## |\n---\n|$)/.exec(text);
+  return m ? m[1] : null;
 }
 
 function sourcesOf(text) {
@@ -52,57 +39,54 @@ function sourcesOf(text) {
   const m = /^sources:\s*(\[\])?\s*$/m.exec(fm);
   if (!m) return null;
   if (m[1]) return [];
-  // 逐行收集：`  - xxx` 与后续缩进续行
-  // ⚠️ 只认 `sources:` 之后连续的、以 `  - ` 开头的行。遇到别的顶层键
-  // （`tags:` 之类，同样是 `^\w`）立即停——否则会把下一段的列表项吞进来。
   const lines = fm.slice(m.index + m[0].length).split('\n');
   const items = [];
   for (const line of lines) {
     if (/^\s+-\s+/.test(line)) items.push(line.replace(/^\s+-\s+/, '').trim());
     else if (items.length && line.trim() && /^\s{2,}/.test(line)) items[items.length - 1] += line.trim();
-    else if (line.trim()) break;   // 顶层键或空行之后的内容都不属于 sources
+    else if (line.trim()) break;
   }
   return items;
 }
 
-test('完成边界：每页主列表 ≤150 字（2026-10-30 定案，原 400）', () => {
+test('完成边界：仅允许单一 issue 指针，严禁写缺件/双签/已解析等第二产地文本', () => {
   assert.ok(existsSync(COURSES), '课程总览 目录不存在');
   const bad = [];
   for (const f of walkMd(COURSES)) {
-    const body = wbBody(readFileSync(f, 'utf8'));
-    if (body === null) continue;
-    const n = [...body].length;
-    if (n > WB_LIMIT) bad.push(`${path.relative(ROOT, f)}: ${n} 字`);
+    const text = readFileSync(f, 'utf8');
+    const sec = wbSection(text);
+    if (sec === null) continue;
+    const rel = path.relative(ROOT, f);
+    if (/^###\s+/m.test(sec)) {
+      bad.push(`${rel}: 完成边界下禁止 ### 子节（双签/三签统一归 GitHub Issue 追踪）`);
+      continue;
+    }
+    const afterWb = text.slice(text.indexOf('## 完成边界') + '## 完成边界'.length);
+    if (/\n##\s+/.test(afterWb)) {
+      bad.push(`${rel}: 完成边界必须居末（后面还有 ## 节）`);
+      continue;
+    }
+    const parsed = parseBoundaryPointer(sec);
+    if (!parsed.ok) bad.push(`${rel}: ${parsed.reason}`);
+  }
+  for (const f of walkMd(COURSES)) {
+    const text = readFileSync(f, 'utf8');
+    if (/^##\s+(?:双签|三签)/m.test(text)) {
+      bad.push(`${path.relative(ROOT, f)}: 禁止单独成节 ## 双签 / ## 三签（统一归 GitHub Issue 追踪）`);
+    }
   }
   assert.deepEqual(bad, [],
-    `完成边界超 ${WB_LIMIT} 字（压缩只删过程、保留结论）：\n` + bad.join('\n'));
+    '完成边界违规（仅允许唯一一行 issue #N 或 GitHub issue 超链接）：\n' + bad.join('\n'));
 });
 
-test('完成边界：不许再有「来源与口径」一栏（出处归 frontmatter 的 sources）', () => {
-  const bad = [];
-  for (const f of walkMd(COURSES)) {
-    const body = wbBody(readFileSync(f, 'utf8'));
-    if (body === null) continue;
-    if (/^-\s+\*{0,2}来源与口径/m.test(body)) bad.push(path.relative(ROOT, f));
-  }
-  assert.deepEqual(bad, [],
-    '「来源与口径」已废（2026-10-30）：出处在 sources 气泡与原始资料索引里，正文不重抄：\n' + bad.join('\n'));
-});
-
-test('完成边界：压缩不许切在公式/括注中间（$、括号、反引号必须成对）', () => {
-  const bad = [];
-  for (const f of walkMd(COURSES)) {
-    const body = wbBody(readFileSync(f, 'utf8'));
-    if (body === null) continue;
-    const probs = [];
-    if ((body.match(/\$/g) || []).length % 2) probs.push('$ 未配对');
-    if ((body.match(/（/g) || []).length !== (body.match(/）/g) || []).length) probs.push('全角括号不配对');
-    if ((body.match(/\(/g) || []).length !== (body.match(/\)/g) || []).length) probs.push('半角括号不配对');
-    if ((body.match(/`/g) || []).length % 2) probs.push('反引号未配对');
-    if (probs.length) bad.push(`${path.relative(ROOT, f)}: ${probs.join(' / ')}`);
-  }
-  assert.deepEqual(bad, [],
-    '压缩把公式或括注切断了（页面上会显示半截），必须退回到安全切口：\n' + bad.join('\n'));
+test('完成边界：构建期按 issue 开闭态自动显隐（OPEN 保留，CLOSED 整节移除）', () => {
+  const sample = '# 页\n\n## 正文\n\n内容。\n\n## 完成边界\n\n- [issue #40](https://github.com/ArchivalEra/S26-1_202609/issues/40)\n';
+  assert.equal(extractBoundaryIssueNumber(sample), 40);
+  const kept = stripClosedBoundary(sample, new Map([[40, 'OPEN']]));
+  assert.ok(kept.includes('## 完成边界'), 'OPEN 的 issue 必须保留完成边界');
+  const hidden = stripClosedBoundary(sample, new Map([[40, 'CLOSED']]));
+  assert.ok(!hidden.includes('## 完成边界') && !hidden.includes('#40'), 'CLOSED 的 issue 必须整节隐去');
+  assert.ok(hidden.includes('## 正文'), '正文必须保留');
 });
 
 test('来源气泡：sources 每条 ≤30 字（它是 chip 文本，写长了撑成横幅）', () => {

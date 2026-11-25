@@ -1397,16 +1397,40 @@ body.sidebar-resizing .m3-drawer {
   border-bottom-style: solid;
 }
 
+.article-content :is(a, code):not(pre code) {
+  overflow-wrap: anywhere;
+}
+
 /* Math Container & Scroll */
 .katex-scroll-container {
   overflow-x: auto;
   overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
   margin: 1.25rem 0;
   padding: 0.75rem 1rem;
   background-color: var(--md-sys-color-surface-container-low);
   border-radius: 12px;
   border: 1px solid var(--md-sys-color-outline-variant);
   max-width: 100%;
+}
+
+/* 超宽且内部无可断点的行内公式（行内矩阵、cases、长分式、整段 \mathbf{…}）：
+   仅当超出容器宽度时由 shirone-reader.js 挂此类，改为就地横向滚动而不是被裁断。 */
+.article-content .katex.katex-inline-scroll {
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  vertical-align: middle;
+  padding-block: 0.25rem;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+@media (max-width: 860px) {
+  .katex-scroll-container {
+    padding: 0.75rem;
+  }
 }
 
 /* 显示公式容器（2026-10-29 换引擎：旧类名 katex-display 换成 math-display，
@@ -1526,7 +1550,8 @@ tr:target td {
     overflow: hidden;
     clip-path: inset(50%);
   }
-  .t-cards :is(table, tbody, tr, td) { display: block; }
+  .t-cards :is(table, tbody, tr, td) { display: block; min-width: 0; }
+  .t-cards td { padding: 0.35rem 0.5rem; }
   .t-cards tr {
     margin-block: 0.75rem;
     border: 1px solid var(--md-sys-color-outline-variant);
@@ -2447,6 +2472,12 @@ body.search-open {
 
 /* 内层：只包公式本体，收缩到公式尺寸。hover 描边与编辑都在它上面。 */
 .fcell-body { display: inline-block; max-width: 100%; }
+.fcell-block .fcell-body,
+.fcell:not(.fcell-block) .fcell-body.katex-inline-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
 /* 块级公式：公式本体居中（与外层满宽无关，外层满宽只为按钮对齐） */
 .math-display .fcell-body,
 .fcell-block .fcell-body { display: inline-block; }

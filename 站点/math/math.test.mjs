@@ -234,6 +234,13 @@ test('渲染：IR 编回 TeX 时 `\\htmlData` 只包有 term 的节点', () => {
   assert.equal((tex.match(/htmlData/g) || []).length, 1, 'x 没有 term，不该被包');
 });
 
+test('渲染：顶层透明组不套外层 `{…}`，保留 KaTeX 断行点（嵌套组仍留 `{…}`）', () => {
+  const topTex = irToTex(parse('a+b=c').expr.root, { decorate: false });
+  assert.ok(!topTex.startsWith('{') && !topTex.endsWith('}'), topTex);
+  const nestedBase = irToTex(parse('{a+b}^2').expr.root, { decorate: false });
+  assert.match(nestedBase, /^\{a \+ b\}\^\{2\}$/);
+});
+
 test('方言：MathLive 需要 `\\dots`→`\\ldots`、`\\substack`→smallmatrix、环境边界插 {}', () => {
   const a = toDialect('a\\dots b', 'mathlive');
   assert.match(a.tex, /\\ldots/);

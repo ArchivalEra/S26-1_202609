@@ -433,20 +433,7 @@
 !/课程总览/通用电气/index.md
 !/课程总览/通用电气/Walkthrough.md
 !/课程总览/通用电气/交叉内容/index.md
-!/课程总览/通用电气/交叉内容/01-正弦量的三张脸.md
-!/课程总览/通用电气/交叉内容/02-相量加减为什么变简单.md
-!/课程总览/通用电气/交叉内容/03-微积分变成乘除法.md
-!/课程总览/通用电气/交叉内容/04-阻抗三角形.md
-!/课程总览/通用电气/交叉内容/05-三相对称分量.md
-!/课程总览/通用电气/交叉内容/06-三次谐波为什么不守规矩.md
-!/课程总览/通用电气/交叉内容/07-大写算工作点小写算放大.md
-!/课程总览/通用电气/交叉内容/figures/fig-ge-01.svg
-!/课程总览/通用电气/交叉内容/figures/fig-ge-02.svg
-!/课程总览/通用电气/交叉内容/figures/fig-ge-03.svg
-!/课程总览/通用电气/交叉内容/figures/fig-ge-04.svg
-!/课程总览/通用电气/交叉内容/figures/fig-ge-05.svg
-!/课程总览/通用电气/交叉内容/figures/fig-ge-06.svg
-!/课程总览/通用电气/交叉内容/figures/fig-ge-08.svg
+!/课程总览/通用电气/交叉内容/01-电路矩阵与消元判解.md
 !/课程总览/电气前沿/课堂笔记/index.md
 !/课程总览/电气前沿/课堂笔记/11-09-新质生产力与就业前景.md
 !/课程总览/电气前沿/课堂笔记/11-16-科技创新与双碳转型.md
@@ -568,6 +555,7 @@
 !/站点/plugins/formula-cells.test.mjs
 !/站点/plugins/formula-editable.test.mjs
 !/站点/plugins/glossary-bubble.test.mjs
+!/站点/plugins/issue-status.mjs
 !/站点/plugins/link-validity.test.mjs
 !/站点/plugins/mathlive-css.test.mjs
 !/站点/plugins/module-mime.test.mjs
@@ -655,11 +643,6 @@
 !/LICENSE
 # math-field 编辑态。STIX Two Math 子集仍留在 assets/fonts/ 给编辑器用。
 # MathLive（vendored，MIT）：**只剩浏览器版**。
-!/questions/01-frontmatter-silent-failure.md
-!/questions/02-实验空三件套改造.md
-!/questions/03-录音入库未写笔记.md
-!/questions/04-缺录音课次统计.md
-!/questions/05-单语言包被迫三语.md
 !/questions/06-学习通未入库作业.md
 !/questions/07-通用电气重写-模块一数学矩阵.md
 !/questions/08-通用电气重写-模块二电路五章.md
@@ -671,9 +654,6 @@
 # SW 已根除（2026-10-23）：sw-template.js 退役，换成一次性清老用户的 sw-kill.mjs
 !/tmp-fake-whitelist-probe.md
 !/reflect-local/check_doc_paths.py
-!/reflect-local/check_identity.py
-!/reflect-local/check_lab_integrity.py
-!/reflect-local/check_semantics.py
 !/reflect-local/check_study.py
 !/reflect-local/check_transcript_privacy.py
 !/reflect-local/check_headings.py
