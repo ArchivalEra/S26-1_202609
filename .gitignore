@@ -604,8 +604,6 @@
 # 折叠面板深链接的客户端增强（独立可拆卸模块，同上：漏白名单 CI 必挂）
 # 自建 TeX 解析器 + IR + 符号判定 + MathLive 渲染。每文件一条，不用通配符（仓库硬约束）。
 !/AGENTS.md
-!/.agents/skills/adversarial-essay-sparring/SKILL.md
-!/.agents/skills/adversarial-writing-autonomous/SKILL.md
 !/.agents/skills/course-intake/SKILL.md
 !/.agents/skills/double-sign/ratfmt.m
 !/.agents/skills/double-sign/SKILL.md

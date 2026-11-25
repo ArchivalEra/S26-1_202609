@@ -35,9 +35,9 @@
       "status": "ready-for-agent"
     },
     "questions/07-通用电气重写-模块一数学矩阵.md": {
-      "body_sha256": "5a1301b9995804cbc80f1d3291e2ff5062ca13b7a2fbb15149bd5a8cdc8253d2",
+      "body_sha256": "f1fe211d36ec1e065c1e2fee6c51d0617f6c5a922a69a71b484624e8076af79a",
       "settling": "`python3 -c \"import os;fs=['01-电路矩阵与消元判解.md','02-行最简形与通解结构.md'];d='课程总览/通用电气/交叉内容';m=sum(1 for f in fs if not os.path.isfile(os.path.join(d,f)) or '## 依赖' not in open(os.path.join(d,f),encoding='utf-8').read());bad=sum(1 for f in fs if os.path.isfile(os.path.join(d,f)) and any(k in open(os.path.join(d,f),encoding='utf-8').read() for k in ('自由响应','受迫响应')));lst=open('站点/页面清单.mjs',encoding='utf-8').read();wt=open('课程总览/通用电气/Walkthrough.md',encoding='utf-8').read();miss=sum(1 for f in fs if f not in lst or f not in wt);raise SystemExit(0 if (m+bad+miss)==0 else 1)\"` -- rc=0 => A (模块一两篇落盘、含依赖闭环、无伪映射且已接入清单与Walkthrough); rc!=0 => B (模块一尚未改写完成或未接闭环)",
-      "sha256": "ff8b567b0cc9c7338cc25080c25afb88967304044bab87fb78fcecb0e20e97a6",
+      "sha256": "5a431b1b53681801d3d1506affd45f6d6fb24e319f976b952327be8d36415af6",
       "status": "ready-for-agent"
     },
     "questions/08-通用电气重写-模块二电路五章.md": {
@@ -53,9 +53,9 @@
       "status": "ready-for-agent"
     },
     "questions/10-通用电气重写-模块四电机救火.md": {
-      "body_sha256": "4f70cb0ced7952fd8087b38334c1ee4f623eea29344b010c30044511d0f7e399",
+      "body_sha256": "d14d54e7febdc8295978e6c1a20790a656ddfdfdbbe58bf5feb691b2b61b8ddc",
       "settling": "`python3 -c \"import os,re;d='课程总览/通用电气/交叉内容';fs=['12-磁路规律与电磁感应.md','13-变压器电路化与归算.md','14-试验标幺值与效率变化率.md','15-三相换算与联结组时钟法.md','16-对称分量与三次谐波.md','17-变压器并联与瞬态过程.md','18-交流绕组与电动势打折.md','19-脉振分解与圆形旋转磁场.md'];all19=sorted(f for f in os.listdir(d) if re.match(r'^(0[1-9]|1[0-9])-.*\\.md$',f));m=sum(1 for f in fs if not os.path.isfile(os.path.join(d,f)) or '## 依赖' not in open(os.path.join(d,f),encoding='utf-8').read());lst=open('站点/页面清单.mjs',encoding='utf-8').read();wt=open('课程总览/通用电气/Walkthrough.md',encoding='utf-8').read();miss=sum(1 for f in fs if f not in lst or f not in wt);raise SystemExit(0 if (len(all19)==19 and m==0 and miss==0 and '初中生' not in open('课程总览/通用电气/index.md',encoding='utf-8').read()) else 1)\"` -- rc=0 => A (模块四八篇与全套 19 篇落盘、退场旧定位且全数接入清单与Walkthrough); rc!=0 => B (模块四或全栏收口尚未完成)",
-      "sha256": "e13bbad4a67b617fe48802f1de170de626646af635a2f47cc3c8e1f059826dfb",
+      "sha256": "db4dd35f788cc2db98768df9bf83246feff8e29ac6144cc84fdda4dfb3a4a3de",
       "status": "ready-for-agent"
     }
   },

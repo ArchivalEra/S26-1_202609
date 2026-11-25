@@ -16,13 +16,13 @@ description: >-
 - **转写必按规范重命名**：每个转写必须先改名为 `yyyymmdd_hhmmhhmm-原文.<ext>` 归入 `/mnt/hdd/study/<课>/原始资料/`（方便日后检索；**不跑例行缺口扫描**，只有用户明确要求时才调 `工具/录音检索.py`；不再收 `.doc` 脱壳，历史工具在 `工具/提取-doc转写.py`）。
 - **未知时段硬停手**：拿到新转写先用文件名 `yyyymmdd_hhmmhhmm` 对照 `AGENTS.md` 固定课表。对不上直接报文件名等用户定课，**禁止打开正文烧 token 分析归属**。
 - **单题推进 + 5 分钟巡检 + 越界即杀**：派后台子代理整理单篇笔记/作业时，锁死只创建/改那 **1 个目标 `.md`**（禁止触碰 `Walkthrough.md`、`index.md`、`zreflect/`、`FACTS.json`），且**一次只允许算一道题**（严禁多题混做/攒批）。主线程**每 5 分钟**检查一次进度，发现多题一起做或越界即刻 kill。
-- **不另开条件备注**：缺条件/口播残缺直接写进 `## 完成边界` 里的 `已知限制`（全段 ≤ 150 字，由 `check_headings.py` 强拦 `### 条件备注`）。
+- **完成边界单一指针、不另开条件备注**：缺条件/缺原图/双签/三签三态统一记在关联 GitHub Issue（`是否缺件 / 是否双签 / 是否三签`）；页面正文严禁出现缺件/未双签/已解析描述及 `### 条件备注`/`## 双签`/`## 三签`，`## 完成边界` 只允许保留唯一指针 `- [issue #N](...)`（构建期读 issue 开闭态，关后整节自动隐身）。
 
 ## 2. 作业缺图外包（禁止偷懒略过）
 
 - 整理作业遇到需要画电路图、线性图、波形图而缺少原图或无法精确手绘时：**禁止静默省略或乱画占位**。
-- 外包给 `multisim`（直接通过 T3 跨线程消息 `t3_thread_list` / `t3_thread_send` 沟通），并在 **`questions/*.md`（Einfacht 悬案系统，带 `**Status:**` 与可执行 `**Settling:**`）** 明确建单登记该题缺图需求。
-- 需要独立核数时按 `double-sign` 组装隔离 prompt；需要核依赖锚点时按 `triple-sign` 查理论闭环。
+- 在 GitHub Issue 记录缺图项（`是否缺件`）并通过 T3 跨线程消息 `t3_thread_list` / `t3_thread_send` 外包给 `multisim`（跨模块专项任务另记 `questions/*.md`）。
+- 需要独立核数时按 `double-sign` 组装隔离 prompt；需要核依赖锚点时按 `triple-sign` 查理论闭环，完成后直接回写关联 GitHub Issue。
 
 ## 3. 教材读图防烧钱（读 JPG / 存 JXL / 展 WebP）
 
@@ -36,4 +36,4 @@ description: >-
 
 1. 同步改：分类 `index.md` + `原始资料/index.md`（原件不入库，仅登记规范文件名与性质说明，**不再算/登记 SHA-256**）+ 课程 `index.md` + 同课 `Walkthrough.md`（若该课已建 `Walkthrough.md`，新笔记/作业必须显式接入）。
 2. 白名单与站点：`.gitignore` 加精确路径 `!/...` → `站点/页面清单.mjs` 与 `站点/build.mjs` `NAV` 加入口 → `(cd 站点 && node build.mjs)`（不自动改写 `README.md`）。
-3. 门禁、本地 `act` 与手工推送：`REFLECT_LANG=zh python3 zreflect/registry.py --run commit` + 本地 `act` 跑通 `.github/workflows/deploy.yml` 构建与测试（改了 `zreflect/`、`reflect-local/`、`knobs.json`、`PRINCIPLES.md` 或 `questions/*.md` 后用 `trust.py --sync` 送审批，全部获批后再 `git commit`；**不代点推送**）。
+3. 门禁、本地 `act` 与手工推送：`REFLECT_LANG=zh python3 zreflect/registry.py --run commit` + 本地 `act`（必须带 `--action-offline-mode`）跑通 `.github/workflows/deploy.yml` 构建与测试（改了 `zreflect/`、`reflect-local/`、`knobs.json`、`PRINCIPLES.md` 或 `questions/*.md` 后用 `trust.py --sync` 送审批，全部获批后再 `git commit`；**不代点推送**）。
