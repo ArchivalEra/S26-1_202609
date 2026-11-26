@@ -367,7 +367,8 @@ def collect(paths: list[str]) -> list[Path]:
         if path.is_file() and path.suffix == '.md':
             files.append(path)
         elif path.is_dir():
-            files.extend(sorted(p for p in path.rglob('*.md') if '.git' not in p.parts and '.kimi-code' not in p.parts))
+            skip = {'.git', '.kimi-code', 'node_modules', 'dist', '.venv', '__pycache__'}
+            files.extend(sorted(p for p in path.rglob('*.md') if not (skip & set(p.parts))))
     seen: set[Path] = set()
     unique: list[Path] = []
     for path in files:

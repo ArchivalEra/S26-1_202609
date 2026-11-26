@@ -473,30 +473,6 @@
 !/站点/assets/favicon/favicon.gif
 !/站点/assets/favicon/favicon.webp
 !/站点/assets/fonts/stix2math-subset.woff2
-!/站点/assets/katex/fonts/KaTeX_AMS-Regular.woff2
-!/站点/assets/katex/fonts/KaTeX_Caligraphic-Bold.woff2
-!/站点/assets/katex/fonts/KaTeX_Caligraphic-Regular.woff2
-!/站点/assets/katex/fonts/KaTeX_Fraktur-Bold.woff2
-!/站点/assets/katex/fonts/KaTeX_Fraktur-Regular.woff2
-!/站点/assets/katex/fonts/KaTeX_Main-BoldItalic.woff2
-!/站点/assets/katex/fonts/KaTeX_Main-Bold.woff2
-!/站点/assets/katex/fonts/KaTeX_Main-Italic.woff2
-!/站点/assets/katex/fonts/KaTeX_Main-Regular.woff2
-!/站点/assets/katex/fonts/KaTeX_Math-BoldItalic.woff2
-!/站点/assets/katex/fonts/KaTeX_Math-Italic.woff2
-!/站点/assets/katex/fonts/KaTeX_SansSerif-Bold.woff2
-!/站点/assets/katex/fonts/KaTeX_SansSerif-Italic.woff2
-!/站点/assets/katex/fonts/KaTeX_SansSerif-Regular.woff2
-!/站点/assets/katex/fonts/KaTeX_Script-Regular.woff2
-!/站点/assets/katex/fonts/KaTeX_Size1-Regular.woff2
-!/站点/assets/katex/fonts/KaTeX_Size2-Regular.woff2
-!/站点/assets/katex/fonts/KaTeX_Size3-Regular.woff2
-!/站点/assets/katex/fonts/KaTeX_Size4-Regular.woff2
-!/站点/assets/katex/fonts/KaTeX_Typewriter-Regular.woff2
-!/站点/assets/katex/katex.min.css
-!/站点/assets/katex/katex.min.js
-!/站点/assets/katex/katex.mjs
-!/站点/assets/katex/LICENSE
 !/站点/assets/theme/shirone-reader.css
 !/站点/assets/theme/shirone-reader.js
 !/站点/assets/vendor/webmcp/polyfill.iife.js
@@ -575,7 +551,9 @@
 !/站点/plugins/whitelist-tracked.test.mjs
 !/站点/README-WebMCP.md
 !/站点/Skill.md
-!/站点/vendor.mjs
+!/站点/adapters/marked.mjs
+!/站点/markdown.mjs
+!/站点/plugins/adapters.test.mjs
 # 折叠块模块（build.mjs 导入它；漏加白名单会导致 CI 构建失败——
 # 折叠面板深链接的客户端增强（独立可拆卸模块，同上：漏白名单 CI 必挂）
 # 自建 TeX 解析器 + IR + 符号判定 + MathLive 渲染。每文件一条，不用通配符（仓库硬约束）。

@@ -16,6 +16,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { KATEX_STYLESHEET } from '../math/render.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -25,8 +26,8 @@ test('数学样式表必须带内容哈希戳（否则改了它浏览器永远�
   // 浏览器照样拿缓存副本 —— 表现是「CSS 规则明明对，就是不生效」，
   // 排查时会误判成规则写错。判据：构建产物里的 link 必须带 `?v=`。
   const html = readFileSync(path.join(HERE, '../dist/index.html'), 'utf8');
-  const m = /<link[^>]*href="([^"]*katex\.min\.css[^"]*)"/.exec(html);
-  assert.ok(m, '页面里没有 katex.min.css 的 link');
-  assert.match(m[1], /\?v=[0-9a-f]+/,
-    'katex.min.css 的 link 必须带内容哈希戳（走 assetUrl），否则改它不生效');
+  const links = [...html.matchAll(/<link[^>]*href="([^"]+)"/g)].map((match) => match[1]);
+  const link = links.find((href) => href.split('?')[0].endsWith('/' + KATEX_STYLESHEET));
+  assert.ok(link, `页面里没有 ${KATEX_STYLESHEET} 的 link`);
+  assert.match(link, /\?v=[0-9a-f]+/, `${KATEX_STYLESHEET} 的 link 必须带内容哈希戳`);
 });

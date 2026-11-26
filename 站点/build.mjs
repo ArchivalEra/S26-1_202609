@@ -2,21 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { marked, yaml } from './vendor.mjs';
-// 数学引擎（2026-10-29 重构）：自建 TeX 解析器 → IR → MathLive 渲染。
-// 为什么不再直接用 KaTeX：符号取词寄生在 TeX 字符串上（`\htmlData` 插宏），
-// 四处各自回答「哪段是符号」，于是长出五个补丁函数互相互相修，改一处崩两处。
-// 现在解析成树、判定一次、渲染与标注都是同一棵树的投影。见 站点/math/。
+import katex from 'katex';
+import { createMarkdownRenderer } from './markdown.mjs';
+// 自建 TeX 解析器 → IR → 可替换的展示引擎，符号判定与展示共用同一棵树。
 import { parse as parseMath } from './math/parser.mjs';
 import { compile as compileMath, render as renderMathDoc, probeRenderer } from './math/index.mjs';
-import { createKatexRenderer, decorateAnchors, DIALECTS } from './math/render.mjs';
-// 展示引擎 = KaTeX（2026-10-30 站长定案）。理由：MathLive 的拉伸括号由 `⎛⎜⎝/⎞⎟⎠`
-// 小片拼成，接缝处有亚像素缝；KaTeX 用字形伸展机制没这个毛病。
-// 解析器与 IR 是我们自己的，这里只换最末端 adapter。
-// 用 **ESM 版**（`katex.mjs`）而不是 `katex.min.js`：后者是 UMD，
-// 在 Node 的 ESM 里 `this` 是 undefined，UMD 头会抛
-// `Cannot set properties of undefined (setting 'katex')`（实测踩到）。
-import katex from './assets/katex/katex.mjs';
+import { createKatexRenderer, decorateAnchors, replaceKatexWithText, KATEX_STYLESHEET } from './math/render.mjs';
 import { renderCollapse } from './plugins/collapse.mjs';
 import { parseFigureLib, renderFigures, restoreFigures, buildFigureIndex, FIGURES_CSS, FIGURES_JS } from './plugins/figures.mjs';
 import { DISCLOSURE_ANCHOR_JS } from './plugins/disclosure-anchor.mjs';
@@ -131,6 +122,20 @@ function copySiteAssets(src, dest) {
   }
 }
 copySiteAssets(path.join(SITE_DIR, 'assets'), path.join(DIST_DIR, 'assets'));
+// KaTeX 前端样式、字体与 LICENSE 直接随 npm 包拷贝进 dist/assets/katex/，仓库不保留上游副本。
+{
+  const katexPkgDir = path.dirname(fileURLToPath(import.meta.resolve('katex/package.json')));
+  const katexDistOut = path.join(DIST_DIR, 'assets', 'katex');
+  const katexFontsOut = path.join(katexDistOut, 'fonts');
+  fs.mkdirSync(katexFontsOut, { recursive: true });
+  copyFileAtomic(path.join(katexPkgDir, 'dist', 'katex.min.css'), path.join(katexDistOut, 'katex.min.css'));
+  copyFileAtomic(path.join(katexPkgDir, 'LICENSE'), path.join(katexDistOut, 'LICENSE'));
+  for (const entry of fs.readdirSync(path.join(katexPkgDir, 'dist', 'fonts'), { withFileTypes: true })) {
+    if (entry.isFile() && entry.name.endsWith('.woff2')) {
+      copyFileAtomic(path.join(katexPkgDir, 'dist', 'fonts', entry.name), path.join(katexFontsOut, entry.name));
+    }
+  }
+}
 console.log(`[build] Copied offline assets to dist/assets/`);
 
 // WebMCP 交互契约（Skill.md），原样复制到 dist 根。
@@ -249,8 +254,7 @@ const probeProblems = probeRenderer(mathRenderer);
 if (probeProblems.some((p) => p.severity === 'error')) {
   throw new Error(`[数学] 渲染器自检失败：${probeProblems[0].message}`);
 }
-console.log(`[数学] 展示引擎 ${mathRenderer.id}；词典 ${Object.keys(symbolCatalog.mathDictionary.packs).length} 包；` +
-  `方言已知差异 ${DIALECTS[mathRenderer.id].unsupported.length} 项`);
+console.log(`[数学] 展示引擎 ${mathRenderer.id}；词典 ${Object.keys(symbolCatalog.mathDictionary.packs).length} 包`);
 
 // 全站搜索：构建期生成倒排索引，浏览器端零依赖。实现与设计理由见
 // 站点/plugins/site-search.mjs（那里也记录了为什么弃用 Pagefind：它按单字索引中文，
@@ -855,185 +859,7 @@ function mathPlain(tex) {
   return s;
 }
 
-// Custom renderer for Marked
-const renderer = new marked.Renderer();
-
-/* ── 响应式表格分级（2026-10-17，外审定案：Claude 评审版方案）──────────────
- * 判定顺序：<!-- table:xxx --> 显式覆盖 > 按内容分级。
- *   t-compact：W_min ≤ 400（窄屏缩字号/减 padding 即可放下；实测 6 列 364、5 列 376）
- *   t-cards  ：放不下且句子型（平均单元格 >6 字）→ data-label 转卡片（窄容器查询触发）
- *   t-matrix ：放不下且短格/数字型 → 横滚 + sticky 首列（真值表/参数矩阵）
- * W_min = Σ(每列最长不可断片段) + 列数×padding；句子判据 = 表体平均字符数。
- * 注释标记通过 processAllTokens 挂到紧随其后的 table token（html token 不进 renderer）。
- */
-const tableModeOf = (token) => {
-  const cols = token.header.length;
-  const padPx = cols * 32;                       // 两侧 padding 1rem×2×0.9 字号缩放后 ~32px/列
-  let wMin = padPx;
-  let charSum = 0, cells = 0;
-  const longest = new Array(cols).fill(0);
-  const cellPlain = (c) => c.text.replace(/\s+/g, ' ').trim();
-  token.header.forEach((h, i) => { const t = cellPlain(h); longest[i] = Math.max(longest[i], t.length); });
-  for (const row of token.rows) {
-    row.forEach((c, i) => {
-      const t = cellPlain(c);
-      longest[i] = Math.max(longest[i], t.length);
-      charSum += t.length; cells++;
-    });
-  }
-  for (const L of longest) wMin += Math.min(L, 20) * 9;   // 0.8rem 中文 ≈9px/字，长列封顶 20
-  // 阈值标定（Playwright 360px 实测）：compact 收紧后可容 ~420px；出血 +22px。
-  // 420~520 是灰带——句子型给 cards（窄容器才转卡，宽屏无感）、短格给 matrix 横滚。
-  if (wMin <= 420) return 't-compact';
-  const avg = cells ? charSum / cells : 0;
-  return avg > 6 ? 't-cards' : 't-matrix';
-};
-
-/** 属性值转义（模块级；表格 renderer 在页面循环之外，拿不到循环里的 attrEsc）。 */
-const escAttr = (v) => String(v == null ? '' : v)
-  .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-renderer.table = function (token) {
-  const mode = token.__tableMode || tableModeOf(token);
-  // data-label：cards 需要表头文本进每个 td（attr() 只能读自身属性——外审确认）
-  // ⚠️ 2026-10-30 真 bug（站长截图：表格里冒出字面 `">`、整行被拆成竖排）：
-  // `data-label` 的值是**表头文本**，而表头里可能有公式——公式在构建期已渲染成
-  // 一长串含双引号的 HTML（`<span class="ML__latex" role="math" aria-label="…">`）。
-  // 原实现直接拼进属性：`data-label="${headerText[i]}"`，于是第一个 `"` 就把属性闭死，
-  // 剩下的 HTML 全成了 td 里的游离文本 —— 页面上看到的就是 `">` 残片与错位的表格行。
-  //
-  // 修法：`data-label` 应当是**纯文本**（它只用于 CSS `attr()` 显示表头），
-  // 所以要 ①剥掉标签 ②解实体 ③再转义成属性安全的形式。
-  const attrText = (t) => String(t || '')
-    .replace(/<[^>]*>/g, '')                    // 剥标签
-    .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
-    .replace(/\s+/g, ' ')
-    .trim();
-  const headerText = token.header.map((h) => attrText(h.text));
-  let body = '';
-  for (const row of token.rows) {
-    body += '<tr>' + row.map((c, i) => `<td data-label="${escAttr(headerText[i] ?? '')}">${this.parser.parseInline(c.tokens)}</td>`).join('') + '</tr>\n';
-  }
-  const thead = '<thead><tr>' + token.header.map((h, i) => {
-    const al = token.align[i] ? ` align="${token.align[i]}"` : '';
-    return `<th${al}>${this.parser.parseInline(h.tokens)}</th>`;
-  }).join('') + '</tr></thead>\n';
-  // ARIA：滚动容器独立包裹层（不覆盖 table 语义）；aria-label 取前一个标题（processAllTokens 里挂）
-  const label = (token.__tableLabel || '数据表').replace(/"/g, '&quot;');
-  return `<div class="table-scroll-container ${mode}" role="region" aria-label="${label}" tabindex="0">\n<table>\n${thead}${body}</table>\n</div>\n`;
-};
-
-
-/**
- * 标题锚点用的公式纯文本中转表（下标与 mathBlocks **完全同构**）。
- *
- * 为什么需要中转：`renderer.heading` 定义在模块级，而 `mathBlocks`
- * 建在每个 Markdown 文件的循环里（函数作用域），两者不通用。
- * 这里按同一套下标记「纯文本」，供 heading 渲染器取用。
- * 每个文件开始处理前清空，避免下标串到别的文件。
- */
-// 每页已用的标题锚点 id（renderer 是模块级的：建页循环开头清空，页内做碰撞去重）
-const usedHeadingIds = new Set();
-
-renderer.heading = function ({ depth, text, tokens }) {
-  // 标题里可能内嵌行内语法（README 自动目录的 `### [工程数学](./…)` 就是链接），
-  // 必须走行内解析，否则会以字面 markdown 泄漏到页面与右侧目录。
-  const inner = tokens
-    ? this.parser.parseInline(tokens)
-    : text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-  // 锚点 id 的清洗：从**渲染后**的 HTML 里取纯文本，
-  // 并把公式占位符先换成可读的纯文本（否则 id 会变成
-  // `第一步-处理前两行-提出-math_inline_125` 这种脏值，点击跳转失效）。
-  //
-  // 注意：**只在算 id 时**做这个替换——<h3> 里输出的仍是完整 KaTeX 排版。
-  // 曾试过在 marked 之前把整个标题行的公式替换成纯文本，那样标题就不排版了，
-  // 属于过度修正；现在改成只在 id 这一处降级，两边都拿到。
-  //
-  // ⚠️ 2026-10-30 改：公式**整体丢弃**，不再把纯文本投影拼进 id。
-  // 原实现把 `$u_k\%$` 投影成 `uk` 塞进 slug，生成
-  // `短路电压-阻抗电压与-uk-一个量的三种叫法`——而**人写链接时只会写看得见的字**
-  // （`#短路电压-阻抗电压与-一个量的三种叫法`），于是 5 条备考深链接全部落空。
-  // 判据：标题的 id 只由**肉眼可见的普通文字**决定，公式不参与。
-  // 全站无「只有公式」的标题（已扫过），所以丢弃不会产生空 id。
-  const forId = inner
-    .replace(/@@MATH_INLINE_(\d+)@@/g, '')
-    .replace(/@@MATH_BLOCK_(\d+)@@/g, '');
-  // ⚠️ 2026-10-30（体检抓到 5 条深链接落空）：剥标签之后**必须再解一次 HTML 实体**。
-  // 标题里写成英文双引号（如 `定义法从"最高阶"往下试`）会被 marked 转成 `&quot;`，
-  // 剥标签后那几个字符仍是实体文本 `&quot;`，再进 slug 清洗（`[^\w\u4e00-\u9fa5]+`→`-`）
-  // 就把它当成字母序列，生成 `…-quot-最高阶-quot-…` 这种 id——
-  // **人写链接时不会想到要写 quot**，于是 `#秩的两条用法-定义法从-最高阶-往下试` 全部落空。
-  const decodeEntities = (t) => t
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&');
-  let clean = decodeEntities(forId.replace(/<[^>]+>/g, ''));
-
-  // ⭐ 显式锚点：「标题 {#my-id}」末尾的 {#…} 直接当 id，并从标题文本里剥掉。
-  //
-  // 为什么要支持：技法库用「一题一条」的稳定短锚（#m-adj3、#m-kmap-nand），
-  // 但此前渲染器不识别 {#…}，会把它拼进中文 slug（`三阶整数阵求逆-伴随法逐元算-m-adj3`），
-  // 于是索引里 11 条 href="#m-…" 全部落空、页面上还印着字面花括号（2026-10-28 三签抓出）。
-  //
-  // 支持后两个好处：① 锚点稳定（改标题措辞不破链接）；② 标题与右侧目录不再带 {#…} 字面量。
-  const explicit = /\{#([^}\s]+)\}\s*$/.exec(clean);
-  const explicitId = explicit ? explicit[1] : null;
-  if (explicitId) clean = clean.slice(0, explicit.index).trim();
-
-  let id = explicitId || clean
-    .toLowerCase()
-    .replace(/[^\w\u4e00-\u9fa5]+/g, '-')
-    .replace(/^-+|-+$/g, '') || ('h-' + Math.random().toString(36).substring(2, 7));
-  // 逐页去重：解析文件每个小节都有「原书抄录」「解析」标题，重复 id 会让
-  // 目录点击永远跳到第一处、滚动高亮一串全亮（用户实测反馈「目录崩坏」）。
-  // 碰撞时追加 -2、-3……（GitHub 风格）；首个出现保持裸 id，旧深链接不受影响。
-  if (usedHeadingIds.has(id)) {
-    let n = 2;
-    while (usedHeadingIds.has(`${id}-${n}`)) n++;
-    id = `${id}-${n}`;
-  }
-  usedHeadingIds.add(id);
-  // 显示用文本也要剥掉尾部 {#…}，否则页面上会印出字面花括号
-  const shown = explicitId
-    ? inner.replace(/\s*\{#([^}\s]+)\}\s*$/, '').trim()
-    : inner;
-  return `<h${depth} id="${id}">${shown}</h${depth}>`;
-};
-
-marked.use({
-  renderer,
-  hooks: {
-    // <!-- table:matrix|cards|compact --> 显式覆盖：挂到紧随其后的 table token；
-    // 同时记最近一个 heading 文本，作滚动容器的 aria-label（外审建议的取法）。
-    processAllTokens(tokens) {
-      let pendingMode = null, lastHeading = '';
-      const walk = (ts) => {
-        for (const t of ts) {
-          // 标题里的 {#显式锚点} 不属标题文字，aria-label 里要剥掉（2026-10-28）
-          if (t.type === 'heading') {
-            lastHeading = t.text.replace(/\s*\{[^}\s]+\}\s*$/, '').replace(/\s+/g, ' ').trim();
-          }
-          if (t.type === 'html') {
-            const m = /<!--\s*table:(compact|cards|matrix)\s*-->/.exec(t.text || '');
-            if (m) { pendingMode = 't-' + m[1]; continue; }
-          }
-          if (t.type === 'table') {
-            if (pendingMode) { t.__tableMode = pendingMode; pendingMode = null; }
-            t.__tableLabel = lastHeading;
-          }
-          if (t.tokens) walk(t.tokens);
-          if (t.items) walk(t.items);
-        }
-      };
-      walk(tokens);
-      return tokens;
-    },
-  },
-});
+const markdownRenderer = createMarkdownRenderer();
 
 // 4. Build each page
 let totalFormulasRendered = 0;
@@ -1148,7 +974,6 @@ for (const relPath of TARGET_FILES) {
 
   // Step 2: Extract and Render Math
   const mathBlocks = [];
-  usedHeadingIds.clear();
 
   // 2.1 Display Math $$...$$
   raw = raw.replace(/\$\$([\s\S]+?)\$\$(?:[ \t]*\{:\s*calc\s*\})?/g, (whole, tex) => {
@@ -1304,12 +1129,10 @@ for (const relPath of TARGET_FILES) {
     return match;
   });
 
-  // Step 5: Render Markdown to HTML via marked
+  // Step 5: Render Markdown to HTML
   //
-  // 标题里的公式锚点问题在 renderer.heading 里解决（只对 id 降级、不影响排版），
-  // 详见上面 renderer.heading 的注释。
-  // 表格的滚动容器/分级类/ARIA 全部在 renderer.table 里产出（不再正则后处理）
-  let htmlContent = marked.parse(raw);
+  // 标题锚点、表格滚动容器、分级与 ARIA 由 markdown.mjs 的站点策略生成。
+  let htmlContent = markdownRenderer.render(raw);
 
   // Step 6: Restore Code Fences
   htmlContent = htmlContent.replace(/@@CODE_FENCE_(\d+)@@/g, (_, id) => {
@@ -1372,7 +1195,7 @@ for (const relPath of TARGET_FILES) {
     const math = mathBlocks[parseInt(id)];
     if (inAttribute(htmlContent, offset)) {
       // 纯文本投影（`data-math-plain` 就是它），再转义成属性安全形式
-      return escAttr(math.plain || '').replace(/"/g, '&quot;');
+      return escHtml(math.plain || '');
     }
     return math.html;
   });
@@ -1435,14 +1258,7 @@ for (const relPath of TARGET_FILES) {
     // （2026-10-28 三签抓出）。
     // 2026-10-29 换引擎后判据变了：不再读 annotation（MathLive 不产），
     // 改读构建期烘的 `data-math-plain`（IR 的纯文本投影）。
-    const rawTitle = hMatch[3]
-      .replace(/<span class="ML__latex"[^>]*data-math-plain="([^"]*)"[\s\S]*?<\/span>/g,
-        (m0, plain) => plain)
-      .replace(/<span class="katex"[\s\S]*?<\/span><\/span><\/span>/g,
-        (m0) => {
-          const ann = /<annotation encoding="application\/x-tex">([\s\S]*?)<\/annotation>/.exec(m0);
-          return ann ? ann[1].replace(/&amp;/g, '&') : '';
-        })
+    const rawTitle = replaceKatexWithText(hMatch[3])
       .replace(/<[^>]+>/g, '')
       .replace(/\{#([^}\s]+)\}/g, '')   // 万一残留显式锚点标记
       .replace(/\s+/g, ' ')
@@ -1755,12 +1571,8 @@ for (const relPath of TARGET_FILES) {
     } catch (e) { /* 隐私模式下 localStorage 可能抛错，忽略 */ }
   })();
   </script>
-  <!-- 数学排版样式（2026-10-30 展示引擎换回 KaTeX）。
-       为什么换回来：MathLive 的拉伸括号由「⎛⎜⎝ / ⎞⎟⎠」小片拼成，接缝处有亚像素缝；
-       KaTeX 用字形伸展机制，没有这个毛病（站长定案）。
-       KaTeX 的 CSS 自带 @font-face 指向 ./fonts/，那份字体也在 assets/katex/fonts/。
-       ⚠️ 必须走 assetUrl（带内容哈希戳）：否则改了它浏览器永远读旧缓存。 -->
-  <link rel="stylesheet" href="${rootRel}${assetUrl('assets/katex/katex.min.css')}">
+  <!-- 数学排版样式由渲染器适配器指定，资源链接带内容哈希戳。 -->
+  <link rel="stylesheet" href="${rootRel}${assetUrl(KATEX_STYLESHEET)}">
   <link rel="stylesheet" href="${rootRel}${assetUrl('assets/theme/shirone-reader.css')}">
   <link rel="stylesheet" href="${rootRel}${assetUrl('assets/plugins/site-search.css')}">
   <link rel="stylesheet" href="${rootRel}${assetUrl('assets/plugins/figures.css')}">

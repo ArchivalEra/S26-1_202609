@@ -49,12 +49,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
           # 零构建期依赖：搜索索引由 plugins/site-search.mjs 在 build.mjs 里直接产出
           # （此前用 pagefind，但它按单字索引中文，已弃用）。
           npm run build
           # 顺手跑一遍插件测试：搜索的折叠/短语校验逻辑一旦回归，这里会先炸
           npm test
           # 产物版权声明与副本一致性门禁（check_right）
+          python3 ../zreflect/check_right.py --spec right.json
           python3 ../zreflect/check_right.py --spec 站点/right-dist.json
 
       - name: Deploy to isui.ren-heart@deploy

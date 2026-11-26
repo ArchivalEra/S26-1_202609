@@ -15,6 +15,19 @@
 
 import { formatSymbolAnchor } from '../symbols/contracts.mjs';
 
+/** KaTeX 前端样式表在 dist 中的相对路径（随构建从 npm 包拷贝）。 */
+export const KATEX_STYLESHEET = 'assets/katex/katex.min.css';
+
+/** 目录提取前，将公式块换成文本，兼容历史 MathLive 标记与 annotation 回退。 */
+export function replaceKatexWithText(html) {
+  return html.replace(/<span class="ML__latex"[^>]*data-math-plain="([^"]*)"[\s\S]*?<\/span>/g,
+    (markup, plain) => plain)
+    .replace(/<span class="katex"[\s\S]*?<\/span><\/span><\/span>/g, (markup) => {
+      const annotation = /<annotation encoding="application\/x-tex">([\s\S]*?)<\/annotation>/.exec(markup);
+      return annotation ? annotation[1].replace(/&amp;/g, '&') : '';
+    });
+}
+
 /**
  * 把 IR 编回 TeX。**这是唯一生成 `\htmlData` 的地方**。
  *

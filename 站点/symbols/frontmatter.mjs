@@ -5,40 +5,47 @@
  * 单行标量正则（后者会直接丢失 `符号排除` 列表与 `符号强制` 映射）。
  */
 
-import { yaml } from '../vendor.mjs';
+import * as yaml from 'js-yaml';
+
+const defaultYamlProvider = { parse: (source) => yaml.load(source) };
 
 const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 
 /**
- * 解析 Markdown 文档的 YAML frontmatter。
+ * 创建同步 frontmatter 解析器，保留严格报错与宽松回退的站点策略。
  *
- * @param {string} source
- * @param {{ strict?: boolean, filePath?: string }} [opts]
- * @returns {{ meta: Record<string, any>, body: string, rawFrontmatter: string, hasFrontmatter: boolean }}
+ * @param {{parse: (source: string) => any}} [provider]
+ * @returns {(source: string, opts?: {strict?: boolean, filePath?: string}) => {
+ *   meta: Record<string, any>, body: string, rawFrontmatter: string, hasFrontmatter: boolean
+ * }}
  */
-export function parseFrontmatter(source, opts = {}) {
-  const text = String(source || '');
-  const m = FM_RE.exec(text);
-  if (!m) {
-    return { meta: {}, body: text, rawFrontmatter: '', hasFrontmatter: false };
-  }
-  const rawFrontmatter = m[1];
-  const body = text.slice(m[0].length);
-  let parsed = {};
-  try {
-    const loaded = yaml.load(rawFrontmatter);
-    if (loaded && typeof loaded === 'object' && !Array.isArray(loaded)) {
-      parsed = loaded;
+export function createFrontmatterParser(provider = defaultYamlProvider) {
+  return function parseFrontmatter(source, opts = {}) {
+    const text = String(source || '');
+    const m = FM_RE.exec(text);
+    if (!m) {
+      return { meta: {}, body: text, rawFrontmatter: '', hasFrontmatter: false };
     }
-  } catch (err) {
-    if (opts.strict) {
-      const label = opts.filePath ? ` ${opts.filePath}` : '';
-      throw new Error(`frontmatter 解析失败${label}: ${err.message}`);
+    const rawFrontmatter = m[1];
+    const body = text.slice(m[0].length);
+    let parsed = {};
+    try {
+      const loaded = provider.parse(rawFrontmatter);
+      if (loaded && typeof loaded === 'object' && !Array.isArray(loaded)) {
+        parsed = loaded;
+      }
+    } catch (err) {
+      if (opts.strict) {
+        const label = opts.filePath ? ` ${opts.filePath}` : '';
+        throw new Error(`frontmatter 解析失败${label}: ${err.message}`);
+      }
+      parsed = {};
     }
-    parsed = {};
-  }
-  return { meta: parsed, body, rawFrontmatter, hasFrontmatter: true };
+    return { meta: parsed, body, rawFrontmatter, hasFrontmatter: true };
+  };
 }
+
+export const parseFrontmatter = createFrontmatterParser();
 
 function asIdList(v) {
   const arr = Array.isArray(v) ? v : v ? [v] : [];

@@ -9,5 +9,10 @@
     "build": "node build.mjs --canonical-root /repo/S26-1_202609/",
     "test": "node --test plugins/",
     "build:pages": "node build.mjs --canonical-root /S26-1_202609/"
+  },
+  "dependencies": {
+    "js-yaml": "5.4.2",
+    "katex": "0.16.28",
+    "marked": "18.0.13"
   }
 }

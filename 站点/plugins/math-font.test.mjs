@@ -21,6 +21,7 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import { KATEX_STYLESHEET } from '../math/render.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '../..');
@@ -109,19 +110,13 @@ test('数学字体子集必须覆盖全站公式用到的所有字符', () => {
     + missing.map((m) => `  ${m.ch}  ${m.cp}`).join('\n'));
 });
 
-test('KaTeX 字体齐全：katex.min.css 引用的每个 woff2 都在盘上', () => {
-  // 2026-10-31 重写：MathLive 的 static.css 已随 SSR 版一起删除（展示引擎只剩
-  // KaTeX，编辑器用的是浏览器版自带的样式），所以「只加载一份 STIX」不再是判据。
-  //
-  // 现在真正会坏的是**字体文件缺失**：katex.min.css 里有 20 条 @font-face
-  // 指向 ./fonts/*.woff2，白名单是逐文件写的（禁通配符），漏一个就有一个族
-  // 悄悄回退到系统字体——页面不报错、构建不报错，只有肉眼能看出字重不对。
-  const cssPath = path.join(HERE, '../assets/katex/katex.min.css');
+test('数学公式样式引用的每个本地 woff2 都随站点发布', () => {
+  const cssPath = path.join(DIST, KATEX_STYLESHEET);
   const code = readFileSync(cssPath, 'utf8');
-  const wanted = [...code.matchAll(/url\(fonts\/([^)]+\.woff2)\)/g)].map((m) => m[1]);
-  assert.ok(wanted.length > 0, 'katex.min.css 里一条 @font-face 都没解析到——正则或文件变了');
-  const missing = wanted.filter((f) => !existsSync(path.join(HERE, '../assets/katex/fonts', f)));
-  assert.deepEqual(missing, [], `katex.min.css 引用了不存在的字体文件：\n${missing.join('\n')}`);
+  const wanted = [...code.matchAll(/url\(\s*["']?([^"')]+\.woff2)(?:[?#][^"')]*)?["']?\s*\)/g)]
+    .map((match) => match[1]).filter((url) => !/^(?:[a-z]+:|\/\/)/i.test(url));
+  const missing = wanted.filter((font) => !existsSync(path.resolve(path.dirname(cssPath), font)));
+  assert.deepEqual(missing, [], `${KATEX_STYLESHEET} 引用了未发布的字体文件：\n${missing.join('\n')}`);
 });
 
 test('STIX 数学字体子集文件在位（全站公式字符校验依赖它）', () => {
