@@ -88,7 +88,6 @@ test('符号缺口：独立复算与账本口径一致（前十同序，计数�
     const { uncovered } = coverageOf(m);
     for (const u of uncovered) agg.set(u.label, (agg.get(u.label) || 0) + u.count);
   }
-  const mine = [...agg.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
   const theirs = r.gaps.slice(0, 10).map((g) => [g.label, g.count]);
   // 集合一致（缺谁多谁才是真问题）。
   //

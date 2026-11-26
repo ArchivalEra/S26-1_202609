@@ -490,6 +490,7 @@
 !/站点/math/render.mjs
 !/站点/math/terms.mjs
 !/站点/licenses.json
+!/站点/eslint.config.mjs
 !/站点/package.json
 !/站点/package-lock.json
 !/站点/right-dist.json

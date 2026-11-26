@@ -1036,7 +1036,7 @@ test('语义：逻辑变量不挂器件词条（防「B 弹出基极电位」这
   // 这是实测抓到的真错：图里 B 是逻辑输入（0/1），却被挂上 sym-VB（晶体管基极电位）。
   // 词条语义与图元语义不符，比不挂更糟——读者会被引到完全无关的知识点上。
   const lib = parseFigureLib('f | and B@sym-VB C -> Y');
-  const r = renderFigures(':::figure f', {
+  renderFigures(':::figure f', {
     lib,
     lookupGloss: (id) => (id === 'sym-VB'
       ? { title: '$V_B$：基极电位', text: '晶体管基极对地电位', href: '#sym-VB' }

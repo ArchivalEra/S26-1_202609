@@ -523,7 +523,7 @@ export function createSymbolCatalog(opts = {}) {
         resolveFigureTerm(termRef) {
           const ref = String(termRef || '').trim();
           if (!ref) return null;
-          let entry = null;
+          let entry;
           const colon = ref.indexOf(':');
           if (colon > 0) {
             const pName = ref.slice(0, colon);

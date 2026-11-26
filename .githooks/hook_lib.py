@@ -11,12 +11,12 @@ import datetime
 import hashlib
 import json
 import os
-from pathlib import Path, PurePosixPath
 import posixpath
 import re
 import subprocess
 import sys
 import unicodedata
+from pathlib import Path, PurePosixPath
 from urllib.parse import quote, unquote, urlsplit
 
 START = '<!-- AUTO-CATALOG:START -->'
@@ -122,9 +122,8 @@ def render(readme, files):
 
 
 def whitelist_rules(files):
-    rules = [line.strip() for line in files['.gitignore'].decode().splitlines()
-             if line.strip() and not line.lstrip().startswith('#')]
-    return rules
+    return [line.strip() for line in files['.gitignore'].decode().splitlines()
+            if line.strip() and not line.lstrip().startswith('#')]
 
 
 def links(path, data):
@@ -209,7 +208,7 @@ def check_fragments(files):
                 raise ValueError(f'深链接锚点失效：{path} → {target}#{fragment}')
 
 
-def validate(files):
+def _validate_whitelist(files):
     if '.gitignore' not in files:
         raise ValueError('缺少精确白名单 .gitignore。')
     rules = whitelist_rules(files)
@@ -218,119 +217,89 @@ def validate(files):
     allowed = set()
     for rule in rules[2:]:
         path = rule[2:]
-        if not rule.startswith('!/') or not path or any(c in path for c in '*?[]\\') or path.endswith('/') or posixpath.normpath(path) != path or path.startswith('/') or '..' in PurePosixPath(path).parts:
+        if (not rule.startswith('!/') or not path or any(c in path for c in '*?[]\\')
+                or path.endswith('/') or posixpath.normpath(path) != path
+                or path.startswith('/') or '..' in PurePosixPath(path).parts):
             raise ValueError(f'非法精确白名单：{rule}')
         allowed.add(path)
     missing = set(files) - allowed
     if missing:
         raise ValueError('文件未列入精确白名单：' + ', '.join(sorted(missing)))
-    # 课程状态**唯一产地 = README 的 COURSE-STATUS 块**（2026-10-11 定案）：
-    # 只允许「开课 / 结课」两档（页面顶端的第一条信息，语义是「这门课还在不在上」）。
-    # 资料页**不再自己写 status**——它们由构建期从 README 继承（见 站点/build.mjs
-    # 的 loadCourseStatus）。这里校验产地：块在、课齐、值合法。
+
+
+def _parse_course_status_rows(readme):
+    m = re.search(r'<!-- COURSE-STATUS:START -->(.*?)<!-- COURSE-STATUS:END -->',
+                  readme, flags=re.S)
+    if not m:
+        raise ValueError('README.md 缺 COURSE-STATUS 块——课程状态的唯一产地，别删。')
+    status_rows = {}
+    for line in m.group(1).splitlines():
+        row = re.fullmatch(r'\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|', line.strip())
+        if not row:
+            continue
+        name, status = row.group(1), row.group(2)
+        if name == '课程' or set(name) <= set('-: '):
+            continue
+        if status not in ('开课', '结课'):
+            raise ValueError(
+                f'README 课程状态表：{name} 的状态「{status}」非法——只允许「开课」或「结课」两档。')
+        status_rows[name] = status
+    if not status_rows:
+        raise ValueError('README 的 COURSE-STATUS 块里一条课程都没有——空不是通过。')
+    return status_rows
+
+
+def _validate_course_status(files):
     if 'README.md' in files:
-        readme = files['README.md'].decode()
-        m = re.search(r'<!-- COURSE-STATUS:START -->(.*?)<!-- COURSE-STATUS:END -->',
-                      readme, flags=re.S)
-        if not m:
-            raise ValueError('README.md 缺 COURSE-STATUS 块——课程状态的唯一产地，别删。')
-        status_rows = {}
-        for line in m.group(1).splitlines():
-            row = re.fullmatch(r'\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|', line.strip())
-            if not row:
-                continue
-            name, status = row.group(1), row.group(2)
-            if name == '课程' or set(name) <= set('-: '):
-                continue
-            if status not in ('开课', '结课'):
-                raise ValueError(
-                    f'README 课程状态表：{name} 的状态「{status}」非法——只允许「开课」或「结课」两档。')
-            status_rows[name] = status
-        if not status_rows:
-            raise ValueError('README 的 COURSE-STATUS 块里一条课程都没有——空不是通过。')
-        # 每门课都要在状态表里（漏一门 ⇒ 该课页面顶端就没有状态）
+        status_rows = _parse_course_status_rows(files['README.md'].decode())
         for course in courses(files):
             if course not in status_rows:
                 raise ValueError(f'README 课程状态表漏了「{course}」——每门课都要有一行状态。')
     for path, data in files.items():
-        if path.startswith('课程总览/') and path.endswith('.md'):
-            text = data.decode()
-            if re.search(r'(?m)^status:', text):
-                raise ValueError(
-                    f'{path} 写了 status —— 课程状态由 README 的 COURSE-STATUS 块统一给出，'
-                    '资料页不写（构建期自动继承）。')
-    # ⚠️ 2026-11-11 实测漏洞：下面这段原本用 `classify(path)` 过滤，只覆盖四类目录
-    # （作业/教材解析/课堂笔记/原始资料）。于是 `Walkthrough.md`、课程 `index.md`
-    # 与任何自定义栏目（如 通用电气/交叉内容/）都 `classify → None` 被跳过，
-    # 「文件名 = 侧栏标签 = H1 = 网址最后一段」这条判据对它们**完全没生效**：
-    # 通用电气 一度是 文件 `Walkthrough.md` / H1 与侧栏「通用电气 · Walkthrough」 /
-    # 网址 `/通用电气/Walkthrough.html`，三者错位而全部闸门绿。
-    # 现在改成：**凡是在侧栏里有 label 的 .md 都查**，与 `check_nav_titles` 同一覆盖面。
-    for path in files:
-        category = classify(path)
-        course, kind = category if category else (None, None)
-        name = PurePosixPath(path).name
-        # ⚠️ 2026-10-29 站长定案：**文件名 = 侧栏标签**，不再按类别套不同命名模板。
-        #
-        # 旧实现按类别各有一套正则（教材解析必须 `<节号>-<名称>.md`、日期资料必须
-        # `YYYY-MM-DD-名称.md`），后果是**同一个页面有三个名字**：
-        #   网址 `2026-10-16-作业3.html` / 侧栏「作业3（习题 2.3、2.4、3.1）」/ H1 又是另一个。
-        # 站点导航要靠人脑在三个名字之间换算，机器（含 AI）更容易走错。
-        #
-        # 现在只有一条：**文件名（去 .md）= 侧栏标签**。三条结构（网址 / 侧栏 / 面包屑）
-        # 因此天然逐字一致；命名是否美观由侧栏标签决定，而侧栏标签本来就要求短（§3.4.1 宽度预算）。
-        # 这条规则替代了原来按类别分支的两套正则——「美观看标签」而不是「看类别模板」。
-        if not name.endswith('.md'):
-            # 配图等二进制资产（如 作业/figures/*.jpg）不参与「文件名 = 侧栏标签」；
-            # 是否随批次登记到分类索引仍由 index-sync 检查统一把关。
-            continue
-        # 范围限定在 课程总览/ 下：站点的 README 侧栏标签是「学期」而文件名是
-        # README.md（站点根就是 /，不是 /学期.html），属于每门课之外的例外。
-        if not path.startswith('课程总览/'):
-            continue
-        # index.md 同样是例外：侧栏标签是目录名（如「课程总览」「作业」），
-        # 而文件名是 index.md —— 网址走目录形式 /课程总览/、/…/作业/，不是 /课程总览.html。
-        if name == 'index.md':
-            continue
-        nav_label = _nav_label_of(files, path)
-        if nav_label is not None:
-            expect = nav_label + '.md'
-            if name != expect:
-                raise ValueError(
-                    f'文件名必须与侧栏标签逐字一致：本页侧栏写「{nav_label}」，'
-                    f'所以文件应叫「{expect}」，实际是「{name}」（{path}）。'
-                    '三条结构（网址/侧栏/面包屑）以网址为准，改哪边都要两边一起改。')
-        if category is None:
-            # 不在四类目录里的页面（课程 index / Walkthrough / 自定义栏目）只校
-            # 「文件名 = 侧栏标签」这一条；分类索引登记另行由 index-sync 管。
-            continue
-        index = f'课程总览/{course}/{kind}/index.md'
-        # 教材解析分三部分，链接登记在分部索引里（如 …/教材解析/第一部分-线性代数/index.md），
-        # 所以除分类总索引外，也接受该分类下**任意一层的 index.md** 里被链接到。
-        # 其它分类仍只认分类索引本身。
-        candidates = [index]
-        if kind == '教材解析':
-            prefix = f'课程总览/{course}/教材解析/'
-            candidates += sorted(
-                p for p in files
-                if p.startswith(prefix) and p.endswith('/index.md')
-            )
-        # 配图等非 .md 资产（如 作业/figures/*.jpg）是所属页面的内嵌资产：
-        # 命名豁免同理，不要求逐张登记进分类索引（随作业页一起入库）。
-        if not path.endswith('.md'):
-            continue
-        if not any(c in files and path in links(c, files[c]) for c in candidates):
+        if path.startswith('课程总览/') and path.endswith('.md') and re.search(r'(?m)^status:', data.decode()):
             raise ValueError(
-                f'资料未登记到分类索引 {index}'
-                + ('（或其分部索引）' if kind == '教材解析' else '')
-                + f'：{path}')
+                f'{path} 写了 status —— 课程状态由 README 的 COURSE-STATUS 块统一给出，'
+                '资料页不写（构建期自动继承）。')
+
+
+def _validate_course_page(files, path):
+    name = PurePosixPath(path).name
+    if not name.endswith('.md') or not path.startswith('课程总览/') or name == 'index.md':
+        return
+    nav_label = _nav_label_of(files, path)
+    if nav_label is not None:
+        expect = nav_label + '.md'
+        if name != expect:
+            raise ValueError(
+                f'文件名必须与侧栏标签逐字一致：本页侧栏写「{nav_label}」，'
+                f'所以文件应叫「{expect}」，实际是「{name}」（{path}）。'
+                '三条结构（网址/侧栏/面包屑）以网址为准，改哪边都要两边一起改。')
+    category = classify(path)
+    if category is None:
+        return
+    course, kind = category
+    index = f'课程总览/{course}/{kind}/index.md'
+    candidates = [index]
+    if kind == '教材解析':
+        prefix = f'课程总览/{course}/教材解析/'
+        candidates += sorted(p for p in files if p.startswith(prefix) and p.endswith('/index.md'))
+    if not any(c in files and path in links(c, files[c]) for c in candidates):
+        raise ValueError(
+            f'资料未登记到分类索引 {index}'
+            + ('（或其分部索引）' if kind == '教材解析' else '')
+            + f'：{path}')
+
+
+def _validate_local_links(files):
     for path, data in files.items():
         if not path.endswith('.md') or path.startswith('模板/'):
             continue
         for target in links(path, data):
             if target not in files and not any(p.startswith(target.rstrip('/') + '/') for p in files):
                 raise ValueError(f'本地链接失效：{path} → {target}')
-    check_fragments(files)
+
+
+def _validate_course_indexes(files):
     names = {PurePosixPath(p).parts[1] for p in files if p.startswith('课程总览/') and len(PurePosixPath(p).parts) >= 3}
     for course in names:
         course_index = f'课程总览/{course}/index.md'
@@ -342,6 +311,16 @@ def validate(files):
             index = f'课程总览/{course}/{kind}/index.md'
             if index not in files or index not in links(course_index, files[course_index]):
                 raise ValueError(f'课程入口缺少分类链接：{index}')
+
+
+def validate(files):
+    _validate_whitelist(files)
+    _validate_course_status(files)
+    for path in files:
+        _validate_course_page(files, path)
+    _validate_local_links(files)
+    check_fragments(files)
+    _validate_course_indexes(files)
     check_build_targets(files)
     check_nav_coverage(files)
     check_nav_titles(files)
@@ -392,6 +371,21 @@ def normalized_for_compare(path, data):
     return (head + text[end:]).encode('utf-8')
 
 
+def _git_blob(ref, path):
+    result = subprocess.run(['git', 'cat-file', 'blob', f'{ref}:{path}'],
+                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    return result.stdout if result.returncode == 0 else None
+
+
+def _first_substantive_date(path, commits):
+    for commit, date in commits:
+        new = _git_blob(commit, path)
+        old = _git_blob(commit + '^', path)
+        if new is not None and (old is None or normalized_for_compare(path, new) != normalized_for_compare(path, old)):
+            return date
+    return None
+
+
 def last_commit_dates(paths):
     """每个路径最后一次**实质**修改的提交日期（YYYY-MM-DD）。
 
@@ -413,46 +407,13 @@ def last_commit_dates(paths):
             candidates.setdefault(line, []).append(current)
     dates = {}
     for path in paths:
-        for commit, date in candidates.get(path, ()):
-            # 父提交没有该路径 ⇒ 本次为新增；本提交没有 ⇒ 该提交删除了它，都不算修改。
-            # cat-file 的 stderr 静音：这两种情况是正常分支，不该往钩子输出里喷 git 报错。
-            def blob(ref):
-                result = subprocess.run(['git', 'cat-file', 'blob', f'{ref}:{path}'],
-                                        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-                return result.stdout if result.returncode == 0 else None
-            new = blob(commit)
-            old = blob(commit + '^')
-            if new is not None and (old is None
-                                    or normalized_for_compare(path, new) != normalized_for_compare(path, old)):
-                dates[path] = date
-                break
+        hit = _first_substantive_date(path, candidates.get(path, ()))
+        if hit is not None:
+            dates[path] = hit
     return dates
 
 
-def sync_last_updated(files, base, worktree=False):
-    """把 md frontmatter 的 last_updated 对齐为该文件自己的最后一次实质修改日期。
-
-    实质变更（相对基线，剥掉日期行后内容仍不同）⇒ 提交当日；新文件 ⇒ 提交当日；
-    未变 ⇒ 最后一次实质修改它的提交日期。改写工作区、更新 files 快照；提交模式
-    下 git add（与两处自动区块同一模式）。模板/ 保留占位值不碰；工作区与暂存
-    不一致的文件跳过（不把未暂存编辑带入提交）。
-    """
-    base = base or {}
-    today = datetime.date.today().isoformat()
-    entries = []
-    for path, data in sorted(files.items()):
-        if path.startswith('模板/'):
-            continue
-        hit = _frontmatter_date_match(path, data)
-        if hit:
-            entries.append((path, *hit))
-    unchanged, targets = [], {}
-    for path, text, m in entries:
-        if path not in base or normalized_for_compare(path, files[path]) != normalized_for_compare(path, base[path]):
-            targets[path] = today
-        else:
-            unchanged.append(path)
-    targets.update(last_commit_dates(unchanged))
+def _apply_last_updated_targets(files, entries, targets, today, worktree):
     changed = []
     for path, text, m in entries:
         target = targets.get(path, today)
@@ -468,6 +429,28 @@ def sync_last_updated(files, base, worktree=False):
         changed.append(path)
     if changed and not worktree:
         git('add', '--', *changed)
+
+
+def sync_last_updated(files, base, worktree=False):
+    """把 md frontmatter 的 last_updated 对齐为该文件自己的最后一次实质修改日期。"""
+    base = base or {}
+    today = datetime.date.today().isoformat()
+    entries = []
+    for path, data in sorted(files.items()):
+        if path.startswith('模板/'):
+            continue
+        hit = _frontmatter_date_match(path, data)
+        if hit:
+            entries.append((path, *hit))
+    unchanged, targets = [], {}
+    for path, _text, _m in entries:
+        if path not in base or normalized_for_compare(path, files[path]) != normalized_for_compare(path, base[path]):
+            targets[path] = today
+        else:
+            unchanged.append(path)
+    targets.update(last_commit_dates(unchanged))
+    changed = _apply_last_updated_targets(files, entries, targets, today, worktree)
+    if changed:
         print(f'last_updated 已按各文件自己的提交日期自动对齐：{len(changed)} 个文件。')
     return changed
 
@@ -604,45 +587,44 @@ NAV_COVERAGE_EXEMPT = {
 }
 
 
-def _balanced_array(text, marker):
-    """从 `marker` 之后的首个 `[` 起，按括号配对截出整个数组字面量（返回 None 表示找不到）。
-
-    不用正则硬解：NAV_STRUCTURE 是嵌套的 JS 字面量（内含注释、字符串、模板串），
-    正则会在第一个 `]` 或字符串里的括号处截断。这里逐字符配对，跳过注释与字符串。
-    """
-    start = text.find(marker)
-    if start < 0:
-        return None
-    start = text.find('[', start + len(marker))
-    if start < 0:
-        return None
-    depth, i, quote, escaped = 0, start, None, False
-    while i < len(text):
-        ch = text[i]
-        if quote:
+def _skip_quoted_or_comment(text, i):
+    ch = text[i]
+    if ch in '"\'`':
+        quote, j, escaped = ch, i + 1, False
+        while j < len(text):
+            cur = text[j]
             if escaped:
                 escaped = False
-            elif ch == '\\':
+            elif cur == '\\':
                 escaped = True
-            elif ch == quote:
-                quote = None
-            i += 1
+            elif cur == quote:
+                return j + 1
+            j += 1
+        return j
+    if ch == '/' and text.startswith('//', i):
+        nl = text.find('\n', i)
+        return len(text) if nl < 0 else nl
+    if ch == '/' and text.startswith('/*', i):
+        end = text.find('*/', i)
+        return len(text) if end < 0 else end + 2
+    return None
+
+
+def _balanced_array(text, marker):
+    """从 `marker` 之后的首个 `[` 起，按括号配对截出整个数组字面量（返回 None 表示找不到）。"""
+    start = text.find(marker)
+    start = text.find('[', start + len(marker)) if start >= 0 else -1
+    if start < 0:
+        return None
+    depth, i = 0, start
+    while i < len(text):
+        jumped = _skip_quoted_or_comment(text, i)
+        if jumped is not None:
+            i = jumped
             continue
-        if ch in '"\'':
-            quote = ch
-        elif ch == '`':
-            quote = ch
-        elif ch == '/' and text.startswith('//', i):
-            nl = text.find('\n', i)
-            i = len(text) if nl < 0 else nl
-            continue
-        elif ch == '/' and text.startswith('/*', i):
-            end = text.find('*/', i)
-            i = len(text) if end < 0 else end + 2
-            continue
-        elif ch == '[':
+        if text[i] == '[':
             depth += 1
-        elif ch == ']':
+        elif text[i] == ']':
             depth -= 1
             if depth == 0:
                 return text[start:i + 1]
@@ -675,8 +657,8 @@ def _nav_paths(script_text):
     try:
         result = subprocess.run(['node', '-e', program],
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    except FileNotFoundError:
-        raise ValueError('未找到 node，无法求值 NAV_STRUCTURE——钩子校验侧栏覆盖需要 node。')
+    except FileNotFoundError as exc:
+        raise ValueError('未找到 node，无法求值 NAV_STRUCTURE——钩子校验侧栏覆盖需要 node。') from exc
     if result.returncode != 0:
         raise ValueError(f'求值 {BUILD_SCRIPT} 的 NAV_STRUCTURE 失败：'
                          + result.stderr.decode().strip())
@@ -766,46 +748,36 @@ def _label_width(text):
     return total
 
 
+def _check_nav_entry(files, path, label, depth, state):
+    mismatch, too_wide, seen = state
+    if not path.endswith('.md') or not label or path not in files:
+        return
+    title = _h1_title(files[path].decode())
+    if title is None:
+        mismatch.append(f'{path}：页面没有 H1 标题，侧栏标签「{label}」无从对齐')
+        return
+    want = _norm_title(title)
+    if _norm_title(label) != want:
+        mismatch.append(f'侧栏写「{label}」，页面是「{want}」 ⇒ label 应改为 '
+                        f'{json.dumps(want, ensure_ascii=False)}（{path}）')
+    budget = NAV_WIDTH_BUDGET.get(depth, NAV_WIDTH_BUDGET_FLOOR)
+    width = _label_width(label)
+    if width > budget:
+        too_wide.append(f'「{label}」宽 {width:.1f} > 第 {depth} 层预算 {budget}（{path}）')
+    seen.setdefault(path, []).append(label)
+
+
 def check_nav_titles(files):
-    """侧栏标签与页面 H1 **必须逐字一致**，且都不得超过该层的宽度预算。
-
-    这是 2026-10-28 站长定案的最终形态（中途试过两个错方向，记在这里防回头）：
-    · 先试「H1 权威、侧栏跟着长长」——错。侧栏是导航，职责是短而可扫；
-      让导航长成内容标题的样子，等于牺牲导航去迁就标题。
-    · 再试「侧栏写简写、H1 自便」——也错。同一份资料两个名字，
-      读者在侧栏认一套、点进去看另一套，找东西对不上号。
-
-    **现在的规则**：侧栏标签就是这篇的**正式短名**，H1 等于它，长描述降级进正文。
-    所以两件事一起校验：
-      ① `label == H1`（逐字，只折叠空白）——一个页面只有一个名字；
-      ② `width(label) ≤ 该层预算`——名字短到侧栏放得下，不用省略号截断。
-
-    全部页面都查（不再只管作业页）：短名是站点的导航契约，任何页面都不该例外。
-    实测这条把 112 个页面的 H1 与 125 个标签中的 27 个收敛到了预算内。
-    """
+    """侧栏标签与页面 H1 **必须逐字一致**，且都不得超过该层的宽度预算。"""
     if BUILD_SCRIPT not in files:
         return
     nav = _nav_paths(files[BUILD_SCRIPT].decode())
     if nav is None:
         return
-    mismatch, too_wide = [], []
-    seen = {}
+    mismatch, too_wide, seen = [], [], {}
+    state = (mismatch, too_wide, seen)
     for path, label, depth in nav:
-        if not path.endswith('.md') or not label or path not in files:
-            continue
-        title = _h1_title(files[path].decode())
-        if title is None:
-            mismatch.append(f'{path}：页面没有 H1 标题，侧栏标签「{label}」无从对齐')
-            continue
-        want = _norm_title(title)
-        if _norm_title(label) != want:
-            mismatch.append(f'侧栏写「{label}」，页面是「{want}」 ⇒ label 应改为 '
-                            f'{json.dumps(want, ensure_ascii=False)}（{path}）')
-        budget = NAV_WIDTH_BUDGET.get(depth, NAV_WIDTH_BUDGET_FLOOR)
-        width = _label_width(label)
-        if width > budget:
-            too_wide.append(f'「{label}」宽 {width:.1f} > 第 {depth} 层预算 {budget}（{path}）')
-        seen.setdefault(path, []).append(label)
+        _check_nav_entry(files, path, label, depth, state)
     if mismatch:
         raise ValueError(
             '侧栏标签必须与页面 H1 标题逐字一致——一个页面只能有一个正式名字'
@@ -815,10 +787,6 @@ def check_nav_titles(files):
             '侧栏标签超出该层的宽度预算，会被省略号截断——把名字改短'
             '（长描述写进正文 H2；预算来自真实 Chromium 逐层实测，见 NAV_WIDTH_BUDGET）：'
             + '；'.join(too_wide))
-
-    # 同一个页面被挂了两个不同标签：读者会看到同一份资料在侧栏出现两次，
-    # 且两个名字必然有一个不等于 H1。2026-10-28 实测电机学两处（章组节点
-    # 借子页当落点），改成纯组节点后消除。
     dup = [f'{p}：{"、".join(f"「{l}」" for l in ls)}'
            for p, ls in seen.items() if len(set(ls)) > 1]
     if dup:
@@ -890,7 +858,7 @@ def check_readme_documents_ui(files):
     unknown = sorted(i for i in ids if i not in BUTTON_HINTS)
     if unknown:
         raise ValueError('以下站点按钮未登记到 README 按钮说明的校验表 '
-                         f'（BUTTON_HINTS），请补上：' + '、'.join(unknown))
+                         '（BUTTON_HINTS），请补上：' + '、'.join(unknown))
     missing = sorted(
         i for i in ids
         if not any(h in readme for h in BUTTON_HINTS[i])
@@ -915,47 +883,41 @@ PREP_STRONG_NUM_RE = re.compile(r'\d+(?:\.\d+)?%|(?:19|20)\d{2}\s*年?')
 WT_POINT_RE = re.compile(r'^-\s+\*\*(.+?)\*\*', re.M)
 
 
+def _norm_prep_text(text):
+    return re.sub(r'[\s（）()：:，,。.、·—\-]', '', text)
+
+
+def _check_single_exam_prep(files, path, problems, warnings):
+    course = PurePosixPath(path).parts[1]
+    text = files[path].decode()
+    wt = f'课程总览/{course}/Walkthrough.md'
+    if wt not in files:
+        problems.append(f'{path}：本课没有 Walkthrough.md——备考以它为底，先建 Walkthrough')
+        return
+    norm_text = _norm_prep_text(text)
+    missing = []
+    for m in WT_POINT_RE.finditer(files[wt].decode()):
+        key = re.split(r'[（(]', m.group(1).strip().rstrip('：:'))[0].strip()
+        if len(key) >= 2 and _norm_prep_text(key) not in norm_text:
+            missing.append(key)
+    if missing:
+        head = '、'.join(missing[:6])
+        tail = '…' if len(missing) > 6 else ''
+        warnings.append(f'{path}：Walkthrough 有 {len(missing)} 条考点在备考页里没找到'
+                        f'（{head}{tail}）——检查备考是否漏了新考点')
+    prefix = f'课程总览/{course}/'
+    source_text = ''.join(data.decode() for p, data in files.items()
+                          if p.startswith(prefix) and p.endswith('.md') and p != path).replace(' ', '')
+    for num in sorted(set(PREP_STRONG_NUM_RE.findall(text))):
+        if num.replace(' ', '') not in source_text:
+            problems.append(f'{path}：数字「{num}」在本课笔记/作业里找不到出处（备考不得自己编数）')
+
+
 def check_exam_prep(files):
     """备考页检查（轻）。文件不存在则跳过（备考是可插拔栏目）。"""
-    problems = []
-    warnings = []
+    problems, warnings = [], []
     for path in sorted(p for p in files if p.endswith('/备考.md') and p.startswith('课程总览/')):
-        course = PurePosixPath(path).parts[1]
-        text = files[path].decode()
-        wt = f'课程总览/{course}/Walkthrough.md'
-        if wt not in files:
-            problems.append(f'{path}：本课没有 {WALKTHROUGH_NAME}——备考以它为底，先建 Walkthrough')
-            continue
-        wt_text = files[wt].decode()
-        # ① 考点覆盖：Walkthrough 的每条考点关键词，备考正文里应能找到（找不到 → 提示，不拦）
-        missing = []
-        # 比对时去掉标点/空格（「两类数据来源」与「数据来源分两类」这类同义改写不该误报）
-        def _norm(t):
-            return re.sub(r'[\s（）()：:，,。.、·—\-]', '', t)
-        norm_text = _norm(text)
-        for m in WT_POINT_RE.finditer(wt_text):
-            kw = m.group(1).strip().rstrip('：:')
-            key = re.split(r'[（(]', kw)[0].strip()
-            if len(key) < 2:
-                continue
-            if _norm(key) not in norm_text:
-                missing.append(key)
-        if missing:
-            head = '、'.join(missing[:6])
-            tail = '…' if len(missing) > 6 else ''
-            warnings.append(f'{path}：Walkthrough 有 {len(missing)} 条考点在备考页里没找到'
-                            f'（{head}{tail}）——检查备考是否漏了新考点')
-        # ② 弱保真：强特征数字必须能在本课资料里找到
-        source_text = ''
-        prefix = f'课程总览/{course}/'
-        for p, data in files.items():
-            if p.startswith(prefix) and p.endswith('.md') and p != path:
-                source_text += data.decode()
-        for num in sorted(set(PREP_STRONG_NUM_RE.findall(text))):
-            token = num.replace(' ', '')
-            if token not in source_text.replace(' ', ''):
-                problems.append(f'{path}：数字「{num}」在本课笔记/作业里找不到出处'
-                                f'（备考不得自己编数）')
+        _check_single_exam_prep(files, path, problems, warnings)
     for w in warnings:
         print(f'[备考] {w}')
     if problems:

@@ -55,7 +55,7 @@ const ANTI_HUMAN = [
 ];
 
 // ── ② 题面引用图号 ⇒ 题面里必须看得见图 ────────────────────────────────────
-const FIG_REF = /图\s*\d+[\.．-]\d+/;
+const FIG_REF = /图\s*\d+[.．-]\d+/;
 // 外部 SVG（2026-11-11 起电子技术 10-14 后六页的落图形态）也必须是「题面里看得见的图」。
 // 它与 `![` 同义：`<figure class="fig">` + `<img src="figures/…">` + `<figcaption>`，
 // 构建器把 figures/ 原样拷进 dist；只认 `:::figure`/内联 `<svg>` 会让这条闸对采纳的
@@ -67,11 +67,11 @@ const HAS_FIG = /:::figure|<svg|!\[|<img\s+src="figures\//;
 // 11-02 作业 8.16/8.18、10-26 作业 8.04/8.05 即此形态）——图的信息完整落在
 // 题面里，读者不用翻别处。
 const HAS_WIRING_TABLE = (stem) => {
-  const m = /\*\*图\s*\d+[\.．-]\d+\**[^\n]*转写[^\n]*：/.exec(stem);
+  const m = /\*\*图\s*\d+[.．-]\d+\**[^\n]*转写[^\n]*：/.exec(stem);
   if (!m) return false;
   return /\n\|/.test(stem.slice(m.index));
 };
-const FIG_MISSING = /图\s*\d+[\.．-]\d+\s*不在|图缺|未加载|不在截图|截图里没有/;
+const FIG_MISSING = /图\s*\d+[.．-]\d+\s*不在|图缺|未加载|不在截图|截图里没有/;
 
 function solutionLayer(text) {
   // `- 完整解答` 起到下一层标记（`- 提示` / `- 复盘` / `- 完整解答`）或收口 `:::`。

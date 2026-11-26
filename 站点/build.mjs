@@ -15,7 +15,6 @@ import { DISCLOSURE_ANCHOR_JS } from './plugins/disclosure-anchor.mjs';
 import {
   createSymbolCatalog,
   parseFrontmatter,
-  SYMBOL_SELECTOR,
   SYMBOL_RUNTIME_ASSET,
   SYMBOL_JSON_SCRIPT_ID,
   SYMBOLS_BUBBLE_JS,
@@ -371,13 +370,11 @@ for (const relPath of TARGET_FILES) {
   if (!fs.existsSync(fullPath)) continue;
   const content = fs.readFileSync(fullPath, 'utf-8');
   let title = path.basename(relPath, '.md');
-  let frontmatter = {};
 
-  const { meta: parsedFm, hasFrontmatter } = parseFrontmatter(content, {
+  const { meta: frontmatter, hasFrontmatter } = parseFrontmatter(content, {
     strict: true,
     filePath: `${relPath}（元数据遍）`,
   });
-  frontmatter = parsedFm;
   if (hasFrontmatter && frontmatter.name) {
     title = frontmatter.name;
   } else if (!hasFrontmatter) {
@@ -817,48 +814,6 @@ const NOTES_ORDER = [
   "课程总览/工程数学/课堂笔记/10-08-矩阵与逆.md"
 ];
 
-// Helper: Wrap bare CJK in math mode
-function wrapBareCJK(tex) {
-  const textEnvRegex = /(\\(?:text|textrm|textit|textbf|mathrm|mathbf|operatorname|mbox)\s*\{[^{}]*\})/g;
-  const parts = tex.split(textEnvRegex);
-  for (let i = 0; i < parts.length; i += 2) {
-    parts[i] = parts[i].replace(/([\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+)/g, '\\text{$1}');
-  }
-  return parts.join('');
-}
-
-/**
- * TeX → 可读纯文本，**只用于标题锚点**。
- *
- * 为什么需要：标题里的公式在 Step 2 已变成 @@MATH_INLINE_N@@ 占位符，
- * 而 marked 用那时的文本生成 heading id，于是锚点会变成
- * `#第一步-处理前两行-提出-math_inline_125` 这种脏值、点击直接失效。
- * 这里给出一份去掉 TeX 标记的纯文本，供 id 与 TOC 使用；
- * 正文里显示的仍是完整 KaTeX 排版，二者互不影响。
- *
- * 注意这是**有损**转换：`\frac{a}{b}` 变成 `a/b`、`x^2` 变成 `x2`……
- * 对锚点足够（可读、稳定），但它不是数学排版，不用于正文。
- */
-function mathPlain(tex) {
-  let s = String(tex);
-  // 先处理常见的分数/上下标，再统一清掉反斜杠命令
-  s = s.replace(/\\frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, '$1/$2');
-  s = s.replace(/\\sqrt\s*\{([^{}]*)\}/g, '√$1');
-  s = s.replace(/\\text\s*\{([^{}]*)\}/g, '$1');
-  s = s.replace(/\\times/g, '×').replace(/\\cdot/g, '·')
-       .replace(/\\div/g, '÷').replace(/\\pm/g, '±')
-       .replace(/\\neq/g, '≠').replace(/\\leq/g, '≤').replace(/\\geq/g, '≥')
-       .replace(/\\to/g, '→').replace(/\\Rightarrow/g, '⇒')
-       .replace(/\\alpha/g, 'α').replace(/\\beta/g, 'β').replace(/\\lambda/g, 'λ')
-       .replace(/\\pi/g, 'π').replace(/\\infty/g, '∞');
-  s = s.replace(/\^\{([^{}]*)\}/g, '$1').replace(/\^(\S)/g, '$1');
-  s = s.replace(/_\{([^{}]*)\}/g, '$1').replace(/_(\S)/g, '$1');
-  s = s.replace(/\\[a-zA-Z]+/g, ' ');   // 其余命令（\begin 等）一律去掉
-  s = s.replace(/[{}$]/g, ' ');
-  s = s.replace(/\s+/g, ' ').trim();
-  return s;
-}
-
 const markdownRenderer = createMarkdownRenderer();
 
 // 4. Build each page
@@ -918,7 +873,8 @@ for (const relPath of TARGET_FILES) {
   // 也不要把句子吞掉。
   const renderBubbleText = (s) => {
     const pieces = [];
-    // ① 抽走公式 → 占位符（\u0000 不会出现在正常文本里，也不会被正则的 * ` $ 匹配到）
+    const NUL = String.fromCharCode(0);
+    // ① 抽走公式 → 占位符（NUL 不会出现在正常文本里，也不会被正则的 * ` $ 匹配到）
     let text = String(s).replace(/\$([^$\n]+)\$/g, (m, tex) => {
       const out = compileMath({ blocks: [{ raw: tex, mode: 'inline' }] },
         { dictionary: symbolCatalog.mathDictionary, packs: [] });
@@ -933,14 +889,14 @@ for (const relPath of TARGET_FILES) {
       }
       const idx = pieces.length;
       pieces.push(html);
-      return `\u0000M${idx}\u0000`;
+      return `${NUL}M${idx}${NUL}`;
     });
     // ② 处理行内标记（此时公式已成占位符，粗体可以横跨公式配对）
     text = escapeHtmlText(text);
     text = text.replace(/\*\*([^\n]+?)\*\*/g, '<strong>$1</strong>');
     text = text.replace(/`([^\n]+?)`/g, '<code>$1</code>');
     // ③ 公式插回
-    return text.replace(/\u0000M(\d+)\u0000/g, (m, i) => pieces[Number(i)] ?? '');
+    return text.replace(new RegExp(`${NUL}M(\\d+)${NUL}`, 'g'), (_m, i) => pieces[Number(i)] ?? '');
   };
 
   const fmParsed = parseFrontmatter(raw, { strict: true, filePath: `${relPath}（渲染遍）` });
@@ -1125,7 +1081,7 @@ for (const relPath of TARGET_FILES) {
         const rewritten = decoded.replace(/\.md(#.*)?$/, '.html$1');
         return `[${text}](${encodeURI(rewritten)})`;
       }
-    } catch (_) {}
+    } catch (_e) { /* 忽略畸形 URI，保留原样 */ }
     return match;
   });
 
@@ -2039,7 +1995,6 @@ if (symbolUncovered.length > 0) {
 // 每份镜像 = 渲染前的整篇源文：正文 Markdown 原样、公式保持 TeX 原文、
 // 图片换成完整 URL、符号不冒泡。就是「进 Shirone reader 之前」的那一份。
 {
-  const base = 'https://isui.ren/repo/S26-1_202609/';
   const machineBase = 'https://isui.ren/repo/S26-1_202609/machine/';
   const machineDir = path.join(DIST_DIR, 'machine');
   fs.rmSync(machineDir, { recursive: true, force: true });

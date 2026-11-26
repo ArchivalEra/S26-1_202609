@@ -48,7 +48,7 @@ function walkMd(dir, out = []) {
 /** 取每个「- 完整解答」块（到下一个「- 提示/- 复盘」或折叠结束）。 */
 export function solutionBlocks(text) {
   const out = [];
-  const re = /^- 完整解答\s*\n([\s\S]*?)(?=\n- (?:提示|复盘)|^\n:::|\Z)/gm;
+  const re = /^- 完整解答\s*\n([\s\S]*?)(?=\n- (?:提示|复盘)|^\n:::|$(?![\s\S]))/gm;
   let m;
   while ((m = re.exec(text)) !== null) out.push(m[1]);
   return out;

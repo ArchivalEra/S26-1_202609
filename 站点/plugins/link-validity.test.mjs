@@ -104,7 +104,6 @@ test('machine/：镜像含整篇源文（TeX 原文 + 图片绝对 URL），Birt
   const machDir = path.join(DIST, 'machine');
   const catFile = path.join(machDir, 'Birthright.html');
   const MACHINE_BASE = 'https://isui.ren/repo/S26-1_202609/machine/';
-  const SITE_BASE = 'https://isui.ren/repo/S26-1_202609/';
   assert.ok(existsSync(catFile), 'Birthright.html 不存在——先跑 node build.mjs');
 
   const sitePages = JSON.parse(
@@ -131,8 +130,6 @@ test('machine/：镜像含整篇源文（TeX 原文 + 图片绝对 URL），Birt
   assert.ok(!/data-term|sym-gloss/.test(sample.body), '符号不冒泡（那是给人页面的交互）');
   // 公式保持 TeX 原文（不是 KaTeX 排版后的 HTML）。
   // 整页可能被切成多片——把同页全部片拼起来再核（含首片及 piece-N 续片）。
-  const samePage = (f) => path.basename(f).startsWith(path.basename(mirrorOf(samplePage), '.json'))
-    || f === path.join(machDir, mirrorOf(samplePage));
   const pieces = allJsonOfPage(samplePage, machDir, mirrorOf);
   const full = pieces.map((f) => JSON.parse(readFileSync(f, 'utf8')).body).join('\n');
   const dispTex = [...full.matchAll(/\$\$(.+?)\$\$/gs)].map((m) => m[1]);

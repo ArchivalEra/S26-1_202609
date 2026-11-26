@@ -39,7 +39,7 @@ export function compileDictionary(packs, deps) {
   for (const [packName, pack] of Object.entries(packs || {})) {
     const atoms = new Map();
     const patterns = [];
-    (pack.entries || []).forEach((entry, idx) => {
+    (pack.entries || []).forEach((entry) => {
       // 只声明形式、没有释义的词条不参与取词（`bubble: false`）
       if (entry.bubble === false) return;
       const toFormList = (tex) => (Array.isArray(tex) ? tex : tex ? [tex] : []);

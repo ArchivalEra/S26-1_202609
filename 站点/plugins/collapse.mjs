@@ -60,7 +60,6 @@
 const OPEN_RE = /^[\t ]{0,3}:{3,}[\t ]*collapse(?:[\t ]+(.*?))?[\t ]*$/i;
 const CLOSE_RE = /^[\t ]{0,3}:{3,}[\t ]*$/;
 const FENCE_RE = /^[\t ]{0,3}(`{3,}|~{3,})/;
-const ALLOWED_OPTIONS = new Set(["accordion", "expand"]);
 
 const esc = (s) =>
   String(s)

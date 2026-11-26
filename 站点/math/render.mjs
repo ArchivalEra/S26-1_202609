@@ -307,7 +307,7 @@ export function createKatexRenderer(katex) {
       // （电机学 1.2 / 1.3 两页就栽在这——9 处 katex-error 里有 2 处是它）。
       const opts = expr.mode === 'display' ? { ...OPTS, displayMode: true } : OPTS;
 
-      let html = '';
+      let html;
       try {
         html = katex.renderToString(tex, opts);
       } catch (e) {

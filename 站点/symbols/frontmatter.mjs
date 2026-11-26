@@ -37,7 +37,7 @@ export function createFrontmatterParser(provider = defaultYamlProvider) {
     } catch (err) {
       if (opts.strict) {
         const label = opts.filePath ? ` ${opts.filePath}` : '';
-        throw new Error(`frontmatter 解析失败${label}: ${err.message}`);
+        throw new Error(`frontmatter 解析失败${label}: ${err.message}`, { cause: err });
       }
       parsed = {};
     }

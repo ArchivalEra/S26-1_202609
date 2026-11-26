@@ -137,7 +137,7 @@ export function renderMarkdown(root, opts) {
     if (/^(https?:|mailto:)/i.test(h)) return { kind: 'external', href: h };
     if (/^javascript:/i.test(h)) return null;
     let decoded = h;
-    try { decoded = decodeURI(h); } catch (e) { /* 保留原样 */ }
+    try { decoded = decodeURI(h); } catch (_e) { /* 保留原样 */ }
     return { kind: 'internal', href: decoded };
   }
   const SKIP = { SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, TEMPLATE: 1, SVG: 1 };
@@ -397,7 +397,7 @@ export function createPageView(doc, loc, winOverride) {
         const v = win.getComputedStyle(rootEl).getPropertyValue('--hue');
         if (v) hue = parseInt(v, 10);
       }
-    } catch (e) { /* 无计算样式 */ }
+    } catch (_e) { /* 无计算样式 */ }
     if (!Number.isFinite(hue) && rootEl) {
       try {
         const inline = typeof rootEl.style?.getPropertyValue === 'function'
@@ -407,7 +407,7 @@ export function createPageView(doc, loc, winOverride) {
           const attr = rootEl.getAttribute('data-hue');
           if (attr) hue = parseInt(attr, 10);
         }
-      } catch (e) { /* 无内联样式 */ }
+      } catch (_e) { /* 无内联样式 */ }
     }
     let sidebar = null;
     const body = (doc?.body) || null;
@@ -431,7 +431,7 @@ export function createPageView(doc, loc, winOverride) {
       scrollY = win ? Math.round(win.scrollY || 0) : 0;
       docHeight = doc?.documentElement ? doc.documentElement.scrollHeight : 0;
       viewH = win ? win.innerHeight || 0 : 0;
-    } catch (e) { /* 无窗口 */ }
+    } catch (_e) { /* 无窗口 */ }
     return {
       title: titleEl ? textOf(titleEl) : (doc.title || ''),
       course: chip ? textOf(chip).replace(/^\S+\s*/, '') : '',
@@ -486,11 +486,10 @@ export function createPageView(doc, loc, winOverride) {
       try {
         if (win2?.__disclosureOpen) win2.__disclosureOpen(target.id);
         else if (location && typeof location === 'object') location.hash = target.id;
-      } catch (e) { /* 无 hash 能力 */ }
+      } catch (_e) { /* 无 hash 能力 */ }
     }
-    const w = win2 || win || null;
-    try { target.scrollIntoView({ block: 'start' }); } catch (e) {
-      try { target.scrollIntoView(); } catch (e2) { /* 无滚动也能返回锚点 */ }
+    try { target.scrollIntoView({ block: 'start' }); } catch (_e) {
+      try { target.scrollIntoView(); } catch (_e2) { /* 无滚动也能返回锚点 */ }
     }
     return { ok: true, title: textOf(target), anchor: target.id };
   }
@@ -524,7 +523,7 @@ export function createPageView(doc, loc, winOverride) {
       const data = JSON.parse(tag.textContent || '');
       if (!data || typeof data !== 'object' || !data.terms) return null;
       return data;
-    } catch (e) { return null; }
+    } catch (_e) { return null; }
   }
 
   /** 从 #sym-glossary-json 按规范 key / 裸 id / 标题精确或模糊查一条词条。 */
@@ -645,14 +644,14 @@ export function createPageView(doc, loc, winOverride) {
     let p = String(raw || '').trim();
     if (!p) return '';
     let wasAbsolute = /^https?:\/\//i.test(p) || p.charAt(0) === '/';
-    try { p = decodeURI(p); } catch (e) { /* 保持原样 */ }
+    try { p = decodeURI(p); } catch (_e) { /* 保持原样 */ }
     // 绝对 URL → 只取 pathname。⚠️ `new URL().pathname` 返回**百分号编码**路径，
     // 中文段会被编码回去，所以提取后必须**再解一次码**，否则与清单里的未编码
     // 中文路径永远匹配不上（实测：只有未编码的 `index.html` 命中，把
     // `…/工程数学/…/index.html` 错配成了根 `index.html`）。
     if (/^https?:\/\//i.test(p)) {
-      try { p = new URL(p).pathname; } catch (e) { /* 保持原样 */ }
-      try { p = decodeURI(p); } catch (e) { /* 保持原样 */ }
+      try { p = new URL(p).pathname; } catch (_e) { /* 保持原样 */ }
+      try { p = decodeURI(p); } catch (_e) { /* 保持原样 */ }
       wasAbsolute = true;
     }
     p = p.replace(/^\.\//, '').replace(/^\/+/, '');
@@ -945,7 +944,7 @@ export function createPageView(doc, loc, winOverride) {
         const hs = headings();
         // 锚点精确命中优先于标题匹配（anchor 是唯一 id，不会有歧义）
         let hit = needle && byId(needle) ? hs.find((h) => h.anchor === needle) : null;
-        let matched = null;
+        let matched;
         if (!hit) {
           // 2026-10-29：**精确优先 + 全部命中**。
           // 旧写法 `filter(...)[0]` 在同一页有「习题 2.4(2)：求秩」与「习题 2.4(3)：求秩」
@@ -1034,7 +1033,7 @@ export function createPageView(doc, loc, winOverride) {
    * DOM 顺序的下一个节点（先子后兄弟后上溯），但不进入 `stopAt` 之前已收元素的内部。
    * 用于「从某标题开始读到下一个同级标题」——线性、不摊平整棵树。
    */
-  function nextInDoc(node, stopAt) {
+  function nextInDoc(node, _stopAt) {
     const kids = node.children;
     if (kids?.length) return kids[0];
     // 真实 DOM 有 nextElementSibling；假 DOM 没有 → 退化成「父节点里找我的下一个兄弟」
@@ -1133,7 +1132,7 @@ export function createPageView(doc, loc, winOverride) {
           el.dispatchEvent(new Ev('click', { bubbles: true, cancelable: true, view: w }));
           return true;
         }
-      } catch (e) { /* 无事件能力 */ }
+      } catch (_e) { /* 无事件能力 */ }
       return false;
     };
 
@@ -1149,7 +1148,7 @@ export function createPageView(doc, loc, winOverride) {
     }
 
     if (to === 'back') {
-      try { if (w.history && w.history.back) { w.history.back(); return { ok: true, to }; } } catch (e) { /* 无 history */ }
+      try { if (w.history && w.history.back) { w.history.back(); return { ok: true, to }; } } catch (_e) { /* 无 history */ }
       return { ok: false, reason: 'history_unavailable' };
     }
 
@@ -1331,7 +1330,7 @@ export function createPageView(doc, loc, winOverride) {
 
     if (opt.theme === 'light' || opt.theme === 'dark') {
       if (rootEl?.setAttribute) rootEl.setAttribute('data-theme', opt.theme);
-      try { if (w.localStorage) w.localStorage.setItem('theme', opt.theme); } catch (e) { /* 无存储 */ }
+      try { if (w.localStorage) w.localStorage.setItem('theme', opt.theme); } catch (_e) { /* 无存储 */ }
       done.theme = opt.theme;
     }
     if (opt.hue !== undefined && opt.hue !== null) {
@@ -1345,7 +1344,7 @@ export function createPageView(doc, loc, winOverride) {
       if (slider) slider.value = String(hue);
       const badge = byId('palette-hue-badge');
       if (badge) badge.textContent = 'Hue ' + hue + '°';
-      try { if (w.localStorage) w.localStorage.setItem('theme-hue', String(hue)); } catch (e) { /* 无存储 */ }
+      try { if (w.localStorage) w.localStorage.setItem('theme-hue', String(hue)); } catch (_e) { /* 无存储 */ }
       done.hue = hue;
     }
     if (opt.sidebar === 'open' || opt.sidebar === 'closed' || opt.sidebar === 'toggle') {
@@ -1592,7 +1591,7 @@ export function createPageView(doc, loc, winOverride) {
       }
       // 站内路径解码（索引里是百分号编码）
       for (const h of hits) {
-        try { h.path = decodeURI(h.path); } catch (e) { /* 原样 */ }
+        try { h.path = decodeURI(h.path); } catch (_e) { /* 原样 */ }
       }
       return {
         ok: true, query, scope: 'index',
@@ -1759,14 +1758,14 @@ export function createPageView(doc, loc, winOverride) {
       if (!includeIcons && /assets\/favicon|site-title-icon/.test(src)) continue;
       const ext = (/[/.]([a-z0-9]+)$/i.exec(src.split('?')[0]) || [])[1] || '';
       let abs = src;
-      try { abs = new URL(src, location.href).href; } catch (e) { /* 相对原样 */ }
+      try { abs = new URL(src, location.href).href; } catch (_e) { /* 相对原样 */ }
       let box = null;
       try {
         if (el.getBoundingClientRect) {
           const r = el.getBoundingClientRect();
           box = { top: Math.round(r.top + (win ? win.scrollY || 0 : 0)), w: Math.round(r.width), h: Math.round(r.height) };
         }
-      } catch (e) { /* 无布局 */ }
+      } catch (_e) { /* 无布局 */ }
       out.push({
         index: out.length,
         src, abs, ext: ext.toLowerCase(),
@@ -1823,7 +1822,7 @@ export function createPageView(doc, loc, winOverride) {
     }
     if (!src) return Promise.resolve({ ok: false, reason: 'empty_src', hint: '给 index（先用 site_list_images 取）或 src' });
     let abs = src;
-    try { abs = new URL(src, location.href).href; } catch (e) { /* 相对原样 */ }
+    try { abs = new URL(src, location.href).href; } catch (_e) { /* 相对原样 */ }
 
     const Ctor = w.Image || (typeof Image !== 'undefined' ? Image : null);
     const canvas = (w.document && w.document.createElement)
@@ -2051,7 +2050,7 @@ export function buildToolDefs(doc, win) {
 
         const el = view.findSymbol(needle);
         if (wantPopup && el) {
-          try { el.scrollIntoView({ block: 'center' }); } catch (e) { /* 无滚动不影响点击 */ }
+          try { el.scrollIntoView({ block: 'center' }); } catch (_e) { /* 无滚动不影响点击 */ }
           const win2 = w || {};
           const ClickEvent = win2.MouseEvent || (typeof MouseEvent !== 'undefined' ? MouseEvent : null);
           if (ClickEvent) {
@@ -2093,7 +2092,7 @@ export function buildToolDefs(doc, win) {
           const all = view.listSymbols(200);
           return { ok: false, reason: 'symbol_not_on_page', total: all.length, available: all.slice(0, 40) };
         }
-        try { el.scrollIntoView({ block: 'center' }); } catch (e) { /* 无滚动不影响点击 */ }
+        try { el.scrollIntoView({ block: 'center' }); } catch (_e) { /* 无滚动不影响点击 */ }
         // 兼容无 #sym-glossary-json 的极简夹具：回退到点击 + 气泡 DOM 读取
         const win2 = w || {};
         const ClickEvent = win2.MouseEvent || (typeof MouseEvent !== 'undefined' ? MouseEvent : null);
@@ -2104,14 +2103,14 @@ export function buildToolDefs(doc, win) {
         }
         const read = () => {
           let bubble = null;
-          try { bubble = doc.querySelector(PAGE_SELECTORS.glossaryBubble); } catch (e) { /* 假 DOM */ }
+          try { bubble = doc.querySelector(PAGE_SELECTORS.glossaryBubble); } catch (_e) { /* 假 DOM */ }
           const senses = [];
           if (bubble?.querySelectorAll) {
             try {
               Array.prototype.slice.call(bubble.querySelectorAll('li')).forEach((li) => {
                 senses.push({ text: renderMarkdown(li), here: hasClass(li, 'is-here') });
               });
-            } catch (e) { /* 无子查询 */ }
+            } catch (_e) { /* 无子查询 */ }
           }
           const more = bubble?.querySelector ? bubble.querySelector('a') : null;
           const fullText = bubble ? renderMarkdown(bubble) : '';
@@ -2233,7 +2232,7 @@ export function registerTools(doc, nav) {
   let attempts = 0;
   for (const d of defs) {
     attempts += 1; // 先记「试了」——单个失败不该把它算漏（2026-10-16 测试抓出的计数偏差）
-    try { Promise.resolve(mc.registerTool(d)).catch(() => {}); } catch (e) { /* 单个失败不影响其余 */ }
+    try { Promise.resolve(mc.registerTool(d)).catch(() => {}); } catch (_e) { /* 单个失败不影响其余 */ }
   }
   return attempts;
 }
@@ -2428,7 +2427,7 @@ export function feedText(name, args, r) {
   }
 
   // 正文：优先 text；没有 text 就压成紧凑 JSON（不整段 dump 原始对象）
-  let body = '';
+  let body;
   if (typeof v.text === 'string' && v.text) body = v.text;
   else {
     try { body = JSON.stringify(v); } catch { body = String(v); }

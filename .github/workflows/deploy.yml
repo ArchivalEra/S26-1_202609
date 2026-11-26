@@ -9,6 +9,12 @@ on:
       - "课程总览/**"
       - "站点/**"
       - "PRINCIPLES.md"
+      - ".githooks/**"
+      - ".kimi-code/hooks/**"
+      - "zreflect/**"
+      - "reflect-local/**"
+      - "ruff.toml"
+      - "right.json"
       - ".github/workflows/**"
   workflow_dispatch: {}
   issues:
@@ -39,25 +45,37 @@ jobs:
           node-version: 26
           check-latest: ${{ !env.ACT }}
 
-      - name: Ensure fontTools & brotli for math-font check (act)
-        if: ${{ env.ACT }}
-        run: python3 -c "import fontTools, brotli" 2>/dev/null || pip3 install --break-system-packages -q fonttools brotli
+      - name: Ensure fontTools, brotli, ruff & shellcheck
+        run: |
+          set -euo pipefail
+          python3 -m ruff --version >/dev/null 2>&1 || pip3 install --break-system-packages -q ruff==0.17.3
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            SUDO=""
+            if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then SUDO="sudo"; fi
+            $SUDO apt-get update -qq && $SUDO apt-get install -y -qq --no-install-recommends shellcheck
+          fi
+          if [ -n "${ACT:-}" ]; then
+            python3 -c "import fontTools, brotli" 2>/dev/null || pip3 install --break-system-packages -q fonttools brotli
+          fi
 
-      - name: Build static site (含自持搜索索引)
-        working-directory: 站点
+      - name: Lint (Ruff / ShellCheck / ESLint) & build static site
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          npm ci --ignore-scripts --no-audit --no-fund
+          npm --prefix 站点 ci --ignore-scripts --no-audit --no-fund
+          python3 -m ruff check zreflect reflect-local .githooks
+          shellcheck -x .githooks/pre-commit .githooks/pre-push .kimi-code/hooks/einfacht-next.sh .kimi-code/hooks/selftest.sh
+          npm --prefix 站点 run lint
           # 零构建期依赖：搜索索引由 plugins/site-search.mjs 在 build.mjs 里直接产出
           # （此前用 pagefind，但它按单字索引中文，已弃用）。
-          npm run build
-          # 顺手跑一遍插件测试：搜索的折叠/短语校验逻辑一旦回归，这里会先炸
-          npm test
-          # 产物版权声明与副本一致性门禁（check_right）
-          python3 ../zreflect/check_right.py --spec right.json
-          python3 ../zreflect/check_right.py --spec 站点/right-dist.json
+          npm --prefix 站点 run build
+          # 顺手跑一遍插件测试、公式核心测试、hook 测试与版权门禁
+          npm --prefix 站点 test
+          node --test 站点/math/math.test.mjs
+          python3 .githooks/test-update-readme.py
+          python3 zreflect/check_right.py --spec right.json
+          python3 zreflect/check_right.py --spec 站点/right-dist.json
 
       - name: Deploy to isui.ren-heart@deploy
         if: ${{ !env.ACT }}

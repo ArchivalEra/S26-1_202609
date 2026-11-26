@@ -11,13 +11,6 @@ import path from 'node:path';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
 
-function extractAssetVersion() {
-  const src = readFileSync(new URL('../build.mjs', import.meta.url), 'utf8');
-  const m = src.match(/const assetVersion = (\(relFromDist\) => \{[\s\S]*?\n\});/);
-  assert.ok(m, 'build.mjs 里应有 assetVersion 函数');
-  return new Function('fs', 'path', 'DIST_DIR', 'createHash', `return (${m[1]})`)(fsLike, path, '', createHash);
-}
-
 // fs 只用到 readFileSync——传真的，DIST_DIR 由闭包变量控制
 import * as fsLike from 'node:fs';
 

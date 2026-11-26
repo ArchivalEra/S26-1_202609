@@ -153,8 +153,21 @@ test('package-lock.json 与 right.json / licenses.json 双向闭环（防漏包�
   const lockDecls = (right.declarations || []).filter((d) => d.path === '站点/package-lock.json');
   const declByField = new Map(lockDecls.map((d) => [d.field, d]));
 
-  // 1. 锁文件里的每一个外部依赖都必须在 right.json 有对应字段检查与 SPDX 标记
+  const ALLOWED_SPDX = new Set([
+    'MIT', 'ISC', 'BSD-2-Clause', 'BSD-3-Clause', 'Apache-2.0', 'Python-2.0', 'BlueOak-1.0.0', '0BSD',
+  ]);
+  const directDeps = new Set([
+    ...Object.keys(pkg.dependencies || {}),
+    ...Object.keys(pkg.devDependencies || {}),
+  ]);
+
+  // 1. 锁文件里每个生产依赖与直接 dev 依赖都必须在 right.json 有对应字段检查与 SPDX 标记；
+  //    所有锁文件传递依赖都必须持有明确的白名单 SPDX 许可（开发依赖如 lodash.merge 键含 '.' 故不强塞点路径）。
   for (const [pkgKey, meta] of lockPkgs) {
+    assert.ok(meta.license && ALLOWED_SPDX.has(meta.license),
+      `package-lock 依赖 ${pkgKey} 许可未在允许的宽松 SPDX 列表中: ${meta.license}`);
+    const pkgName = pkgKey.replace(/^node_modules\//, '');
+    if (meta.dev && !directDeps.has(pkgName)) continue;
     assert.ok(!pkgKey.includes('.'), `package-lock 键名含 '.' 无法用 check_right 点路径定位: ${pkgKey}`);
     const field = `packages.${pkgKey}.license`;
     const decl = declByField.get(field);

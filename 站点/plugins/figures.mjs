@@ -1005,7 +1005,7 @@ function drawLogic(payload, opts = {}) {
   {
     const entries = [...inputAnchor.entries()].sort((a, b) => a[1].y - b[1].y);
     let prevY = -Infinity;
-    entries.forEach(([label, pt]) => {
+    entries.forEach(([_label, pt]) => {
       if (pt.y - prevY < MIN_INPUT_GAP) pt.y = prevY + MIN_INPUT_GAP;
       prevY = pt.y;
     });
@@ -1121,7 +1121,7 @@ function drawLogic(payload, opts = {}) {
     }
   });
   body.push(`<g class="fig-labels" fill="currentColor" stroke="none" font-size="${font}" font-family="sans-serif">`);
-  outLabels.forEach(({ label, ci }, i) => {
+  outLabels.forEach(({ label, ci }) => {
     const g = GATE_GEOM[ci.op] || GATE_GEOM.and;
     const p = pos[clauses.indexOf(ci)];
     const bx = g.outBubble ? p.x + g.w + 11 : p.x + g.w;
@@ -2254,7 +2254,7 @@ export function renderFigures(source, opts = {}) {
       try {
         payload = parser(def.id, def.body);
       } catch (e) {
-        throw new Error(`${libName}:${def.line} ${e.message}`);
+        throw new Error(`${libName}:${def.line} ${e.message}`, { cause: e });
       }
       // 图内符号：把标签里形如词条 id 的引用解析掉（作者的记号是 `label`，
       // 词条 id 写在图库行的尾部，形如 `sym-diode:sym-...`——这里只查标签本身）

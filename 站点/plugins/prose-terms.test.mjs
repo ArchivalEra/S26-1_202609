@@ -11,7 +11,7 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { parseGlossaryDict, parseGlossaryMatch, renderGlossary, autoWrapTerms, applySymbolExclusions, GLOSSARY_JS } from "./prose-terms.mjs";
+import { parseGlossaryDict, parseGlossaryMatch, renderGlossary, applySymbolExclusions, GLOSSARY_JS } from "./prose-terms.mjs";
 
 /** 宿主注入的假 KaTeX 渲染回调：包一层标记便于断言。 */
 const fakeTex = (tex) => `<k>${tex}</k>`;
@@ -379,7 +379,7 @@ describe("符号排除：页面级显式禁自动取词（显式优先于自动�
   });
 
   it("显式令牌不受排除影响（tokenDict 全量）：[A]{#sym-A} 照常出泡", () => {
-    const { proseDict, texDict } = applySymbolExclusions(wide(), { noProse: ["sym-A"], noTex: ["sym-A"] });
+    const { proseDict } = applySymbolExclusions(wide(), { noProse: ["sym-A"], noTex: ["sym-A"] });
     const out = renderGlossary("[A]{#sym-A}", {
       dict: proseDict, tokenDict: wide(), renderTex: fakeTex, onHit: () => {},
     });

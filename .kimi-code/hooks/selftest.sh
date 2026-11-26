@@ -11,9 +11,9 @@
 #      「各跑各的」契约）。
 
 set -u
-HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+HERE=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 SHELL_SCRIPT="$HERE/einfacht-next.sh"
-REPO=$(CDPATH= cd -- "$HERE/../.." && pwd)
+REPO=$(CDPATH='' cd -- "$HERE/../.." && pwd)
 
 bad=0
 chk() {

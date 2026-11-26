@@ -99,8 +99,13 @@ def math_cjk_issues(lines: list[str]) -> list[tuple[int, str]]:
         if line_no in reported:
             continue
         reported.add(line_no)
-        issues.append((line_no, f'数学模式内出现未包裹的中文「{hit.group()}」，'
-                                f'KaTeX 会解析失败，请用 \\text{{}} 包裹'))
+        issues.append((
+            line_no,
+            (
+                f'数学模式内出现未包裹的中文「{hit.group()}」，'
+                f'KaTeX 会解析失败，请用 \\text{{}} 包裹'
+            ),
+        ))
     return issues
 
 
@@ -153,194 +158,113 @@ class Checker:
     def warn(self, line_no: int, message: str) -> None:
         self.issues.append((line_no, '警告', message))
 
-    def run(self) -> list[tuple[int, str, str]]:
-        if self.lines and not self.lines[-1].strip() and self.lines[-1] == '':
-            # splitlines 已去掉换行；这里检查文件是否以空行结尾
-            pass
-        h1 = 0
-        prev_level = 0
-        in_fence = False
-        fence_char = ''
-        fence_len = 0
-        fence_lang = ''
-        fence_line = 0
-        display_open = False
-        prev_kind = 'start'
-        in_catalog = False
-        in_panel = False
-        i = 0
-        while i < len(self.lines):
-            line = self.lines[i]
-            line_no = i + 1
-            stripped = line.strip()
+    def _check_panel_item(self, line_no: int, line: str) -> None:
+        item = PANEL_ITEM_RE.match(line)
+        if not item:
+            return
+        title = item.group(1).strip()
+        # 循环剥掉行尾装饰（:+ / :- / {#id}），二者顺序任意
+        while True:
+            stripped_title = PANEL_DECOR_RE.sub('', title).strip()
+            if stripped_title == title:
+                break
+            title = stripped_title
+        for label in PANEL_LABELS:
+            if title == label:
+                return
+            if title.startswith(label):
+                rest = title[len(label):].strip()
+                # 「提示 1」「提示 2」这类**纯序号**后缀不算内容泄露
+                # （学生看到序号得不到任何信息，而多提示题需要编号区分）。
+                if re.fullmatch(r'[0-9]+', rest):
+                    return
+                self.error(
+                    line_no,
+                    f'折叠面板标题必须裸词：`{title[:40]}` —— 标签「{label}」后'
+                    f'不得跟描述文字（收起状态会直接显示，学生不用点开就看到内容）。'
+                    f'把「{rest[:20]}」移到标题的下一行、作为面板正文'
+                )
+                return
 
-            # README 的自动目录由 hook 生成，长链接无法换行，整块跳过。
-            if '<!-- AUTO-CATALOG:START -->' in line:
-                in_catalog = True
-                prev_kind = 'text'
-                i += 1
-                continue
-            if in_catalog:
-                if '<!-- AUTO-CATALOG:END -->' in line:
-                    in_catalog = False
-                    prev_kind = 'text'
-                i += 1
-                continue
+    def _update_panel_state(self, line_no: int, line: str, in_panel: bool) -> bool:
+        if COLLAPSE_OPEN_RE.match(line):
+            return True
+        if in_panel and COLLAPSE_CLOSE_RE.match(line):
+            return False
+        if in_panel:
+            self._check_panel_item(line_no, line)
+        return in_panel
 
-            # 折叠面板标题必须裸词（判据见文件头常量区的注释）。
-            if not in_fence and not display_open:
-                if COLLAPSE_OPEN_RE.match(line):
-                    in_panel = True
-                elif in_panel and COLLAPSE_CLOSE_RE.match(line):
-                    in_panel = False
-                elif in_panel:
-                    item = PANEL_ITEM_RE.match(line)
-                    if item:
-                        title = item.group(1).strip()
-                        # 循环剥掉行尾装饰（:+ / :- / {#id}），二者顺序任意
-                        while True:
-                            stripped_title = PANEL_DECOR_RE.sub('', title).strip()
-                            if stripped_title == title:
-                                break
-                            title = stripped_title
-                        for label in PANEL_LABELS:
-                            if title == label:
-                                break
-                            if title.startswith(label):
-                                rest = title[len(label):].strip()
-                                # 「提示 1」「提示 2」这类**纯序号**后缀不算内容泄露
-                                # （学生看到序号得不到任何信息，而多提示题需要编号区分）。
-                                if re.fullmatch(r'[0-9]+', rest):
-                                    break
-                                self.error(
-                                    line_no,
-                                    f'折叠面板标题必须裸词：`{title[:40]}` —— 标签「{label}」后'
-                                    f'不得跟描述文字（收起状态会直接显示，学生不用点开就看到内容）。'
-                                    f'把「{rest[:20]}」移到标题的下一行、作为面板正文'
-                                )
-                                break
+    def _check_table_block(self, idx: int) -> int:
+        block = 0
+        header_cells = split_cells(self.lines[idx])
+        while idx + block < len(self.lines) and looks_like_table_row(self.lines[idx + block]) and self.lines[idx + block].strip():
+            row = self.lines[idx + block]
+            row_no = idx + block + 1
+            cells = split_cells(row)
+            self._check_table_row(row_no, block, cells, header_cells, row)
+            block += 1
+        after = idx + block
+        if after < len(self.lines) and self.lines[after].strip():
+            self.warn(after + 1, '表格后缺少空行')
+        return after
 
-            fence_match = FENCE_RE.match(line) if not display_open else None
-            if not in_fence and fence_match:
-                in_fence = True
-                fence_char = fence_match.group(2)[0]
-                fence_len = len(fence_match.group(2))
-                fence_lang = fence_match.group(3)
-                fence_line = line_no
-                if not fence_lang:
-                    self.warn(line_no, '围栏代码块未标注语言（建议 matlab / text / bash 等）')
-                # 缩进的围栏位于列表项内部，紧跟条目文字是合法且常见的写法。
-                if prev_kind not in ('blank', 'start') and len(line) == len(line.lstrip()):
-                    self.warn(line_no, '代码围栏前缺少空行')
-                prev_kind = 'fence'
-                i += 1
-                continue
+    def _check_table_row(
+        self,
+        row_no: int,
+        block: int,
+        cells: list[str],
+        header_cells: list[str],
+        row: str,
+    ) -> None:
+        if block == 1:
+            if not is_separator_row(row):
+                self.error(row_no, '表头下一行不是合法的分隔行')
+            elif len(cells) != len(header_cells):
+                self.error(row_no, f'分隔行列数 {len(cells)} 与表头 {len(header_cells)} 不一致')
+        elif len(cells) != len(header_cells):
+            self.error(row_no, f'表格行列数 {len(cells)} 与表头 {len(header_cells)} 不一致')
+        if row.rstrip() != row:
+            self.warn(row_no, '行尾有多余空格')
 
-            if in_fence:
-                if len(line) - len(line.lstrip()) < 4 and line.lstrip().startswith(fence_char * fence_len):
-                    in_fence = False
-                    if prev_kind not in ('blank', 'start'):
-                        pass
-                    prev_kind = 'fence'
-                else:
-                    if line.rstrip() != line:
-                        self.warn(line_no, '行尾有多余空格')
-                i += 1
-                continue
+    def _check_prose_line(self, line_no: int, line: str) -> None:
+        plain = strip_code_spans(line)
+        if re.search(r'(?<!\\)\$', plain):
+            count = len(re.findall(r'(?<!\\)\$', plain))
+            if count % 2 == 1:
+                self.warn(line_no, f'内联数学 $ 数量为奇数（{count} 个），可能未闭合')
+        if line.rstrip() != line:
+            self.warn(line_no, '行尾有多余空格')
+        if '\t' in line:
+            self.warn(line_no, '正文含制表符，建议用空格')
+        width = effective_width(line)
+        if width > LONG_LINE_LIMIT:
+            self.warn(line_no, f'渲染宽度约 {width} 超过 {LONG_LINE_LIMIT}（已扣除内联数学与链接），建议换行')
 
-            if not stripped:
-                if prev_kind == 'blank':
-                    self.warn(line_no, '连续多个空行')
-                prev_kind = 'blank'
-                i += 1
-                continue
+    def _check_heading_line(
+        self,
+        line_no: int,
+        heading: re.Match[str],
+        h1: int,
+        prev_level: int,
+        prev_kind: str,
+    ) -> tuple[int, int]:
+        level = len(heading.group(1))
+        title = heading.group(2)
+        if level == 1:
+            h1 += 1
+        if prev_level and level > prev_level + 1:
+            self.error(line_no, f'标题层级从 H{prev_level} 跳到 H{level}')
+        if prev_kind not in ('blank', 'start'):
+            self.warn(line_no, '标题前缺少空行')
+        key = (level, title)
+        if key in self.headings and title not in STRUCTURAL_HEADINGS:
+            self.warn(line_no, f'标题重复（与第 {self.headings[key]} 行相同）')
+        else:
+            self.headings.setdefault(key, line_no)
+        return h1, level
 
-            # 显示数学 $$...$$：只检查配对与闭合，不强制独立成行
-            dollar_pairs = len(re.findall(r'(?<!\\)\$\$', strip_code_spans(line)))
-            if dollar_pairs:
-                for _ in range(dollar_pairs):
-                    display_open = not display_open
-                if line.rstrip() != line:
-                    self.warn(line_no, '行尾有多余空格')
-                prev_kind = 'math'
-                i += 1
-                continue
-
-            if display_open:
-                if line.rstrip() != line:
-                    self.warn(line_no, '行尾有多余空格')
-                prev_kind = 'math'
-                i += 1
-                continue
-
-            # 标题
-            heading = HEADING_RE.match(line)
-            if heading:
-                level = len(heading.group(1))
-                title = heading.group(2)
-                if level == 1:
-                    h1 += 1
-                if prev_level and level > prev_level + 1:
-                    self.error(line_no, f'标题层级从 H{prev_level} 跳到 H{level}')
-                if prev_kind not in ('blank', 'start'):
-                    self.warn(line_no, '标题前缺少空行')
-                key = (level, title)
-                if key in self.headings and title not in STRUCTURAL_HEADINGS:
-                    self.warn(line_no, f'标题重复（与第 {self.headings[key]} 行相同）')
-                else:
-                    self.headings.setdefault(key, line_no)
-                prev_level = level
-                prev_kind = 'heading'
-                i += 1
-                continue
-
-            if prev_kind == 'heading':
-                # 标题后建议空一行，但多数解析器仍能正确渲染，故只提示
-                self.warn(line_no, '标题后缺少空行')
-
-            # 表格块
-            if looks_like_table_row(line) and i + 1 < len(self.lines) and is_separator_row(self.lines[i + 1]):
-                if prev_kind not in ('blank', 'start'):
-                    self.warn(line_no, '表格前缺少空行')
-                block = 0
-                header_cells = split_cells(line)
-                while i + block < len(self.lines) and looks_like_table_row(self.lines[i + block]) and self.lines[i + block].strip():
-                    row = self.lines[i + block]
-                    row_no = i + block + 1
-                    cells = split_cells(row)
-                    if block == 1:
-                        if not is_separator_row(row):
-                            self.error(row_no, '表头下一行不是合法的分隔行')
-                        elif len(cells) != len(header_cells):
-                            self.error(row_no, f'分隔行列数 {len(cells)} 与表头 {len(header_cells)} 不一致')
-                    elif len(cells) != len(header_cells):
-                        self.error(row_no, f'表格行列数 {len(cells)} 与表头 {len(header_cells)} 不一致')
-                    if row.rstrip() != row:
-                        self.warn(row_no, '行尾有多余空格')
-                    block += 1
-                after = i + block
-                if after < len(self.lines) and self.lines[after].strip():
-                    self.warn(after + 1, '表格后缺少空行')
-                i = after
-                prev_kind = 'table'
-                continue
-
-            # 普通正文
-            plain = strip_code_spans(line)
-            if re.search(r'(?<!\\)\$', plain):
-                count = len(re.findall(r'(?<!\\)\$', plain))
-                if count % 2 == 1:
-                    self.warn(line_no, f'内联数学 $ 数量为奇数（{count} 个），可能未闭合')
-            if line.rstrip() != line:
-                self.warn(line_no, '行尾有多余空格')
-            if '\t' in line:
-                self.warn(line_no, '正文含制表符，建议用空格')
-            width = effective_width(line)
-            if width > LONG_LINE_LIMIT:
-                self.warn(line_no, f'渲染宽度约 {width} 超过 {LONG_LINE_LIMIT}（已扣除内联数学与链接），建议换行')
-            prev_kind = 'text'
-            i += 1
-
+    def _finish_checks(self, in_fence: bool, fence_line: int, display_open: bool, h1: int) -> None:
         if in_fence:
             self.error(fence_line, f'代码围栏未闭合（起始于第 {fence_line} 行）')
         if display_open:
@@ -351,6 +275,120 @@ class Checker:
             self.error(1, f'一级标题出现 {h1} 次，应只有一个')
         for line_no, message in math_cjk_issues(self.lines):
             self.warn(line_no, message)
+
+    def _open_fence(
+        self,
+        line_no: int,
+        line: str,
+        fence_match: re.Match[str],
+        state: dict[str, object],
+    ) -> None:
+        state['in_fence'] = True
+        state['fence_char'] = fence_match.group(2)[0]
+        state['fence_len'] = len(fence_match.group(2))
+        state['fence_line'] = line_no
+        if not fence_match.group(3):
+            self.warn(line_no, '围栏代码块未标注语言（建议 matlab / text / bash 等）')
+        if state['prev_kind'] not in ('blank', 'start') and len(line) == len(line.lstrip()):
+            self.warn(line_no, '代码围栏前缺少空行')
+        state['prev_kind'] = 'fence'
+
+    def _step_fence_or_blank(
+        self,
+        line_no: int,
+        line: str,
+        state: dict[str, object],
+    ) -> bool:
+        fence_match = FENCE_RE.match(line) if not state['display_open'] else None
+        if not state['in_fence'] and fence_match:
+            self._open_fence(line_no, line, fence_match, state)
+            return True
+        if state['in_fence']:
+            closer = str(state['fence_char']) * int(state['fence_len'])
+            if len(line) - len(line.lstrip()) < 4 and line.lstrip().startswith(closer):
+                state['in_fence'] = False
+                state['prev_kind'] = 'fence'
+            elif line.rstrip() != line:
+                self.warn(line_no, '行尾有多余空格')
+            return True
+        if not line.strip():
+            if state['prev_kind'] == 'blank':
+                self.warn(line_no, '连续多个空行')
+            state['prev_kind'] = 'blank'
+            return True
+        return False
+
+    def _step_math(self, line_no: int, line: str, state: dict[str, object]) -> bool:
+        dollar_pairs = len(re.findall(r'(?<!\\)\$\$', strip_code_spans(line)))
+        if dollar_pairs:
+            if dollar_pairs % 2 == 1:
+                state['display_open'] = not state['display_open']
+            if line.rstrip() != line:
+                self.warn(line_no, '行尾有多余空格')
+            state['prev_kind'] = 'math'
+            return True
+        if state['display_open']:
+            if line.rstrip() != line:
+                self.warn(line_no, '行尾有多余空格')
+            state['prev_kind'] = 'math'
+            return True
+        return False
+
+    def _step_body_line(
+        self,
+        i: int,
+        line_no: int,
+        line: str,
+        state: dict[str, object],
+    ) -> int:
+        heading = HEADING_RE.match(line)
+        if heading:
+            h1, prev_level = self._check_heading_line(
+                line_no, heading, int(state['h1']), int(state['prev_level']), str(state['prev_kind']))
+            state['h1'], state['prev_level'], state['prev_kind'] = h1, prev_level, 'heading'
+            return i + 1
+        if state['prev_kind'] == 'heading':
+            self.warn(line_no, '标题后缺少空行')
+        if looks_like_table_row(line) and i + 1 < len(self.lines) and is_separator_row(self.lines[i + 1]):
+            if state['prev_kind'] not in ('blank', 'start'):
+                self.warn(line_no, '表格前缺少空行')
+            state['prev_kind'] = 'table'
+            return self._check_table_block(i)
+        self._check_prose_line(line_no, line)
+        state['prev_kind'] = 'text'
+        return i + 1
+
+    def run(self) -> list[tuple[int, str, str]]:
+        state: dict[str, object] = {
+            'h1': 0,
+            'prev_level': 0,
+            'in_fence': False,
+            'fence_char': '',
+            'fence_len': 0,
+            'fence_line': 0,
+            'display_open': False,
+            'prev_kind': 'start',
+            'in_catalog': False,
+            'in_panel': False,
+        }
+        i = 0
+        while i < len(self.lines):
+            line = self.lines[i]
+            line_no = i + 1
+            if '<!-- AUTO-CATALOG:START -->' in line or state['in_catalog']:
+                state['in_catalog'] = '<!-- AUTO-CATALOG:END -->' not in line
+                state['prev_kind'] = 'text'
+                i += 1
+                continue
+            if not state['in_fence'] and not state['display_open']:
+                state['in_panel'] = self._update_panel_state(line_no, line, bool(state['in_panel']))
+            if self._step_fence_or_blank(line_no, line, state) or self._step_math(line_no, line, state):
+                i += 1
+                continue
+            i = self._step_body_line(i, line_no, line, state)
+        self._finish_checks(
+            bool(state['in_fence']), int(state['fence_line']),
+            bool(state['display_open']), int(state['h1']))
         return self.issues
 
 

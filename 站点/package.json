@@ -7,6 +7,7 @@
   "private": true,
   "scripts": {
     "build": "node build.mjs --canonical-root /repo/S26-1_202609/",
+    "lint": "eslint .",
     "test": "node --test plugins/",
     "build:pages": "node build.mjs --canonical-root /S26-1_202609/"
   },
@@ -14,5 +15,10 @@
     "js-yaml": "5.4.2",
     "katex": "0.16.28",
     "marked": "18.0.13"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.15.0",
+    "globals": "17.0.0"
   }
 }

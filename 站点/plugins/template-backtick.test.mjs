@@ -27,7 +27,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, statSync, existsSync, writeFileSync, unlinkSync } from 'node:fs';
+import { readdirSync, statSync, existsSync, writeFileSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
@@ -84,9 +84,9 @@ test('闸门自检：故意造一个断串必须被抓到', () => {
   try {
     let threw = false;
     try { execFileSync(process.execPath, ['--check', tmp], { stdio: 'pipe' }); }
-    catch (e) { threw = true; }
+    catch (_e) { threw = true; }
     assert.ok(threw, '断串没被 node --check 抓到 —— 闸门失效了');
   } finally {
-    try { unlinkSync(tmp); } catch (e) {}
+    try { unlinkSync(tmp); } catch (_e) { /* ignore cleanup error */ }
   }
 });

@@ -321,7 +321,7 @@
     if (fontSlider) fontSlider.value = n;
     if (fontSample) fontSample.style.fontSize = n + "px";
     if (save) {
-      try { localStorage.setItem(FONT_KEY, String(n)); } catch (e) { /* 隐私模式 */ }
+      try { localStorage.setItem(FONT_KEY, String(n)); } catch (_e) { /* 隐私模式 */ }
     }
     if (typeof scheduleInlineMathOverflow === "function") scheduleInlineMathOverflow();
   }
@@ -383,7 +383,7 @@
       localStorage.removeItem("theme-hue");
       applyHue(DEFAULT_HUE, false);
       // 字号也一并复位——这个按钮的语义是「回到默认」，两样都算默认的一部分。
-      try { localStorage.removeItem(FONT_KEY); } catch (e) { /* 隐私模式 */ }
+      try { localStorage.removeItem(FONT_KEY); } catch (_e) { /* 隐私模式 */ }
       applyFontSize(FONT_DEFAULT, false);
     });
   }
@@ -397,7 +397,7 @@
   function parseCssColor(str) {
     if (!str || str === "transparent") return null;
     const s = String(str).trim();
-    const mRgb = /^rgba?\(\s*([0-9.]+)\s*[,\s]\s*([0-9.]+)\s*[,\s]\s*([0-9.]+)(?:\s*[,\/]\s*([0-9.]+%?))?\s*\)$/i.exec(s);
+    const mRgb = /^rgba?\(\s*([0-9.]+)\s*[,\s]\s*([0-9.]+)\s*[,\s]\s*([0-9.]+)(?:\s*[,/]\s*([0-9.]+%?))?\s*\)$/i.exec(s);
     if (mRgb) {
       let a = 1;
       if (mRgb[4] !== undefined) {
@@ -546,6 +546,8 @@
   }
   updateAllImageContrast();
 
+  let onScroll = null;
+
   window.__readerRescan = function () {
     tocLinks = document.querySelectorAll(".toc-item a");
     headings = Array.from(document.querySelectorAll(".article-content h2, .article-content h3"))
@@ -556,7 +558,7 @@
   };
   if (tocLinks.length > 0) {
 
-    function onScroll() {
+    onScroll = function () {
       const scrollY = window.scrollY || window.pageYOffset;
       let currentHeadingId = "";
       let currentTop = -Infinity;

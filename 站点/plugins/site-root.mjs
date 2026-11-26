@@ -159,7 +159,7 @@ function rewriteLinks(root) {
       if (actual && actual !== '/' && rel.startsWith(actual)) rel = rel.slice(actual.length);
       rel = rel.replace(/^\/+/, '');
       a.setAttribute('href', root + rel);
-    } catch (e) { /* 坏 href 跳过 */ }
+    } catch (_e) { /* 坏 href 跳过 */ }
   }
 }
 

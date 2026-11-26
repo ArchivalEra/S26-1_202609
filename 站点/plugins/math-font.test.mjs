@@ -24,7 +24,6 @@ import { execFileSync } from 'node:child_process';
 import { KATEX_STYLESHEET } from '../math/render.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.join(HERE, '../..');
 const DIST = path.join(HERE, '../dist');
 const FONT = path.join(HERE, '../assets/fonts/stix2math-subset.woff2');
 
@@ -79,7 +78,7 @@ print(' '.join(str(c) for c in sorted(cmap)))
       const out = execFileSync(cmd, args, { encoding: 'utf8', timeout: 120000 });
       const set = new Set(out.trim().split(/\s+/).filter(Boolean).map(Number));
       if (set.size) return set;
-    } catch (e) { /* 试下一个 */ }
+    } catch (_e) { /* 试下一个 */ }
   }
   return null;
 }

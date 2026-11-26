@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 """Exercise commits and pushes exclusively in temporary local repositories."""
-from pathlib import Path
 import datetime
 import json
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
-import time
 import unittest
+from pathlib import Path
 
 SOURCE = Path(__file__).resolve().parent
 KINDS = ('作业', '教材解析', '课堂笔记', '原始资料')  # 2026-10-30 删去「音频」类
@@ -159,7 +157,7 @@ class ReadmeHookTest(unittest.TestCase):
 
     def test_deep_link_anchor_validation(self):
         """深链接的锚点在目标文件里必须真实存在，否则提交被拒。"""
-        target = self.write(
+        self.write(
             '课程总览/工程数学/课堂笔记/2026-09-19-anchor-target.md',
             '# 锚点目标\n\n'
             ':::collapse accordion\n'
@@ -219,7 +217,6 @@ class ReadmeHookTest(unittest.TestCase):
 
     def test_parent_chain_must_be_updated_level_by_level(self):
         """只更新最近一层父页面不够：更上层没动，提交仍被拒。"""
-        note = '课程总览/工程数学/课堂笔记/行列式学习.md'
         self.note.write_text(self.note.read_text() + '\n新增一节。\n')
         # 只动分类索引，不动课程索引与课程总索引
         self.index.write_text('[笔记](行列式学习.md)\n\n已同步。\n')
