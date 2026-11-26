@@ -128,10 +128,13 @@ def _pair_problems(pr, root, loader):
     return problems + _confound_problems(pr, key, da, db), skips
 
 
+_AB_JSON = "ab.json"
+
+
 def check(spec, root, loader=_load):
     """Pure logic (the selftest injects `loader`). Returns (problems, skips)."""
     if not isinstance(spec, dict):
-        return [M("ab.spec_broken", name="ab.json", error="spec must be an object")], []
+        return [M("ab.spec_broken", name=_AB_JSON, error="spec must be an object")], []
     pairs = spec.get("pairs")
     if pairs is None:
         pairs = []
@@ -169,24 +172,25 @@ def _cases():
         os.makedirs(os.path.dirname(p), exist_ok=True)
         json.dump(obj, open(p, "w", encoding="utf-8"))
         return rel
+    a_json, b_json, nk_json, k_json = "a.json", "b.json", "nokey.json", "K.json"
     spec = {"pairs": [
-        {"name": "allocator A/B", "a": "a.json", "b": "b.json", "key": "declared",
+        {"name": "allocator A/B", "a": a_json, "b": b_json, "key": "declared",
          "allow": ["malloc"]}]}
     # a/b: identical except malloc
-    wf("a.json", {"declared": {"simd": True, "malloc": "mimalloc", "v128": 4752}})
-    wf("b.json", {"declared": {"simd": True, "malloc": "dlmalloc", "v128": 4752}})
+    wf(a_json, {"declared": {"simd": True, "malloc": "mimalloc", "v128": 4752}})
+    wf(b_json, {"declared": {"simd": True, "malloc": "dlmalloc", "v128": 4752}})
     wf("mut-a.json", {"declared": {"simd": True, "malloc": "mimalloc", "v128": 4752}})
     wf("mut-b.json", {"declared": {"simd": False, "malloc": "mimalloc", "v128": 4752}})
-    wf("nokey.json", {"declared": "not-a-dict"})
+    wf(nk_json, {"declared": "not-a-dict"})
     empty: dict[str, list[Any]] = {"pairs": []}
     confound_spec = {"pairs": [{"name": "m", "a": "mut-a.json", "b": "mut-b.json",
                                 "key": "declared", "allow": ["malloc"]}]}
     return [
         ("ab.resolve_spec",
-         lambda: gate.resolve_spec(["--spec", "x.json"], "K.json", "ab.json") == ("x.json", True)
-         and gate.resolve_spec([], "K.json", "ab.json") == ("K.json", True)
-         and gate.resolve_spec([], "", "ab.json") == ("ab.json", False)
-         and gate.resolve_spec([], "  ", "ab.json") == ("ab.json", False)),
+         lambda: gate.resolve_spec(["--spec", "x.json"], k_json, _AB_JSON) == ("x.json", True)
+         and gate.resolve_spec([], k_json, _AB_JSON) == (k_json, True)
+         and gate.resolve_spec([], "", _AB_JSON) == (_AB_JSON, False)
+         and gate.resolve_spec([], "  ", _AB_JSON) == (_AB_JSON, False)),
         # (1) compliant input: nothing reported
         ("ab.ok", lambda: check(spec, d)[0] == []),
         # (2) what must be reported is reported
@@ -202,11 +206,11 @@ def _cases():
                          "optional": True}]}, d)[0]]),
         ("★ ab.not_a_dict",
          lambda: [p.code for p in check(
-             {"pairs": [{"name": "x", "a": "nokey.json", "b": "nokey.json",
+             {"pairs": [{"name": "x", "a": nk_json, "b": nk_json,
                          "key": "declared"}]}, d)[0]] == ["ab.not_a_dict"]),
         ("★ ab.pair_missing_field",
          lambda: [p.code for p in check(
-             {"pairs": [{"a": "a.json", "b": "b.json"}]}, d)[0]]
+             {"pairs": [{"a": a_json, "b": b_json}]}, d)[0]]
          == ["ab.pair_missing_field"]),
         # (3) empty input must be reported
         ("★ ab.empty",

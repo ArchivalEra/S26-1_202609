@@ -71,17 +71,19 @@ def _shape_problems(c):
     return [], (path, mc or [], mnc or [])
 
 
+def _bad_frag_list(val):
+    return isinstance(val, list) and any(not isinstance(x, str) or not x for x in val)
+
+
 def _criteria_problems(path, mc, mnc):
     """Shape validation for the criteria fields (must_contain / must_not_contain)."""
-    if not isinstance(mc, list) and not isinstance(mnc, list):
-        return [M("invariants.no_criteria", path=path)]
-    if (mc is not None and not isinstance(mc, list)) or \
-            (mnc is not None and not isinstance(mnc, list)):
+    bad_type = (mc is not None and not isinstance(mc, list)) or (
+        mnc is not None and not isinstance(mnc, list))
+    if bad_type:
         return [M("invariants.not_string_list", path=path)]
-    if not (mc or []) and not (mnc or []):
+    if not (mc or mnc):
         return [M("invariants.no_criteria", path=path)]
-    if any(not isinstance(x, str) or not x for x in (mc or [])) or \
-            any(not isinstance(x, str) or not x for x in (mnc or [])):
+    if _bad_frag_list(mc) or _bad_frag_list(mnc):
         return [M("invariants.fragment_not_string", path=path)]
     return None
 

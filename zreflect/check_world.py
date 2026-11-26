@@ -170,7 +170,7 @@ def _active_problems(active, lines):
     return []
 
 
-def _branch_problems(branch, active, lines, override):
+def _branch_problems(branch, active, override):
     """Branch audit: detached HEAD, unlisted branch, or a different line without override => red."""
     if override or not active:
         return []
@@ -198,7 +198,7 @@ def spec_problems(spec, branch, override):
     out = _active_problems(active, lines) + _line_problems(lines)
     if override and override not in lines:
         out.append(M("world.override_unknown", line_name=override))
-    return out + _branch_problems(branch, active, lines, override)
+    return out + _branch_problems(branch, active, override)
 
 
 def _one_stamp_problem(name, st, run):
@@ -359,12 +359,13 @@ def _cases_stamps(fx):
 def _cases_shape(fx):
     """See `_cases()`: this group has 6 cases."""
     good = fx["good"]
+    lines_empty = "world.lines_empty"
     return [
     # (2) what should be reported must be reported
     ("★ world.lines_empty",
      lambda: [p.code for p in spec_problems(
          {"lines": {}, "active": "x", "stamps": {}}, "", "")]
-     == ["world.lines_empty"]),
+     == [lines_empty]),
     ("★ world.active_missing",
      lambda: [p.code for p in spec_problems(
          {"lines": good["lines"], "stamps": {}}, "", "")]
@@ -386,7 +387,7 @@ def _cases_shape(fx):
      == ["world.spec_not_object"]),
     ("★ world.lines_empty_declared",
      lambda: [p.code for p in spec_problems({}, "", "")]
-     == ["world.lines_empty"]),
+     == [lines_empty]),
     ]
 
 

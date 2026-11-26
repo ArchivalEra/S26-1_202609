@@ -363,28 +363,31 @@ def _suite_py_sources():
     return sources
 
 
+def _file_environ_problems(rel, text, msg):
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    env_names, getenv_names = _env_imports(tree)
+    called_in_cases = _cases_called_names(tree)
+    out = []
+    for stmt in tree.body:
+        if _is_test_node(stmt, called_in_cases):
+            continue
+        for node in ast.walk(stmt):
+            key = _environ_read_key(node, env_names, getenv_names)
+            if key:
+                out.append(msg("knobs.inline_default_literal", file=rel,
+                               lineno=getattr(node, "lineno", 0),
+                               literal="os.environ", knob=key))
+    return out
+
+
 def direct_environ_problems(sources=None):
     """Report production code outside `knobs.py` that reads `REFLECT_*` directly via `os.environ`."""
     from i18n import M  # noqa: PLC0415
     items = _suite_py_sources() if sources is None else sources
-    out = []
-    for rel, text in items:
-        try:
-            tree = ast.parse(text)
-        except SyntaxError:
-            continue
-        env_names, getenv_names = _env_imports(tree)
-        called_in_cases = _cases_called_names(tree)
-        for stmt in tree.body:
-            if _is_test_node(stmt, called_in_cases):
-                continue
-            for node in ast.walk(stmt):
-                key = _environ_read_key(node, env_names, getenv_names)
-                if key:
-                    out.append(M("knobs.inline_default_literal", file=rel,
-                                 lineno=getattr(node, "lineno", 0),
-                                 literal="os.environ", knob=key))
-    return out
+    return [p for rel, text in items for p in _file_environ_problems(rel, text, M)]
 
 
 def _docs_follow_case():

@@ -25,7 +25,7 @@
     "doctor.py"
   ],
   "principles": {
-    "doc_py_sha256": "adab25026da89f7c63709984fe91fafec2b42a9230a04a6de9c4e5151f669ac2",
+    "doc_py_sha256": "ead2ac0459b7d6e4eb3bd71e3d9cd5a1ac540cac8153d143887247b4d6cdf332",
     "no_principles": false,
     "principles_md_sha256": "6bbbc3ff4a16074b3d2ce6e32063ac97488c956454273651175890b22372316b"
   },
@@ -107,6 +107,6 @@
   "repo": "ArchivalEra/S26-1_202609",
   "revoked_ids": [],
   "schema": 2,
-  "suite_seq": 9,
-  "suite_tree_sha256": "637510831d103bf28ecf7921b7638eccde7aded008baff59ac5403f265522b22"
+  "suite_seq": 11,
+  "suite_tree_sha256": "7290399157967e71101e3f06dfc00ec08262c96b268916deaeea9bec1a41f419"
 }

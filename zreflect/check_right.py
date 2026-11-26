@@ -114,7 +114,7 @@ def _parse_doc(path, fmt, real_path, toml_loader=None):
         data = json.loads(raw.decode("utf-8")) if fmt == "json" else (toml_loader or _load_toml_bytes)(raw)
     except _FatalError:
         raise
-    except (OSError, UnicodeDecodeError, ValueError) as exc:
+    except (OSError, ValueError) as exc:
         return None, M("right.parse_error", path=path, format=fmt, error=str(exc))
     if not isinstance(data, dict):
         return None, M("right.parse_error", path=path, format=fmt, error="top-level value must be a table/object")
@@ -281,6 +281,13 @@ def main(argv):
     return finish(M("right.title"), list(probs) + list(skips), M("right.ok", count=_spec_count(spec)))
 
 
+_CARGO_TOML = "Cargo.toml"
+_PKG_JSON = "package.json"
+_AGPL = "AGPL-3.0-only"
+_PKG_LIC = "package.license"
+_RIGHT_JSON = "right.json"
+
+
 def _seed_right_fixture():
     import atexit  # noqa: PLC0415
     import shutil  # noqa: PLC0415
@@ -294,10 +301,10 @@ def _seed_right_fixture():
     open(os.path.join(d, "dist", "LICENSE"), "wb").write(lic)
     open(os.path.join(d, "dist", "bad-LICENSE"), "wb").write(b"MIT\n")
     open(os.path.join(d, "dist", "empty-LICENSE"), "wb").write(b"")
-    open(os.path.join(d, "Cargo.toml"), "w", encoding="utf-8").write(
-        '[package]\nname = "demo"\nlicense = "AGPL-3.0-only"\n')
-    open(os.path.join(d, "package.json"), "w", encoding="utf-8").write(
-        '{"name": "demo", "license": "AGPL-3.0-only"}\n')
+    open(os.path.join(d, _CARGO_TOML), "w", encoding="utf-8").write(
+        f'[package]\nname = "demo"\nlicense = "{_AGPL}"\n')
+    open(os.path.join(d, _PKG_JSON), "w", encoding="utf-8").write(
+        f'{{"name": "demo", "license": "{_AGPL}"}}\n')
     open(os.path.join(d, "bad.json"), "w", encoding="utf-8").write(
         '{"name": "demo", "license": "MIT"}\n')
     open(os.path.join(d, "bad-spdx.json"), "w", encoding="utf-8").write(
@@ -306,13 +313,14 @@ def _seed_right_fixture():
 
 
 def _spdx_cases():
+    r_cfg = "R.json"
     return [
         ("right.resolve_spec",
-         lambda: gate.resolve_spec(["--spec", "x.json"], "R.json", "right.json") == ("x.json", True)
-         and gate.resolve_spec([], "R.json", "right.json") == ("R.json", True)
-         and gate.resolve_spec([], "", "right.json") == ("right.json", False)),
+         lambda: gate.resolve_spec(["--spec", "x.json"], r_cfg, _RIGHT_JSON) == ("x.json", True)
+         and gate.resolve_spec([], r_cfg, _RIGHT_JSON) == (r_cfg, True)
+         and gate.resolve_spec([], "", _RIGHT_JSON) == (_RIGHT_JSON, False)),
         ("★ right.spdx_syntax",
-         lambda: parse_spdx("AGPL-3.0-only")
+         lambda: parse_spdx(_AGPL)
          and parse_spdx("(MIT OR Apache-2.0 WITH LLVM-exception) AND BSD-3-Clause")
          and not parse_spdx("")
          and not parse_spdx("MIT OR")
@@ -323,7 +331,7 @@ def _spdx_cases():
 
 def _toml_unavail_rejected(d):
     spec = {"schema": 1, "declarations": [
-        {"path": "Cargo.toml", "format": "toml", "field": "package.license", "equals": "AGPL-3.0-only"},
+        {"path": _CARGO_TOML, "format": "toml", "field": _PKG_LIC, "equals": _AGPL},
     ]}
 
     def _raise(_raw):
@@ -340,10 +348,10 @@ def _cases():
     d = _seed_right_fixture()
     good = {
         "schema": 1,
-        "default_equals": "AGPL-3.0-only",
+        "default_equals": _AGPL,
         "declarations": [
-            {"path": "Cargo.toml", "format": "toml", "field": "package.license", "spdx": True},
-            {"path": "package.json", "format": "json", "field": "license", "spdx": True},
+            {"path": _CARGO_TOML, "format": "toml", "field": _PKG_LIC, "spdx": True},
+            {"path": _PKG_JSON, "format": "json", "field": "license", "spdx": True},
         ],
         "copies": [{"src": "LICENSE", "dst": "dist/LICENSE"}],
     }
@@ -351,15 +359,15 @@ def _cases():
     cases += [
         ("right.ok", lambda: check(good, root=d)[0] == [] and check(good, root=d)[1] == []),
         ("★ right.optional_forbidden",
-         lambda: [p.code for p in check({"declarations": [{"path": "package.json", "optional": True}]}, root=d)[0]]
+         lambda: [p.code for p in check({"declarations": [{"path": _PKG_JSON, "optional": True}]}, root=d)[0]]
          == ["gate.optional_forbidden"]),
         ("★ right.field_mismatch",
-         lambda: [p.code for p in check({"default_equals": "AGPL-3.0-only", "declarations": [
+         lambda: [p.code for p in check({"default_equals": _AGPL, "declarations": [
              {"path": "bad.json", "format": "json", "field": "license"}]}, root=d)[0]]
          == ["right.field_mismatch"]),
         ("★ right.field_missing",
          lambda: [p.code for p in check({"declarations": [
-             {"path": "package.json", "format": "json", "field": "package.license", "equals": "MIT"}]}, root=d)[0]]
+             {"path": _PKG_JSON, "format": "json", "field": _PKG_LIC, "equals": "MIT"}]}, root=d)[0]]
          == ["right.field_missing"]),
         ("★ right.spdx_invalid",
          lambda: [p.code for p in check({"declarations": [

@@ -385,7 +385,7 @@ def M(code, **params):
 def _raises(fn):
     try:
         fn()
-    except (MissingPack, SystemExit, KeyError, TypeError, AttributeError):
+    except (MissingPack, KeyError, TypeError, AttributeError):
         return True
     return False
 

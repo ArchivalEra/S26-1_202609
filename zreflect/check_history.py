@@ -64,6 +64,13 @@ def _norm(path):
     return os.path.normcase(os.path.realpath(str(path)))
 
 
+def _entry_overlaps(target, base_root, entry):
+    if not str(entry or "").strip():
+        return False
+    base = _norm(entry if os.path.isabs(entry) else os.path.join(base_root, entry))
+    return target == base or target.startswith(base + os.sep) or base.startswith(target + os.sep)
+
+
 def is_exempt(path, known=None, root=None):
     """Whether `path` lies outside every scan surface.
 
@@ -72,15 +79,9 @@ def is_exempt(path, known=None, root=None):
     """
     base_root = root or gate.GATE_REPO
     target = _norm(path)
-    for _knob, entries in (known if known is not None else surfaces()).items():
-        for entry in entries:
-            if not str(entry or "").strip():
-                continue
-            base = _norm(entry if os.path.isabs(entry)
-                         else os.path.join(base_root, entry))
-            if target == base or target.startswith(base + os.sep) or base.startswith(target + os.sep):
-                return False
-    return True
+    src = known if known is not None else surfaces()
+    return not any(_entry_overlaps(target, base_root, entry)
+                   for entries in src.values() for entry in entries)
 
 
 def _content_problems(target):
@@ -171,23 +172,23 @@ def run(argv=None):
     return gate.finish(M("history.title"), probs, M("history.ok", path=label))
 
 
-def _empty_case():
+def _empty_case(empty_code):
     import tempfile  # noqa: PLC0415
     with tempfile.NamedTemporaryFile("w", suffix=".md", delete=False) as fh:
         fh.write("# HISTORY\n")
         p = fh.name
     try:
-        return [c.code for c in problems({}, path=p)] == ["history.empty_or_malformed"]
+        return [c.code for c in problems({}, path=p)] == [empty_code]
     finally:
         os.unlink(p)
 
 
-def _fold_mode_case():
+def _fold_mode_case(empty_code, wrong_kind_code):
     import tempfile  # noqa: PLC0415
     with tempfile.TemporaryDirectory() as td:
         hdir = os.path.join(td, "HISTORY")
         os.makedirs(os.path.join(hdir, "2026"))
-        if [p.code for p in problems({}, path=hdir, mode="folder")] != ["history.empty_or_malformed"]:
+        if [p.code for p in problems({}, path=hdir, mode="folder")] != [empty_code]:
             return False
         open(os.path.join(hdir, "01-init.md"), "w", encoding="utf-8").write("# Init\n\n> why\n")
         open(os.path.join(hdir, "2026", "release-notes.md"), "w", encoding="utf-8").write("# Rel\n\nnote\n")
@@ -199,36 +200,39 @@ def _fold_mode_case():
             return False
         bad = os.path.join(hdir, "broken.md")
         open(bad, "w", encoding="utf-8").write("# Missing prose\n")
-        if [p.code for p in problems({}, path=hdir, mode="folder")] != ["history.empty_or_malformed"]:
+        if [p.code for p in problems({}, path=hdir, mode="folder")] != [empty_code]:
             return False
-        if [p.code for p in problems({}, path=hdir, mode="file")] != ["history.wrong_kind"]:
+        if [p.code for p in problems({}, path=hdir, mode="file")] != [wrong_kind_code]:
             return False
-        if [p.code for p in problems({}, path=bad, mode="folder")] != ["history.wrong_kind"]:
+        if [p.code for p in problems({}, path=bad, mode="folder")] != [wrong_kind_code]:
             return False
         os.unlink(bad)
         open(os.path.join(hdir, "raw.txt"), "w", encoding="utf-8").write("# Non-md\n\ntext\n")
-        return [p.code for p in problems({}, path=hdir, mode="folder")] == ["history.empty_or_malformed"]
+        return [p.code for p in problems({}, path=hdir, mode="folder")] == [empty_code]
 
 
 def _cases():
     surfaces_a = {"REFLECT_DOCS": ["STATE.md", "PRINCIPLES.md"],
                   "REFLECT_QUESTIONS": ["questions"]}
+    repo_dir = "/repo"
+    empty_code, wrong_kind = "history.empty_or_malformed", "history.wrong_kind"
     return [
         ("history.exempt_by_default",
-         lambda: is_exempt("/repo/HISTORY.md", surfaces_a, root="/repo")),
+         lambda: is_exempt(repo_dir + "/HISTORY.md", surfaces_a, root=repo_dir)),
         ("\u2605 history.declared_as_doc_is_not_exempt",
-         lambda: not is_exempt("/repo/STATE.md", surfaces_a, root="/repo")),
+         lambda: not is_exempt(repo_dir + "/STATE.md", surfaces_a, root=repo_dir)),
         ("\u2605 history.inside_a_scanned_dir_is_not_exempt",
-         lambda: not is_exempt("/repo/questions/HISTORY.md", surfaces_a,
-                               root="/repo")),
+         lambda: not is_exempt(repo_dir + "/questions/HISTORY.md", surfaces_a,
+                               root=repo_dir)),
         ("history.prefix_is_not_containment",
-         lambda: is_exempt("/repo/questions-archive/HISTORY.md", surfaces_a,
-                           root="/repo")),
+         lambda: is_exempt(repo_dir + "/questions-archive/HISTORY.md", surfaces_a,
+                           root=repo_dir)),
         ("\u2605 history.missing_is_reported",
          lambda: [p.code for p in problems({}, path="/nonexistent/HISTORY.md")]
          == ["history.missing"]),
-        ("\u2605 history.empty_or_malformed", _empty_case),
-        ("\u2605 history.fold_mode_folder_exemption_and_format", _fold_mode_case),
+        ("\u2605 history.empty_or_malformed", lambda: _empty_case(empty_code)),
+        ("\u2605 history.fold_mode_folder_exemption_and_format",
+         lambda: _fold_mode_case(empty_code, wrong_kind)),
         ("history.this_repo_is_exempt",
          lambda: problems() == []),
     ]

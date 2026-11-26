@@ -39,6 +39,14 @@ def _import_dep(mod_name, local_mods):
     return cand if cand in local_mods else None
 
 
+def _node_import_names(node):
+    if isinstance(node, ast.Import):
+        return [a.name for a in node.names]
+    if isinstance(node, ast.ImportFrom) and node.module:
+        return [node.module]
+    return []
+
+
 def _imported_locals(path, local_mods):
     try:
         src = open(path, encoding="utf-8", errors="replace").read()
@@ -47,9 +55,7 @@ def _imported_locals(path, local_mods):
         return set()
     deps = set()
     for node in ast.walk(tree):
-        names = [a.name for a in node.names] if isinstance(node, ast.Import) else (
-            [node.module] if isinstance(node, ast.ImportFrom) and node.module else [])
-        for name in names:
+        for name in _node_import_names(node):
             dep = _import_dep(name, local_mods)
             if dep:
                 deps.add(dep)
@@ -92,26 +98,36 @@ def _split_list(val):
     return [_norm(x.strip()) for x in str(val or "").split(",") if x.strip()]
 
 
-def _knob_paths(knob_values=None):
-    def get(name):
-        if knob_values is not None:
-            return str(knob_values.get(name) or knobs.REGISTRY.get(name, ("", "", ""))[1] or "")
-        return str(knobs.get(name) or "") if name in knobs.REGISTRY else ""
-    qdir = _norm(get("REFLECT_QUESTIONS") or "questions").rstrip("/")
-    hmode = "folder" if get("REFLECT_HISTORY_MODE").strip().lower() in knobs.HISTORY_FOLDER_MODES else "file"
+def _knob_val(name, knob_values):
+    if knob_values is not None:
+        return str(knob_values.get(name) or knobs.REGISTRY.get(name, ("", "", ""))[1] or "")
+    return str(knobs.get(name) or "") if name in knobs.REGISTRY else ""
+
+
+def _history_knob_path(knob_values, hmode):
     raw_h = knob_values.get("REFLECT_HISTORY") if knob_values is not None else knobs.raw("REFLECT_HISTORY")
-    hpath = _norm(raw_h if (raw_h or "").strip() else ("HISTORY" if hmode == "folder" else knobs.REGISTRY["REFLECT_HISTORY"][1])).rstrip("/")
+    if (raw_h or "").strip():
+        return _norm(raw_h).rstrip("/")
+    default_h = "HISTORY" if hmode == "folder" else knobs.REGISTRY["REFLECT_HISTORY"][1]
+    return _norm(default_h).rstrip("/")
+
+
+def _knob_paths(knob_values=None):
+    qdir = _norm(_knob_val("REFLECT_QUESTIONS", knob_values) or "questions").rstrip("/")
+    raw_mode = _knob_val("REFLECT_HISTORY_MODE", knob_values).strip().lower()
+    hmode = "folder" if raw_mode in knobs.HISTORY_FOLDER_MODES else "file"
+    hpath = _history_knob_path(knob_values, hmode)
     return {
-        "docs": set(_split_list(get("REFLECT_DOCS"))),
-        "facts": _norm(get("REFLECT_FACTS") or "FACTS.json"),
-        "retractions": _norm(get("REFLECT_RETRACTIONS") or "retractions.json"),
-        "readmes": set(_split_list(get("REFLECT_READMES"))),
+        "docs": set(_split_list(_knob_val("REFLECT_DOCS", knob_values))),
+        "facts": _norm(_knob_val("REFLECT_FACTS", knob_values) or "FACTS.json"),
+        "retractions": _norm(_knob_val("REFLECT_RETRACTIONS", knob_values) or "retractions.json"),
+        "readmes": set(_split_list(_knob_val("REFLECT_READMES", knob_values))),
         "history": hpath,
         "history_mode": hmode,
         "history_prefix": (hpath + "/") if hpath else "",
         "questions_prefix": (qdir + "/") if qdir else "questions/",
-        "secrets": _norm(get("REFLECT_SECRETS") or "secrets.json"),
-        "lint_cfg": _norm(get("REFLECT_LINT_CONFIG") or "ruff.toml"),
+        "secrets": _norm(_knob_val("REFLECT_SECRETS", knob_values) or "secrets.json"),
+        "lint_cfg": _norm(_knob_val("REFLECT_LINT_CONFIG", knob_values) or "ruff.toml"),
     }
 
 

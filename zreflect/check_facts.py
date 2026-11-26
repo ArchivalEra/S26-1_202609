@@ -15,6 +15,7 @@ from gate import fatal, finish, main_selftest_or, meta, repo  # noqa: E402
 from i18n import M  # noqa: E402
 
 _DEFAULT_NAKED_MIN = int(knobs.REGISTRY["REFLECT_NAKED_MIN"][1])
+_STATE_DOC = "STATE.md"
 _FENCE = re.compile(r"^(`{3,}|~{3,})")
 _SHAPE_PATTERNS = (
     r"\bv?\d+(?:\.\d+){1,3}(?:-[A-Za-z0-9._-]+)?\b",
@@ -48,7 +49,7 @@ def _number_lines(doc_text):
     return out
 
 
-def _line_unaccounted(line, lineno, f, bm, known, strip_re, doc_name="STATE.md"):
+def _line_unaccounted(line, lineno, f, bm, known, strip_re, doc_name=_STATE_DOC):
     cleaned = strip_re.sub(" ", line)
     cites = ledger.CITE_RE.findall(cleaned)
     cited_vals = {
@@ -64,7 +65,7 @@ def _line_unaccounted(line, lineno, f, bm, known, strip_re, doc_name="STATE.md")
     return out
 
 
-def _unaccounted_numbers(f, bm, nlines, doc_name="STATE.md"):
+def _unaccounted_numbers(f, bm, nlines, doc_name=_STATE_DOC):
     known = {v for e in f.values() if isinstance((v := ledger.value_of(e)), int) and not isinstance(v, bool)}
     strip_re = re.compile("|".join(_SHAPE_PATTERNS))
     out = []
@@ -74,14 +75,14 @@ def _unaccounted_numbers(f, bm, nlines, doc_name="STATE.md"):
     return out
 
 
-def _cite_problems(doc_or_nlines, f, doc_name="STATE.md"):
+def _cite_problems(doc_or_nlines, f, doc_name=_STATE_DOC):
     nlines = _number_lines(doc_or_nlines) if isinstance(doc_or_nlines, str) else doc_or_nlines
     return [M("facts.missing_key_cite", file=doc_name, line=i, key=k)
             for i, line in nlines
             for k in ledger.CITE_RE.findall(re.sub(r"`[^`]*`", "", line)) if k not in f]
 
 
-def _copied_fact_problems(f, nlines, bm, doc_name="STATE.md"):
+def _copied_fact_problems(f, nlines, bm, doc_name=_STATE_DOC):
     out = []
     for k, entry in sorted(f.items()):
         v = ledger.value_of(entry)
@@ -93,7 +94,7 @@ def _copied_fact_problems(f, nlines, bm, doc_name="STATE.md"):
     return out
 
 
-def hand_written_problems(doc_text, name="STATE.md"):
+def hand_written_problems(doc_text, name=_STATE_DOC):
     """Report non-title/non-intro prose lines in fully rendered docs (`STATE.md`/`PRINCIPLES.md`)."""
     out, in_intro, title_seen, quote_count = [], True, False, 0
     for lineno, line in enumerate(doc_text.splitlines(), 1):
@@ -111,7 +112,7 @@ def hand_written_problems(doc_text, name="STATE.md"):
     return out
 
 
-def problems(led, doc_text, bare_min=None, doc_name="STATE.md"):
+def problems(led, doc_text, bare_min=None, doc_name=_STATE_DOC):
     """Check block consistency, `[[key]]` citations, copied numbers, and unaccounted numbers."""
     bm = _bare_min() if bare_min is None else bare_min
     f = ledger.facts_of(led)
@@ -212,6 +213,9 @@ def _cases():
     led = {"facts": {"count": {"value": 4752, "cmd": "c"}}}
     good = "no bare numbers.\n" + ledger.render_block(led)
     fifty = {"facts": {"n": {"value": 50, "cmd": "c"}}}
+    unacc_code = "facts.bare_number_unaccounted"
+    cite_code = "facts.missing_key_cite"
+    hw_code = "facts.hand_written_in_state"
     return [
         ("facts.block_and_cite_ok",
          lambda: problems(led, good, bare_min=_DEFAULT_NAKED_MIN) == []
@@ -224,23 +228,23 @@ def _cases():
          == ["facts.copied_value"]),
         ("★ facts.missing_key_cite",
          lambda: [p.code for p in problems(led, "see [[nope]]\n" + ledger.render_block(led), bare_min=_DEFAULT_NAKED_MIN)]
-         == ["facts.missing_key_cite"]
-         and [p.code for p in _cite_problems("bad [[nope]]", led["facts"])] == ["facts.missing_key_cite"]),
+         == [cite_code]
+         and [p.code for p in _cite_problems("bad [[nope]]", led["facts"])] == [cite_code]),
         ("★ facts.bare_number_unaccounted",
          lambda: [p.code for p in problems(led, "measured 99887766.\n" + ledger.render_block(led), bare_min=_DEFAULT_NAKED_MIN)]
-         == ["facts.bare_number_unaccounted"]),
+         == [unacc_code]),
         ("facts.cite_counts_as_provenance",
          lambda: problems(led, "see [[count]] = 4752\n" + ledger.render_block(led), bare_min=_DEFAULT_NAKED_MIN) == []),
         ("★ facts.cite_value_mismatch_flagged",
          lambda: [p.code for p in problems(led, "see [[count]] = 99887766\n" + ledger.render_block(led), bare_min=_DEFAULT_NAKED_MIN)]
-         == ["facts.bare_number_unaccounted"]),
+         == [unacc_code]),
         ("★ facts.empty_ledger",
          lambda: [p.code for p in problems({"facts": {}}, good, bare_min=_DEFAULT_NAKED_MIN)] == ["facts.empty_ledger"]),
         ("★ facts.hand_written_in_state",
          lambda: [p.code for p in hand_written_problems("# T\n\n> ok\n- junk\n")]
-         == ["facts.hand_written_in_state"]
+         == [hw_code]
          and [p.code for p in hand_written_problems("# T\n\n> 1\n> 2\n> 3\n> 4\n")]
-         == ["facts.hand_written_in_state"]),
+         == [hw_code]),
         ("★ facts.no_block_markers",
          lambda: [p.code for p in problems(led, "plain", bare_min=_DEFAULT_NAKED_MIN)] == ["facts.no_block_markers"]),
         ("★ facts.inline_backtick_and_fenced_numbers_caught",
@@ -252,8 +256,8 @@ def _cases():
          == ["facts.copied_value"]),
         ("★ facts.stale_gates_and_rules_block",
          lambda: [p.code for p in extra_block_problems(
-             {"STATE.md": "<!-- AUTO:GATES -->\nstale\n<!-- /AUTO:GATES -->"},
-             [("STATE.md", [("<!-- AUTO:GATES -->", "<!-- /AUTO:GATES -->",
+             {_STATE_DOC: "<!-- AUTO:GATES -->\nstale\n<!-- /AUTO:GATES -->"},
+             [(_STATE_DOC, [("<!-- AUTO:GATES -->", "<!-- /AUTO:GATES -->",
                             "<!-- AUTO:GATES -->\nfresh\n<!-- /AUTO:GATES -->")])])]
          == ["facts.block_stale"]),
         ("facts.pack_entry_wired",
@@ -270,11 +274,7 @@ def _bad_naked_min_fatals_ok():
     os.environ["REFLECT_NAKED_MIN"] = "abc"
     try:
         with contextlib.redirect_stderr(io.StringIO()):
-            try:
-                _bare_min()
-            except SystemExit as exc:
-                return exc.code == 2
-            return False
+            return gate.exit_code_of(_bare_min) == 2
     finally:
         if saved is None:
             os.environ.pop("REFLECT_NAKED_MIN", None)

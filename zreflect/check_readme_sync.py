@@ -212,68 +212,73 @@ def _trio():
 def _cases_structure():
     """(1) Structural criterion: cross-links (trio) / existence / non-emptiness
     (single entry)."""
+    en, zh = LANGS[0], LANGS[1]
+    single = "maintaince.md"
+    miss_code, empty_code = "readme.file_missing", "readme.file_empty"
     return [
         ("readme.trio_linked",
          lambda: problems_structure(_trio(), LANGS) == []),
         # (1) Normal case: no report (single entry: cross-link criterion
         # degrades, issue #8)
         ("readme.single_no_self_reference",
-         lambda: problems_structure({"maintaince.md": "# rules\n\nno links here."},
-                                    ("maintaince.md",)) == []),
+         lambda: problems_structure({single: "# rules\n\nno links here."},
+                                    (single,)) == []),
         ("\u2605 readme.file_missing",
          lambda: [p.code for p in problems_structure(
              {k: v for k, v in _trio().items() if k != "README.de.md"}, LANGS)]
-         == ["readme.file_missing"]),
+         == [miss_code]),
         ("\u2605 readme.switcher_incomplete",
          lambda: [p.code for p in problems_structure(
-             dict(_trio(), **{"README.md": "only [README.md](README.md) and "
-                                            "[README.zh.md](README.zh.md)"}),
+             dict(_trio(), **{en: f"only [{en}]({en}) and [{zh}]({zh})"}),
              LANGS)] == ["readme.switcher_incomplete"]),
         ("\u2605 readme.file_empty",
-         lambda: "readme.file_empty" in [p.code for p in problems_structure(
-             dict(_trio(), **{"README.zh.md": "   \n"}), LANGS)]),
+         lambda: empty_code in [p.code for p in problems_structure(
+             dict(_trio(), **{zh: "   \n"}), LANGS)]),
         # Single entry: existence / non-emptiness do not degrade (issue #8)
         ("\u2605 readme.single_file_missing",
-         lambda: [p.code for p in problems_structure({}, ("maintaince.md",))]
-         == ["readme.file_missing"]),
+         lambda: [p.code for p in problems_structure({}, (single,))]
+         == [miss_code]),
         ("\u2605 readme.single_file_empty",
-         lambda: "readme.file_empty" in [p.code for p in problems_structure(
-             {"maintaince.md": "  \n"}, ("maintaince.md",))]),
+         lambda: empty_code in [p.code for p in problems_structure(
+             {single: "  \n"}, (single,))]),
         # (3) Empty input must be reported
         ("\u2605 readme.names_empty_structure",
          lambda: [p.code for p in problems_structure(_trio(), ())]
          == ["readme.names_empty_structure"]),
         ("\u2605 readme.structure_mismatch",
          lambda: [p.code for p in problems_structure(
-             dict(_trio(), **{"README.zh.md": "## extra\n" + _trio()["README.zh.md"]}),
+             dict(_trio(), **{zh: "## extra\n" + _trio()[zh]}),
              LANGS)] == ["readme.structure_mismatch"]),
     ]
 
 
 def _cases_push():
     """Push-set cases: multi-entry conditional, single-entry unconditional."""
+    en, zh = LANGS[0], LANGS[1]
+    single = "maintaince.md"
+    not_in_push = "readme.not_in_push"
     return [
         ("readme.push_all_present",
          lambda: problems_push(set(LANGS) | {"code.py"}, LANGS) == []),
         ("readme.single_push_contains_it",
-         lambda: problems_push({"maintaince.md", "a.py"}, ("maintaince.md",))
+         lambda: problems_push({single, "a.py"}, (single,))
          == []),
         ("\u2605 readme.not_in_push",
          lambda: [p.code for p in problems_push(
-             {"README.md", "README.zh.md", "zreflect/facts.py"}, LANGS)]
-         == ["readme.not_in_push"]),
+             {en, zh, "zreflect/facts.py"}, LANGS)]
+         == [not_in_push]),
         ("\u2605 readme.single_not_in_push",
-         lambda: [p.code for p in problems_push({"other.md"}, ("maintaince.md",))]
-         == ["readme.not_in_push"]),
+         lambda: [p.code for p in problems_push({"other.md"}, (single,))]
+         == [not_in_push]),
         ("readme.multi_untouched_is_not_in_scope",
          lambda: problems_push({"zreflect/x.py"},
-                               ("README.md", "README.zh.md")) == []),
+                               (en, zh)) == []),
         ("\u2605 readme.multi_partial_still_fires",
          lambda: [p.code for p in problems_push(
-             {"README.md", "zreflect/x.py"}, ("README.md", "README.zh.md"))
-         ] == ["readme.not_in_push"]),
+             {en, "zreflect/x.py"}, (en, zh))
+         ] == [not_in_push]),
         ("\u2605 readme.names_empty_push",
-         lambda: [p.code for p in problems_push({"README.md"}, ())]
+         lambda: [p.code for p in problems_push({en}, ())]
          == ["readme.names_empty_push"]),
         ("\u2605 readme.changed_empty",
          lambda: [p.code for p in problems_push(set(), LANGS)]

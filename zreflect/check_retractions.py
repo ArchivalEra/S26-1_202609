@@ -41,7 +41,7 @@ _PLACEHOLDER_FIXED = frozenset({"tbd", "todo", "none", "n/a", "-", "?"})
 
 
 _FIXED_ANCHOR = re.compile(
-    r"(?:[0-9a-f]{7,}|#\d+|R-\d+|\.[a-z]{2,4}\b|[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*\(\))",
+    r"(?:[0-9a-f]{7,}|#\d+|R-\d+|\.[a-z]{2,4}\b|[A-Za-z_]\w*(?:\.[A-Za-z_]\w*|\(\)))",
     re.I,
 )
 
@@ -190,10 +190,13 @@ def _cases():
                              "evidence": "python3 zreflect/facts.py --check",
                              "fixed_in": "a.py"}]}
     doc_marked = "(record) this thing is green -- retracted, see R-1\n"
+    resurf = "retractions.resurfaced"
+    ev_bad = "retractions.evidence_not_runnable"
+    miss_key = "retractions.missing_key"
     return [
         ("\u2605 retractions.hist_mark_does_not_exempt",
          lambda: [p.code for p in problems(ok_r, {"A.md": doc_marked})]
-         == ["retractions.resurfaced"]),
+         == [resurf]),
         ("retractions.assertion_absent",
          lambda: problems(ok_r, {"A.md": "clean document\n"}) == []),
         ("retractions.no_retractions",
@@ -203,22 +206,22 @@ def _cases():
                           hist_secs=("5",)) == []),
         ("★ retractions.resurfaced",
          lambda: [p.code for p in problems(
-             ok_r, {"A.md": "this thing is green.\n"})] == ["retractions.resurfaced"]),
+             ok_r, {"A.md": "this thing is green.\n"})] == [resurf]),
         ("★ retractions.resurfaced_undeclared_history",
          lambda: [p.code for p in problems(
              ok_r, {"A.md": "## 5 history\nthis thing is green.\n"}, hist_secs=())]
-         == ["retractions.resurfaced"]),
+         == [resurf]),
         ("\u2605 retractions.entry_missing_field",
          lambda: [p.code for p in problems(
              {"retractions": [{"id": "R-2", "text": "t", "fixed_in": "a.py"}]},
              {"A.md": "x\n"})]
-         == ["retractions.entry_missing_field", "retractions.evidence_not_runnable"]),
+         == ["retractions.entry_missing_field", ev_bad]),
         ("\u2605 retractions.evidence_not_runnable",
          lambda: [p.code for p in problems(
              {"retractions": [{"id": "R-3", "text": "t",
                                "evidence": "a subagent report",
                                "fixed_in": "a.py"}]}, {"A.md": "x\n"})]
-         == ["retractions.evidence_not_runnable"]),
+         == [ev_bad]),
         ("★ retractions.fixed_in_prose_rejected",
          lambda: [p.code for p in problems(
              {"retractions": [{"id": "R-4", "text": "t", "evidence": "python3 a.py",
@@ -228,15 +231,15 @@ def _cases():
         ("★ retractions.multiline_resurfaced",
          lambda: [p.code for p in problems(
              ok_r, {"A.md": "this thing\nis green.\n"}, runner=lambda _c: (0, "ok"))]
-         == ["retractions.resurfaced"]),
+         == [resurf]),
         ("★ retractions.no_docs",
          lambda: [p.code for p in problems(ok_r, {})] == ["retractions.no_docs"]),
         ("★ retractions.missing_key",
          lambda: [p.code for p in problems({}, {"A.md": "x\n"})]
-         == ["retractions.missing_key"]),
+         == [miss_key]),
         ("★ retractions.missing_key_none",
          lambda: [p.code for p in problems(None, {"A.md": "x\n"})]
-         == ["retractions.missing_key"]),
+         == [miss_key]),
         ("★ retractions.evidence_failed",
          lambda: [p.code for p in problems(
              ok_r, {"A.md": "clean\n"}, runner=lambda _c: (1, "fail"))]
@@ -247,7 +250,7 @@ def _cases():
                                "evidence": "python3 zreflect/check_questions.py",
                                "fixed_in": "a.py"}]},
              {"A.md": "this thing is green\n"}, verify_evidence=True, skip_reentrant=True)]
-         == ["retractions.resurfaced"]),
+         == [resurf]),
     ]
 
 

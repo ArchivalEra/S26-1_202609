@@ -156,6 +156,9 @@ def _pin_problems(p, root, run):
     return problems + tree_probs, skips + tree_skips
 
 
+_PINS_JSON = "pins.json"
+
+
 def check(spec, run=_run, root=None):
     """Pure logic (the selftest injects `run`). Returns (problems, skips).
 
@@ -164,11 +167,11 @@ def check(spec, run=_run, root=None):
     """
     root = repo() if root is None else root
     if not isinstance(spec, dict):
-        return [M("pins.spec_broken", name="pins.json", error="spec must be an object")], []
+        return [M("pins.spec_broken", name=_PINS_JSON, error="spec must be an object")], []
     pins = spec.get("pins")
     if not isinstance(pins, list) or not pins:
         return [M("pins.empty")], []
-    problems, skips = gate.exec_position_problems(spec, "pins.json"), []
+    problems, skips = gate.exec_position_problems(spec, _PINS_JSON), []
     for p in pins:
         probs, sks = _pin_problems(p, root, run)
         problems += probs
@@ -233,11 +236,12 @@ def _fixture():
 def _cases():
     fx = _fixture()
     d = fx["d"]
+    k_json = "K.json"
     return [
         ("pins.resolve_spec",
-         lambda: gate.resolve_spec(["--spec", "x.json"], "K.json", "pins.json") == ("x.json", True)
-         and gate.resolve_spec([], "K.json", "pins.json") == ("K.json", True)
-         and gate.resolve_spec([], "", "pins.json") == ("pins.json", False)),
+         lambda: gate.resolve_spec(["--spec", "x.json"], k_json, _PINS_JSON) == ("x.json", True)
+         and gate.resolve_spec([], k_json, _PINS_JSON) == (k_json, True)
+         and gate.resolve_spec([], "", _PINS_JSON) == (_PINS_JSON, False)),
         # (1) compliant input: nothing reported
         ("pins.ok", lambda: check(fx["ok"], run=_run, root=d) == ([], [])),
         # (2) what must be reported is reported

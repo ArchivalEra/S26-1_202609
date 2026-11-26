@@ -621,6 +621,7 @@
 !/reflect-local/principles.json
 !/reflect-local/transcript_baseline.json
 !/zreflect/SEAL.json
+!/zreflect/SUITE.sig
 !/zreflect/check_ab.py
 !/zreflect/check_explain.py
 !/zreflect/check_facts.py

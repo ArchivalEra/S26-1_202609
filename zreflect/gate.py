@@ -31,7 +31,7 @@ _PROSE_CHARS = re.compile(r"[\u4e00-\u9fff（）【】；：，。]")
 _QUOTED = re.compile(r'"([^"]*)"|(\S+)')
 _QUOTED_SPAN = re.compile(r"('[^']*'|\"(?:\\.|[^\"\\])*\")")
 _PY_CMD = re.compile(r"(?:^|(?<=[\s;&]))python3?(?=\s)")
-_TOOL_REL = re.compile(r"(?<!\w)(zreflect/[A-Za-z_][A-Za-z0-9_]*\.py)")
+_TOOL_REL = re.compile(r"(?<!\w)(zreflect/[A-Za-z_]\w*\.py)")
 _NEEDS_QUOTING = re.compile(r"""[\s\\$`"'|&;<>()*?{}\[\]#~]""")
 
 
@@ -302,15 +302,21 @@ EXEC_POSITIONS = {
 }
 
 
+def _entry_pairs(raw):
+    if isinstance(raw, list):
+        return [(str(i), e) for i, e in enumerate(raw)]
+    if isinstance(raw, dict):
+        return list(raw.items())
+    return []
+
+
 def exec_position_problems(spec, name):
     """Validate declared command fields in `world.json` or `pins.json`."""
     entry_key, fields = EXEC_POSITIONS.get(name, (None, ()))
     if entry_key is None or not isinstance(spec, dict):
         return []
     fields = (fields,) if isinstance(fields, str) else fields
-    raw = spec.get(entry_key) or {}
-    pairs = ([(str(i), e) for i, e in enumerate(raw)] if isinstance(raw, list)
-             else list(raw.items()) if isinstance(raw, dict) else [])
+    pairs = _entry_pairs(spec.get(entry_key) or {})
     out = []
     for key, entry in pairs:
         if not isinstance(entry, dict):
@@ -523,6 +529,12 @@ def _inproc_suite_argv(cmd):
     return (full, parts[2:]) if os.path.isfile(full) else None
 
 
+def _exit_code_value(code):
+    if isinstance(code, int):
+        return code
+    return 1 if code else 0
+
+
 def _exec_inproc_target(script_path, extra_args):
     if script_path == "@enforced":
         import doc  # noqa: PLC0415
@@ -534,7 +546,7 @@ def _exec_inproc_target(script_path, extra_args):
         runpy.run_path(script_path, run_name="__main__")
         return 0
     except SystemExit as exc:
-        return exc.code if isinstance(exc.code, int) else (1 if exc.code else 0)
+        return _exit_code_value(exc.code)
     finally:
         sys.argv = old_argv
 
@@ -616,6 +628,15 @@ def module_meta(name, desc, selftest=True):
     return {"name": name, "desc": desc, "selftest": bool(selftest)}
 
 
+def exit_code_of(fn):
+    """Run `fn()` and return `SystemExit.code` if raised, else `None`."""
+    try:
+        fn()
+    except SystemExit as exc:
+        return exc.code
+    return None
+
+
 def raises(fn):
     """Return True if `fn()` raises `SystemExit`."""
     try:
@@ -623,6 +644,20 @@ def raises(fn):
     except SystemExit:
         return True
     return False
+
+
+def _run_selftest_case(label, fn):
+    try:
+        passed, failure = bool(fn()), None
+    except SystemExit as e:
+        passed, failure = False, i18n.M("gate.case_unexpected_systemexit", label=label, error=e)
+    except Exception as e:                           # noqa: BLE001
+        passed, failure = False, i18n.M("gate.case_raised", label=label, error=e)
+    if failure is not None:
+        print(i18n.emit("fail", failure))
+        return 1
+    print(i18n.emit("pass" if passed else "fail", label))
+    return 0 if passed else 1
 
 
 def selftest(name, cases):
@@ -634,20 +669,7 @@ def selftest(name, cases):
         probs = trust.verify_problems()
         if probs:
             fatal_exit(probs[0])
-    bad = 0
-    for label, fn in cases:
-        try:
-            passed, failure = bool(fn()), None
-        except SystemExit as e:
-            passed, failure = False, i18n.M("gate.case_unexpected_systemexit", label=label, error=e)
-        except Exception as e:                           # noqa: BLE001
-            passed, failure = False, i18n.M("gate.case_raised", label=label, error=e)
-        if failure is not None:
-            print(i18n.emit("fail", failure))
-            bad += 1
-        else:
-            print(i18n.emit("pass" if passed else "fail", label))
-            bad += 0 if passed else 1
+    bad = sum(_run_selftest_case(label, fn) for label, fn in cases)
     print(i18n.emit_summary(len(cases) - bad, bad))
     return 1 if bad else 0
 
@@ -704,6 +726,37 @@ def default_runner(f, repo_root=None):
     return p.returncode, (p.stdout or "") + (p.stderr or "")
 
 
+def _record_ok_gate(res, f, out):
+    text = out or ""
+    if any(k == "skip" for _i, k, _ln in i18n.scan(text)):
+        res["skipped"] += 1
+        res["skip_list"].append(f)
+        res["fail_out"][f] = text
+        return
+    first_ln = next((ln for ln in text.splitlines() if ln.strip()), "")
+    scanned = i18n.scan(first_ln)
+    if scanned and scanned[0][1] == "off":
+        res["off"] += 1
+        res["off_list"].append(f)
+    else:
+        res["ran"] += 1
+
+
+def _record_gate_result(res, f, rc, out):
+    if rc == 0:
+        _record_ok_gate(res, f, out)
+        return
+    if rc == 2:
+        bucket, lst = "fatal", "fatal_list"
+    elif rc < 0 or rc > 2:
+        bucket, lst = "error", "error_list"
+    else:
+        bucket, lst = "failed", "fail_list"
+    res[bucket] += 1
+    res[lst].append(f)
+    res["fail_out"][f] = out or ""
+
+
 def run_phase(phase, gates, runner=None, repo_root=None):
     """Run phase gates and aggregate `{ran, off, skipped, failed, fatal, error, *_list, fail_out}`."""
     run = runner or (lambda f: default_runner(f, repo_root))
@@ -717,33 +770,7 @@ def run_phase(phase, gates, runner=None, repo_root=None):
         if isinstance(item, dict) and item.get("runs_at") not in (None, phase):
             continue
         rc, out = run(f)
-        if rc == 2:
-            res["fatal"] += 1
-            res["fatal_list"].append(f)
-            res["fail_out"][f] = out or ""
-        elif rc < 0 or rc > 2:
-            res["error"] += 1
-            res["error_list"].append(f)
-            res["fail_out"][f] = out or ""
-        elif rc != 0:
-            res["failed"] += 1
-            res["fail_list"].append(f)
-            res["fail_out"][f] = out or ""
-        else:
-            scanned_all = i18n.scan(out or "")
-            if any(k == "skip" for _i, k, _ln in scanned_all):
-                res["skipped"] += 1
-                res["skip_list"].append(f)
-                res["fail_out"][f] = out or ""
-                continue
-            first_ln = next((ln for ln in (out or "").splitlines() if ln.strip()), "")
-            scanned = i18n.scan(first_ln)
-            kind = scanned[0][1] if scanned else None
-            if kind == "off":
-                res["off"] += 1
-                res["off_list"].append(f)
-            else:
-                res["ran"] += 1
+        _record_gate_result(res, f, rc, out)
     return res
 
 

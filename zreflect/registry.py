@@ -189,11 +189,17 @@ def runnable(phase="commit", zdir=None):
     return [g for g in gs if g.get("runs_at", "commit") == phase]
 
 
+def _knob_default_set(kind, dflt):
+    if kind == "list":
+        return {x.strip() for x in dflt.split(",")}
+    return {dflt} if dflt else set()
+
+
 def _touches_renamed(g):
+    renamed = set(RENAMED_DEFAULTS)
     for k in g["knobs"]:
         kind, dflt, _ = knobs.REGISTRY.get(k, ("", "", ""))
-        vals = {x.strip() for x in dflt.split(",")} if kind == "list" else ({dflt} if dflt else set())
-        if vals & set(RENAMED_DEFAULTS):
+        if _knob_default_set(kind, dflt) & renamed:
             return True
     return False
 
@@ -393,6 +399,9 @@ def _emit_run_result(phase, res):
     return 1 if (res["failed"] or res.get("fatal") or res.get("error")) else 0
 
 
+_RESEAL_PREFIX = "--reseal="
+
+
 def _main_run(argv):
     phase = _arg_after(argv, "--run")
     if phase not in phases():
@@ -423,9 +432,9 @@ def _main_seal(argv):
             return 1
         print(trust.current_tree_sha(verified=True) or "")
         return 0
-    hit = [a for a in argv if a.startswith("--reseal=")]
+    hit = [a for a in argv if a.startswith(_RESEAL_PREFIX)]
     if hit:
-        targets = [t.strip() for t in hit[0][len("--reseal="):].split(",") if t.strip()]
+        targets = [t.strip() for t in hit[0][len(_RESEAL_PREFIX):].split(",") if t.strip()]
         tree, err = trust.reseal(targets, force_all="--force" in argv, bump_seq="--bump-seq" in argv)
         if err:
             return fatal(err)
@@ -486,7 +495,7 @@ _KNOWN_FLAGS = frozenset({
 
 def _unknown_flag(argv):
     for a in argv:
-        if a.startswith("-") and not a.startswith("--reseal=") and a not in _KNOWN_FLAGS:
+        if a.startswith("-") and not a.startswith(_RESEAL_PREFIX) and a not in _KNOWN_FLAGS:
             return a
     return None
 

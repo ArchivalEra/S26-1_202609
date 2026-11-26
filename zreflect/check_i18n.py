@@ -276,6 +276,14 @@ def _load_tables(langs, load):
     return tables, None
 
 
+def _filter_served(langs, served, count):
+    missing_srv = [l for l in served if l not in langs]
+    if missing_srv:
+        return None, [M("knobs.pack_missing_code", lang=l, count=count, codes="*")
+                      for l in sorted(missing_srv)]
+    return [l for l in langs if l in served], None
+
+
 def pack_coverage_problems(codes=None, loader=None, discovery=None):
     """Ensure every code used by core source exists in every served/installed pack."""
     load = loader if loader is not None else i18n.load_pack
@@ -286,19 +294,16 @@ def pack_coverage_problems(codes=None, loader=None, discovery=None):
         return [M("knobs.pack_unreadable", lang="*", error=e)]
     served = () if discovery is not None else knobs.served_langs()
     if served:
-        missing_srv = [l for l in served if l not in langs]
-        if missing_srv:
-            return [M("knobs.pack_missing_code", lang=l, count=len(codes) or 1, codes="*")
-                    for l in sorted(missing_srv)]
-        langs = [l for l in langs if l in served]
+        langs, err = _filter_served(langs, served, len(codes) or 1)
+        if err is not None:
+            return err
     if not codes or not langs:
         return []
+    tables, load_err = _load_tables(sorted(langs), load)
+    if load_err is not None:
+        return load_err
     out = []
-    for lang in sorted(langs):
-        try:
-            table = load(lang)
-        except Exception as e:                           # noqa: BLE001
-            return [M("knobs.pack_unreadable", lang=lang, error=e)]
+    for lang, table in tables.items():
         missing = sorted(codes - set(table))
         if missing:
             out.append(M("knobs.pack_missing_code", lang=lang,

@@ -98,7 +98,6 @@ def unpublished_commits(repo):
         return None
     if _git(repo, "rev-parse", "--verify", "HEAD") is None:
         return [] if _git(repo, "symbolic-ref", "--short", "HEAD") else None
-        return []
     out = _git(repo, "log", "--oneline", "HEAD", "--not", "--remotes")
     return [ln.strip() for ln in out.splitlines() if ln.strip()] if out is not None else None
 
@@ -321,7 +320,7 @@ def _real_git_case():
         subprocess.run(["git", "-C", d, "add", "x"], check=True)
         subprocess.run(["git", "-C", d, "commit", "-qm", "c"], check=True,
                        capture_output=True)
-        last, pending = collect(d)
+        last, _pending = collect(d)
         # Chinese in fixtures is codepoint-built (this repo's discipline; a
         # literal would turn check_i18n red)
         # ⚠️ Assert on the **code**, not the rendered text -- under the null
@@ -364,7 +363,7 @@ def _empty_pending_explicit():
 
 def _nonexistent_root_loud():
     """Missing repo root reports explicit unreadable errors."""
-    last, pending = collect("/nonexistent-xyz")
+    last, _pending = collect("/nonexistent-xyz")
     codes = {getattr(ln, "code", "") for ln in last}
     return "next.commits_unreadable" in codes and "next.tree_unreadable" in codes
 

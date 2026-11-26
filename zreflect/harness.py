@@ -78,7 +78,7 @@ def _tail(text, n=5):
 
 def _has_summary(text):
     for ln in (text or "").splitlines():
-        m = re.fullmatch(r"=== ([0-9]+) PASS / ([0-9]+) FAIL ===", ln.strip())
+        m = re.fullmatch(r"=== (\d+) PASS / (\d+) FAIL ===", ln.strip())
         if m and int(m.group(1)) >= 1 and int(m.group(2)) == 0:
             return True
     return False

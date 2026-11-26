@@ -36,7 +36,7 @@ RULES = (
         r"-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----")),
     ("aws-access-key", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
     ("github-token", re.compile(
-        r"\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,})\b")),
+        r"\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_\w{22,})\b")),
     ("slack-token", re.compile(r"\bxox[baprs]-[0-9A-Za-z-]{10,}\b")),
     ("stripe-key", re.compile(r"\b(?:sk|rk)_live_[0-9A-Za-z]{16,}\b")),
     ("google-api-key", re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b")),
@@ -293,8 +293,9 @@ def _cases():
     import tempfile  # noqa: PLC0415
     clean = 'token = "${SERVICE_TOKEN}"\npassword = "your-password-here"\n'
     leaked = 'aws = "AKIAIOSFODNN7EXAMPLE"\n'
+    fn = "a.txt"
     return [
-        ("secrets.clean", lambda: line_findings("a.txt", 1, clean) == []),
+        ("secrets.clean", lambda: line_findings(fn, 1, clean) == []),
         ("secrets.allow_shape",
          lambda: spec_problems({"paths": ["app"], "allow": [
              {"path": "app/a.txt", "rule": "aws-access-key", "reason": "fixture"}]}) == []),
@@ -303,43 +304,43 @@ def _cases():
              {"path": "app/a.txt", "rule": "aws-access-key"}]})] == ["secrets.allow_fields"]
          and [p.code for p in spec_problems({"paths": ["app"], "ignore_paths": ["scripts"]})]
          == ["secrets.ignore_not_list"]),
-        ("★ secrets.aws", lambda: [x["rule"] for x in line_findings("a.txt", 1, leaked)]
+        ("★ secrets.aws", lambda: [x["rule"] for x in line_findings(fn, 1, leaked)]
          == ["aws-access-key"]),
         ("★ secrets.private_key",
          lambda: [x["rule"] for x in line_findings(
-             "a.txt", 1, "-----BEGIN OPENSSH PRIVATE KEY-----")] == ["private-key"]),
+             fn, 1, "-----BEGIN OPENSSH PRIVATE KEY-----")] == ["private-key"]),
         ("★ secrets.github",
          lambda: [x["rule"] for x in line_findings(
-             "a.txt", 1, "ghp_" + "a" * 36)] == ["github-token"]),
+             fn, 1, "ghp_" + "a" * 36)] == ["github-token"]),
         ("★ secrets.generic",
          lambda: [x["rule"] for x in line_findings(
-             "a.txt", 1, 'api_key = "not-a-real-demo-value"')] == ["generic-secret"]),
+             fn, 1, 'api_key = "not-a-real-demo-value"')] == ["generic-secret"]),
         # the family set must actually grow: a 1M-line repo leaks through Slack,
         # Stripe, Google, JWT and inline-URL credentials, not only AWS/GitHub
         ("★ secrets.slack",
          lambda: [x["rule"] for x in line_findings(
-             "a.txt", 1, "hook = xoxb-" + "1" * 12)] == ["slack-token"]),
+             fn, 1, "hook = xoxb-" + "1" * 12)] == ["slack-token"]),
         ("★ secrets.stripe",
          lambda: [x["rule"] for x in line_findings(
-             "a.txt", 1, "k = sk_live_" + "a" * 20)] == ["stripe-key"]),
+             fn, 1, "k = sk_live_" + "a" * 20)] == ["stripe-key"]),
         ("★ secrets.google",
          lambda: [x["rule"] for x in line_findings(
-             "a.txt", 1, "k = AIza" + "a" * 35)] == ["google-api-key"]),
+             fn, 1, "k = AIza" + "a" * 35)] == ["google-api-key"]),
         ("★ secrets.jwt",
          lambda: [x["rule"] for x in line_findings(
-             "a.txt", 1, "t = eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.SflKxwRJSM")]
+             fn, 1, "t = eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.SflKxwRJSM")]
          == ["jwt"]),
         ("★ secrets.url_credentials",
          lambda: [x["rule"] for x in line_findings(
-             "a.txt", 1, "u = https://user:hunter2pass@host/x")] == ["url-credentials"]),
+             fn, 1, "u = https://user:hunter2pass@host/x")] == ["url-credentials"]),
         ("★ secrets.bare_assignment",
          lambda: [x["rule"] for x in line_findings(
-             "a.txt", 1, "password: hunter2hunter2hunter2")] == ["generic-secret"]),
+             fn, 1, "password: hunter2hunter2hunter2")] == ["generic-secret"]),
         # placeholder exemption must be exact, not substring: a real secret that
         # merely contains "example" used to be waved through
         ("★ secrets.placeholder_is_exact",
-         lambda: line_findings("a.txt", 1, 'api_key = "my-example-real-key-9f2"')
-         != [] and line_findings("a.txt", 1, 'api_key = "${API_KEY}"') == []),
+         lambda: line_findings(fn, 1, 'api_key = "my-example-real-key-9f2"')
+         != [] and line_findings(fn, 1, 'api_key = "${API_KEY}"') == []),
         ("★ secrets.empty_paths",
          lambda: [p.code for p in spec_problems({"paths": []})]
          == ["secrets.paths_empty"]),

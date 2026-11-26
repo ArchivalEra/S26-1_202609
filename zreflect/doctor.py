@@ -437,7 +437,7 @@ def _cases_http(fx):
     ]
 
 
-def _cases_docker(fx):
+def _cases_docker():
     """See `_cases()`: this group has 4 cases."""
     return [
     ("doctor.docker_verdict_ok",
@@ -457,7 +457,7 @@ def _cases_docker(fx):
     ]
 
 
-def _cases_port(fx):
+def _cases_port():
     """See `_cases()`: this group has 3 cases."""
     return [
     ("doctor.port_free_verdict_ok",
@@ -497,8 +497,8 @@ def _cases():
     return (
     _cases_spec(fx)
     + _cases_http(fx)
-    + _cases_docker(fx)
-    + _cases_port(fx)
+    + _cases_docker()
+    + _cases_port()
     + _cases_misc(fx)
     )
 

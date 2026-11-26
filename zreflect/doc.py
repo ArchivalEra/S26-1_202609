@@ -67,28 +67,37 @@ def _question_exec_problems(qdir):
     return out
 
 
+def _spec_exec_problems(base, knob_key, name):
+    p = knobs.repo_path(knob_key, base)
+    if not (p and os.path.isfile(p)):
+        return []
+    data, err = _read_json_checked(p)
+    if err:
+        return [i18n.M("doc.corrupt_json", path=name, error=err)]
+    return gate.exec_position_problems(data, name)
+
+
+def _retractions_exec_problems(base):
+    ret = knobs.repo_path("REFLECT_RETRACTIONS", base)
+    if not (ret and os.path.isfile(ret)):
+        return []
+    rdata, rerr = _read_json_checked(ret)
+    if rerr:
+        return [i18n.M("doc.corrupt_json", path="retractions.json", error=rerr)]
+    out: list[i18n.Message] = []
+    for r in rdata.get("retractions") or []:
+        if isinstance(r, dict):
+            out += gate.prose_in_exec_problems("retractions/%s" % r.get("id", "?"),
+                                               "evidence", r.get("evidence"))
+    return out
+
+
 def all_exec_position_problems(root=None):
     """Collect prose-in-command errors across `world.json`, `pins.json`, `retractions.json`, `questions/*.md`."""
     base = root or gate.GATE_REPO
-    out = []
-    for knob_key, name in (("REFLECT_WORLD", "world.json"), ("REFLECT_PINS", "pins.json")):
-        p = knobs.repo_path(knob_key, base)
-        if p and os.path.isfile(p):
-            data, err = _read_json_checked(p)
-            if err:
-                out.append(i18n.M("doc.corrupt_json", path=name, error=err))
-            else:
-                out += gate.exec_position_problems(data, name)
-    ret = knobs.repo_path("REFLECT_RETRACTIONS", base)
-    if ret and os.path.isfile(ret):
-        rdata, rerr = _read_json_checked(ret)
-        if rerr:
-            out.append(i18n.M("doc.corrupt_json", path="retractions.json", error=rerr))
-        else:
-            for r in rdata.get("retractions") or []:
-                if isinstance(r, dict):
-                    out += gate.prose_in_exec_problems("retractions/%s" % r.get("id", "?"),
-                                                       "evidence", r.get("evidence"))
+    out = _spec_exec_problems(base, "REFLECT_WORLD", "world.json")
+    out += _spec_exec_problems(base, "REFLECT_PINS", "pins.json")
+    out += _retractions_exec_problems(base)
     return out + _question_exec_problems(knobs.questions_path(base))
 
 

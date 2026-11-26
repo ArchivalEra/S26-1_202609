@@ -174,13 +174,12 @@ def _inplace_mutations(tree, module, aliases):
     for node in ast.walk(tree):
         targets = node.targets if isinstance(node, ast.Delete) else _assign_targets(node)
         for t in targets:
-            if isinstance(t, ast.Subscript):
-                pair = _root_target(t, module, aliases)
-                if pair is not None:
-                    out.add(pair)
-        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-                and node.func.attr in _MUTATING_METHODS):
-            pair = _root_target(node.func.value, module, aliases)
+            pair = _root_target(t, module, aliases) if isinstance(t, ast.Subscript) else None
+            if pair is not None:
+                out.add(pair)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            pair = (_root_target(node.func.value, module, aliases)
+                    if node.func.attr in _MUTATING_METHODS else None)
             if pair is not None:
                 out.add(pair)
     return out
@@ -525,6 +524,7 @@ def _fixtures():
 
 def _cases_value_copy(fx):
     """Value copies: constants/attribute reads pass; mutable global imports fail."""
+    mut_code = "snapshot.mutable_copy"
     return [
         ("snapshot.constant_copy_is_fine",
          lambda: problems(sources={"gate": fx["good"],
@@ -535,7 +535,7 @@ def _cases_value_copy(fx):
         ("\u2605 snapshot.mutable_copy",
          lambda: [p.code for p in problems(
              sources={"gate": fx["bad_gate"], "check_x": fx["bad_user"]})
-         ] == ["snapshot.mutable_copy"]),
+         ] == [mut_code]),
         ("snapshot.dead_import_not_reported",
          lambda: problems(sources={
              "gate": fx["bad_gate"],
@@ -543,39 +543,40 @@ def _cases_value_copy(fx):
         ("\u2605 snapshot.mutable_copy_via_alias",
          lambda: [p.code for p in problems(sources={
              "gate": ALIAS_GATE, "usr": ALIAS_USER, "victim": ALIAS_VICTIM})
-         ] == ["snapshot.mutable_copy"]),
+         ] == [mut_code]),
         ("\u2605 snapshot.source_from_any_module",
          lambda: [p.code for p in problems(sources={
              "check_zzz": CHECK_AS_SOURCE, "victim": CHECK_AS_VICTIM})
-         ] == ["snapshot.mutable_copy"]),
+         ] == [mut_code]),
         ("\u2605 snapshot.inplace_dict_and_list_mutations",
          lambda: [p.code for p in problems(sources={
              "cfg": "CACHE = {}\nITEMS = []\ndef f():\n    CACHE['k'] = 1\n    ITEMS.append(2)\n",
              "u1": "from cfg import CACHE\nprint(CACHE)\n",
              "u2": "from cfg import ITEMS\nprint(ITEMS)\n",
-         })] == ["snapshot.mutable_copy", "snapshot.mutable_copy"]),
+         })] == [mut_code, mut_code]),
         ("\u2605 snapshot.star_and_relative_imports",
          lambda: [p.code for p in problems(sources={
              "gate": fx["bad_gate"],
              "u_star": "from gate import *\n",
              "u_rel": "from .gate import GATE_REPO\nprint(GATE_REPO)\n",
-         })] == ["snapshot.mutable_copy", "snapshot.mutable_copy"]),
+         })] == [mut_code, mut_code]),
     ]
 
 
 def _cases_derived():
     """Derived snapshots: top-level calls reading mutable globals."""
+    deriv_code = "snapshot.derived_copy"
     return [
         ("\u2605 snapshot.derived_copy",
          lambda: [p.code for p in problems(sources={
              "gate": GATE_WITH_REPO,
              "facts": "OUT = repo('L.json')\nprint(OUT)\n"})
-         ] == ["snapshot.derived_copy"]),
+         ] == [deriv_code]),
         ("\u2605 snapshot.derived_copy_annotated",
          lambda: [p.code for p in problems(sources={
              "gate": GATE_WITH_REPO,
              "facts": "OUT: str = repo('L.json')\nprint(OUT)\n"})
-         ] == ["snapshot.derived_copy"]),
+         ] == [deriv_code]),
     ]
 
 

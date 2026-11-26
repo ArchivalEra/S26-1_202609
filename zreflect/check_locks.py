@@ -156,12 +156,13 @@ def _cases():
                            "sha256": good}]}
     no_sha = {"locked": [{"name": "glpk", "url": "u", "file": g}]}
     empty: dict[str, list[Any]] = {"locked": []}
+    k_json, lock_json = "K.json", "upstream-lock.json"
     return [
         ("locks.resolve_spec",
-         lambda: gate.resolve_spec(["--spec", "x.json"], "K.json", "upstream-lock.json")
+         lambda: gate.resolve_spec(["--spec", "x.json"], k_json, lock_json)
          == ("x.json", True)
-         and gate.resolve_spec([], "K.json", "upstream-lock.json") == ("K.json", True)
-         and gate.resolve_spec([], "", "upstream-lock.json") == ("upstream-lock.json", False)),
+         and gate.resolve_spec([], k_json, lock_json) == (k_json, True)
+         and gate.resolve_spec([], "", lock_json) == (lock_json, False)),
         # (1) compliant input: nothing reported
         ("locks.ok",
          lambda: check(spec, root=d)[0] == [] and check(spec, root=d)[1] == []),

@@ -126,6 +126,7 @@ def run(argv=None):
     (a config incident must not stay silent).
     """
     conf = os.path.join(gate.GATE_REPO, CONFIG)
+    _ = argv
     if not os.path.isfile(conf):
         return off(M("lint.off_config", path=CONFIG))
     if shutil.which("ruff") is None:

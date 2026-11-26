@@ -32,9 +32,11 @@ HIST_MARK = re.compile(
     r"|已翻案|更正|是错的|误读|推翻|曾写|已作废|不再成立"
     r"|superseded|retracted|deprecated")
 DATED_RECORD = re.compile(r"[A-Za-z0-9._-]*-\d{8}|`[0-9a-f]{7,64}`")
-CITE_RE = re.compile(r"\[\[([A-Za-z_][A-Za-z0-9_]*)\]\]")
+CITE_RE = re.compile(r"\[\[([A-Za-z_]\w*)\]\]")
 
 _COUNT_CMD = "python3 zreflect/facts.py --count"
+_TS_FMT = "%Y-%m-%dT%H:%M:%S%z"
+_STATE_DOC = "STATE.md"
 _AUTO_BLOCK = re.compile(r"^\s*<!--\s*(/?AUTO:[A-Z]+)\s*-->\s*$")
 _PROTECTED = ("value", "cmd", "calibrate", "calibrate_expect", "kind", "source", "first_seen")
 _OWN_CODE_DIRS = ("src", "lib", "app", "pkg", "packages")
@@ -49,7 +51,7 @@ def load(path):
     try:
         with open(path, encoding="utf-8") as fh:
             return json.load(fh)
-    except (OSError, UnicodeError, ValueError) as e:
+    except (OSError, ValueError) as e:
         raise Unreadable(path, e) from e
 
 
@@ -86,10 +88,15 @@ def dropped_keys(old_facts, new_facts):
     return sorted(set(old_facts or {}) - set(new_facts or {}))
 
 
+def _field_val(entry, fld):
+    if isinstance(entry, dict):
+        return entry.get(fld)
+    return entry if fld == "value" else None
+
+
 def _first_diff(old_e, new_e):
     for fld in _PROTECTED:
-        o = old_e.get(fld) if isinstance(old_e, dict) else (old_e if fld == "value" else None)
-        n = new_e.get(fld) if isinstance(new_e, dict) else (new_e if fld == "value" else None)
+        o, n = _field_val(old_e, fld), _field_val(new_e, fld)
         if o != n:
             return (o, n) if fld == "value" else (f"{fld}:{o}", f"{fld}:{n}")
     return None
@@ -112,7 +119,7 @@ def fact(value, cmd, source, note="", calibrate=None, calibrate_expect=None, kin
     if (calibrate is None) != (calibrate_expect is None):
         fatal_exit(M("ledger.shape_incomplete", name="calibrate"))
     d = {"value": value, "cmd": cmd, "source": source,
-         "measured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+         "measured_at": time.strftime(_TS_FMT),
          "first_seen": time.strftime("%Y-%m-%d")}
     if note:
         d["note"] = note
@@ -130,7 +137,7 @@ def age_days(entry):
     if not ts:
         return None
     try:
-        when = datetime.strptime(str(ts), "%Y-%m-%dT%H:%M:%S%z")
+        when = datetime.strptime(str(ts), _TS_FMT)
     except ValueError:
         return None
     return (datetime.now(timezone.utc) - when).total_seconds() / 86400.0
@@ -138,7 +145,7 @@ def age_days(entry):
 
 def section_is_living(heading, historical_secs=()):
     """Return True if a `## ` section is living state (only `historical_secs` exempt)."""
-    m = re.match(r"^##\s+([0-9]+)", heading)
+    m = re.match(r"^##\s+(\d+)", heading)
     if m:
         return m.group(1) not in {str(s) for s in historical_secs}
     return True
@@ -156,17 +163,20 @@ def living_lines(text, historical_secs=()):
     return out
 
 
+def _git_ignored_flag(path):
+    try:
+        r = subprocess.run(["git", "-C", gate.GATE_REPO, "check-ignore", "-q", path],
+                           capture_output=True)
+    except OSError:
+        return None
+    if r.returncode == 0:
+        return True
+    return False if r.returncode == 1 else None
+
+
 def write_target_problems(path, ignored=None):
     """Check whether ledger write target `path` is gitignored (`(fatal_msg, warn_msg)`)."""
-    if ignored is None:
-        try:
-            r = subprocess.run(["git", "-C", gate.GATE_REPO, "check-ignore", "-q", path],
-                               capture_output=True)
-            ig = True if r.returncode == 0 else (False if r.returncode == 1 else None)
-        except OSError:
-            ig = None
-    else:
-        ig = ignored
+    ig = _git_ignored_flag(path) if ignored is None else ignored
     if ig is True:
         return M("guard.write_target_gitignored", path=path), None
     if ig is None:
@@ -184,6 +194,14 @@ def accepted_keys(argv):
     return False
 
 
+def _remaining_changed(changed, accepted):
+    if accepted is None:
+        return []
+    if accepted is False:
+        return list(changed)
+    return [c for c in changed if c[0] not in accepted]
+
+
 def decide(old_facts, new_facts, accepted=False, allow_drop=False):
     """Evaluate drop and change guards; return `('write'|'refuse', problems, notes)`."""
     notes: dict[str, list[Message]] = {"err": [], "out": []}
@@ -195,8 +213,7 @@ def decide(old_facts, new_facts, accepted=False, allow_drop=False):
         notes["err"].append(M("guard.note_allow_drop", count=len(dropped),
                               keys=", ".join(dropped)))
     changed = changed_keys(old_facts, new_facts)
-    remaining = ([] if accepted is None else list(changed) if accepted is False
-                 else [c for c in changed if c[0] not in accepted])
+    remaining = _remaining_changed(changed, accepted)
     if remaining:
         probs = [M("guard.refuse_changed", count=len(remaining))] + [
             M("guard.changed_row", key=k, before=short_value(o), after=short_value(n))
@@ -573,17 +590,16 @@ def measure(argv):
     return 0
 
 
-def _facts_with_principles(led):
+def facts_with_principles(led):
+    """Return the combined entries and the keys supplied by active rules."""
     import doc  # noqa: PLC0415
-    f = dict(facts_of(led))
-    if doc.accepts_principles():
-        f.update(doc.facts_of_rules())
-    return f
+    rules = doc.facts_of_rules() if doc.accepts_principles() else {}
+    return {**facts_of(led), **rules}, set(rules)
 
 
 def get_value(led, key):
     """Return `(found?, value_or_error_message)` across ledger and active principles."""
-    f = _facts_with_principles(led)
+    f, _ = facts_with_principles(led)
     if key not in f:
         return False, M("facts.unknown_key", key=key,
                         existing=", ".join(sorted(f)) or M("facts.none"))
@@ -779,7 +795,7 @@ def cmd_accept(argv):
 
 
 def cmd_show(argv):
-    f = _facts_with_principles(_load_or_die())
+    f, _ = facts_with_principles(_load_or_die())
     keys = [argv[1]] if len(argv) > 1 else sorted(f)
     rc = 0
     for k in keys:
