@@ -89,6 +89,12 @@
       "settling": "`python3 -c \"import os;rm=['站点/plugins/capability-pack.mjs','站点/plugins/pack-runtime.mjs','站点/plugins/formula-cells.mjs','站点/plugins/static-release.mjs','站点/assets/mathlive/mathlive-browser.min.js'];keep=['站点/symbols/index.mjs','站点/plugins/webmcp-tools.mjs','站点/plugins/figures.mjs','站点/math/parser.mjs'];b=open('站点/build.mjs',encoding='utf-8').read();c=open('站点/assets/theme/shirone-reader.css',encoding='utf-8').read();sp=open('站点/plugins/spa-router.mjs',encoding='utf-8').read();bad=any(os.path.exists(p) for p in rm) or any(not os.path.isfile(p) for p in keep) or any(k in b for k in ('pack-capsule','pack-popover','notebook-popover','pack-runtime','formula-cells','static-release','data-octave-code')) or any(k in c for k in ('.pack-capsule','.pack-popover','.notebook-popover','.fcell')) or '__packCellsReset' in sp;raise SystemExit(1 if bad else 0)\"` -- rc=0 => A (能力胶囊、OPFS、MathLive 与站内求值全栈已彻底切除且核心符号/阅读/WebMCP 保留完整); rc!=0 => B (能力胶囊或站内求值残留仍在或核心文件缺失)",
       "sha256": "0f5a667d589d2bec513c6b40939c9f7302ba161a6ea266c7d0bbffe8c27d08cf",
       "status": "resolved"
+    },
+    "questions/18-20261123至25七份转写归位与六课笔记入库.md": {
+      "body_sha256": "6faab5518391f0313e78f841591f112a0ad9be872e4e2125cd0da51a9437106b",
+      "settling": "`python3 -c \"import glob,os;slots=[('电路原理','11-23-*.md',True,['20261123_08000935-原文.txt']),('电路原理','11-25-*.md',True,['20261125_09501115-原文.txt']),('电气前沿','11-23-*.md',False,['20261123_09501115-原文.txt']),('劳动教育','11-23-*.md',False,['20261123_15051546-原文.txt']),('电子技术','11-23-*.md',True,['20261123_18001900-原文.txt','20261123_19002000-原文.txt']),('电力大数据与人工智能','11-24-*.md',True,['20261124_13301455-原文.txt'])];lst=open('站点/页面清单.mjs',encoding='utf-8').read();bd=open('站点/build.mjs',encoding='utf-8').read();ok=all(len(glob.glob(f'课程总览/{c}/课堂笔记/{p}'))==1 and '## 这节课在干什么' in open(glob.glob(f'课程总览/{c}/课堂笔记/{p}')[0],encoding='utf-8').read() and glob.glob(f'课程总览/{c}/课堂笔记/{p}')[0].replace(os.sep,'/') in lst and glob.glob(f'课程总览/{c}/课堂笔记/{p}')[0].replace(os.sep,'/') in bd and (not wt or os.path.basename(glob.glob(f'课程总览/{c}/课堂笔记/{p}')[0]) in open(f'课程总览/{c}/Walkthrough.md',encoding='utf-8').read()) and all(r in open(f'课程总览/{c}/原始资料/index.md',encoding='utf-8').read() for r in rs) for c,p,wt,rs in slots);raise SystemExit(0 if ok else 1)\"` -- rc=0 => A (七份转写已全部登记并整理入库六篇合规课堂笔记且接入清单/导航/Walkthrough); rc!=0 => B (仍有转写未入库或笔记/索引/清单/Walkthrough 未闭环)",
+      "sha256": "b4e3711d645879ba6c761c0ccba205613998d2091616d82d90bed396cb4df018",
+      "status": "ready-for-agent"
     }
   },
   "questions_dir": "questions",
