@@ -2,21 +2,647 @@
   "schema": 1,
   "default_equals": "AGPL-3.0-only",
   "declarations": [
-    {"path": "站点/package.json", "format": "json", "field": "license", "spdx": true},
-    {"path": "站点/package-lock.json", "format": "json", "field": "packages.node_modules/marked.license", "equals": "MIT", "spdx": true},
-    {"path": "站点/package-lock.json", "format": "json", "field": "packages.node_modules/js-yaml.license", "equals": "MIT", "spdx": true},
-    {"path": "站点/package-lock.json", "format": "json", "field": "packages.node_modules/katex.license", "equals": "MIT", "spdx": true},
-    {"path": "站点/package-lock.json", "format": "json", "field": "packages.node_modules/argparse.license", "equals": "Python-2.0", "spdx": true},
-    {"path": "站点/package-lock.json", "format": "json", "field": "packages.node_modules/commander.license", "equals": "MIT", "spdx": true},
-    {"path": "站点/package-lock.json", "format": "json", "field": "packages.node_modules/@eslint/js.license", "equals": "MIT", "spdx": true},
-    {"path": "站点/package-lock.json", "format": "json", "field": "packages.node_modules/eslint.license", "equals": "MIT", "spdx": true},
-    {"path": "站点/package-lock.json", "format": "json", "field": "packages.node_modules/globals.license", "equals": "MIT", "spdx": true},
-    {"path": "站点/licenses.json", "format": "json", "field": "license", "spdx": true},
-    {"path": "站点/licenses.json", "format": "json", "field": "components.site_code.license", "spdx": true},
-    {"path": "站点/licenses.json", "format": "json", "field": "components.shirone_reader.license", "equals": "MIT", "spdx": true},
-    {"path": "站点/licenses.json", "format": "json", "field": "components.katex.license", "equals": "MIT", "spdx": true},
-    {"path": "站点/licenses.json", "format": "json", "field": "components.marked.license", "equals": "MIT", "spdx": true},
-    {"path": "站点/licenses.json", "format": "json", "field": "components.js_yaml.license", "equals": "MIT", "spdx": true}
+    {
+      "path": "站点/package.json",
+      "format": "json",
+      "field": "license",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/@cacheable/memory.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/@cacheable/utils.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/@eslint-community/eslint-utils.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/@eslint-community/eslint-utils/node_modules/eslint-visitor-keys.license",
+      "equals": "Apache-2.0",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/@eslint-community/regexpp.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/@eslint/config-array.license",
+      "equals": "Apache-2.0",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/@eslint/config-helpers.license",
+      "equals": "Apache-2.0",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/@eslint/core.license",
+      "equals": "Apache-2.0",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/@eslint/js.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/@eslint/object-schema.license",
+      "equals": "Apache-2.0",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/@eslint/plugin-kit.license",
+      "equals": "Apache-2.0",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/@humanfs/core.license",
+      "equals": "Apache-2.0",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/@humanfs/node.license",
+      "equals": "Apache-2.0",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/@humanfs/types.license",
+      "equals": "Apache-2.0",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/@humanwhocodes/module-importer.license",
+      "equals": "Apache-2.0",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/@humanwhocodes/retry.license",
+      "equals": "Apache-2.0",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/@isaacs/nonrecursive-glob-match.license",
+      "equals": "BlueOak-1.0.0",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/@keyv/bigmap.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/@keyv/serialize.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/@types/esrecurse.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/@types/estree.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/@types/json-schema.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/acorn.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/acorn-jsx.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/ajv.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/argparse.license",
+      "equals": "Python-2.0",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/balanced-match.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/brace-expansion.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/cacheable.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/commander.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/cross-spawn.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/debug.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/deep-is.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/escape-string-regexp.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/eslint.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/eslint-scope.license",
+      "equals": "BSD-2-Clause",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/eslint-visitor-keys.license",
+      "equals": "Apache-2.0",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/espree.license",
+      "equals": "BSD-2-Clause",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/esquery.license",
+      "equals": "BSD-3-Clause",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/esrecurse.license",
+      "equals": "BSD-2-Clause",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/estraverse.license",
+      "equals": "BSD-2-Clause",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/esutils.license",
+      "equals": "BSD-2-Clause",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/fast-deep-equal.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/fast-json-stable-stringify.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/fast-levenshtein.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/file-entry-cache.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/find-up.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/flat-cache.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/flatted.license",
+      "equals": "ISC",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/glob-parent.license",
+      "equals": "ISC",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/globals.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/hashery.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/hookified.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/ignore.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/imurmurhash.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/is-extglob.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/is-glob.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/isexe.license",
+      "equals": "ISC",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/js-yaml.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/json-schema-traverse.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/json-stable-stringify-without-jsonify.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/katex.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/keyv.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/levn.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/locate-path.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/marked.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/minimatch.license",
+      "equals": "BlueOak-1.0.0",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/ms.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/natural-compare.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/optionator.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/p-limit.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/p-locate.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/path-exists.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/path-key.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/prelude-ls.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/punycode.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/qified.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/qified/node_modules/hookified.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/shebang-command.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/shebang-regex.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/type-check.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/uri-js.license",
+      "equals": "BSD-2-Clause",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/which.license",
+      "equals": "ISC",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/word-wrap.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/package-lock.json",
+      "format": "json",
+      "field": "packages.node_modules/yocto-queue.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/licenses.json",
+      "format": "json",
+      "field": "license",
+      "spdx": true
+    },
+    {
+      "path": "站点/licenses.json",
+      "format": "json",
+      "field": "components.site_code.license",
+      "spdx": true
+    },
+    {
+      "path": "站点/licenses.json",
+      "format": "json",
+      "field": "components.shirone_reader.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/licenses.json",
+      "format": "json",
+      "field": "components.katex.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/licenses.json",
+      "format": "json",
+      "field": "components.marked.license",
+      "equals": "MIT",
+      "spdx": true
+    },
+    {
+      "path": "站点/licenses.json",
+      "format": "json",
+      "field": "components.js_yaml.license",
+      "equals": "MIT",
+      "spdx": true
+    }
   ],
   "copies": []
 }

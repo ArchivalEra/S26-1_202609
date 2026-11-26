@@ -104,14 +104,17 @@ function copyFileAtomic(srcPath, destPath) {
   fs.renameSync(tmpPath, destPath);
 }
 
-// 本地历史运行库目录（octave / pyodide，若残留在本地磁盘）不随纯静态站发布。
-function copySiteAssets(src, dest) {
+// 已退役的运行时目录（octave / pyodide / m / oct）不得残留进站点资产或发布产物。
+const RETIRED_RUNTIME_ASSET_DIRS = new Set(['octave', 'pyodide', 'm', 'oct']);
+function copySiteAssets(src, dest, isRoot = true) {
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    if (entry.name === 'octave' || entry.name === 'pyodide') continue;
+    if (isRoot && entry.isDirectory() && RETIRED_RUNTIME_ASSET_DIRS.has(entry.name)) {
+      throw new Error(`[build] 禁止在 assets/ 残留已退役的运行时目录（请删除）：${path.join(src, entry.name)}`);
+    }
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
-    if (entry.isDirectory()) copySiteAssets(srcPath, destPath);
+    if (entry.isDirectory()) copySiteAssets(srcPath, destPath, false);
     else {
       if (/\.png$/i.test(entry.name)) {
         throw new Error(`[build] 禁止向静态站输出 PNG 资产（请改用 SVG/WebP/GIF）：${srcPath}`);
