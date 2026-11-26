@@ -454,7 +454,6 @@
 # 事实系统（Einfacht 机制层 + 本仓数据层 + 钩子 + 规格）
 # 收件口（把手机上的文件传进本机；收到的东西按类型归位，不进这个目录的白名单）
 # 数学动画（已封存归档；配方留档，等多元微积分的 3D 动画再启用）
-# 线上地址 /repo/S26-1_202609/Skill.md。2026-10-22 用户定案）
 # 新课程及各类资料模板
 # 新增课程、笔记、原始资料或脚本时，先增加对应 !/完整相对路径。
 # 形势与政策：按课程声明豁免教材解析（COURSE_SKIPPED_KINDS），故无该目录
@@ -475,10 +474,6 @@
 !/站点/assets/fonts/stix2math-subset.woff2
 !/站点/assets/theme/shirone-reader.css
 !/站点/assets/theme/shirone-reader.js
-!/站点/assets/vendor/webmcp/polyfill.iife.js
-!/站点/assets/vendor/webmcp/README.md
-!/站点/assets/vendor/webmcp/relay-embed.js
-!/站点/assets/vendor/webmcp/widget.html
 !/站点/build.mjs
 # 站点/math/：数学引擎（2026-10-29 重构，替换 KaTeX 路径）
 !/站点/math/commands.mjs
@@ -543,15 +538,9 @@
 !/站点/symbols/runtime.mjs
 !/站点/plugins/table-responsive.test.mjs
 !/站点/plugins/template-backtick.test.mjs
-!/站点/plugins/webmcp-loader.mjs
-!/站点/plugins/webmcp-loader.test.mjs
-!/站点/plugins/webmcp-shim.mjs
-!/站点/plugins/webmcp-shim.test.mjs
-!/站点/plugins/webmcp-tools.mjs
-!/站点/plugins/webmcp-tools.test.mjs
+!/站点/plugins/site-helpers.mjs
+!/站点/plugins/site-helpers.test.mjs
 !/站点/plugins/whitelist-tracked.test.mjs
-!/站点/README-WebMCP.md
-!/站点/Skill.md
 !/站点/adapters/marked.mjs
 !/站点/markdown.mjs
 !/站点/plugins/adapters.test.mjs
@@ -599,10 +588,6 @@
 !/questions/10-通用电气重写-模块四电机救火.md
 !/questions/11-电子技术11-23作业.md
 !/questions/12-电机学9份客观题.md
-!/questions/14-退役学习助手仅保留WebMCP.md
-!/questions/15-重写README与WebMCP交互Skill.md
-!/questions/16-全站符号系统收口为深模块.md
-!/questions/17-退役能力胶囊并外包Octave站.md
 !/questions/18-20261123至25七份转写归位与六课笔记入库.md
 !/questions/19-退役WebMCP协议栈为便利函数并落地SPA外懒加载.md
 !/README.md

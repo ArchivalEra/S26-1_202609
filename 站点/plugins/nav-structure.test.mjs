@@ -149,33 +149,37 @@ const needDist = (rel) => {
   return readFileSync(p, 'utf8');
 };
 
-const navJsonOf = (html) => {
-  const m = html.match(/<script[^>]*id="nav-structure-json"[^>]*>([\s\S]*?)<\/script>/);
-  assert.ok(m, '页面里没有 nav-structure-json 脚本块');
-  return JSON.parse(m[1]);
-};
+const sharedNavJson = () => JSON.parse(needDist('assets/nav-structure.json'));
 
-test('T5b-① 抽样页面都埋了可解析的 nav JSON，且 nodes 非空', () => {
+test('T5b-① 共享外置 nav-structure.json / site-pages.json 与页面哈希指针完整', () => {
+  const json = sharedNavJson();
+  assert.equal(json.v, 1, 'shared nav-structure.json: schema 版本');
+  assert.ok(Array.isArray(json.nodes) && json.nodes.length > 0, 'shared nav-structure.json: nodes 非空');
+  const sitePages = JSON.parse(needDist('assets/site-pages.json'));
+  assert.ok(Array.isArray(sitePages) && sitePages.length > 0, 'shared site-pages.json 非空');
+
   const pages = [
     'index.html',                                        // 顶层
     '课程总览/工程数学/作业/index.html',                        // 中层索引
     '课程总览/工程数学/作业/作业2.html',              // 深层叶子
   ];
   for (const rel of pages) {
-    const json = navJsonOf(needDist(rel));
-    assert.equal(json.v, 1, `${rel}: schema 版本`);
-    assert.ok(Array.isArray(json.nodes) && json.nodes.length > 0, `${rel}: nodes 非空`);
-    assert.ok(Array.isArray(json.activeIds), `${rel}: activeIds 是数组`);
+    const html = needDist(rel);
+    assert.ok(!html.includes('id="nav-structure-json"'), `${rel}: 不应再内联 #nav-structure-json`);
+    assert.ok(!html.includes('id="site-pages-json"'), `${rel}: 不应再内联 #site-pages-json`);
+    assert.match(html, /data-nav-path="assets\/nav-structure\.json\?v=[0-9a-f]+"/, `${rel}: 缺带哈希的 data-nav-path`);
+    assert.match(html, /data-pages-path="assets\/site-pages\.json\?v=[0-9a-f]+"/, `${rel}: 缺带哈希的 data-pages-path`);
   }
 });
 
-test('T5b-② JSON 的 current 与该页 data-site-path 一致（防「埋了但埋错」）', () => {
+test('T5b-② 共享 nav JSON 与抽样页 data-site-path 能对齐判定', () => {
   const rel = '课程总览/工程数学/作业/作业2.html';
   const html = needDist(rel);
-  const json = navJsonOf(html);
+  const json = sharedNavJson();
   const m = html.match(/<body[^>]*data-site-path="([^"]+)"/);
   assert.ok(m, '页面缺 data-site-path');
-  assert.equal(json.current, m[1], 'JSON.current 必须等于本页 data-site-path');
+  const state = collectActive(json.nodes, m[1], true);
+  assert.ok(state.activeIds.includes(m[1]), 'collectActive 必须命中本页 data-site-path');
 });
 
 test('T5b-③ 组标题链接在应有处出现、在重复 path 组处不出现（纯标题 + 整行点击）', () => {
@@ -192,7 +196,7 @@ test('T5b-③ 组标题链接在应有处出现、在重复 path 组处不出现
   assert.ok(gongcheng, '工程数学组标题应是 drawer-nav-link 链接（header 无 nav-header-clickable）');
 
   // 不应有：电机学第01章（path == 子项 path）——纯标题 span + nav-header-clickable
-  const motor = navJsonOf(needDist('课程总览/电机学/教材解析/第01章-概述/1.1-电机的分类.html'));
+  const motor = sharedNavJson();
   const walk = (ns, out = []) => {
     for (const n of ns) {
       if (n.children && (n.label || '').includes('第01章')) out.push(n);
@@ -205,7 +209,7 @@ test('T5b-③ 组标题链接在应有处出现、在重复 path 组处不出现
   for (const g of dupGroups) {
     assert.equal(g.indexHref, null, `${g.label}: 重复 path 组不得有 indexHref`);
   }
-  // 产物侧：该页侧栏里「第01章 概述」组是纯标题（无 <a>）且 header 可整行点击折叠
+  // 产物侧：该页侧栏里「第01章 概述」组（处于激活分支）是纯标题（无 <a>）且 header 可整行点击折叠
   const motorHtml = needDist('课程总览/电机学/教材解析/第01章-概述/1.1-电机的分类.html');
   const ch1 = motorHtml.match(
     /<li class="drawer-nav-group [^"]*" data-node-id="[^"]*">\s*<div class="nav-group-header nav-header-clickable">\s*<span class="drawer-section-title-text">第01章-概述<\/span>/);
@@ -215,7 +219,7 @@ test('T5b-③ 组标题链接在应有处出现、在重复 path 组处不出现
   assert.ok(!/<a[\s>]/.test(ch1[0]), '重复 path 组标题区不得渲染 <a>（纯标题）');
 });
 
-test('T5b-③b 首页默认展开「课程总览」，构建期 HTML 与运行时 collectActive 一致（不闪烁合拢）', () => {
+test('T5b-③b 首页仅直出「课程总览」展开层，折叠课程标为 data-nav-lazy="1"', () => {
   const { nodes, json } = buildNavModel([
     {
       label: '课程总览',
@@ -231,11 +235,14 @@ test('T5b-③b 首页默认展开「课程总览」，构建期 HTML 与运行�
   const homeHtml = needDist('index.html');
   assert.match(homeHtml, /<li class="drawer-nav-group\s+expanded" data-node-id="课程总览\/">/,
     '首页 HTML 中「课程总览」组初始必须是 expanded');
-  const homeJson = navJsonOf(homeHtml);
-  assert.ok(homeJson.expandedIds.includes('课程总览/'), 'nav JSON 的 expandedIds 必须包含「课程总览/」');
+  assert.match(homeHtml, /<li class="drawer-nav-group\s+collapsed" data-node-id="课程总览\/电路原理\/" data-nav-lazy="1">/,
+    '首页折叠课程分支应标为 data-nav-lazy="1" 按需水合');
+  assert.ok(!homeHtml.includes('习题册第一章.html'),
+    '首页侧栏不应预先直出折叠课程深层叶子节点');
+  const homeJson = sharedNavJson();
   const runtimeState = collectActive(homeJson.nodes, '', true);
   assert.deepEqual(runtimeState.expandedIds, ['课程总览/'],
-    '运行时 collectActive(nodes, "", true) 必须保持「课程总览/」展开，否则 DOMContentLoaded 会强行合拢');
+    '运行时 collectActive(nodes, "", true) 必须保持「课程总览/」展开');
 });
 
 test('T5b-④ drawer-sync 产物靠 nav JSON 判定，不再有 data-path 全等收集循环', () => {

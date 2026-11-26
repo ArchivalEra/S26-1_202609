@@ -6,7 +6,6 @@ export default [
     ignores: [
       'dist/**',
       'node_modules/**',
-      'assets/vendor/**',
     ],
   },
   js.configs.recommended,

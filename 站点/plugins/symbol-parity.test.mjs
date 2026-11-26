@@ -12,7 +12,7 @@ const DIST = path.join(HERE, '../dist');
 const CSS = fs.readFileSync(path.join(HERE, '../assets/theme/shirone-reader.css'), 'utf8');
 const RUNTIME = fs.readFileSync(path.join(HERE, '../symbols/runtime.mjs'), 'utf8');
 const FIGS = fs.readFileSync(path.join(HERE, 'figures.mjs'), 'utf8');
-const WEBMCP = fs.readFileSync(path.join(HERE, 'webmcp-tools.mjs'), 'utf8');
+const HELPERS = fs.readFileSync(path.join(HERE, 'site-helpers.mjs'), 'utf8');
 
 function stripCssComments(src) {
   return src.replace(/\/\*[\s\S]*?\*\//g, '');
@@ -37,7 +37,7 @@ function cssSymbolShapes(css) {
   return shapes;
 }
 
-test('符号奇偶校验：强调色（CSS 着色）与冒泡/守卫/WebMCP 使用同一单一真相', () => {
+test('符号奇偶校验：强调色（CSS 着色）与冒泡/守卫/页面便利函数使用同一单一真相', () => {
   // ── 真源：已清理退场 .ML__latex [data-term]，只留两条现役形状 ──
   assert.deepEqual(SYMBOL_SELECTORS, ['a.sym-gloss', '.katex [data-term]']);
   assert.equal(SYMBOL_SELECTOR, 'a.sym-gloss, .katex [data-term]');
@@ -60,7 +60,7 @@ test('符号奇偶校验：强调色（CSS 着色）与冒泡/守卫/WebMCP 使�
 
   // ── 其余源码适配器：一律直接 import symbols/index.mjs，不再手工复写 ──
   for (const [label, src] of [
-    ['webmcp-tools', WEBMCP],
+    ['site-helpers', HELPERS],
     ['figures', FIGS],
   ]) {
     assert.match(src, /from ['"]\.\.\/symbols\/index\.mjs['"]/,
@@ -75,11 +75,11 @@ test('符号奇偶校验：强调色（CSS 着色）与冒泡/守卫/WebMCP 使�
   if (fs.existsSync(DIST)) {
     const bubbleJs = fs.readFileSync(path.join(DIST, SYMBOL_RUNTIME_ASSET), 'utf8');
     const figsJs = fs.readFileSync(path.join(DIST, 'assets/plugins/figures.js'), 'utf8');
-    const webmcpJs = fs.readFileSync(path.join(DIST, 'assets/plugins/webmcp-tools.js'), 'utf8');
+    const helpersJs = fs.readFileSync(path.join(DIST, 'assets/plugins/site-helpers.js'), 'utf8');
     for (const [name, js] of [
       [SYMBOL_RUNTIME_ASSET, bubbleJs],
       ['figures.js', figsJs],
-      ['webmcp-tools.js', webmcpJs],
+      ['site-helpers.js', helpersJs],
     ]) {
       assert.ok(js.includes(SYMBOL_SELECTOR), `dist/${name} 未注入一致的 SYMBOL_SELECTOR`);
     }

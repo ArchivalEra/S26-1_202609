@@ -52,6 +52,31 @@ function isPageLink(a) {
   return true;
 }
 
+function syncOptAssets(doc, baseUrl) {
+  var links = doc.querySelectorAll('link[rel="stylesheet"][data-opt-asset]');
+  for (var li = 0; li < links.length; li++) {
+    var key = links[li].getAttribute("data-opt-asset");
+    var href = links[li].getAttribute("href");
+    if (!key || !href || document.querySelector('link[data-opt-asset="' + key + '"]')) continue;
+    var linkEl = document.createElement("link");
+    linkEl.rel = "stylesheet";
+    linkEl.setAttribute("data-opt-asset", key);
+    linkEl.href = new URL(href, baseUrl).href;
+    document.head.appendChild(linkEl);
+  }
+  var scripts = doc.querySelectorAll("script[data-opt-asset]");
+  for (var si = 0; si < scripts.length; si++) {
+    var skey = scripts[si].getAttribute("data-opt-asset");
+    var ssrc = scripts[si].getAttribute("src");
+    if (!skey || !ssrc || document.querySelector('script[data-opt-asset="' + skey + '"]')) continue;
+    var scEl = document.createElement("script");
+    scEl.defer = true;
+    scEl.setAttribute("data-opt-asset", skey);
+    scEl.src = new URL(ssrc, baseUrl).href;
+    document.body.appendChild(scEl);
+  }
+}
+
 // 换页：fetch → 解析 → 替换三块 → reset 钩子
 var inflight = null;
 function navigate(rawUrl, hash, push, opts4) {
@@ -146,6 +171,9 @@ function navigate(rawUrl, hash, push, opts4) {
       else if (curJson && !nextJson) curJson.remove();
     }
 
+    // ③f 按页按需资产同步（从零公式/零图元首页跳入含公式/图元/符号页时动态补齐样式与脚本）
+    syncOptAssets(doc, u.href);
+
     // ④ 侧栏 active 态（drawer 里当前页高亮由 theme 脚本管；这里触发它的重扫）
     // （shirone-reader 的 active 类基于 URL data 属性——换页后由 __readerRescan 处理）
 
@@ -167,6 +195,7 @@ function navigate(rawUrl, hash, push, opts4) {
 
     // reset 钩子（全部可选存在）
     try { if (window.__glossaryReset) window.__glossaryReset(); } catch (e) {}
+    try { if (window.__figuresReset) window.__figuresReset(); } catch (e) {}
     try { if (window.__readerRescan) window.__readerRescan(); } catch (e) {}
     try { if (window.__disclosureOpen) window.__disclosureOpen(hash); } catch (e) {}
   }).catch(function (err) {

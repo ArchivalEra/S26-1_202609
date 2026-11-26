@@ -12,9 +12,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  PAGE_SELECTORS, textOf, hasClass, renderMarkdown, createPageView, buildToolDefs, registerTools,
-  serializeSelectors, WEBMCP_TOOLS_JS, runTool, feedText,
-} from './webmcp-tools.mjs';
+  PAGE_SELECTORS, textOf, hasClass, renderMarkdown, createPageView, buildToolDefs,
+  serializeSelectors, SITE_HELPERS_JS, runTool, feedText,
+} from './site-helpers.mjs';
 
 // ---------------------------------------------------------------- 假 DOM
 
@@ -824,7 +824,7 @@ test('site_read：正文容器缺失时明确报错，不回退到 body（页脚
   // 2026-10-29 站长实测：「一次读经常读到下面的那些免责声明」。
   // 根因：`first(S.article) || doc.body` —— 正文容器不存在时读整个 body，
   // 页脚免责声明、侧栏、搜索面板全被当正文。
-  const src = fs.readFileSync(new URL('./webmcp-tools.mjs', import.meta.url), 'utf8');
+  const src = fs.readFileSync(new URL('./site-helpers.mjs', import.meta.url), 'utf8');
   // 只看**可执行代码**，不看注释（注释里正写着「原先 … || doc.body」这句教训）
   const codeOnly = src.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
   assert.ok(!/first\(S\.article\)\s*\|\|/.test(codeOnly),
@@ -833,7 +833,7 @@ test('site_read：正文容器缺失时明确报错，不回退到 body（页脚
 });
 
 test('site_show_symbol：一次只给一句释义与详情链接，不给整段气泡', () => {
-  const src = fs.readFileSync(new URL('./webmcp-tools.mjs', import.meta.url), 'utf8');
+  const src = fs.readFileSync(new URL('./site-helpers.mjs', import.meta.url), 'utf8');
   // 站长的要求：小豆包记不住太多 detail
   assert.match(src, /brief:/, '应返回 brief（一句释义）');
   assert.match(src, /firstSentence/, '应有首句抽取');
@@ -906,7 +906,7 @@ function withImages(doc) {
   const w2 = el('img', '', { attrs: { src: 'figures/fig-1.2.png', alt: '图 1.2' } });
   w2.naturalWidth = 400; w2.naturalHeight = 300;
   w2.getBoundingClientRect = () => ({ top: 900, left: 0, width: 400, height: 300 });
-  const icon = el('img', '', { attrs: { src: '../../../assets/favicon/brand.gif', alt: '' } });
+  const icon = el('img', '', { attrs: { src: '../../../assets/favicon/brand.webp', alt: '' } });
   article.children.push(w1, w2, icon);
   w1.parentElement = article; w2.parentElement = article; icon.parentElement = article;
   return { w1, w2, icon };
@@ -1332,39 +1332,6 @@ test('PAGE_SELECTORS.glossaryBubble 必须匹配真实气泡类名 .sym-gloss-po
   assert.doesNotMatch(PAGE_SELECTORS.glossaryBubble, /bubble/, '真实 DOM 里没有含 bubble 的类');
 });
 
-test('registerTools：探测两个注册表；都没有时返回 0 且不抛', () => {
-  assert.equal(registerTools({}, null), 0);
-  assert.equal(registerTools(null, {}), 0);
-});
-
-test('registerTools：document 侧注册表可用时注册 11 个（Chromium 形态）', () => {
-  const registered = [];
-  const doc = fakeDoc();
-  doc.modelContext = { registerTool: (t) => { registered.push(t.name); return Promise.resolve(); } };
-  assert.equal(registerTools(doc, null), 11);
-  assert.deepEqual(registered, [
-    'site_get_page_info', 'site_read', 'site_index', 'site_navigate', 'site_search',
-    'site_show_symbol', 'site_panels', 'site_view',
-    'site_list_images', 'site_image', 'site_capture_view',
-  ]);
-});
-
-test('registerTools：只有 navigator 侧时也注册（Firefox 原生形态）', () => {
-  const registered = [];
-  const nav = { modelContext: { registerTool: (t) => { registered.push(t.name); return Promise.resolve(); } } };
-  assert.equal(registerTools(fakeDoc(), nav), 11);
-  assert.equal(registered.length, 11);
-});
-
-test('registerTools：单个工具注册失败不影响其余', () => {
-  let n = 0;
-  const doc = fakeDoc();
-  doc.modelContext = {
-    registerTool: () => { n += 1; if (n === 2) throw new Error('boom'); return Promise.resolve(); },
-  };
-  assert.equal(registerTools(doc, null), 11, '仍应尝试注册全部 11 个');
-});
-
 test('textOf：空/缺元素都给空串（永不 undefined）', () => {
   assert.equal(textOf(null), '');
   assert.equal(textOf(undefined), '');
@@ -1383,71 +1350,44 @@ test('serializeSelectors：RegExp 序列化成 new RegExp（JSON 会丢它）', 
   const s = serializeSelectors({ re: /共\s*(\d+)/, plain: 'x' });
   assert.ok(s.includes('new RegExp('), '正则要显式还原');
   assert.ok(s.includes('"plain":"x"'));
-  // 还原后行为一致
   const restored = new Function(`return ${s}`)();
   assert.ok(restored.re instanceof RegExp);
   assert.equal('共 7 页命中'.match(restored.re)[1], '7');
 });
 
-test('WEBMCP_TOOLS_JS：是真函数派生的、语法可解析、含两个注册表探测', () => {
-  assert.ok(WEBMCP_TOOLS_JS.includes(createPageView.toString().slice(0, 80)), '应由 createPageView 派生');
-  assert.ok(WEBMCP_TOOLS_JS.includes(renderMarkdown.toString().slice(0, 80)), '应由 renderMarkdown 派生');
-  // 2026-10-31：可选链改造后源码写成 `doc?.modelContext || nav?.modelContext`。
-  // 断言改成同时接受两种写法（`doc.modelContext` / `doc?.modelContext`），
-  // 判据不变：**两个注册表都必须被探测**（Firefox 原生只有 nav、Chromium polyfill
-  // 只有 doc，漏掉任何一个就会在那一侧静默注册不上）。
-  const probesBoth = (name) => new RegExp(name + '\\??\\.modelContext').test(WEBMCP_TOOLS_JS);
-  assert.ok(probesBoth('doc') && probesBoth('nav'),
-    '两个注册表都要探测（Chromium 回归的判据）');
-  assert.doesNotThrow(() => new Function(WEBMCP_TOOLS_JS), '内联源码必须语法可解析');
+test('SITE_HELPERS_JS：是真函数派生的、语法可解析，且不再自动注册 modelContext', () => {
+  assert.ok(SITE_HELPERS_JS.includes(createPageView.toString().slice(0, 80)), '应由 createPageView 派生');
+  assert.ok(SITE_HELPERS_JS.includes(renderMarkdown.toString().slice(0, 80)), '应由 renderMarkdown 派生');
+  assert.ok(!SITE_HELPERS_JS.includes('modelContext'), '退役后不应自动注册 modelContext 协议');
+  assert.ok(SITE_HELPERS_JS.includes('window.__siteHelpers'), '应暴露按需便利函数入口 __siteHelpers');
+  assert.doesNotThrow(() => new Function(SITE_HELPERS_JS), '内联源码必须语法可解析');
 });
 
-test('WEBMCP_TOOLS_JS：内联源码必须自带全部依赖（2026-10-19 真实页崩过：isTextNode is not defined）', async () => {
-  // 盲区：模块测试直接 import 函数，能跑；浏览器跑的是内联字符串，
-  // 漏了一个依赖（childrenOf/isTextNode 提升到模块级后忘了加）就整条 site_read 崩。
-  // 这里在**隔离 vm** 里跑内联源码，并真的调用 site_read 的 section 分支。
+test('SITE_HELPERS_JS：按需挂载 __siteHelpers 且自带全部依赖（vm 执行）', async () => {
   const vm = await import('node:vm');
   const doc = fakeDoc();
-  let captured = null;
-  doc.modelContext = {
-    registerTool: (t) => { if (t.name === 'site_read') captured = t; return Promise.resolve(); },
-  };
   const sandbox = {
-    document: doc, navigator: null, Promise, RegExp, JSON, Array, Number, String, Object,
+    document: doc, navigator: null, location: { href: 'https://x.test/' },
+    Promise, RegExp, JSON, Array, Number, String, Object,
     Math, URL, Event: class {}, MouseEvent: class {}, setTimeout, console,
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
-  vm.runInContext(WEBMCP_TOOLS_JS, sandbox);
-  assert.ok(captured, 'site_read 应已注册');
-  const r = await captured.execute({ what: 'section', query: '第一节' });
-  assert.equal(r.ok, true, 'section 分支在内联环境里必须能跑：' + JSON.stringify(r));
-  assert.match(r.text, /第一节正文/);
+  vm.runInContext(SITE_HELPERS_JS, sandbox);
+  assert.ok(sandbox.__siteHelpers && typeof sandbox.__siteHelpers.runTool === 'function', '__siteHelpers.runTool 应就绪');
+  const defs = sandbox.__siteHelpers.defs();
+  assert.equal(defs.length, 11, '应提供 11 个便利函数定义');
+  const r = await sandbox.__siteHelpers.runTool('site_read', { what: 'section', query: '第一节' });
+  assert.equal(r.ok, true, 'section 分支在隔离环境里必须能跑：' + JSON.stringify(r));
+  assert.match(r.value.text, /第一节正文/);
 });
 
-test('WEBMCP_TOOLS_JS：内联源码引用的每个模块级函数都在（派生完整性）', () => {
-  // 粗粒度守卫：源码里出现的「裸函数名调用」必须要么是内联过的，要么是 JS 内置。
+test('SITE_HELPERS_JS：派生源码引用的每个模块级函数都在（派生完整性）', () => {
   const inlined = ['textOf', 'hasClass', 'childrenOf', 'isTextNode', 'renderMarkdown',
-    'createPageView', 'buildToolDefs', 'registerTools'];
+    'createPageView', 'buildToolDefs', 'runTool', 'feedHead', 'reasonText', 'feedText'];
   for (const fn of inlined) {
-    assert.ok(WEBMCP_TOOLS_JS.includes(`var ${fn} = `), `内联源码缺 ${fn}`);
+    assert.ok(SITE_HELPERS_JS.includes(`var ${fn} = `), `源码缺 ${fn}`);
   }
-});
-
-test('WEBMCP_TOOLS_JS：在假环境里能真的注册上（端到端，不靠浏览器）', async () => {
-  // 用 node:vm 跑那段内联源码，喂假 document/navigator
-  const vm = await import('node:vm');
-  const registered = [];
-  const doc = fakeDoc();
-  doc.modelContext = { registerTool: (t) => { registered.push(t.name); return Promise.resolve(); } };
-  const sandbox = {
-    document: doc, navigator: null, Promise, RegExp, JSON, Array, Number, String, Object,
-    Math, URL, Event: class {}, MouseEvent: class {}, setTimeout, console,
-  };
-  sandbox.window = sandbox;
-  vm.createContext(sandbox);
-  vm.runInContext(WEBMCP_TOOLS_JS, sandbox);
-  assert.equal(registered.length, 11, '内联源码应注册 11 个工具');
 });
 
 
@@ -1590,12 +1530,12 @@ test('内联完整性：被内联函数之间的依赖不能断', () => {
   const defined = new Set();
   const defRe = /^var (\w+) = /gm;
   let m;
-  while ((m = defRe.exec(WEBMCP_TOOLS_JS)) !== null) defined.add(m[1]);
+  while ((m = defRe.exec(SITE_HELPERS_JS)) !== null) defined.add(m[1]);
 
   // 已知会被内联的项目函数全集（新增内联函数时请同时加进这个清单）
   const projectFns = [
     'textOf', 'hasClass', 'childrenOf', 'isTextNode', 'renderMarkdown',
-    'createPageView', 'buildToolDefs', 'registerTools', 'feedHead', 'reasonText',
+    'createPageView', 'buildToolDefs', 'feedHead', 'reasonText',
     'feedText', 'runTool',
   ];
 
@@ -1603,14 +1543,14 @@ test('内联完整性：被内联函数之间的依赖不能断', () => {
   const bodies = {};
   const marks = [];
   for (const fn of projectFns) {
-    const i = WEBMCP_TOOLS_JS.indexOf('var ' + fn + ' = ');
+    const i = SITE_HELPERS_JS.indexOf('var ' + fn + ' = ');
     if (i > -1) marks.push({ fn, i });
   }
   marks.sort((a, b) => a.i - b.i);
   for (let k = 0; k < marks.length; k++) {
     const from = marks[k].i;
-    const to = k + 1 < marks.length ? marks[k + 1].i : WEBMCP_TOOLS_JS.length;
-    bodies[marks[k].fn] = WEBMCP_TOOLS_JS.slice(from, to);
+    const to = k + 1 < marks.length ? marks[k + 1].i : SITE_HELPERS_JS.length;
+    bodies[marks[k].fn] = SITE_HELPERS_JS.slice(from, to);
   }
 
   const problems = [];

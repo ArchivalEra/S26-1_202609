@@ -107,8 +107,7 @@ test('machine/：镜像含整篇源文（TeX 原文 + 图片绝对 URL），Birt
   assert.ok(existsSync(catFile), 'Birthright.html 不存在——先跑 node build.mjs');
 
   const sitePages = JSON.parse(
-    readFileSync(path.join(DIST, 'index.html'), 'utf8')
-      .match(/id="site-pages-json">(.*?)<\/script>/s)[1],
+    readFileSync(path.join(DIST, 'assets/site-pages.json'), 'utf8'),
   );
 
   // ① 镜像数 = 全站页数，且「.html → .json」逐条成立。

@@ -40,8 +40,8 @@ test('SPA_ROUTER_JS 源码形状：三个 reset 钩子调用与兜底都在', ()
   assert.ok(src.includes('location.href = url'), '失败兜底整页跳转');
 });
 
-test('SPA 路由必须支持 soft 模式（WebMCP 工具调用不许整页重载）', () => {
-  // 整页重载会销毁 document，导致已注册的 WebMCP site_* 工具与连接中断。
+test('SPA 路由必须支持 soft 模式（便利函数调用不许整页重载）', () => {
+  // 整页重载会销毁 document，导致正在执行中的页面会话状态中断。
   // 站内导航工具调用传 soft=true，让路由任何失败都上报而不是整页跳转。
   const src = fs.readFileSync(path.join(HERE, 'spa-router.mjs'), 'utf8');
   assert.match(src, /function navigate\(rawUrl, hash, push, opts4\)/, 'navigate 要收第 4 参');

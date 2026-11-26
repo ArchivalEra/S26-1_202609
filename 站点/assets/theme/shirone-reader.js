@@ -139,55 +139,81 @@
     });
   }
 
-  // Collapsible Navigation Groups (Accordion & Collapse-All)
-  const navGroups = document.querySelectorAll(".drawer-nav-group");
+  // Collapsible Navigation Groups (Delegated Accordion, Lazy Hydration & Collapse-All)
   const toggleAllBtn = document.getElementById("toggle-all-groups-btn");
   const toggleAllText = document.getElementById("toggle-all-text");
 
+  function getNavGroups() {
+    return document.querySelectorAll(".drawer-nav-group");
+  }
+
   function updateToggleAllButtonState() {
     if (!toggleAllBtn || !toggleAllText) return;
-    const hasExpanded = Array.from(navGroups).some(g => g.classList.contains("expanded"));
+    const hasExpanded = Array.from(getNavGroups()).some(g => g.classList.contains("expanded"));
     toggleAllText.textContent = hasExpanded ? "全部收起" : "全部展开";
   }
 
-  navGroups.forEach(group => {
-    const collapseBtn = group.querySelector(":scope > .nav-group-header .nav-collapse-btn");
-    const clickableHeader = group.querySelector(":scope > .nav-group-header.nav-header-clickable");
-
-    function toggleGroup(e) {
-      if (e) e.stopPropagation();
-      const isExpanded = group.classList.contains("expanded");
-      if (isExpanded) {
-        group.classList.remove("expanded");
-        group.classList.add("collapsed");
-      } else {
-        group.classList.remove("collapsed");
-        group.classList.add("expanded");
-      }
+  function toggleGroup(group) {
+    if (!group) return;
+    const isExpanded = group.classList.contains("expanded");
+    if (isExpanded) {
+      group.classList.remove("expanded");
+      group.classList.add("collapsed");
       updateToggleAllButtonState();
+      return;
     }
+    const finishExpand = () => {
+      group.classList.remove("collapsed");
+      group.classList.add("expanded");
+      updateToggleAllButtonState();
+    };
+    if (group.hasAttribute("data-nav-lazy") && window.__navStructure?.ensureHydrated) {
+      window.__navStructure.ensureHydrated(group).then(finishExpand);
+    } else {
+      finishExpand();
+    }
+  }
 
-    if (collapseBtn) {
-      collapseBtn.addEventListener("click", toggleGroup);
-    }
-    if (clickableHeader) {
-      clickableHeader.addEventListener("click", toggleGroup);
-    }
-  });
+  if (drawer) {
+    drawer.addEventListener("click", (e) => {
+      const btn = e.target && e.target.closest ? e.target.closest(".nav-collapse-btn") : null;
+      if (btn) {
+        e.stopPropagation();
+        toggleGroup(btn.closest(".drawer-nav-group"));
+        return;
+      }
+      const header = e.target && e.target.closest ? e.target.closest(".nav-group-header.nav-header-clickable") : null;
+      if (header) {
+        e.stopPropagation();
+        toggleGroup(header.closest(".drawer-nav-group"));
+      }
+    });
+  }
 
   if (toggleAllBtn) {
     toggleAllBtn.addEventListener("click", () => {
-      const hasExpanded = Array.from(navGroups).some(g => g.classList.contains("expanded"));
-      navGroups.forEach(group => {
-        if (hasExpanded) {
+      const groups = Array.from(getNavGroups());
+      const hasExpanded = groups.some(g => g.classList.contains("expanded"));
+      if (hasExpanded) {
+        groups.forEach(group => {
           group.classList.remove("expanded");
           group.classList.add("collapsed");
-        } else {
+        });
+        updateToggleAllButtonState();
+        return;
+      }
+      const applyExpandAll = () => {
+        getNavGroups().forEach(group => {
           group.classList.remove("collapsed");
           group.classList.add("expanded");
-        }
-      });
-      updateToggleAllButtonState();
+        });
+        updateToggleAllButtonState();
+      };
+      if (document.querySelector("li[data-nav-lazy='1']") && window.__navStructure?.hydrateAll) {
+        window.__navStructure.hydrateAll().then(applyExpandAll);
+      } else {
+        applyExpandAll();
+      }
     });
   }
 

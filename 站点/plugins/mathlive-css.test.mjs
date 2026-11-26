@@ -25,9 +25,12 @@ test('数学样式表必须带内容哈希戳（否则改了它浏览器永远�
   // assetUrl 带 `?v=<内容哈希>`）。于是补丁写进 dist、页面也重新构建了，
   // 浏览器照样拿缓存副本 —— 表现是「CSS 规则明明对，就是不生效」，
   // 排查时会误判成规则写错。判据：构建产物里的 link 必须带 `?v=`。
-  const html = readFileSync(path.join(HERE, '../dist/index.html'), 'utf8');
+  const homeHtml = readFileSync(path.join(HERE, '../dist/index.html'), 'utf8');
+  assert.ok(!homeHtml.includes(KATEX_STYLESHEET), '零公式首页不应加载 katex.min.css');
+
+  const html = readFileSync(path.join(HERE, '../dist/课程总览/工程数学/Walkthrough.html'), 'utf8');
   const links = [...html.matchAll(/<link[^>]*href="([^"]+)"/g)].map((match) => match[1]);
   const link = links.find((href) => href.split('?')[0].endsWith('/' + KATEX_STYLESHEET));
-  assert.ok(link, `页面里没有 ${KATEX_STYLESHEET} 的 link`);
+  assert.ok(link, `含公式页里没有 ${KATEX_STYLESHEET} 的 link`);
   assert.match(link, /\?v=[0-9a-f]+/, `${KATEX_STYLESHEET} 的 link 必须带内容哈希戳`);
 });

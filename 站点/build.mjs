@@ -22,14 +22,12 @@ import {
   plainBubbleText,
 } from './symbols/index.mjs';
 import { extractSearchDoc, buildSearchBundle, SEARCH_JS, SEARCH_CSS } from './plugins/site-search.mjs';
-import { WEBMCP_LOADER_JS, WEBMCP_RELAY_JS } from './plugins/webmcp-loader.mjs';
 import { SPA_ROUTER_JS } from './plugins/spa-router.mjs';
 // SW 根除（2026-10-23）：一次性反注册脚本——见下方写盘段注释
 import { SW_KILL_JS } from './plugins/sw-kill.mjs';
 import { DRAWER_SYNC_JS } from './plugins/drawer-sync.mjs';
 import { buildNavModel, isActive, isExpanded, htmlPathOf, filePathOf, NAV_STRUCTURE_JS } from './plugins/nav-structure.mjs';
-import { WEBMCP_SHIM_JS } from './plugins/webmcp-shim.mjs';
-import { WEBMCP_TOOLS_JS } from './plugins/webmcp-tools.mjs';
+import { SITE_HELPERS_JS } from './plugins/site-helpers.mjs';
 import { TARGET_FILES } from './页面清单.mjs';
 import { computeSourceHash } from './源树hash.mjs';
 // 符号覆盖统计（2026-11-05）：构建期把「哪些符号冒了泡、哪些该冒没冒」写成数据，
@@ -140,16 +138,7 @@ copySiteAssets(path.join(SITE_DIR, 'assets'), path.join(DIST_DIR, 'assets'));
 }
 console.log(`[build] Copied offline assets to dist/assets/`);
 
-// WebMCP 交互契约（Skill.md），原样复制到 dist 根。
-// 为什么复制而不是渲染：它是**纯文本契约**，给外部 Agent 与小模型读的，不是给人看的页面——
-// 走 markdown 渲染管线反而会加导航/样式噪音。线上地址 /repo/.../Skill.md。
-// 可拆卸：删掉本段与 .gitignore 的那行白名单即回退。
 {
-  const skillSrc = path.join(SITE_DIR, 'Skill.md');
-  if (fs.existsSync(skillSrc)) {
-    copyFileAtomic(skillSrc, path.join(DIST_DIR, 'Skill.md'));
-    console.log(`[build] Copied Skill.md to dist/Skill.md`);
-  }
   const licJsonSrc = path.join(SITE_DIR, 'licenses.json');
   if (fs.existsSync(licJsonSrc)) {
     copyFileAtomic(licJsonSrc, path.join(DIST_DIR, 'licenses.json'));
@@ -292,47 +281,21 @@ const assetUrl = (relFromDist) => {
   return v ? `${relFromDist}?v=${v}` : relFromDist;
 };
 
-const webmcpDir = path.join(DIST_DIR, 'assets', 'plugins');
-fs.mkdirSync(webmcpDir, { recursive: true });
-// ⚠️ 2026-10-23 修（Node 桥实测抓到）：loader 动态注入 shim/tools 时**不带缓存戳**，
-// 改了 webmcp-tools.js 浏览器一直用旧副本（工具行为怎么改都不生效，只能手动硬刷）。
-// 现在先写 shim/tools，算出内容哈希，再把它替换进 loader 源码里的 __SHIM_VER__/__TOOLS_VER__。
-// 顺序必须是这样（先写被注入方、后写注入方），否则哈希算的是上一轮的旧内容。
-fs.writeFileSync(path.join(webmcpDir, 'webmcp-shim.js'), WEBMCP_SHIM_JS);
-fs.writeFileSync(path.join(webmcpDir, 'webmcp-tools.js'), WEBMCP_TOOLS_JS);
-{
-  const shimVer = assetVersion('assets/plugins/webmcp-shim.js');
-  const toolsVer = assetVersion('assets/plugins/webmcp-tools.js');
-  const loaderSrc = WEBMCP_LOADER_JS
-    .split('__SHIM_VER__').join(shimVer)
-    .split('__TOOLS_VER__').join(toolsVer)
-    .split('__POLYFILL_VER__').join(assetVersion('assets/vendor/webmcp/polyfill.iife.js'));
-  fs.writeFileSync(path.join(webmcpDir, 'webmcp-loader.js'), loaderSrc);
-}
-fs.writeFileSync(path.join(webmcpDir, 'webmcp-relay.js'), WEBMCP_RELAY_JS);
-// 部署根探测（2026-10-20）：修「无前缀入口下相对链接退到域名根」的线上 404。
-// 原样拷贝源文件（内含全局暴露，模板里同步加载并立即调用 fixSiteRoot()）。
-fs.writeFileSync(path.join(webmcpDir, 'site-root.js'), fs.readFileSync(path.join(SITE_DIR, 'plugins', 'site-root.mjs'), 'utf8'));
-// vendor 第三方资产（polyfill + relay embed/widget）逐字节拷贝。
-copyDir(path.join(SITE_DIR, 'assets', 'vendor', 'webmcp'), path.join(DIST_DIR, 'assets', 'vendor', 'webmcp'));
-console.log('[build] Wrote WebMCP plugins + copied vendor assets (polyfill + relay embed)');
+const pluginDir = path.join(DIST_DIR, 'assets', 'plugins');
+fs.mkdirSync(pluginDir, { recursive: true });
+// 页面便利函数（Q19）：写盘供 `?helpers=1` / 测试按需加载，正常页面不注入。
+fs.writeFileSync(path.join(pluginDir, 'site-helpers.js'), SITE_HELPERS_JS);
+// 部署根探测（2026-10-20）：修「无前缀入口下相对链接退到域名根」的线上 404（模板以 defer 加载并自动执行）。
+fs.writeFileSync(path.join(pluginDir, 'site-root.js'), fs.readFileSync(path.join(SITE_DIR, 'plugins', 'site-root.mjs'), 'utf8'));
+console.log('[build] Wrote site-helpers + site-root plugins');
 
-// SPA 路由 + Service Worker（2026-10-17 大重构）：站内点击不重载（fetch → 换正文/TOC/标题），
-//   document 不销毁 ⇒ WebMCP 工具注册一次永久有效。SW 双策略：资产 cache-first、页面 SWR。
-//   可拆卸：删掉本段与模板里 spa-router 一行 + dist/sw.js 即回退。
-fs.writeFileSync(path.join(webmcpDir, 'spa-router.js'), SPA_ROUTER_JS);
-// 侧栏形状运行时（阶段一，2026-10-21）：读 #nav-structure-json + 共享判定。
-// 由 nav-structure.mjs 的真函数派生（浏览器跑的就是测试跑的）。drawer-sync 依赖它。
-fs.writeFileSync(path.join(webmcpDir, 'nav-structure.js'), NAV_STRUCTURE_JS);
-fs.writeFileSync(path.join(webmcpDir, 'drawer-sync.js'), DRAWER_SYNC_JS);
-// SW 已根除（2026-10-23 用户定案：长任务要「永远新鲜的页面」，SW 的 SWR/预缓存
-// 与它正面冲突——页面先出旧缓存、后台静默更新、下次才生效，模型跳十几次页会拿到
-// 上一版 HTML；且 SW 修过两次版本错配/部署形态坑，是纯负资产。浏览器 HTTP 缓存 +
-// CDN + 站点自带的 ?v=<内容哈希> 接管静态资产缓存）。
-//
+fs.writeFileSync(path.join(pluginDir, 'spa-router.js'), SPA_ROUTER_JS);
+// 侧栏形状运行时（阶段一，2026-10-21）：外置共享 JSON + 按需水合。
+fs.writeFileSync(path.join(pluginDir, 'nav-structure.js'), NAV_STRUCTURE_JS);
+fs.writeFileSync(path.join(pluginDir, 'drawer-sync.js'), DRAWER_SYNC_JS);
 // 这里写的是**一次性清老用户**的 sw-kill.js：老浏览器里已注册的旧 SW 还活着，
 // 页面加载时反注册 + 清全部 caches。跑一两周（老用户都来过一次）后删本段。
-fs.writeFileSync(path.join(webmcpDir, 'sw-kill.js'), SW_KILL_JS);
+fs.writeFileSync(path.join(pluginDir, 'sw-kill.js'), SW_KILL_JS);
 console.log('[build] Wrote sw-kill.js (one-shot SW removal for legacy visitors)');
 
 // 检索语料：渲染循环里逐页填，循环结束后统一建索引。
@@ -818,6 +781,19 @@ const NOTES_ORDER = [
 ];
 
 const markdownRenderer = createMarkdownRenderer();
+
+// 外置共享导航树与站点页面清单（Q19）：构建期单次产出，带内容哈希 URL 供浏览器缓存，不再每页重复内联 ~50 KB。
+const sharedNavModel = buildNavModel(NAV_STRUCTURE, null);
+fs.writeFileSync(path.join(DIST_DIR, 'assets', 'nav-structure.json'),
+  JSON.stringify({ v: 1, nodes: sharedNavModel.nodes }) + '\n', 'utf-8');
+fs.writeFileSync(path.join(DIST_DIR, 'assets', 'site-pages.json'),
+  JSON.stringify(SITE_PAGE_PATHS) + '\n', 'utf-8');
+const NAV_JSON_ASSET_URL = assetUrl('assets/nav-structure.json');
+const PAGES_JSON_ASSET_URL = assetUrl('assets/site-pages.json');
+const SEARCH_CSS_ASSET_URL = assetUrl('assets/plugins/site-search.css');
+const SEARCH_JS_ASSET_URL = assetUrl('assets/plugins/site-search.js');
+const SPA_JS_ASSET_URL = assetUrl('assets/plugins/spa-router.js');
+const HELPERS_JS_ASSET_URL = assetUrl('assets/plugins/site-helpers.js');
 
 // 4. Build each page
 let totalFormulasRendered = 0;
@@ -1364,9 +1340,8 @@ for (const relPath of TARGET_FILES) {
   }
 
   // 侧栏形状 = 唯一真相源 nav-structure.mjs（阶段一，2026-10-21）。
-  // buildNavModel 产出归一化节点树 + 烘焙 JSON；本处只负责出 HTML。
+  // buildNavModel 产出归一化节点树；本处只直出顶层与当前激活分支，折叠分支按需水合。
   const navModel = buildNavModel(NAV_STRUCTURE, relPath);
-  const navJsonPayload = navModel.json;
 
   // Render Sidebar Tree HTML with Collapsible Groups
   // 每个 <li> 带 data-node-id（归一化节点 id）：SPA 换页后 drawer-sync 据此对齐 active。
@@ -1378,25 +1353,13 @@ for (const relPath of TARGET_FILES) {
       const nodeActive = isActive(node, relPath);
       const nodeExpanded = isExpanded(node, relPath);
 
-      // 有子节点的组节点（票 B，2026-10-22 回归 530427c 始冀形态）：
-      // · 有索引页（indexHref 非空）→ 标题本身就是 drawer-nav-link 链接（点击进索引页），
-      //   header **不带** nav-header-clickable——shirone-reader 的 clickableHeader 绑定
-      //   只命中带该类的 header，点击只走 spa-router 的 data-path 拼接，不折叠；
-      //   折叠由 chevron 按钮单独负责（530427c 原版同款天然分离，零事件机关）。
-      // · 无索引页（无 path 的组、path 与子项重复的电机学章节点）→ 纯标题 +
-      //   nav-header-clickable（整行点击 = 折叠），现状不变。
-      // indexHref 判据零改动（nav-structure.mjs 的 indexHrefOf 是唯一真相源），
-      // 本处只把它的输出从「小图标链接」改接到「标题链接」上。
       if (hasChildren) {
         const titleHtml = node.indexHref
           ? `<a href="${rootRel}${node.indexHref}" data-path="${node.indexHref}" class="drawer-nav-link"><span>${node.label}</span></a>`
           : `<span class="drawer-section-title-text">${node.label}</span>`;
-        // ⚠️ 2026-10-26 修（首帧闪烁）：组节点此前**不输出 active 类**——
-        // 只有运行时 drawer-sync 的 recompute() 会补上，于是「首屏直进目录页」时
-        // 侧栏先无高亮、几十~一两百毫秒后才闪出来。
-        // 判定用的就是上面那一个 nodeActive（与运行时 collectActive 同一份 isActive），
-        // 两边输出对齐即可，不新增任何判定逻辑。
-        out += `<li class="drawer-nav-group ${nodeActive ? 'active' : ''} ${nodeExpanded ? 'expanded' : 'collapsed'}" data-node-id="${attrEsc(node.id)}">
+        const childrenHtml = nodeExpanded ? renderNav(node.children) : '';
+        const lazyAttr = nodeExpanded ? '' : ' data-nav-lazy="1"';
+        out += `<li class="drawer-nav-group ${nodeActive ? 'active' : ''} ${nodeExpanded ? 'expanded' : 'collapsed'}" data-node-id="${attrEsc(node.id)}"${lazyAttr}>
           <div class="nav-group-header ${node.indexHref ? '' : 'nav-header-clickable'}">
             ${titleHtml}
             <button class="nav-collapse-btn" aria-label="折叠或展开 ${node.label}" title="折叠/展开">
@@ -1405,7 +1368,7 @@ for (const relPath of TARGET_FILES) {
           </div>
           <div class="nav-nested-wrapper">
             <div class="nav-nested">
-              ${renderNav(node.children)}
+              ${childrenHtml}
             </div>
           </div>
         </li>`;
@@ -1500,9 +1463,13 @@ for (const relPath of TARGET_FILES) {
     </aside>`;
   }
 
+  const hasMath = mathBlocks.length > 0;
+  const hasFigures = pageFigures.length > 0 || /<img\b/i.test(htmlContent);
+  const hasGlossary = Object.keys(glossaryJsonPayload.terms || {}).length > 0 || /data-term=/.test(htmlContent);
+
   // Final HTML Document
   const finalHtml = `<!DOCTYPE html>
-<html lang="zh-CN" data-depth="${rootRel === './' ? 0 : rootRel.split('../').length - 1}" data-root="${rootRel}" data-canonical-root="${CANONICAL_ROOT}">
+<html lang="zh-CN" data-depth="${rootRel === './' ? 0 : rootRel.split('../').length - 1}" data-root="${rootRel}" data-canonical-root="${CANONICAL_ROOT}" data-nav-path="${NAV_JSON_ASSET_URL}" data-pages-path="${PAGES_JSON_ASSET_URL}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1530,14 +1497,10 @@ for (const relPath of TARGET_FILES) {
     } catch (e) { /* 隐私模式下 localStorage 可能抛错，忽略 */ }
   })();
   </script>
-  <!-- 数学排版样式由渲染器适配器指定，资源链接带内容哈希戳。 -->
-  <link rel="stylesheet" href="${rootRel}${assetUrl(KATEX_STYLESHEET)}">
-  <link rel="stylesheet" href="${rootRel}${assetUrl('assets/theme/shirone-reader.css')}">
-  <link rel="stylesheet" href="${rootRel}${assetUrl('assets/plugins/site-search.css')}">
-  <link rel="stylesheet" href="${rootRel}${assetUrl('assets/plugins/figures.css')}">
-  <!-- 站点图标：动画 GIF 为主（Chrome/Firefox/Edge 会动），静态 WebP 作不支持动画时的回退（禁止服务 PNG） -->
-  <link rel="icon" type="image/gif" href="${rootRel}assets/favicon/favicon.gif">
-  <link rel="alternate icon" type="image/webp" href="${rootRel}assets/favicon/favicon.webp">
+  <!-- 按页条件加载数学/图元样式，基础页零额外 CSS 阻塞。 -->
+  ${hasMath ? `<link rel="stylesheet" href="${rootRel}${assetUrl(KATEX_STYLESHEET)}" data-opt-asset="katex-css">\n  ` : ''}<link rel="stylesheet" href="${rootRel}${assetUrl('assets/theme/shirone-reader.css')}">
+  ${hasFigures ? `<link rel="stylesheet" href="${rootRel}${assetUrl('assets/plugins/figures.css')}" data-opt-asset="figures-css">\n  ` : ''}<!-- 站点图标统一使用轻量静态 WebP（较 GIF 体积减重 >90%） -->
+  <link rel="icon" type="image/webp" href="${rootRel}assets/favicon/favicon.webp">
   <link rel="apple-touch-icon" href="${rootRel}assets/favicon/apple-touch-icon.webp">
 </head>
 <body data-site-path="${sitePathOf(relPath)}">
@@ -1548,7 +1511,7 @@ for (const relPath of TARGET_FILES) {
     <aside class="m3-drawer" id="m3-drawer">
       <div class="drawer-header-brand">
         <a href="${rootRel}" class="sidebar-brand">
-          <img class="site-title-icon" src="${rootRel}assets/favicon/brand.gif" alt="" width="48" height="48" aria-hidden="true">
+          <img class="site-title-icon" src="${rootRel}assets/favicon/brand.webp" alt="" width="48" height="48" aria-hidden="true">
           <span class="sidebar-brand-text">${SITE_NAME}</span>
         </a>
         <button class="m3-icon-btn drawer-collapse-btn" id="drawer-collapse-btn" aria-label="收起侧边栏" title="收起侧边栏">
@@ -1741,38 +1704,37 @@ for (const relPath of TARGET_FILES) {
 
   <script src="${rootRel}${assetUrl('assets/theme/shirone-reader.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/disclosure-anchor.js')}" defer></script>
-  <script src="${rootRel}${assetUrl('assets/plugins/figures.js')}" defer></script>
-  <script type="application/json" id="${SYMBOL_JSON_SCRIPT_ID}">${JSON.stringify(glossaryJsonPayload).replace(/<\//g, '<\\/')}</script>
-  <!-- 图元索引烘焙（2026-10-28）：本页所有图的 IR 汇总。
-       三个消费者读同一份——页面交互、site_figure 工具、构建期提到的静态结构表。
-       与 sym-glossary-json / nav-structure-json 同一个范式：构建期烘、客户端不发请求。 -->
-  <script type="application/json" id="figure-index-json">${JSON.stringify(buildFigureIndex(pageFigures)).replace(/<\//g, '<\\/').replace(/@@MATH_INLINE_(\d+)@@/g, (_, i) => JSON.stringify(mathBlocks[parseInt(i, 10)]?.plain || '').slice(1, -1).replace(/<\//g, '<\\/'))}</script>
-  <!-- 侧栏形状烘焙（阶段一）：nav-structure.mjs（buildNavModel）产出的归一化树 + 判定结果。
-       site_index / site_navigate / drawer-sync 三个消费者都读这一份，不再爬侧栏 DOM。 -->
-  <script type="application/json" id="nav-structure-json">${JSON.stringify(navJsonPayload).replace(/<\//g, '<\\/')}</script>
-  <!-- 站点页面清单烘焙（2026-10-29）：TARGET_FILES 派生的**真实产物路径**。
-       site_navigate 的 to=page 靠它判「这一页到底存不存在」——此前判据是「像不像
-       index.html」，于是模型拼错层级的路径（少了课程层）也能通过，SPA fetch 撞 404。
-       注意它是**产物清单**不是导航清单：README / 符号包都在内。 -->
-  <script type="application/json" id="site-pages-json">${JSON.stringify(SITE_PAGE_PATHS).replace(/<\//g, '<\\/')}</script>
-  <script src="${rootRel}${assetUrl(SYMBOL_RUNTIME_ASSET)}" defer></script>
-  <script src="${rootRel}${assetUrl('assets/plugins/site-search.js')}" defer></script>
-  <script src="${rootRel}${assetUrl('assets/plugins/webmcp-loader.js')}" defer></script>
-  <!-- relay 连接器**不带 defer**：它要在解析期用 document.write 插入 vendor 的 embed.js，
-       而 embed.js 靠 document.currentScript.src 定位同目录的 widget.html——
-       defer 脚本执行时 readyState 已是 interactive，document.write 会毁掉文档。 -->
-  <script src="${rootRel}${assetUrl('assets/plugins/webmcp-relay.js')}"></script>
-  <!-- site-root：部署根探测与链接修正。同步执行、先于一切读 data-root 的脚本
-       （drawer-sync / spa-router / loader），否则它们拿到错误的相对根。 -->
-  <script src="${rootRel}${assetUrl('assets/plugins/site-root.js')}"></script>
-  <script>try { fixSiteRoot(); } catch (e) { /* 探测失败保持构建期相对路径 */ }</script>
-  <!-- 侧栏形状运行时：先于 drawer-sync，暴露 window.__navStructure（读 JSON + 共享判定）。 -->
+  ${hasFigures ? `<script src="${rootRel}${assetUrl('assets/plugins/figures.js')}" data-opt-asset="figures-js" defer></script>\n  ` : ''}${hasGlossary ? `<script type="application/json" id="${SYMBOL_JSON_SCRIPT_ID}">${JSON.stringify(glossaryJsonPayload).replace(/<\//g, '<\\/')}</script>\n  ` : ''}${pageFigures.length > 0 ? `<script type="application/json" id="figure-index-json">${JSON.stringify(buildFigureIndex(pageFigures)).replace(/<\//g, '<\\/').replace(/@@MATH_INLINE_(\d+)@@/g, (_, i) => JSON.stringify(mathBlocks[parseInt(i, 10)]?.plain || '').slice(1, -1).replace(/<\//g, '<\\/'))}</script>\n  ` : ''}${hasGlossary ? `<script src="${rootRel}${assetUrl(SYMBOL_RUNTIME_ASSET)}" data-opt-asset="symbols-bubble" defer></script>\n  ` : ''}<script src="${rootRel}${assetUrl('assets/plugins/site-root.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/nav-structure.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/drawer-sync.js')}" defer></script>
-  <script src="${rootRel}${assetUrl('assets/plugins/spa-router.js')}" defer></script>
-  <!-- SW 已根除（2026-10-23）：只保留一次性清理，反注册老用户的旧 SW + 清 caches。
-       localStorage 标记去重，清完一次后本脚本自动变 no-op。 -->
   <script src="${rootRel}${assetUrl('assets/plugins/sw-kill.js')}" defer></script>
+  <script>(function(){
+    var CFG={sc:${JSON.stringify(SEARCH_CSS_ASSET_URL)},sj:${JSON.stringify(SEARCH_JS_ASSET_URL)},sp:${JSON.stringify(SPA_JS_ASSET_URL)},hp:${JSON.stringify(HELPERS_JS_ASSET_URL)}};
+    var loaded={};
+    function urlOf(rel){var r=document.documentElement.getAttribute("data-root")||"./";return new URL(r+rel,location.href).href;}
+    function addCss(rel,key){if(loaded[key])return;loaded[key]=1;var l=document.createElement("link");l.rel="stylesheet";l.href=urlOf(rel);document.head.appendChild(l);}
+    function addJs(rel){if(loaded[rel])return loaded[rel];loaded[rel]=new Promise(function(res){var s=document.createElement("script");s.defer=true;s.src=urlOf(rel);s.onload=res;s.onerror=res;document.body.appendChild(s);});return loaded[rel];}
+    function bootSearch(open){
+      if(window.__siteSearchLoaded){if(open&&window.__siteSearch&&window.__siteSearch.open)window.__siteSearch.open();return;}
+      window.__siteSearchWantOpen=window.__siteSearchWantOpen||!!open;
+      addCss(CFG.sc,"sc");addJs(CFG.sj);
+    }
+    var st=document.getElementById("search-toggle"),si=document.getElementById("search-input");
+    if(st)st.addEventListener("click",function(){if(!window.__siteSearchLoaded)bootSearch(true);});
+    if(si)si.addEventListener("focus",function(){if(!window.__siteSearchLoaded)bootSearch(false);});
+    document.addEventListener("keydown",function(e){
+      if(window.__siteSearchLoaded)return;
+      var ae=document.activeElement,typing=/^(INPUT|TEXTAREA|SELECT)$/.test((ae&&ae.tagName)||"");
+      if((e.key==="/"&&!typing)||((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k")){e.preventDefault();bootSearch(true);}
+    });
+    function bootSpa(){if(!window.__spaRouter)addJs(CFG.sp);}
+    var onHover=function(e){if(e.target&&e.target.closest&&e.target.closest("a")){document.removeEventListener("pointerover",onHover);document.removeEventListener("touchstart",onHover);bootSpa();}};
+    document.addEventListener("pointerover",onHover,{passive:true});
+    document.addEventListener("touchstart",onHover,{passive:true});
+    if(typeof requestIdleCallback==="function")requestIdleCallback(bootSpa,{timeout:2000});
+    else setTimeout(bootSpa,1500);
+    if((location.search||"").indexOf("helpers=1")>=0){try{if(new URLSearchParams(location.search).get("helpers")==="1")addJs(CFG.hp);}catch(_e){}}
+  })();</script>
 </body>
 </html>`;
 

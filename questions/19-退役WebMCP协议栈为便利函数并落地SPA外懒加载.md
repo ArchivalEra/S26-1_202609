@@ -1,6 +1,6 @@
 # 19: 退役 WebMCP 协议栈为纯便利函数并落地 SPA 外懒加载
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Settling:** `python3 -c "import os;rm=['站点/assets/vendor/webmcp','站点/plugins/webmcp-loader.mjs','站点/plugins/webmcp-shim.mjs','站点/plugins/webmcp-tools.mjs','站点/plugins/webmcp-tools.test.mjs','站点/Skill.md','站点/README-WebMCP.md'];keep=['站点/plugins/site-helpers.mjs','站点/plugins/site-helpers.test.mjs'];es=open('站点/eslint.config.mjs',encoding='utf-8').read();rm_ok=not any(os.path.exists(p) for p in rm) and all(os.path.isfile(p) for p in keep) and 'assets/vendor' not in es;rd=open('README.md',encoding='utf-8').read();rd_ok=('search/index.json' in rd and 'sym-glossary-json' in rd and 'Birthright.html' in rd and 'webmcp-local-relay' not in rd and 'Skill.md' not in rd);idx=open('站点/dist/index.html',encoding='utf-8').read() if os.path.isfile('站点/dist/index.html') else '';idx_ok=bool(idx) and 'brand.webp' in idx and 'webmcp-' not in idx and 'katex.min.css' not in idx and 'figures.css' not in idx and 'nav-structure-json' not in idx;raise SystemExit(0 if (rm_ok and rd_ok and idx_ok) else 1)"` -- rc=0 => A (WebMCP协议栈已退役为site-helpers便利函数、README已改为静态接口清单且首页懒加载与外置导航已生效); rc!=0 => B (WebMCP残留仍在、README未更新或首页懒加载未落地)
 

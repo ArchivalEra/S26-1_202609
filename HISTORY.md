@@ -1062,3 +1062,12 @@ sh gates-selftest.sh                             # 每道闸门先证明自己�
 
 - 《形势与政策》已于一个月前结课考结案，原拟入库的 `作业一`（`taskrefId=56955857`）与 `作业二`（`taskrefId=56955927`）两份旧作业无入库价值；GitHub [issue #43](https://github.com/ArchivalEra/S26-1_202609/issues/43) 已于 2026-11-25 标为 `Not planned` 关闭。
 - 按本仓「推翻悬案扫进 `HISTORY.md`」惯例，将决策记录归档于本条，并删除 `questions/13-形势与政策2份作业.md` 及 `.gitignore` 对应白名单行（`/mnt/hdd/study/形势与政策/原始资料/学习通抓取-20261125/` 下已抓原件保留在本地，不入站）。
+
+### 8. 归档已被 Q19 取代的历史 WebMCP 期悬案（`questions/14`–`17`）
+
+因 `questions/19-退役WebMCP协议栈为便利函数并落地SPA外懒加载.md` 退役浏览器端 `@mcp-b/*` vendor、`webmcp-loader`、`webmcp-shim`、`Skill.md` 与 `README-WebMCP.md`，并将 `webmcp-tools.mjs` 重命名为按需加载的纯便利函数 `site-helpers.mjs`，原绑定旧文件名与 `Skill.md` 的四份已结案悬案按本仓惯例归档入史、移出 `questions/` 与 `.gitignore` 白名单：
+
+- **`questions/14-退役学习助手仅保留WebMCP.md`**：已完成彻底切除学习助手（`chat-panel` / `chat-render` / `#assistant-toggle` / `--assistant-secrets`）并验证站点与插件隔离；WebMCP 协议胶水后续由 Q19 退役。
+- **`questions/15-重写README与WebMCP交互Skill.md`**：已完成重写 `README.md` 人类导航与 `/machine/Birthright.html` 镜像入口说明，原有 WebMCP/`Skill.md` 段落由 Q19 改为静态搜索/符号/目录数据接口说明。
+- **`questions/16-全站符号系统收口为深模块.md`**：已完成将全站符号系统收口至 `站点/symbols/` 深核心与适配器（含 `#sym-glossary-json` 零点击直读、`machine/symbols/index.json`、奇偶/覆盖/气泡单测守卫），原 `webmcp-tools.mjs` 适配入口已并入 `site-helpers.mjs`。
+- **`questions/17-退役能力胶囊并外包Octave站.md`**：已完成彻底切除能力胶囊、OPFS、MathLive 与 `{:calc}` 站内求值栈（后续在 `站点/assets/` 同步清除了 `octave`、`pyodide`、`m`、`oct` 残留），静态数学渲染、符号与图元核心完好保留，原 `webmcp-tools.mjs` 保持边界由 `site-helpers.mjs` 与 Q19 接管。

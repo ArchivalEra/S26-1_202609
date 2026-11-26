@@ -21,13 +21,14 @@
 - **路径映射**：`.html` 页面与 `.json` 源文一一对应，将页面路径中的 `.html` 替换为 `.json` 并加 `machine/` 前缀（例如 `…/课程总览/工程数学/Walkthrough.html` → `…/machine/课程总览/工程数学/Walkthrough.json`），返回渲染前整篇源文（原始 Markdown、TeX 公式源码、图片完整 URL）。
 - **大页面分片**：整页过大时可读取同目录下的 `_index.json`（列出各小节的 `heading`、字数与文件名），按需抓取 `<页面>/<file>`。
 
-### 3. 客户端浏览器 WebMCP 接口（交互 + `Skill.md`）
+### 3. 站点静态索引与页内数据接口
 
-已打开站点页面时，可通过浏览器侧 WebMCP（`document.modelContext` / `navigator.modelContext`）直接操控页面导航、展开折叠解答、点开符号气泡、按图转码与截图：
+不需要浏览器扩展或协议转发层，静态站点本身暴露以下机器可读接口：
 
-- **线上纯文本契约（推荐直接喂给 Agent / 小模型）**：[`https://isui.ren/repo/S26-1_202609/Skill.md`](https://isui.ren/repo/S26-1_202609/Skill.md)
-- **仓内源文件**：`./站点/Skill.md`（[GitHub 查看](https://github.com/ArchivalEra/S26-1_202609/blob/main/%E7%AB%99%E7%82%B9/Skill.md)）· 架构说明：`./站点/README-WebMCP.md`
-- **开启方式**：访问站点时在 URL 追加 `?relay=1`（或 `?webmcp=1`，亦可设 `localStorage.webmcp_relay = 'on'`），配合本机 `@mcp-b/webmcp-local-relay`（默认 `ws://127.0.0.1:9333`）或 `./站点/Skill.md` 附带的零依赖 WebSocket 转发器示例，即可列出并调用全部 11 个 `site_*` 工具。
+- **站点全站搜索接口**：[`search/index.json`](https://isui.ren/repo/S26-1_202609/search/index.json)（全站页面清单、小节锚点、总字数及 `buckets: 64` 倒排桶配置）；倒排索引分桶在 `search/g/<0..63>.json`，单页纯文本分片在 `search/t/<id>.json`。
+- **每页符号查询接口**：每个含符号词条的页面内嵌 `<script type="application/json" id="sym-glossary-json">`（包含当前页 `env`、`ctx` 及全部命中词条 `terms` 的多义项，SPA 切页同步替换），对应公式/图元 DOM 节点带属性 `data-term="sym-..."`（或 `<包>:sym-...`）；全站符号总目录与分包定义在 [`machine/symbols/index.json`](https://isui.ren/repo/S26-1_202609/machine/symbols/index.json)。
+- **站点目录与源文直读接口**：共享侧栏导航树 [`assets/nav-structure.json`](https://isui.ren/repo/S26-1_202609/assets/nav-structure.json) 与页面清单 [`assets/site-pages.json`](https://isui.ren/repo/S26-1_202609/assets/site-pages.json)（供外部缓存复用）；全站源文镜像树在 [`/machine/Birthright.html`](https://isui.ren/repo/S26-1_202609/machine/Birthright.html)（任意 `.html` 页面对应 `machine/...json`）。
+- **页面按需便利函数（默认零加载）**：`站点/plugins/site-helpers.mjs` 保留正文 Markdown 提取、节选、图元与符号直读纯函数；正常访问零字节下发，仅按需引入或访问页面追加 `?helpers=1` 时挂载到 `window.__siteHelpers`。
 
 <!-- COURSE-STATUS:START -->
 

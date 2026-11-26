@@ -1,35 +1,14 @@
 /**
- * 站点语义工具：把页面的**全部交互能力**注册成 WebMCP 工具（独立可拆卸模块）。
+ * 站点语义便利函数（Q19 从原 WebMCP 协议栈退役而来）。
  *
- * 与本地可选离线 MCP 读层（`工具/` 不入仓）的分工：
- *   - **读层**给「内容」——搜全站、取正文、查符号，不需要浏览器；
- *   - **本模块**给「交互」——跳页、跳锚点、开搜索、展开折叠、查页面上的符号、改显示设置，
- *     这些只有在**打开的页面上**才有意义。
+ * 正常页面加载零字节下发；仅作纯辅助函数导出（测试、Playwright/WebBridge eval、
+ * 或 URL 带 `?helpers=1` 显式按需加载到 `window.__siteHelpers`）。
  *
- * ## 2026-10-19 大补全：从 6 个浅工具到 8 个深工具
- *
- * 原工具集只能「跳小节 / 搜一下 / 点符号」，**读不到正文**——模型看不见页面内容，
- * 就不可能完成人能做的大部分事。本轮按「人在这页上能干什么」重划接口：
- *
- *   site_get_page_info  我在哪（标题/课程/URL/小节/当前定位/面板状态/显示设置）
- *   site_read           **读内容**（整页 / 大纲 / 某一节 / 折叠面板 / 某表格），输出 Markdown
- *   site_navigate       去别处（小节 / 侧栏某页 / 上一节 / 下一节 / 首页 / 后退 / 顶 / 底）
- *   site_search         找（全站索引 / 本页内文）
- *   site_show_symbol    查符号（点开气泡，读全部义项）
- *   site_panels         折叠面板（全部 / 按标题匹配 / 单个）
- *   site_view           显示设置（明暗主题 / 主题色相 / 侧栏开合）
- *   site_capture_view   截图（宿主注入能力）
- *
- * ## 结构（2026-10-16 候选 2+5 重构，本轮沿用）
- *
- *   ① **page-view**：**纯函数 + 依赖注入**——输入是「一个像 document 的对象」，
- *      输出是结构化页面事实。站点主题的选择器全部收缩在 `PAGE_SELECTORS`。
- *   ② **工具定义**：在 page-view 之上写，不含任何 `querySelector`。
- *   ③ **内联**：`WEBMCP_TOOLS_JS` 用 `Function.prototype.toString()` 把上面两者原样塞进页面。
- *
- * ## 为什么用 DOM 接口而不是内部 API
- * 站点的搜索/气泡/折叠模块只暴露纯函数，没有「跑一次搜索」的编程入口。
- * 所以交互走 DOM：点按钮、填输入框、派发事件——**与真人操作同一条路径**。
+ * ## 结构
+ *   ① **page-view**：纯函数 + 依赖注入——输入 `document` 抽象，输出结构化页面事实。
+ *   ② **helper defs**：在 page-view 之上提供统一动作定义与 `runTool` 分派入口。
+ *   ③ **按需包**：`SITE_HELPERS_JS` 用 `Function.prototype.toString()` 派生浏览器包，
+ *      不向 `document.modelContext` / `navigator.modelContext` 自动注册协议工具。
  */
 
 // ════════════════════════════════════════════════════════════════
@@ -596,33 +575,30 @@ export function createPageView(doc, loc, winOverride) {
    */
   function navStructure() {
     const tag = byId(S.navJson);
-    if (!tag) return null;
-    try {
-      const data = JSON.parse(tag.textContent || '');
-      if (!data || !Array.isArray(data.nodes)) return null;
-      return data;
-    } catch { return null; }   // 块缺失/坏 JSON 按未找到
+    if (tag) {
+      try {
+        const data = JSON.parse(tag.textContent || '');
+        if (data && Array.isArray(data.nodes)) return data;
+      } catch { /* fall through to runtime store */ }
+    }
+    if (win?.__navStructure?.readNavJson) {
+      return win.__navStructure.readNavJson();
+    }
+    return null;
   }
 
-  /**
-   * 站点**实际生成了的页面**清单：`#site-pages-json`，构建期从 `页面清单.mjs`
-   * 的 TARGET_FILES 派生（`README.md` → `index.html`，其余 `.md` → `.html`）。
-   *
-   * 为什么不能拿侧栏形状当白名单：侧栏只覆盖「有导航入口」的页，README、
-   * `站点/符号包/通用` 都不在里面——拿它当唯一判据会把这几页判成不存在。
-   * 反过来，只判「像不像索引页」又太松：模型拼出 `教材解析/index.html`
-   * （少了 `课程总览/工程数学/` 两层）照样放行，SPA 去 fetch 就撞 404。
-   * 所以判据用这份**真实产物清单**。
-   *
-   * 缺失/损坏返回 null——调用方据此降级为「只信侧栏白名单」，不静默全放行。
-   */
   function sitePages() {
     const tag = byId(S.pagesJson);
-    if (!tag) return null;
-    try {
-      const data = JSON.parse(tag.textContent || '');
-      return Array.isArray(data) ? data : null;
-    } catch { return null; }   // 块缺失/坏 JSON 按未找到
+    if (tag) {
+      try {
+        const data = JSON.parse(tag.textContent || '');
+        if (Array.isArray(data)) return data;
+      } catch { /* fall through to runtime store */ }
+    }
+    if (win?.__navStructure?.readPagesJson) {
+      return win.__navStructure.readPagesJson();
+    }
+    return null;
   }
 
   /**
@@ -1262,59 +1238,53 @@ export function createPageView(doc, loc, winOverride) {
       //   ① 有 `#site-pages-json` ⇒ 必须是产物清单里的条目（README/符号包都在内）；
       //   ② 没有那份清单（老产物/夹具）⇒ 退回侧栏白名单，不再给索引页开后门。
       // 未命中一律拒绝并回喂「没有这一页」+ 同课程的合法路径，让模型挑，不许它跳到 404 上。
-      const navData = navStructure();
-      const navPaths = navData ? navTargets(navData) : [];
-      const pages = sitePages();
-      const pool = pages || navPaths;
-      const normalized = canonicalPagePath(path, pool);
-      const known = pool.indexOf(normalized) >= 0;
-      if (!known) {
-        const bodyEl = (doc?.body) || null;
-        const curPath = bodyEl?.getAttribute ? (bodyEl.getAttribute('data-site-path') || '') : '';
-        // 课程层从本页路径取（`课程总览/<课>/…` 的第二段）。不能写死 `课程/`——
-        // 目录 2026-10-29 改名为 `课程总览/`，写死的前缀会让候选恒为空。
-        const segs = curPath.split('/');
-        const curCourse = segs.length > 2 && segs[0] === '课程总览' ? segs[1] : '';
-        const sameCourse = curCourse
-          ? pool.filter((x) => x.startsWith('课程总览/' + curCourse + '/'))
-          : [];
-        const tail = normalized.split('/').pop() || '';
-        // 优先给「同名文件」——模型经常只是少了前缀层，给同名的真路径一次就能改对。
-        const sameName = (sameCourse.length ? sameCourse : pool).filter((x) => x.split('/').pop() === tail);
-        const candidates = (sameName.length ? sameName : (sameCourse.length ? sameCourse : pool)).slice(0, 20);
-        return {
-          ok: false, reason: 'no_such_page', path: normalized,
-          hint: '站点里没有这一页，跳不过去。下面是真实存在的路径，从里面挑一个；'
-            + '不确定整站结构就先用 site_index 看地图。',
-          candidates,
-        };
-      }
+      const finishPageNav = (navData, pages) => {
+        const navPaths = navData ? navTargets(navData) : [];
+        const pool = pages || navPaths;
+        const normalized = canonicalPagePath(path, pool);
+        const known = pool.indexOf(normalized) >= 0;
+        if (!known) {
+          const bodyEl = (doc?.body) || null;
+          const curPath = bodyEl?.getAttribute ? (bodyEl.getAttribute('data-site-path') || '') : '';
+          const segs = curPath.split('/');
+          const curCourse = segs.length > 2 && segs[0] === '课程总览' ? segs[1] : '';
+          const sameCourse = curCourse
+            ? pool.filter((x) => x.startsWith('课程总览/' + curCourse + '/'))
+            : [];
+          const tail = normalized.split('/').pop() || '';
+          const sameName = (sameCourse.length ? sameCourse : pool).filter((x) => x.split('/').pop() === tail);
+          const candidates = (sameName.length ? sameName : (sameCourse.length ? sameCourse : pool)).slice(0, 20);
+          return {
+            ok: false, reason: 'no_such_page', path: normalized,
+            hint: '站点里没有这一页，跳不过去。下面是真实存在的路径，从里面挑一个；'
+              + '不确定整站结构就先用 site_index 看地图。',
+            candidates,
+          };
+        }
 
-      // 全程走 SPA（不整页刷新，且保留侧栏）。
-      //
-      // **没有 `location.href` 兜底**（2026-10-29 站长指出）：整页重载会销毁 document，
-      // 助手面板与已注册的 site_* 工具一起消失——用户看到的是「学数学跳过去，回来连接断了」。
-      // 路由不存在（页面不在站点里 / 老产物没有 SPA）就明确回报，让模型换路径，
-      // 而不是拿一次换页把会话掐断。
-      if (w.__spaRouter && typeof w.__spaRouter.navigate === 'function') {
-        const rootAttr = (doc.documentElement && doc.documentElement.getAttribute('data-root')) || './';
-        const url = new URL(rootAttr + normalized, location.href).pathname;
-        const verified = navPaths.indexOf(normalized) >= 0;
-        // 2026-10-24（issue #18 决策 #4 配套）：等 SPA 路由真正换完页再回结果——
-        // 此前 fire-and-forget，工具立刻回 ok 而 URL/滚动还是旧页的，
-        // 页面桥量出的 navigated/scrolled 全是假值。返回 Promise：runTool 与
-        // execute 都 await（WebMCP 的 execute 允许异步），同步读 .ok 的旧调用
-        // 只剩测试，已同步改 await。
-        // 第 4 参 soft=true：路由内部任何失败都上报，绝不整页重载（见 spa-router 注释）。
-        return Promise.resolve(w.__spaRouter.navigate(url, hash, true, { soft: true }))
-          .then(() => ({ ok: true, to, path: normalized, hash, via: 'spa', verified }),
-                (err) => ({ ok: false, reason: 'navigate_failed', path: normalized,
-                            hint: '路由换页失败（页面可能已失效）。别重试同一路径，换个候选。',
-                            error: String((err?.message) || err) }));
+        if (w.__spaRouter && typeof w.__spaRouter.navigate === 'function') {
+          const rootAttr = (doc.documentElement && doc.documentElement.getAttribute('data-root')) || './';
+          const url = new URL(rootAttr + normalized, location.href).pathname;
+          const verified = navPaths.indexOf(normalized) >= 0;
+          return Promise.resolve(w.__spaRouter.navigate(url, hash, true, { soft: true }))
+            .then(() => ({ ok: true, to, path: normalized, hash, via: 'spa', verified }),
+                  (err) => ({ ok: false, reason: 'navigate_failed', path: normalized,
+                              hint: '路由换页失败（页面可能已失效）。别重试同一路径，换个候选。',
+                              error: String((err?.message) || err) }));
+        }
+        return { ok: false, reason: 'no_spa_router', path: normalized,
+                 hint: '当前页面没有站内路由，跳转会整页重载并中断助手会话，已放弃跳转。' };
+      };
+
+      const syncNav = navStructure();
+      const syncPages = sitePages();
+      if ((syncNav || !w?.__navStructure?.loadNavJson) && (syncPages || !w?.__navStructure?.loadPagesJson)) {
+        return finishPageNav(syncNav, syncPages);
       }
-      // 没有 SPA 路由（非标准页/老产物）：不换页，直接回报。
-      return { ok: false, reason: 'no_spa_router', path: normalized,
-               hint: '当前页面没有站内路由，跳转会整页重载并中断助手会话，已放弃跳转。' };
+      return Promise.all([
+        syncNav ? Promise.resolve(syncNav) : (w?.__navStructure?.loadNavJson ? w.__navStructure.loadNavJson().catch(() => null) : Promise.resolve(null)),
+        syncPages ? Promise.resolve(syncPages) : (w?.__navStructure?.loadPagesJson ? w.__navStructure.loadPagesJson().catch(() => null) : Promise.resolve(null)),
+      ]).then(([navData, pages]) => finishPageNav(navData, pages));
     }
 
     return { ok: false, reason: 'unknown_target', to };
@@ -1629,10 +1599,21 @@ export function createPageView(doc, loc, winOverride) {
     const scope = opt.scope === 'all' ? 'all' : 'course';
     const max = Math.max(1, Number(opt.max) || (scope === 'all' ? 140 : 60));
 
-    const navData = navStructure();
-    if (!navData) {
-      return { ok: false, reason: 'no_sidebar', hint: '本页没有侧栏导航数据（#nav-structure-json 缺失或损坏）' };
+    const finishIndex = (navData) => {
+      if (!navData) {
+        return { ok: false, reason: 'no_sidebar', hint: '本页没有侧栏导航数据（nav-structure 数据缺失或损坏）' };
+      }
+      return finishSiteIndex(navData, opt, scope, max);
+    };
+
+    const syncNav = navStructure();
+    if (syncNav || !win?.__navStructure?.loadNavJson) {
+      return finishIndex(syncNav);
     }
+    return win.__navStructure.loadNavJson().catch(() => null).then(finishIndex);
+  }
+
+  function finishSiteIndex(navData, opt, scope, max) {
 
     // JSON 节点 → site_index 输出形态：组节点带 indexHref（若有）作 path，叶子带 href。
     const toNode = (n) => {
@@ -2217,33 +2198,16 @@ export function buildToolDefs(doc, win) {
 }
 
 // ════════════════════════════════════════════════════════════════
-// ③ 内联：把上面两者原样塞进页面（与站点既有做法一致）
+// ③ 按需浏览器包：由真函数 toString() 派生（零自动协议注册）
 // ════════════════════════════════════════════════════════════════
 
-/** 注册引导：探测两个注册表、建 defs、逐个注册。依赖注入（document/navigator 由页面给）。
- *  @returns {number} **尝试注册的个数**（不是成功数——单个抛错不影响其余，也不该让计数漏掉那一个）。 */
-export function registerTools(doc, nav) {
-  // **两个注册表都要探测**（2026-10-16 修）：
-  //   Firefox 原生只有 navigator.modelContext；Chromium 走 polyfill 只有 document.modelContext。
-  //   只认 navigator ⇒ Chromium 下第一行就 return、工具一个都没注册（实测踩到）。
-  const mc = (doc?.modelContext) || (nav?.modelContext) || null;
-  if (!mc || typeof mc.registerTool !== 'function') return 0;
-  const defs = buildToolDefs(doc, (doc?.defaultView) || null);
-  let attempts = 0;
-  for (const d of defs) {
-    attempts += 1; // 先记「试了」——单个失败不该把它算漏（2026-10-16 测试抓出的计数偏差）
-    try { Promise.resolve(mc.registerTool(d)).catch(() => {}); } catch (_e) { /* 单个失败不影响其余 */ }
-  }
-  return attempts;
-}
-
 /**
- * 在页面里执行一个已注册的工具。
+ * 便利函数调用入口。
  *
- * 与 `registerTools` 共用同一套 `createPageView` / `buildToolDefs`，保持注册与执行一致。
+ * 与 `buildToolDefs` 共用同一套 `createPageView`，保持构建外调用一致。
  *
  * @param {Document} doc
- * @param {string} name  工具名（site_index 等）
+ * @param {string} name  函数/工具名（site_index 等）
  * @param {object} args  参数
  * @returns {Promise<{ok:boolean, value?:any, effect?:object, error?:string}>}
  *   恒 resolve——失败也回 `{ok:false, error}`。
@@ -2485,12 +2449,9 @@ export function serializeSelectors(sel) {
 }
 
 /**
- * 站点工具的源码（构建期内联；浏览器端执行）。
- *
- * **每一段都由上面的真函数 `toString()` 派生**——测试跑的就是浏览器跑的
- * （从前这里是一份手写的独立字符串，与可测版本各活各的，改坏了没人拦）。
+ * 站点便利函数浏览器包（仅当显式 `?helpers=1` 或调试/eval 引入时执行，正常访问零加载）。
  */
-export const WEBMCP_TOOLS_JS = `(function () {
+export const SITE_HELPERS_JS = `(function () {
 "use strict";
 if (typeof document === "undefined") return;
 
@@ -2502,23 +2463,16 @@ var isTextNode = ${isTextNode.toString()};
 var renderMarkdown = ${renderMarkdown.toString()};
 var createPageView = ${createPageView.toString()};
 var buildToolDefs = ${buildToolDefs.toString()};
-var registerTools = ${registerTools.toString()};
-// ⚠️ 2026-10-26：feedText 必须与 runTool 一起内联——runTool 里调用它，
-// 漏了就是运行时「feedText is not defined」（实测踩到，整条工具链直接挂）。
-// ⚠️ 2026-10-27（同一坑第二次）：feedHead 也必须内联。它是「抬头随机化」抽出的
-// 顶层函数，忘了加进这一行 ⇒ 浏览器里每次 site_* 都抛「feedHead is not defined」
-// ⇒ 工具调用全失败、桥侧只看到 30 秒超时。**凡是被 toString() 内联的函数的依赖，
-// 都得手动加进这里，没有自动追踪**。加完请在页面内跑一次 __mcpTools.runTool 冒烟。
 var feedHead = ${feedHead.toString()};
-// ⚠️ 2026-10-29（同一坑第四次）：reasonText 是 feedText 的依赖，必须一起内联。
 var reasonText = ${reasonText.toString()};
 var feedText = ${feedText.toString()};
-// 阶段二 T11：站点侧协议栈的 invoke 入口（runTool 依赖 createPageView，已在上面）
 var runTool = ${runTool.toString()};
-registerTools(document, typeof navigator !== "undefined" ? navigator : null);
 
-// 暴露页面工具直接调用入口（与 WebMCP modelContext 共用同一份 buildToolDefs）。
-window.__mcpTools = {
+// 按需挂载纯便利函数（零自动注册行为）
+window.__siteHelpers = {
   runTool: function (name, args) { return runTool(document, name, args); },
+  call: function (name, args) { return runTool(document, name, args); },
+  defs: function () { return buildToolDefs(document, window); },
+  createPageView: function () { return createPageView(document, location, window); },
 };
 })();`;
