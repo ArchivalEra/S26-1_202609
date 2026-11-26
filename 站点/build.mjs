@@ -94,6 +94,9 @@ function copyDir(src, dest) {
     if (entry.isDirectory()) {
       copyDir(srcPath, destPath);
     } else {
+      if (/\.png$/i.test(entry.name)) {
+        throw new Error(`[build] 禁止向静态站输出 PNG 文件（请改用 SVG 或 WebP）：${srcPath}`);
+      }
       copyFileAtomic(srcPath, destPath);
     }
   }
@@ -119,7 +122,12 @@ function copySiteAssets(src, dest) {
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
     if (entry.isDirectory()) copySiteAssets(srcPath, destPath);
-    else copyFileAtomic(srcPath, destPath);
+    else {
+      if (/\.png$/i.test(entry.name)) {
+        throw new Error(`[build] 禁止向静态站输出 PNG 资产（请改用 SVG/WebP/GIF）：${srcPath}`);
+      }
+      copyFileAtomic(srcPath, destPath);
+    }
   }
 }
 copySiteAssets(path.join(SITE_DIR, 'assets'), path.join(DIST_DIR, 'assets'));
@@ -1756,10 +1764,10 @@ for (const relPath of TARGET_FILES) {
   <link rel="stylesheet" href="${rootRel}${assetUrl('assets/theme/shirone-reader.css')}">
   <link rel="stylesheet" href="${rootRel}${assetUrl('assets/plugins/site-search.css')}">
   <link rel="stylesheet" href="${rootRel}${assetUrl('assets/plugins/figures.css')}">
-  <!-- 站点图标：动画 GIF 为主（Chrome/Firefox/Edge 会动），静态 PNG 作不支持动画时的回退 -->
+  <!-- 站点图标：动画 GIF 为主（Chrome/Firefox/Edge 会动），静态 WebP 作不支持动画时的回退（禁止服务 PNG） -->
   <link rel="icon" type="image/gif" href="${rootRel}assets/favicon/favicon.gif">
-  <link rel="alternate icon" type="image/png" href="${rootRel}assets/favicon/favicon.png">
-  <link rel="apple-touch-icon" href="${rootRel}assets/favicon/apple-touch-icon.png">
+  <link rel="alternate icon" type="image/webp" href="${rootRel}assets/favicon/favicon.webp">
+  <link rel="apple-touch-icon" href="${rootRel}assets/favicon/apple-touch-icon.webp">
 </head>
 <body data-site-path="${sitePathOf(relPath)}">
   <div class="drawer-backdrop" id="drawer-backdrop"></div>
@@ -2400,3 +2408,18 @@ a:hover{text-decoration:underline}
   console.log(`[Birthright] ${links.length} 条完整镜像链接 → dist/machine/Birthright.html`
     + `（${Buffer.byteLength(html)} bytes，逐条校验文件存在）`);
 }
+
+// 硬守门：dist/ 内禁止存在任何 .png 文件（serve 阶段禁 PNG；MCP canvas 截图不落盘不受影响）
+(function assertNoPngInDist(dir) {
+  const bad = [];
+  (function walk(d) {
+    for (const ent of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, ent.name);
+      if (ent.isDirectory()) walk(p);
+      else if (/\.png$/i.test(ent.name)) bad.push(path.relative(DIST_DIR, p));
+    }
+  })(dir);
+  if (bad.length) {
+    throw new Error(`[build] dist/ 内存在禁止服务的 PNG 文件：\n  ${bad.join('\n  ')}`);
+  }
+})(DIST_DIR);

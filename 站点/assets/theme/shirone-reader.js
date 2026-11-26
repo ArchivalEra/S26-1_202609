@@ -27,6 +27,7 @@
     document.documentElement.setAttribute("data-theme", next);
     localStorage.setItem("theme", next);
     syncThemeButtons();
+    if (typeof updateAllImageContrast === "function") updateAllImageContrast();
   }
 
   syncThemeButtons();
@@ -392,12 +393,166 @@
   let tocLinks = document.querySelectorAll(".toc-item a");
   let headings = Array.from(document.querySelectorAll(".article-content h2, .article-content h3"))
     .filter((h) => h.id);
+  // 透明底黑线配图自动对比度检测与反色呈现
+  function parseCssColor(str) {
+    if (!str || str === "transparent") return null;
+    const s = String(str).trim();
+    const mRgb = /^rgba?\(\s*([0-9.]+)\s*[,\s]\s*([0-9.]+)\s*[,\s]\s*([0-9.]+)(?:\s*[,\/]\s*([0-9.]+%?))?\s*\)$/i.exec(s);
+    if (mRgb) {
+      let a = 1;
+      if (mRgb[4] !== undefined) {
+        a = mRgb[4].endsWith("%") ? parseFloat(mRgb[4]) / 100 : parseFloat(mRgb[4]);
+      }
+      return { r: Number(mRgb[1]), g: Number(mRgb[2]), b: Number(mRgb[3]), a: Number.isFinite(a) ? a : 1 };
+    }
+    const mSrgb = /^color\(\s*srgb\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)(?:\s*\/\s*([0-9.]+%?))?\s*\)$/i.exec(s);
+    if (mSrgb) {
+      let a = 1;
+      if (mSrgb[4] !== undefined) {
+        a = mSrgb[4].endsWith("%") ? parseFloat(mSrgb[4]) / 100 : parseFloat(mSrgb[4]);
+      }
+      return {
+        r: Number(mSrgb[1]) * 255,
+        g: Number(mSrgb[2]) * 255,
+        b: Number(mSrgb[3]) * 255,
+        a: Number.isFinite(a) ? a : 1,
+      };
+    }
+    return null;
+  }
+
+  function relLuminance(r, g, b) {
+    const ch = [r, g, b].map((v) => {
+      const c = Math.max(0, Math.min(255, v)) / 255;
+      return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+  }
+
+  function contrastRatio(l1, l2) {
+    const hi = Math.max(l1, l2);
+    const lo = Math.min(l1, l2);
+    return (hi + 0.05) / (lo + 0.05);
+  }
+
+  function resolveBgRgb(el) {
+    const layers = [];
+    let cur = el;
+    while (cur && cur.nodeType === 1) {
+      const parsed = parseCssColor(window.getComputedStyle(cur).backgroundColor);
+      if (parsed && parsed.a > 0.01) {
+        layers.push(parsed);
+        if (parsed.a >= 0.99) break;
+      }
+      cur = cur.parentElement;
+    }
+    const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+    let acc = isDark ? { r: 18, g: 17, b: 23 } : { r: 255, g: 255, b: 255 };
+    for (let i = layers.length - 1; i >= 0; i--) {
+      const top = layers[i];
+      const a = Math.max(0, Math.min(1, top.a));
+      acc = {
+        r: top.r * a + acc.r * (1 - a),
+        g: top.g * a + acc.g * (1 - a),
+        b: top.b * a + acc.b * (1 - a),
+      };
+    }
+    return acc;
+  }
+
+  function shouldInvertSamples(rgba, bgRgb) {
+    if (!rgba || rgba.length < 4 || !bgRgb) return false;
+    const total = rgba.length / 4;
+    let transparentCount = 0;
+    let inkWeight = 0;
+    let fgLumSum = 0;
+    let invLumSum = 0;
+    for (let i = 0; i < rgba.length; i += 4) {
+      const a = rgba[i + 3] / 255;
+      if (a < 0.1) {
+        transparentCount++;
+        continue;
+      }
+      inkWeight += a;
+      fgLumSum += a * relLuminance(rgba[i], rgba[i + 1], rgba[i + 2]);
+      invLumSum += a * relLuminance(255 - rgba[i], 255 - rgba[i + 1], 255 - rgba[i + 2]);
+    }
+    if (inkWeight === 0 || transparentCount / total < 0.08) return false;
+    const bgLum = relLuminance(bgRgb.r, bgRgb.g, bgRgb.b);
+    const curContrast = contrastRatio(fgLumSum / inkWeight, bgLum);
+    const invContrast = contrastRatio(invLumSum / inkWeight, bgLum);
+    return curContrast < 3.0 && invContrast > curContrast * 1.5;
+  }
+
+  let sampleCanvas = null;
+  function evaluateImageContrast(img) {
+    if (!img || !img.complete || !(img.naturalWidth > 0)) return;
+    const bgRgb = resolveBgRgb(img);
+    try {
+      const w = Math.max(16, Math.min(64, img.naturalWidth));
+      const h = Math.max(16, Math.min(64, img.naturalHeight));
+      if (!sampleCanvas) sampleCanvas = document.createElement("canvas");
+      sampleCanvas.width = w;
+      sampleCanvas.height = h;
+      const ctx = sampleCanvas.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return;
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+      const data = ctx.getImageData(0, 0, w, h).data;
+      img.classList.toggle("img-auto-invert", shouldInvertSamples(data, bgRgb));
+    } catch (_) {
+      // file:// 预览下 canvas 读取同源 SVG 可能受限：深色底对透明 SVG 回落反色
+      const src = img.getAttribute("src") || "";
+      const isSvg = /\.svg(?:[?#]|$)/i.test(src);
+      const isDarkBg = relLuminance(bgRgb.r, bgRgb.g, bgRgb.b) < 0.25;
+      img.classList.toggle("img-auto-invert", isSvg && isDarkBg);
+    }
+  }
+
+  function updateAllImageContrast() {
+    document.querySelectorAll(".article-content img").forEach((img) => {
+      if (!img.dataset.contrastBound) {
+        img.dataset.contrastBound = "1";
+        img.addEventListener("load", () => evaluateImageContrast(img));
+      }
+      if (img.complete && img.naturalWidth > 0) evaluateImageContrast(img);
+    });
+  }
+
+  window.__contrastInvert = {
+    parseCssColor: parseCssColor,
+    relLuminance: relLuminance,
+    contrastRatio: contrastRatio,
+    shouldInvertSamples: shouldInvertSamples,
+    updateAllImageContrast: updateAllImageContrast,
+  };
+
+  if (typeof MutationObserver === "function") {
+    new MutationObserver(() => {
+      updateAllImageContrast();
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  }
+  if (window.matchMedia) {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    if (typeof mq.addEventListener === "function") {
+      mq.addEventListener("change", () => {
+        if (!localStorage.getItem("theme")) {
+          document.documentElement.setAttribute("data-theme", mq.matches ? "dark" : "light");
+          syncThemeButtons();
+        }
+        updateAllImageContrast();
+      });
+    }
+  }
+  updateAllImageContrast();
+
   window.__readerRescan = function () {
     tocLinks = document.querySelectorAll(".toc-item a");
     headings = Array.from(document.querySelectorAll(".article-content h2, .article-content h3"))
       .filter((h) => h.id);
     if (typeof onScroll === "function") onScroll();
     scheduleInlineMathOverflow();
+    updateAllImageContrast();
   };
   if (tocLinks.length > 0) {
 

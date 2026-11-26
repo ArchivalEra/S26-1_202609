@@ -467,11 +467,11 @@
 !/站点/图库/电子技术.figures.txt
 !/站点/页面清单.mjs
 !/站点/源树hash.mjs
-!/站点/assets/favicon/apple-touch-icon.png
+!/站点/assets/favicon/apple-touch-icon.webp
 !/站点/assets/favicon/brand.gif
-!/站点/assets/favicon/brand.png
+!/站点/assets/favicon/brand.webp
 !/站点/assets/favicon/favicon.gif
-!/站点/assets/favicon/favicon.png
+!/站点/assets/favicon/favicon.webp
 !/站点/assets/fonts/stix2math-subset.woff2
 !/站点/assets/katex/fonts/KaTeX_AMS-Regular.woff2
 !/站点/assets/katex/fonts/KaTeX_Caligraphic-Bold.woff2
@@ -530,6 +530,7 @@
 !/站点/plugins/figures.mjs
 !/站点/plugins/figures.test.mjs
 !/站点/plugins/glossary-bubble.test.mjs
+!/站点/plugins/image-serving.test.mjs
 !/站点/plugins/issue-status.mjs
 !/站点/plugins/link-validity.test.mjs
 !/站点/plugins/mathlive-css.test.mjs
