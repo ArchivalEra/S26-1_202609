@@ -1,5 +1,5 @@
 {
-  "schema": 1,
+  "schema": 2,
   "default_equals": "AGPL-3.0-only",
   "declarations": [
     {
@@ -612,37 +612,180 @@
     {
       "path": "站点/licenses.json",
       "format": "json",
-      "field": "components.site_code.license",
+      "field": "version",
+      "equals_from": {
+        "path": "站点/package.json",
+        "format": "json",
+        "field": "version"
+      }
+    },
+    {
+      "path": "站点/licenses.json",
+      "format": "json",
+      "field": [
+        "components",
+        "site_code",
+        "license"
+      ],
       "spdx": true
     },
     {
       "path": "站点/licenses.json",
       "format": "json",
-      "field": "components.shirone_reader.license",
+      "field": [
+        "components",
+        "site_code",
+        "version"
+      ],
+      "equals_from": {
+        "path": "站点/package.json",
+        "format": "json",
+        "field": "version"
+      }
+    },
+    {
+      "path": "站点/licenses.json",
+      "format": "json",
+      "field": [
+        "components",
+        "shirone_reader",
+        "license"
+      ],
       "equals": "MIT",
       "spdx": true
     },
     {
       "path": "站点/licenses.json",
       "format": "json",
-      "field": "components.katex.license",
-      "equals": "MIT",
-      "spdx": true
+      "field": [
+        "components",
+        "katex",
+        "license"
+      ],
+      "spdx": true,
+      "equals_from": {
+        "path": "站点/package-lock.json",
+        "format": "json",
+        "field": [
+          "packages",
+          "node_modules/katex",
+          "license"
+        ]
+      }
     },
     {
       "path": "站点/licenses.json",
       "format": "json",
-      "field": "components.marked.license",
-      "equals": "MIT",
-      "spdx": true
+      "field": [
+        "components",
+        "katex",
+        "version"
+      ],
+      "equals_from": {
+        "path": "站点/package-lock.json",
+        "format": "json",
+        "field": [
+          "packages",
+          "node_modules/katex",
+          "version"
+        ]
+      }
     },
     {
       "path": "站点/licenses.json",
       "format": "json",
-      "field": "components.js_yaml.license",
-      "equals": "MIT",
-      "spdx": true
+      "field": [
+        "components",
+        "marked",
+        "license"
+      ],
+      "spdx": true,
+      "equals_from": {
+        "path": "站点/package-lock.json",
+        "format": "json",
+        "field": [
+          "packages",
+          "node_modules/marked",
+          "license"
+        ]
+      }
+    },
+    {
+      "path": "站点/licenses.json",
+      "format": "json",
+      "field": [
+        "components",
+        "marked",
+        "version"
+      ],
+      "equals_from": {
+        "path": "站点/package-lock.json",
+        "format": "json",
+        "field": [
+          "packages",
+          "node_modules/marked",
+          "version"
+        ]
+      }
+    },
+    {
+      "path": "站点/licenses.json",
+      "format": "json",
+      "field": [
+        "components",
+        "js_yaml",
+        "license"
+      ],
+      "spdx": true,
+      "equals_from": {
+        "path": "站点/package-lock.json",
+        "format": "json",
+        "field": [
+          "packages",
+          "node_modules/js-yaml",
+          "license"
+        ]
+      }
+    },
+    {
+      "path": "站点/licenses.json",
+      "format": "json",
+      "field": [
+        "components",
+        "js_yaml",
+        "version"
+      ],
+      "equals_from": {
+        "path": "站点/package-lock.json",
+        "format": "json",
+        "field": [
+          "packages",
+          "node_modules/js-yaml",
+          "version"
+        ]
+      }
     }
   ],
-  "copies": []
+  "copies": [],
+  "notices": [
+    {
+      "path": "LICENSE",
+      "contains": [
+        "GNU AFFERO GENERAL PUBLIC LICENSE",
+        "Version 3, 19 November 2007"
+      ]
+    },
+    {
+      "path": "站点/assets/theme/shirone-reader.css",
+      "contains_from": {
+        "path": "站点/licenses.json",
+        "format": "json",
+        "field": [
+          "components",
+          "shirone_reader",
+          "copyright"
+        ]
+      }
+    }
+  ]
 }

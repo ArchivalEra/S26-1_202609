@@ -1,36 +1,48 @@
 {
   "schema": 1,
   "name": "S26-1_202609",
+  "version": "1.0.0",
   "license": "AGPL-3.0-only",
   "licenseUrl": "https://www.gnu.org/licenses/agpl-3.0.html",
   "localLicense": "LICENSE",
   "components": {
     "site_code": {
       "name": "S26-1 站点自研代码与原创学习笔记",
+      "version": "1.0.0",
       "license": "AGPL-3.0-only",
       "licenseUrl": "https://www.gnu.org/licenses/agpl-3.0.html",
-      "localLicense": "LICENSE"
+      "localLicense": "LICENSE",
+      "copyright": "Copyright (c) ArchivalEra"
     },
     "shirone_reader": {
       "name": "Shirone Material 3 Reader 主题样式",
       "license": "MIT",
-      "licenseUrl": "https://opensource.org/license/mit"
+      "licenseUrl": "https://opensource.org/license/mit",
+      "copyright": "Shirone Material 3 Expressive Reader Theme"
     },
     "katex": {
       "name": "KaTeX",
+      "version": "0.16.28",
       "license": "MIT",
       "licenseUrl": "https://github.com/KaTeX/KaTeX/blob/main/LICENSE",
-      "localLicense": "assets/katex/LICENSE"
+      "localLicense": "assets/katex/LICENSE",
+      "copyright": "Copyright (c) 2013-2020 Khan Academy and other contributors"
     },
     "marked": {
       "name": "marked",
+      "version": "18.0.13",
       "license": "MIT",
-      "licenseUrl": "https://github.com/markedjs/marked/blob/master/LICENSE.md"
+      "licenseUrl": "https://github.com/markedjs/marked/blob/master/LICENSE.md",
+      "localLicense": "assets/marked/LICENSE",
+      "copyright": "Copyright (c) 2018+, MarkedJS"
     },
     "js_yaml": {
       "name": "js-yaml",
+      "version": "5.4.2",
       "license": "MIT",
-      "licenseUrl": "https://github.com/nodeca/js-yaml/blob/master/LICENSE"
+      "licenseUrl": "https://github.com/nodeca/js-yaml/blob/master/LICENSE",
+      "localLicense": "assets/js-yaml/LICENSE",
+      "copyright": "Copyright (C) 2011-2015 by Vitaly Puzrin"
     }
   }
 }

@@ -376,9 +376,29 @@ def _eval_principles_anchor(head_anc, cur_anc, *, receipt, repo_name, pub, revok
     return probs
 
 
-def _eval_existing_question_entry(rel, prev, cur, *, receipt, repo_name, pub, revoked, verify_sig_fn):
+def is_suite_upgraded(head_anchors, cur_anchors):
+    """True iff `cur_anchors` strictly advances `suite_seq` over `head_anchors`."""
+    if not isinstance(head_anchors, dict) or not isinstance(cur_anchors, dict):
+        return False
+    old_seq = safe_int(head_anchors.get("suite_seq"), 0)
+    new_seq = safe_int(cur_anchors.get("suite_seq"), 0)
+    return old_seq is not None and new_seq is not None and new_seq > old_seq
+
+
+def _is_parser_reanchor_exempt(prev, cur, disk_snap, head_q, suite_upgraded):
+    if not suite_upgraded or cur.get("sha256") != prev.get("sha256"):
+        return False
+    if isinstance(disk_snap, dict) and cur == disk_snap:
+        return True
+    return isinstance(head_q, dict) and prev == head_q
+
+
+def _eval_existing_question_entry(rel, prev, cur, *, receipt, repo_name, pub, revoked,
+                                  verify_sig_fn, disk_snap=None, head_q=None, suite_upgraded=False):
     if cur.get("sha256") == prev.get("sha256"):
-        return [] if cur == prev else [M("approval.anchors_broken")]
+        if cur == prev or _is_parser_reanchor_exempt(prev, cur, disk_snap, head_q, suite_upgraded):
+            return []
+        return [M("approval.anchors_broken")]
     if _question_transition_exempt(prev.get("status"), prev.get("settling"), prev.get("body_sha256"),
                                    cur.get("status"), cur.get("settling"), cur.get("body_sha256")):
         return []
@@ -388,7 +408,8 @@ def _eval_existing_question_entry(rel, prev, cur, *, receipt, repo_name, pub, re
         pub_b64=pub, revoked_ids=revoked, verify_sig_fn=verify_sig_fn)
 
 
-def eval_question_entry(rel, prev, cur, *, receipt, repo_name, pub, revoked, verify_sig_fn):
+def eval_question_entry(rel, prev, cur, *, receipt, repo_name, pub, revoked, verify_sig_fn,
+                        disk_snap=None, head_q=None, suite_upgraded=False):
     """Authorize a change between two question snapshots."""
     if (prev is not None and not isinstance(prev, dict)) or (cur is not None and not isinstance(cur, dict)):
         return [M("approval.anchors_broken")]
@@ -405,20 +426,24 @@ def eval_question_entry(rel, prev, cur, *, receipt, repo_name, pub, revoked, ver
     if prev is not None and cur is not None:
         return _eval_existing_question_entry(
             rel, prev, cur, receipt=receipt, repo_name=repo_name,
-            pub=pub, revoked=revoked, verify_sig_fn=verify_sig_fn)
+            pub=pub, revoked=revoked, verify_sig_fn=verify_sig_fn,
+            disk_snap=disk_snap, head_q=head_q, suite_upgraded=suite_upgraded)
     return []
 
 
-def _eval_questions_anchor(head_anc, cur_anc, *, receipt, repo_name, pub, revoked, verify_sig_fn):
+def _eval_questions_anchor(head_anc, cur_anc, *, receipt, repo_name, pub, revoked, verify_sig_fn,
+                           disk_questions=None):
     h_q = head_anc.get("questions") or {}
     c_q = cur_anc.get("questions") or {}
     if not isinstance(h_q, dict) or not isinstance(c_q, dict):
         return [M("approval.anchors_broken")]
+    suite_upgraded = is_suite_upgraded(head_anc, cur_anc)
     probs = []
     for rel in sorted(set(h_q) | set(c_q)):
         probs += eval_question_entry(
             rel, h_q.get(rel), c_q.get(rel), receipt=receipt, repo_name=repo_name,
-            pub=pub, revoked=revoked, verify_sig_fn=verify_sig_fn)
+            pub=pub, revoked=revoked, verify_sig_fn=verify_sig_fn,
+            disk_snap=(disk_questions or {}).get(rel), suite_upgraded=suite_upgraded)
     return probs
 
 
@@ -446,7 +471,7 @@ def _anchors_header_probs(head_anchors, cur_anchors):
 
 
 def eval_anchors_integrity(head_anchors, cur_anchors, *, receipt, repo_name, verify_sig_fn=None,
-                           suite_principles_md_sha=None):
+                           suite_principles_md_sha=None, disk_questions=None):
     """Verify `ANCHORS.json` was not weakened relative to `HEAD:ANCHORS.json`."""
     if head_anchors is None:
         return []
@@ -473,7 +498,8 @@ def eval_anchors_integrity(head_anchors, cur_anchors, *, receipt, repo_name, ver
                                    pub=pub, revoked=revoked, verify_sig_fn=verify_sig_fn,
                                    suite_principles_md_sha=suite_principles_md_sha)
     out += _eval_questions_anchor(head_anchors, cur_anchors, receipt=receipt, repo_name=repo_name,
-                                  pub=pub, revoked=revoked, verify_sig_fn=verify_sig_fn)
+                                  pub=pub, revoked=revoked, verify_sig_fn=verify_sig_fn,
+                                  disk_questions=disk_questions)
     return out
 
 
@@ -588,7 +614,10 @@ def _selftest_anchors_integrity():
     if [p.code for p in eval_anchors_integrity(base, dict(base, repo="other/repo"), receipt=rec, repo_name="other/repo")] != [_T_BROKEN]:
         return False
     same_sha_tamper = dict(base, questions={_T_Q: {"sha256": "q1", "status": "resolved", "settling": "true", "body_sha256": "other"}})
-    if [p.code for p in eval_anchors_integrity(base, same_sha_tamper, receipt=rec, repo_name=_T_ORG)] != [_T_BROKEN]:
+    reanchored = dict(base, suite_seq=2, questions={_T_Q: {"sha256": "q1", "status": "ready-for-agent", "settling": _T_CMD, "body_sha256": "new_b1"}})
+    if ([p.code for p in eval_anchors_integrity(base, same_sha_tamper, receipt=rec, repo_name=_T_ORG)] != [_T_BROKEN]
+            or eval_anchors_integrity(base, reanchored, receipt=rec, repo_name=_T_ORG, disk_questions=reanchored["questions"]) != []
+            or [p.code for p in eval_anchors_integrity(base, dict(same_sha_tamper, suite_seq=2), receipt=rec, repo_name=_T_ORG, disk_questions=reanchored["questions"])] != [_T_BROKEN]):
         return False
     shrunk_rev = dict(base, revoked_ids=[])
     return [p.code for p in eval_anchors_integrity(base, shrunk_rev, receipt=rec, repo_name=_T_ORG)] == [_T_BROKEN]

@@ -786,15 +786,26 @@ def _principles_md_clean(base, md_p):
         r.stdout, doc_mod.RULES_BEGIN, doc_mod.RULES_END)
 
 
+def _disk_question_snapshots(root, keys=()):
+    import check_questions  # noqa: PLC0415
+    files = check_questions.collect(root=root)
+    targets = (set(keys) & set(files)) if keys else set(files)
+    return {rel: _question_snapshot(files[rel]) for rel in sorted(targets)}
+
+
 def _check_integrity(anchors, root, rec):
     head, err = _baseline_anchors(root)
     if err:
         return [M("approval.anchors_broken")]
     s_md = _verified_suite_principles_md(root, anchors)
+    disk_q = None
+    if trust_core.is_suite_upgraded(head, anchors):
+        keys = set((head or {}).get("questions") or ()) | set(anchors.get("questions") or ())
+        disk_q = _disk_question_snapshots(root, keys) if keys else {}
     return trust_core.eval_anchors_integrity(
         head, anchors, receipt=rec,
         repo_name=anchors.get("repo") or repo_id(root), verify_sig_fn=ed25519_verify,
-        suite_principles_md_sha=s_md)
+        suite_principles_md_sha=s_md, disk_questions=disk_q)
 
 
 def _run_anchor_gate(root, receipt, auto_sync, eval_fn):
@@ -893,11 +904,11 @@ def _question_snapshot(text):
         text, check_questions.field(text, "Status"), check_questions.field(text, "Settling"))
 
 
-def _eval_one_question(rel, cur, prev, r, *, rname, pub, revoked):
+def _eval_one_question(rel, cur, prev, r, *, rname, pub, revoked, head_q=None, suite_upgraded=False):
     snapshot = _question_snapshot(cur) if cur is not None else None
     return trust_core.eval_question_entry(
         rel, prev, snapshot, receipt=r, repo_name=rname, pub=pub, revoked=revoked,
-        verify_sig_fn=ed25519_verify)
+        verify_sig_fn=ed25519_verify, head_q=head_q, suite_upgraded=suite_upgraded)
 
 
 def check_questions_against_anchor(files, root=None, receipt=None, qdir=None, *, auto_sync=False):
@@ -914,10 +925,14 @@ def check_questions_against_anchor(files, root=None, receipt=None, qdir=None, *,
             return [M("approval.anchors_broken")]
         if qdir:
             q_map = {k: v for k, v in q_map.items() if k.startswith(qdir.rstrip("/") + "/")}
+        head_anc, _ = _baseline_anchors(base)
+        upgraded = trust_core.is_suite_upgraded(head_anc, anchors)
+        head_q_map = (head_anc or {}).get("questions") or {}
         probs = []
         for rel in sorted(set(q_map) | set(files)):
             probs += _eval_one_question(rel, files.get(rel), q_map.get(rel), rec,
-                                        rname=rname, pub=pub, revoked=revoked)
+                                        rname=rname, pub=pub, revoked=revoked,
+                                        head_q=head_q_map.get(rel), suite_upgraded=upgraded)
         return probs
 
     return _run_anchor_gate(root, receipt, auto_sync, _eval)
@@ -963,6 +978,16 @@ def init_anchors(root=None, pub_b64=None):
     return 0
 
 
+def _refresh_untouched_questions(root, migrated):
+    q_map = dict(migrated.get("questions") or {})
+    snaps = _disk_question_snapshots(root, q_map)
+    for rel, old_q in q_map.items():
+        snap = snaps.get(rel)
+        if isinstance(old_q, dict) and snap and snap.get("sha256") == old_q.get("sha256"):
+            q_map[rel] = snap
+    migrated["questions"] = q_map
+
+
 def cmd_migrate(argv=()):
     """Migrate `<repo>/ANCHORS.json` from schema v1 to v2 (idempotent, monotonic)."""
     _ = argv
@@ -979,6 +1004,7 @@ def cmd_migrate(argv=()):
     )
     if probs or not migrated:
         return fatal(probs[0] if probs else M("approval.anchors_broken"))
+    _refresh_untouched_questions(base, migrated)
     write_anchors(base, migrated)
     print(f"migrate.ok(schema={migrated['schema']}, suite_seq={migrated['suite_seq']})")
     return 0
@@ -1058,7 +1084,8 @@ def _ensure_upgrade_principles_md(dst, migrated):
 def _post_upgrade_refresh(dst, migrated=None):
     _ensure_upgrade_principles_md(dst, migrated)
     sub_env = dict(os.environ, GATE_REPO=dst)
-    cmds = [[sys.executable, _FACTS_REL, "--accept-changes", "--allow-drop"]]
+    cmds = [[sys.executable, os.path.join("zreflect", "trust.py"), "--migrate"]] if migrated is not None else []
+    cmds.append([sys.executable, _FACTS_REL, "--accept-changes", "--allow-drop"])
     doc_name = knobs.get("REFLECT_DOC", root=dst) or "STATE.md"
     if os.path.isfile(os.path.join(dst, doc_name)):
         cmds.append([sys.executable, _FACTS_REL, "--render-doc"])
@@ -1093,8 +1120,11 @@ def _prepare_upgrade(src, dst):
     return seal_d, migrated, None
 
 
-def _refresh_upgraded_principles(dst, migrated):
-    if migrated is None:
+def _refresh_upgraded_principles(dst, had_anchors):
+    if not had_anchors:
+        return
+    migrated = load_anchors(dst)
+    if not migrated:
         return
     pr = trust_core.clean_principles(migrated.get("principles"))
     md_p = os.path.join(dst, _PRINCIPLES_MD)
@@ -1133,7 +1163,7 @@ def cmd_upgrade(argv):
     rc = _post_upgrade_refresh(dst, migrated)
     if rc != 0:
         return rc
-    _refresh_upgraded_principles(dst, migrated)
+    _refresh_upgraded_principles(dst, migrated is not None)
     print(f"upgrade.ok(from={src!r}, suite_seq={seal_d.get('suite_seq', 1)})")
     return 0
 
@@ -1534,6 +1564,52 @@ def _selftest_question_evaluation_shared():
         return evaluate.call_count == 12
 
 
+def _selftest_parser_drift_upgrade():
+    genv = _clean_git_env()
+    rel = "questions/06-contract.md"
+    q_txt = ("# Q6\n\n**Status:** ready-for-agent\n\n**Settling:** python3 -c pass -- rc=0 => ok\n\n"
+             "## Related\nSee contract.\n")
+    file_sha = trust_core.sha256_text(q_txt)
+    old_snap = {"sha256": file_sha, "status": "ready-for-agent",
+                "settling": "python3 -c pass -- rc=0 => ok ## Related See contract.",
+                "body_sha256": "old_parser_body_hash"}
+    new_snap = _question_snapshot(q_txt)
+    with tempfile.TemporaryDirectory() as rt:
+        subprocess.run(["git", "init", "-q", rt], check=True, env=genv)
+        subprocess.run(["git", "-C", rt, "config", "user.email", "t@e.com"], check=True, env=genv)
+        subprocess.run(["git", "-C", rt, "config", "user.name", "t"], check=True, env=genv)
+        os.makedirs(os.path.join(rt, "questions"))
+        with open(os.path.join(rt, rel), "w", encoding="utf-8") as fh:
+            fh.write(q_txt)
+        head_anc = {"schema": 2, "repo": _TEST_CONSUMER, "approver_pub": "PUB", "lock_core": False,
+                    "revoked_ids": [], "suite_seq": 1, "knobs_sha256": "NONE", "questions_dir": "questions",
+                    "local_scripts": {}, "off_gates": [], "principles": {}, "questions": {rel: old_snap}}
+        write_anchors(rt, head_anc)
+        subprocess.run(["git", "-C", rt, "add", ANCHORS_FILE, rel], check=True, env=genv)
+        subprocess.run(["git", "-C", rt, "commit", "-qm", "init"], check=True, env=genv)
+        # 1. Pre-migrate upgrade (suite_seq bumped, questions still match HEAD old parser) must pass
+        write_anchors(rt, {**head_anc, "suite_seq": 12})
+        if check_questions_against_anchor({rel: q_txt}, root=rt, receipt={"receipts": []}) != []:
+            return False
+        # 2. Tampering ANCHORS.json[rel] while keeping sha256 identical must still fail anchors_broken
+        write_anchors(rt, {**head_anc, "suite_seq": 12, "questions": {rel: {**old_snap, "settling": "true"}}})
+        if [p.code for p in check_questions_against_anchor({rel: q_txt}, root=rt, receipt={"receipts": []})] != ["approval.anchors_broken"]:
+            return False
+        # 3. Re-anchoring to new_snap via cmd_migrate clears worktree & integrity checks
+        write_anchors(rt, {**head_anc, "suite_seq": 12})
+        old_repo = gate.GATE_REPO
+        try:
+            gate.GATE_REPO = rt
+            if cmd_migrate() != 0:
+                return False
+        finally:
+            gate.GATE_REPO = old_repo
+        migrated = load_anchors(rt)
+        return bool(migrated and migrated["questions"][rel] == new_snap
+                    and check_knobs_anchor(root=rt, receipt={"receipts": []}) == []
+                    and check_questions_against_anchor({rel: q_txt}, root=rt, receipt={"receipts": []}) == [])
+
+
 def _cases():
     return [
         ("★ trust.local_scripts_tamper_and_downgrade_rejected", _selftest_local_scripts_and_upgrade),
@@ -1545,6 +1621,7 @@ def _cases():
         ("★ trust.happy_upgrade_refreshes_principles", _selftest_happy_upgrade),
         ("★ trust.cli_subdir_doctor_and_pull_bundle", _selftest_cli_flows),
         ("★ trust.security_edges_and_bundle_safety", _selftest_security_edges),
+        ("★ trust.parser_drift_upgrade_reanchor", _selftest_parser_drift_upgrade),
         ("trust.question_shared_evaluation", _selftest_question_evaluation_shared),
     ]
 

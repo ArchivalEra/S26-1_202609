@@ -1,12 +1,48 @@
 {
-  "schema": 1,
+  "schema": 2,
   "default_equals": "AGPL-3.0-only",
   "declarations": [
-    {"path": "站点/dist/licenses.json", "format": "json", "field": "license", "spdx": true}
+    {"path": "站点/dist/licenses.json", "format": "json", "field": "license", "spdx": true},
+    {
+      "path": "站点/dist/licenses.json", "format": "json", "field": "version",
+      "equals_from": {"path": "站点/package.json", "format": "json", "field": "version"}
+    },
+    {
+      "path": "站点/dist/licenses.json", "format": "json", "field": ["components", "katex", "version"],
+      "equals_from": {"path": "站点/package-lock.json", "format": "json", "field": ["packages", "node_modules/katex", "version"]}
+    },
+    {
+      "path": "站点/dist/licenses.json", "format": "json", "field": ["components", "katex", "license"], "spdx": true,
+      "equals_from": {"path": "站点/package-lock.json", "format": "json", "field": ["packages", "node_modules/katex", "license"]}
+    },
+    {
+      "path": "站点/dist/licenses.json", "format": "json", "field": ["components", "marked", "version"],
+      "equals_from": {"path": "站点/package-lock.json", "format": "json", "field": ["packages", "node_modules/marked", "version"]}
+    },
+    {
+      "path": "站点/dist/licenses.json", "format": "json", "field": ["components", "marked", "license"], "spdx": true,
+      "equals_from": {"path": "站点/package-lock.json", "format": "json", "field": ["packages", "node_modules/marked", "license"]}
+    },
+    {
+      "path": "站点/dist/licenses.json", "format": "json", "field": ["components", "js_yaml", "version"],
+      "equals_from": {"path": "站点/package-lock.json", "format": "json", "field": ["packages", "node_modules/js-yaml", "version"]}
+    },
+    {
+      "path": "站点/dist/licenses.json", "format": "json", "field": ["components", "js_yaml", "license"], "spdx": true,
+      "equals_from": {"path": "站点/package-lock.json", "format": "json", "field": ["packages", "node_modules/js-yaml", "license"]}
+    }
   ],
   "copies": [
     {"src": "LICENSE", "dst": "站点/dist/LICENSE"},
     {"src": "站点/licenses.json", "dst": "站点/dist/licenses.json"},
-    {"src": "站点/node_modules/katex/LICENSE", "dst": "站点/dist/assets/katex/LICENSE"}
+    {"src": "站点/node_modules/katex/LICENSE", "dst": "站点/dist/assets/katex/LICENSE"},
+    {"src": "站点/node_modules/marked/LICENSE", "dst": "站点/dist/assets/marked/LICENSE"},
+    {"src": "站点/node_modules/js-yaml/LICENSE", "dst": "站点/dist/assets/js-yaml/LICENSE"}
+  ],
+  "notices": [
+    {"path": "站点/dist/LICENSE", "contains": ["GNU AFFERO GENERAL PUBLIC LICENSE", "Version 3, 19 November 2007"]},
+    {"path": "站点/dist/assets/katex/LICENSE", "contains_from": {"path": "站点/dist/licenses.json", "format": "json", "field": ["components", "katex", "copyright"]}},
+    {"path": "站点/dist/assets/marked/LICENSE", "contains_from": {"path": "站点/dist/licenses.json", "format": "json", "field": ["components", "marked", "copyright"]}},
+    {"path": "站点/dist/assets/js-yaml/LICENSE", "contains_from": {"path": "站点/dist/licenses.json", "format": "json", "field": ["components", "js_yaml", "copyright"]}}
   ]
 }

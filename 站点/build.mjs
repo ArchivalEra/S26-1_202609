@@ -135,6 +135,14 @@ copySiteAssets(path.join(SITE_DIR, 'assets'), path.join(DIST_DIR, 'assets'));
       copyFileAtomic(path.join(katexPkgDir, 'dist', 'fonts', entry.name), path.join(katexFontsOut, entry.name));
     }
   }
+  const copyPkgLicense = (pkgJsonSpec, outSubdir) => {
+    const pkgDir = path.dirname(fileURLToPath(import.meta.resolve(pkgJsonSpec)));
+    const outDir = path.join(DIST_DIR, 'assets', outSubdir);
+    fs.mkdirSync(outDir, { recursive: true });
+    copyFileAtomic(path.join(pkgDir, 'LICENSE'), path.join(outDir, 'LICENSE'));
+  };
+  copyPkgLicense('marked/package.json', 'marked');
+  copyPkgLicense('js-yaml/package.json', 'js-yaml');
 }
 console.log(`[build] Copied offline assets to dist/assets/`);
 

@@ -355,7 +355,7 @@ def sort_key(name):
 
 def collect(d=None, root=None):
     # The directory name is configurable via `knobs.questions_dir()`.
-    d = d or knobs.questions_dir()
+    d = d or knobs.get("REFLECT_QUESTIONS", root).strip().rstrip("/") or "questions"
     base = os.path.join(root or gate.GATE_REPO, d)
     files = {}
     if os.path.isdir(base):
