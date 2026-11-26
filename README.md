@@ -2,33 +2,16 @@
 
 2026 年秋季学期 · 九门课的学习记录与静态阅读站。
 
-## 三种交互方式
-
-### 1. 人类自己导航（浏览器阅读站）
+## 在线阅读与界面功能
 
 **[进入在线阅读站 →](https://isui.ren/repo/S26-1_202609/)**
 
-顶栏与阅读控件说明：
+顶栏与页内阅读功能：
 
-- **导航树（`#drawer-toggle`）**：左侧汉堡按钮展开/收起课程导航树（边界可拖宽），右侧附当前页小节目录跳转。
-- **全站搜索（`#search-toggle`）**：顶栏放大镜按钮（或快捷键 `/`、`Ctrl+K`）打开全站搜索面板，中文按字面子串精准匹配。
-- **调色盘与昼夜（`#palette-toggle`）**：切换主题强调色色相、明暗主题（昼夜/深浅）与正文字号。
-- **作业渐进提示**：作业页提示与解答分层折叠——先独立演算，卡住再逐层展开。
-
-### 2. 机器直读 `/machine/`（全站源文镜像）
-
-- **全站入口**：[`https://isui.ren/repo/S26-1_202609/machine/Birthright.html`](https://isui.ren/repo/S26-1_202609/machine/Birthright.html) —— 全站目录树，每个叶子节点均为完整 URL，点开或抓取即可，无需自行拼接规则。
-- **路径映射**：`.html` 页面与 `.json` 源文一一对应，将页面路径中的 `.html` 替换为 `.json` 并加 `machine/` 前缀（例如 `…/课程总览/工程数学/Walkthrough.html` → `…/machine/课程总览/工程数学/Walkthrough.json`），返回渲染前整篇源文（原始 Markdown、TeX 公式源码、图片完整 URL）。
-- **大页面分片**：整页过大时可读取同目录下的 `_index.json`（列出各小节的 `heading`、字数与文件名），按需抓取 `<页面>/<file>`。
-
-### 3. 站点静态索引与页内数据接口
-
-不需要浏览器扩展或协议转发层，静态站点本身暴露以下机器可读接口：
-
-- **站点全站搜索接口**：[`search/index.json`](https://isui.ren/repo/S26-1_202609/search/index.json)（全站页面清单、小节锚点、总字数及 `buckets: 64` 倒排桶配置）；倒排索引分桶在 `search/g/<0..63>.json`，单页纯文本分片在 `search/t/<id>.json`。
-- **每页符号查询接口**：每个含符号词条的页面内嵌 `<script type="application/json" id="sym-glossary-json">`（包含当前页 `env`、`ctx` 及全部命中词条 `terms` 的多义项，SPA 切页同步替换），对应公式/图元 DOM 节点带属性 `data-term="sym-..."`（或 `<包>:sym-...`）；全站符号总目录与分包定义在 [`machine/symbols/index.json`](https://isui.ren/repo/S26-1_202609/machine/symbols/index.json)。
-- **站点目录与源文直读接口**：共享侧栏导航树 [`assets/nav-structure.json`](https://isui.ren/repo/S26-1_202609/assets/nav-structure.json) 与页面清单 [`assets/site-pages.json`](https://isui.ren/repo/S26-1_202609/assets/site-pages.json)（供外部缓存复用）；全站源文镜像树在 [`/machine/Birthright.html`](https://isui.ren/repo/S26-1_202609/machine/Birthright.html)（任意 `.html` 页面对应 `machine/...json`）。
-- **页面按需便利函数（默认零加载）**：`站点/plugins/site-helpers.mjs` 保留正文 Markdown 提取、节选、图元与符号直读纯函数；正常访问零字节下发，仅按需引入或访问页面追加 `?helpers=1` 时挂载到 `window.__siteHelpers`。
+- **导航树（`#drawer-toggle`）**：左上角汉堡按钮展开或收起课程导航树（侧栏右缘可拖宽），页内右侧附本页小节目录跳转。
+- **全站搜索（`#search-toggle`）**：顶栏搜索按钮（快捷键 `/` 或 `Ctrl+K`）打开全站检索面板，中文按字面子串精准匹配；站内跳转由 SPA 路由无刷新切换。
+- **调色盘与昼夜（`#palette-toggle`）**：调节强调色色相、明暗主题（昼夜/深浅）与正文字号。
+- **渐进折叠提示**：作业页提示与解答分层折叠，需要时逐层展开。
 
 <!-- COURSE-STATUS:START -->
 
@@ -72,15 +55,13 @@
 
 <!-- AUTO-CATALOG:END -->
 
-## 规则与维护
+## 机器与自动化入口
 
-- 原则与判定：`PRINCIPLES.md` · 常驻规则：`AGENTS.md` · 活状态：`STATE.md` · 变更历史：`HISTORY.md`
-- 仓库根层文档（含 `PRINCIPLES.md`、`AGENTS.md`、`STATE.md`、`HISTORY.md`）仅随 Git 仓库提供，不编入阅读站页面
-- 各课程首页登记本课全部材料（文件名 + SHA-256）；教材照片原件不入库，存本地 `/mnt/hdd/study/`
-- 缺什么、待补什么：看 [GitHub issues](https://github.com/ArchivalEra/S26-1_202609/issues)（open = 没补，closed = 补了）
+- [`HELPERS.md`](https://isui.ren/repo/S26-1_202609/HELPERS.md)（仓内 `./站点/HELPERS.md`）：页面 `?helpers=1` 便利函数文档
+- [`Birthright.html`](https://isui.ren/repo/S26-1_202609/machine/Birthright.html)：全站只读源文镜像树（全文检索索引在 [`search/index.json`](https://isui.ren/repo/S26-1_202609/search/index.json)，页内符号数据见 `#sym-glossary-json`）
 
-## 许可
+## 维护与许可
 
-- 自研代码（`站点/`）与原创文字：AGPL-3.0-only，署名 ArchivalEra；完整成分与许可链接见 [`licenses.json`](https://isui.ren/repo/S26-1_202609/licenses.json)（仓内 `./站点/licenses.json`）
-- 教材题目与章节结构：归原书作者与出版社；本仓解析仅作学习用途引用
-- 站点主题 Shirone M3 Reader（MIT）；KaTeX、MathLive、marked、js-yaml 等第三方库依其自身许可证分发
+- **仓内规则**：`PRINCIPLES.md` · `AGENTS.md` · `STATE.md` · `HISTORY.md`（仅随 Git 仓库保存，不编入阅读站）
+- **原始资料与缺件**：各课原始资料索引记录来源、日期与范围，教材照片与转写底稿原件存本地 `/mnt/hdd/study/` 不入库；缺条件与缺图跟踪见 [GitHub issues](https://github.com/ArchivalEra/S26-1_202609/issues)
+- **许可**：自研代码（`站点/`）与原创文字按 AGPL-3.0-only 发布（[`licenses.json`](https://isui.ren/repo/S26-1_202609/licenses.json)，仓内 `./站点/licenses.json`）；教材题目归原书作者与出版社；站点主题 Shirone M3 Reader（MIT），第三方库 KaTeX、marked、js-yaml 依各自许可证分发

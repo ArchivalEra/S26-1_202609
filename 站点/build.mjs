@@ -139,6 +139,10 @@ copySiteAssets(path.join(SITE_DIR, 'assets'), path.join(DIST_DIR, 'assets'));
 console.log(`[build] Copied offline assets to dist/assets/`);
 
 {
+  const helpersDocSrc = path.join(SITE_DIR, 'HELPERS.md');
+  if (fs.existsSync(helpersDocSrc)) {
+    copyFileAtomic(helpersDocSrc, path.join(DIST_DIR, 'HELPERS.md'));
+  }
   const licJsonSrc = path.join(SITE_DIR, 'licenses.json');
   if (fs.existsSync(licJsonSrc)) {
     copyFileAtomic(licJsonSrc, path.join(DIST_DIR, 'licenses.json'));
