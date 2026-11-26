@@ -173,46 +173,6 @@ export function renderMarkdown(root, opts) {
     return (el.textContent || '').replace(/\s+/g, ' ').trim();
   }
 
-  /**
-   * 剥掉站点注入的 `\htmlData{term=sym-x}{内容}` 包裹，只留内容。
-   * **必须按括号配对扫描**——内容里可能还有 `\frac{a}{b}` 这样的嵌套花括号，
-   * 正则的非贪婪写法在嵌套时会把公式切坏（实测 `p_h` 变 `\htmlData{...`）。
-   */
-  function stripHtmlData(src) {
-    const s = String(src);
-    const TAG = '\\htmlData{';
-    let out = '';
-    let i = 0;
-    while (i < s.length) {
-      const at = s.indexOf(TAG, i);
-      if (at < 0) { out += s.slice(i); break; }
-      out += s.slice(i, at);
-      // 跳过第一组 {…}（term 参数）
-      let j = at + TAG.length;
-      let depth = 1;
-      while (j < s.length && depth > 0) {
-        if (s[j] === '{') depth += 1;
-        else if (s[j] === '}') depth -= 1;
-        j += 1;
-      }
-      // 紧接着第二组 {…}（内容）
-      if (s[j] === '{') {
-        let k = j + 1;
-        depth = 1;
-        while (k < s.length && depth > 0) {
-          if (s[k] === '{') depth += 1;
-          else if (s[k] === '}') depth -= 1;
-          k += 1;
-        }
-        out += stripHtmlData(s.slice(j + 1, k - 1));   // 递归剥嵌套
-        i = k;
-      } else {
-        i = j;   // 没有内容组：整段丢掉
-      }
-    }
-    return out;
-  }
-
   function walkInline(node) {
     if (!node) return '';
     if (isTextNode(node)) return node.textContent || '';

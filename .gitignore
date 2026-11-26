@@ -533,6 +533,7 @@
 !/站点/plugins/image-serving.test.mjs
 !/站点/plugins/issue-status.mjs
 !/站点/plugins/link-validity.test.mjs
+!/站点/plugins/math-font.test.mjs
 !/站点/plugins/mathlive-css.test.mjs
 !/站点/plugins/nav-structure.mjs
 !/站点/plugins/nav-structure.test.mjs
@@ -629,7 +630,6 @@
 !/retractions.json
 !/STATE.md
 # SW 已根除（2026-10-23）：sw-template.js 退役，换成一次性清老用户的 sw-kill.mjs
-!/tmp-fake-whitelist-probe.md
 !/reflect-local/check_doc_paths.py
 !/reflect-local/check_study.py
 !/reflect-local/check_tools_untracked.py

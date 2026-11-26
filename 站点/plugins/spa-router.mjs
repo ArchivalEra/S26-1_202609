@@ -166,8 +166,6 @@ function navigate(rawUrl, hash, push, opts4) {
     try { if (window.__drawerSync) window.__drawerSync.onNavigate(); } catch (e) {}
 
     // reset 钩子（全部可选存在）
-    // 2026-10-19：聊天面板不销毁，只做位置复位（历史保留）
-    try { if (window.__chatSync) window.__chatSync(); } catch (e) {}
     try { if (window.__glossaryReset) window.__glossaryReset(); } catch (e) {}
     try { if (window.__readerRescan) window.__readerRescan(); } catch (e) {}
     try { if (window.__disclosureOpen) window.__disclosureOpen(hash); } catch (e) {}

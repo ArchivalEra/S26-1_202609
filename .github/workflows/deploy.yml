@@ -6,7 +6,7 @@ on:
       - main
     paths:
       - "README.md"
-      - "课程/**"
+      - "课程总览/**"
       - "站点/**"
       - "PRINCIPLES.md"
       - ".github/workflows/**"
