@@ -1455,6 +1455,22 @@ pre code {
   scroll-margin-top: calc(var(--header-height) + 0.75rem);
 }
 
+@keyframes anchorFlash {
+  0%, 100% {
+    background-color: transparent;
+    box-shadow: none;
+  }
+  50% {
+    background-color: color-mix(in oklab, var(--md-sys-color-primary-container) 55%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--md-sys-color-primary) 65%, transparent);
+  }
+}
+
+.anchor-flash {
+  animation: anchorFlash 1s ease-in-out 5;
+  border-radius: 6px;
+}
+
 /* 符号气泡（站点/symbols/）：术语符号上**强调色**，无下划线、无链接框——
  * 是「术语高亮」的样子，不是「链接」的样子。正文令牌（a.sym-gloss）与
  * KaTeX 公式内部的取词符号（[data-term]）同一套配色。
