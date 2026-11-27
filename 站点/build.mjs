@@ -9,7 +9,6 @@ import { parse as parseMath } from './math/parser.mjs';
 import { compile as compileMath, render as renderMathDoc, probeRenderer } from './math/index.mjs';
 import { createKatexRenderer, decorateAnchors, replaceKatexWithText, KATEX_STYLESHEET } from './math/render.mjs';
 import { renderCollapse } from './plugins/collapse.mjs';
-import { parseFigureLib, renderFigures, restoreFigures, buildFigureIndex, FIGURES_CSS, FIGURES_JS } from './plugins/figures.mjs';
 import { DISCLOSURE_ANCHOR_JS } from './plugins/disclosure-anchor.mjs';
 // 符号深核心（2026-11-25 收口）：加载/编译/查词/页面会话/运行时全部收进 站点/symbols/。
 import {
@@ -181,15 +180,6 @@ for (const course of fs.readdirSync(path.join(ROOT, '课程总览'), { withFileT
 const disclosureAnchorDist = path.join(DIST_DIR, 'assets', 'plugins', 'disclosure-anchor.js');
 fs.mkdirSync(path.dirname(disclosureAnchorDist), { recursive: true });
 fs.writeFileSync(disclosureAnchorDist, DISCLOSURE_ANCHOR_JS);
-
-// 图元样式（2026-10-28）：与 SEARCH_CSS / CHAT_CSS 同款——模块导出字符串，构建期写盘。
-// 可拆卸：删掉本段与页面模板里的对应 <link> 即回退（图仍渲染，只是没有排版）。
-const figuresCssDist = path.join(DIST_DIR, 'assets', 'plugins', 'figures.css');
-fs.mkdirSync(path.dirname(figuresCssDist), { recursive: true });
-fs.writeFileSync(figuresCssDist, FIGURES_CSS);
-// 交互层（选中元件 / 高亮网络 / 属性面板 / 缩放）。可拆卸：删本段与模板里的 <script>。
-const figuresJsDist = path.join(DIST_DIR, 'assets', 'plugins', 'figures.js');
-fs.writeFileSync(figuresJsDist, FIGURES_JS);
 
 // 符号深核心：加载全部符号包、校验 match 正则防呆、编译数学词典（统一规范键 `包:词条`）。
 const symbolCatalog = createSymbolCatalog({ root: ROOT, parseMath });
@@ -908,7 +898,6 @@ for (const relPath of TARGET_FILES) {
 
   // 打开本页符号会话（唯一环境装配 + 强制/排除 + 规范键包:词条）
   const symSession = symbolCatalog.openPage({ relPath, frontmatter, course: here });
-  const pageFigures = [];        // Step 2.4 解析出的图元 IR（Step 6.5 还原成 <figure>）
 
   // Step 1: Protect Code Fences
   const codeBlocks = [];
@@ -962,19 +951,6 @@ for (const relPath of TARGET_FILES) {
       if (!libPath || !fs.existsSync(libPath)) {
         throw new Error(`${relPath}：页面里有 :::figure，但图库 ${libFile} 不存在——先建图库或去掉该指令`);
       }
-    }
-    if (libPath && fs.existsSync(libPath)) {
-      const lib = parseFigureLib(fs.readFileSync(libPath, 'utf-8'), libFile);
-      const figOut = renderFigures(raw, {
-        lib,
-        libName: libFile,
-        pagePath: relPath,
-        lookupGloss: (label) => symSession.resolveFigureTerm(label),
-        onHit: (key, entry) => symSession.recordBubbleHit(key, entry),
-      });
-      raw = figOut.source;
-      pageFigures.push(...figOut.figures);
-      for (const w of figOut.warnings) console.warn(`[图] ${relPath}：${w}`);
     }
   }
 
@@ -1160,39 +1136,6 @@ for (const relPath of TARGET_FILES) {
   // 那一刻正文里**必须还没有 SVG**（否则它会把 `<text>B</text>` 改成
   // `<text>[B]{#sym-B}</text>`，随后产生非法的 `<text><a>B</a></text>`）。
   // marked 也已经跑完，SVG 里的 `*`、`|`、`[]()` 不会被当 Markdown 语法。
-  if (pageFigures.length) {
-    // 不需要 lookupGloss：图内符号在 Step 2.4 解析期就已按 `@词条` 解析完，
-    // IR.symbols 里带着 key/href，restore 只按标签做替换。
-    htmlContent = restoreFigures(htmlContent, pageFigures);
-    // ⚠️ 图注里的行内公式要再还原一次。
-    // 图注文字来自 `:::figure id | 图注`，作者会在里面写 `$u_i$`；但它在 Step 2
-    // 就变成了 `@@MATH_INLINE_n@@`（那是 **Step 6** 才换回 KaTeX 的），而
-    // restoreFigures 在 Step 6.5 才跑——它把图注原文带进 HTML 时，Step 6 的
-    // 整轮 replace 已经过去了。实测后果：页面上直接显示
-    // 「上一行为输入 @@MATH_INLINE_84@@（幅值 20 V…」这种占位符。
-    //
-    // 图注在**三处各存一份**，必须一起换，否则页面显示对了、AI 读到的仍是占位符：
-    //   ① <figcaption>（人看的）
-    //   ② 图元 <svg> 的 aria-label + <script class="fig-data">（AI 读的结构表来源）
-    //   ③ 页脚 <script id="figure-index-json">（MCP 的图索引）
-    // ①②在下面的 figure 块替换里一并处理；③ 由模板调 buildFigureIndex 现算，
-    // 所以那边直接对**已经填好的 caption** 取（见模板处的 figureIndexMath）。
-    const fillHtmlMath = (s) => s.replace(
-      /@@MATH_INLINE_(\d+)@@/g,
-      (_, id) => mathBlocks[parseInt(id, 10)]?.html || '');
-    const fillAttrMath = (s) => s.replace(
-      /@@MATH_INLINE_(\d+)@@/g,
-      (_, id) => escHtml(mathBlocks[parseInt(id, 10)]?.plain || ''));
-    const fillJsonMath = (s) => s.replace(
-      /@@MATH_INLINE_(\d+)@@/g,
-      (_, id) => JSON.stringify(mathBlocks[parseInt(id, 10)]?.plain || '').slice(1, -1).replace(/<\//g, '<\\/'));
-    htmlContent = htmlContent.replace(/<figure class="fig"[\s\S]*?<\/figure>/g, (fig) =>
-      fig
-        .replace(/<svg\b[^>]*>/g, fillAttrMath)
-        .replace(/<script type="application\/json" class="fig-data">[\s\S]*?<\/script>/g, fillJsonMath)
-        .replace(/<figcaption>[\s\S]*?<\/figcaption>/g, fillHtmlMath)
-        .replace(/@@MATH_INLINE_(\d+)@@/g, (_, id) => mathBlocks[parseInt(id, 10)]?.html || ''));
-  }
 
   // Extract TOC headings —— **必须在公式还原之后**。
   //
@@ -1483,7 +1426,6 @@ for (const relPath of TARGET_FILES) {
   }
 
   const hasMath = mathBlocks.length > 0;
-  const hasFigures = pageFigures.length > 0 || /<img\b/i.test(htmlContent);
   const hasGlossary = Object.keys(glossaryJsonPayload.terms || {}).length > 0 || /data-term=/.test(htmlContent);
 
   // Final HTML Document
@@ -1518,7 +1460,7 @@ for (const relPath of TARGET_FILES) {
   </script>
   <!-- 按页条件加载数学/图元样式，基础页零额外 CSS 阻塞。 -->
   ${hasMath ? `<link rel="stylesheet" href="${rootRel}${assetUrl(KATEX_STYLESHEET)}" data-opt-asset="katex-css">\n  ` : ''}<link rel="stylesheet" href="${rootRel}${assetUrl('assets/theme/shirone-reader.css')}">
-  ${hasFigures ? `<link rel="stylesheet" href="${rootRel}${assetUrl('assets/plugins/figures.css')}" data-opt-asset="figures-css">\n  ` : ''}<!-- 站点图标统一使用轻量静态 WebP（较 GIF 体积减重 >90%） -->
+  <!-- 站点图标统一使用轻量静态 WebP（较 GIF 体积减重 >90%） -->
   <link rel="icon" type="image/webp" href="${rootRel}assets/favicon/favicon.webp">
   <link rel="apple-touch-icon" href="${rootRel}assets/favicon/apple-touch-icon.webp">
 </head>
@@ -1723,7 +1665,7 @@ for (const relPath of TARGET_FILES) {
 
   <script src="${rootRel}${assetUrl('assets/theme/shirone-reader.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/disclosure-anchor.js')}" defer></script>
-  ${hasFigures ? `<script src="${rootRel}${assetUrl('assets/plugins/figures.js')}" data-opt-asset="figures-js" defer></script>\n  ` : ''}${hasGlossary ? `<script type="application/json" id="${SYMBOL_JSON_SCRIPT_ID}">${JSON.stringify(glossaryJsonPayload).replace(/<\//g, '<\\/')}</script>\n  ` : ''}${pageFigures.length > 0 ? `<script type="application/json" id="figure-index-json">${JSON.stringify(buildFigureIndex(pageFigures)).replace(/<\//g, '<\\/').replace(/@@MATH_INLINE_(\d+)@@/g, (_, i) => JSON.stringify(mathBlocks[parseInt(i, 10)]?.plain || '').slice(1, -1).replace(/<\//g, '<\\/'))}</script>\n  ` : ''}${hasGlossary ? `<script src="${rootRel}${assetUrl(SYMBOL_RUNTIME_ASSET)}" data-opt-asset="symbols-bubble" defer></script>\n  ` : ''}<script src="${rootRel}${assetUrl('assets/plugins/site-root.js')}" defer></script>
+  ${hasGlossary ? `<script type="application/json" id="${SYMBOL_JSON_SCRIPT_ID}">${JSON.stringify(glossaryJsonPayload).replace(/<\//g, '<\\/')}</script>\n  ` : ''}${hasGlossary ? `<script src="${rootRel}${assetUrl(SYMBOL_RUNTIME_ASSET)}" data-opt-asset="symbols-bubble" defer></script>\n  ` : ''}<script src="${rootRel}${assetUrl('assets/plugins/site-root.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/nav-structure.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/drawer-sync.js')}" defer></script>
   <script src="${rootRel}${assetUrl('assets/plugins/sw-kill.js')}" defer></script>

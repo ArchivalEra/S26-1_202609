@@ -11,7 +11,6 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(HERE, '../dist');
 const CSS = fs.readFileSync(path.join(HERE, '../assets/theme/shirone-reader.css'), 'utf8');
 const RUNTIME = fs.readFileSync(path.join(HERE, '../symbols/runtime.mjs'), 'utf8');
-const FIGS = fs.readFileSync(path.join(HERE, 'figures.mjs'), 'utf8');
 const HELPERS = fs.readFileSync(path.join(HERE, 'site-helpers.mjs'), 'utf8');
 
 function stripCssComments(src) {
@@ -61,24 +60,19 @@ test('符号奇偶校验：强调色（CSS 着色）与冒泡/守卫/页面便�
   // ── 其余源码适配器：一律直接 import symbols/index.mjs，不再手工复写 ──
   for (const [label, src] of [
     ['site-helpers', HELPERS],
-    ['figures', FIGS],
   ]) {
     assert.match(src, /from ['"]\.\.\/symbols\/index\.mjs['"]/,
       `${label} 必须直接从 ../symbols/index.mjs 导入真源`);
     assert.ok(!/"a\.sym-gloss,/.test(src),
       `${label} 不应再手工硬编码选择器副本`);
   }
-  const guards = (FIGS.match(/closest\(SYMBOL_SELECTOR\)/g) || []).length;
-  assert.ok(guards >= 3, `figures 的让路守卫应至少 3 处用 SYMBOL_SELECTOR，实际 ${guards}`);
 
   // ── 构建产物端一致性（dist 存在时一并核验） ──
   if (fs.existsSync(DIST)) {
     const bubbleJs = fs.readFileSync(path.join(DIST, SYMBOL_RUNTIME_ASSET), 'utf8');
-    const figsJs = fs.readFileSync(path.join(DIST, 'assets/plugins/figures.js'), 'utf8');
     const helpersJs = fs.readFileSync(path.join(DIST, 'assets/plugins/site-helpers.js'), 'utf8');
     for (const [name, js] of [
       [SYMBOL_RUNTIME_ASSET, bubbleJs],
-      ['figures.js', figsJs],
       ['site-helpers.js', helpersJs],
     ]) {
       assert.ok(js.includes(SYMBOL_SELECTOR), `dist/${name} 未注入一致的 SYMBOL_SELECTOR`);
