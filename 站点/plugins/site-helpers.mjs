@@ -1847,11 +1847,13 @@ export function createPageView(doc, loc, winOverride) {
           let dataUrl = canvas.toDataURL(mime, q / 100);
           let bytes = Math.round(((dataUrl.split(',')[1] || '').length) * 3 / 4);
           let tries = 0;
-          while (bytes > maxBytes && format === 'jpeg' && q > 40 && tries < 6) {
-            q = Math.max(40, q - 12);
-            dataUrl = canvas.toDataURL(mime, q / 100);
-            bytes = Math.round(((dataUrl.split(',')[1] || '').length) * 3 / 4);
-            tries += 1;
+          if (format === 'jpeg') {
+            while (bytes > maxBytes && q > 40 && tries < 6) {
+              q = Math.max(40, q - 12);
+              dataUrl = canvas.toDataURL(mime, q / 100);
+              bytes = Math.round(((dataUrl.split(',')[1] || '').length) * 3 / 4);
+              tries += 1;
+            }
           }
           clrT(timer);
           done({

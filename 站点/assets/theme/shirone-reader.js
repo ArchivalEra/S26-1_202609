@@ -391,7 +391,7 @@
     });
   }
   scheduleInlineMathOverflow();
-  if (document.fonts && document.fonts.ready) {
+  if (document.fonts && typeof document.fonts.ready?.then === "function") {
     document.fonts.ready.then(scheduleInlineMathOverflow);
   }
   window.addEventListener("resize", scheduleInlineMathOverflow);

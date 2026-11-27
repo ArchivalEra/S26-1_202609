@@ -1840,7 +1840,7 @@ for (const relPath of TARGET_FILES) {
   // 图片：源里的相对路径（figures/xxx.svg）→ 相对该页的绝对 URL。
   const siteBase = 'https://isui.ren/repo/S26-1_202609/';
   const pageDir = targetHtmlPath.replace(/[^/]+$/, '');
-  const bodyMd = srcNoFm.replace(/(!\[[^\]]*\]\()([^)\s]+\.(?:svg|png|jpe?g|webp|gif))(\s*[^)]*)?\)/g,
+  const bodyMd = srcNoFm.replace(/(!\[[^\]]*\]\()([^)\s]+\.(?:svg|png|jpe?g|webp|gif))(\s[^)]*)?\)/g,
     (_, pre, src, tail) => {
       if (/^https?:/.test(src)) return `${pre}${src}${tail || ''})`;
       return `${pre}${siteBase}${pageDir}${src}${tail || ''})`;
@@ -1873,7 +1873,7 @@ for (const relPath of TARGET_FILES) {
   const slugify = (h) => h.toLowerCase()
     .replace(/[（(][^）)]*[）)]/g, '')          // 去掉括号里的图号/补充
     .replace(/[^\w\u4e00-\u9fa5]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'x';
+    .replace(/(?:^-+)|(?:-+$)/g, '') || 'x';
   const sliced = [];
   sections.forEach((sec, i) => {
     const text = sec.lines.join('\n').trim();

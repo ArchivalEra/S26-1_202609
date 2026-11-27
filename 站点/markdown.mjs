@@ -45,7 +45,7 @@ export function createMarkdownRenderer(provider = defaultMarkdownProvider) {
     if (explicitId) clean = clean.slice(0, explicit.index).trim();
     let id = explicitId || clean.toLowerCase()
       .replace(/[^\w\u4e00-\u9fa5]+/g, '-')
-      .replace(/^-+|-+$/g, '') || ('h-' + Math.random().toString(36).substring(2, 7));
+      .replace(/(?:^-+)|(?:-+$)/g, '') || ('h-' + Math.random().toString(36).substring(2, 7));
     if (usedHeadingIds.has(id)) {
       let n = 2;
       while (usedHeadingIds.has(`${id}-${n}`)) n++;

@@ -582,12 +582,11 @@ function parseNetBody(id, body) {
     //   受控源                    位号 类型 数值 输出1 输出2 控制1 控制2     = 7 段
     //   单刀双投（spdt）          位号 类型 数值 公共 触点1 触点2 刀位      = 7 段
     //     ↑ 末段 `pos` 说刀接在哪一侧（1 或 2）——这一笔是语义，不是坐标
-    let want = 5;
-  if (controlled || spec.pins === 3) want = 7;
+    const want = (controlled || spec.pins === 3) ? 7 : 5;
     if (tok.length !== want) {
-      const pinHint = controlled
-        ? '输出1 输出2 控制1 控制2'
-        : spec.pins === 3 ? '公共端 触点1 触点2 刀位(1|2)' : '引脚1 引脚2';
+      let pinHint = '引脚1 引脚2';
+      if (controlled) pinHint = '输出1 输出2 控制1 控制2';
+      else if (spec.pins === 3) pinHint = '公共端 触点1 触点2 刀位(1|2)';
       throw new Error(
         `图元「${id}」（net）：「${ref}」是 ${type}，应写 ${want} 段` +
         `（位号 类型 数值 ${pinHint}），` +
@@ -1258,8 +1257,9 @@ function drawWave(payload, opts = {}) {
       prevY = y;
     });
     if (d.trim()) pieces.push(`<path d="${d.trim()}" />`);
+    const colorAttr = row.color ? ` data-color="${attrEsc(row.color)}"` : '';
     body.push(
-      `<g class="fig-wave-row"${row.color ? ` data-color="${attrEsc(row.color)}"` : ''} ` +
+      `<g class="fig-wave-row"${colorAttr} ` +
       `fill="none" stroke="${stroke}" stroke-width="1.8" stroke-linejoin="round">${pieces.join('')}</g>`);
   });
 
@@ -2008,7 +2008,8 @@ function drawPlot(payload, opts = {}) {
       refs.forEach((v) => {
         if (v < row.axis[0] || v > row.axis[1]) return;
         const yy = yPix(v);
-        body.push(`<text x="${x1 + 4}" y="${(yy + 3).toFixed(1)}">${v > 0 ? `+${v}` : v} V</text>`);
+        const vLabel = v > 0 ? `+${v}` : String(v);
+        body.push(`<text x="${x1 + 4}" y="${(yy + 3).toFixed(1)}">${vLabel} V</text>`);
       });
       body.push(`</g>`);
     }
@@ -2139,14 +2140,16 @@ export function renderStructureTable(ir) {
     rows.push(['元件', '类型', '引脚1', '引脚2', '控制端']);
     comps.forEach((c) => {
       const def = NET_COMPONENTS[c.type];
+      const ctrlKind = def.ctrl === 'v' ? '电压' : '电流';
+      const ctrlText = c.ctrlPins
+        ? `${c.ctrlPins[0]}、${c.ctrlPins[1]}（取${ctrlKind}）`
+        : '—';
       rows.push([
         c.ref,
         `${def.label}（${c.type}）`,
         c.pins[0],
         c.pins[1],
-        c.ctrlPins
-          ? `${c.ctrlPins[0]}、${c.ctrlPins[1]}（取${def.ctrl === 'v' ? '电压' : '电流'}）`
-          : '—',   // 模板内层是单层三元；GitRoll 把「三元内含三元」计为嵌套，拆开会多一个临时变量，收益低
+        ctrlText,
       ]);
     });
     tables.push(rows);
@@ -2165,7 +2168,10 @@ export function renderStructureTable(ir) {
     .map((t) => {
       const head = t[0].map((h) => `<th>${esc(h)}</th>`).join('');
       const body = t.slice(1)
-        .map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join('')}</tr>`)
+        .map((r) => {
+          const cells = r.map((c) => `<td>${esc(c)}</td>`).join('');
+          return `<tr>${cells}</tr>`;
+        })
         .join('');
       return `<table class="fig-structure-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
     })
@@ -2358,7 +2364,9 @@ export function restoreFigures(html, figures) {
         /<text([^>]*)>([\s\S]*?)<\/text>/g,
         (whole, attrs, content) => {
           const m = /data-label="([^"]*)"/.exec(attrs);
-          const label = m ? unattrEsc(m[1]) : (content.includes('<') ? null : content);
+          let label = null;
+          if (m) label = unattrEsc(m[1]);
+          else if (!content.includes('<')) label = content;
           if (label === null) return whole;
           const sym = byLabel.get(label);
           const spans = content;
