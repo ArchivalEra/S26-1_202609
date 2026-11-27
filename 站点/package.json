@@ -9,7 +9,10 @@
     "build": "node build.mjs --canonical-root /repo/S26-1_202609/",
     "lint": "eslint .",
     "test": "node --test plugins/",
-    "build:pages": "node build.mjs --canonical-root /S26-1_202609/"
+    "build:pages": "node build.mjs --canonical-root /S26-1_202609/",
+    "size": "size-limit",
+    "hint": "hint dist/index.html",
+    "lhci": "lhci autorun"
   },
   "dependencies": {
     "js-yaml": "5.4.2",
@@ -18,7 +21,11 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@lhci/cli": "^0.16.1",
+    "@size-limit/file": "^14.3.0",
     "eslint": "10.15.0",
-    "globals": "17.0.0"
+    "globals": "17.0.0",
+    "hint": "^7.1.13",
+    "size-limit": "^14.3.0"
   }
 }

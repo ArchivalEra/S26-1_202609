@@ -266,12 +266,13 @@ test('T5b-④ drawer-sync 产物靠 nav JSON 判定，不再有 data-path 全等
     '提供者里必须有 JSON 脚本 id');
 
   const html = needDist('index.html');
-  const iProvider = html.indexOf('nav-structure.js');
-  const iConsumer = html.indexOf('drawer-sync.js');
-  assert.ok(iProvider > 0, '页面应加载 nav-structure.js');
-  assert.ok(iConsumer > 0, '页面应加载 drawer-sync.js');
+  const bundle = html.includes('assets/app.js') ? needDist('assets/app.js') : html;
+  const iProvider = bundle.includes('nav-structure.js') ? bundle.indexOf('nav-structure.js') : bundle.indexOf('nav-structure-json');
+  const iConsumer = bundle.includes('drawer-sync.js') ? bundle.indexOf('drawer-sync.js') : bundle.indexOf('drawerSync');
+  assert.ok(iProvider > 0, '页面/包应加载 nav-structure');
+  assert.ok(iConsumer > 0, '页面/包应加载 drawer-sync');
   assert.ok(iProvider < iConsumer,
-    '加载顺序：nav-structure.js 必须在 drawer-sync.js 之前（否则运行时 undefined）');
+    '加载顺序：nav-structure 必须在 drawer-sync 之前（否则运行时 undefined）');
 });
 
 // ── 侧栏 active 的「应用层」契约（2026-10-26）────────────────────

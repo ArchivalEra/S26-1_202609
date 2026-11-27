@@ -108,7 +108,8 @@ test('SW 根除：一次性清理脚本在场且被页面引用（老用户退�
   assert.ok(kill.includes('caches.delete') || kill.includes('caches.keys'), '清理脚本必须清缓存');
   assert.ok(kill.includes('sw_killed'), '必须有去重标记（清完变 no-op）');
   const page = fs.readFileSync(path.join(HERE, '../dist/index.html'), 'utf8');
-  assert.ok(page.includes('sw-kill.js'), '页面必须引用清理脚本');
+  const hasRef = page.includes('sw-kill.js') || (page.includes('assets/app.js') && fs.readFileSync(path.join(HERE, '../dist/assets/app.js'), 'utf8').includes('sw_killed'));
+  assert.ok(hasRef, '页面必须引用清理脚本（直连或打入 app.js）');
 });
 
 

@@ -302,6 +302,18 @@ fs.writeFileSync(path.join(pluginDir, 'drawer-sync.js'), DRAWER_SYNC_JS);
 fs.writeFileSync(path.join(pluginDir, 'sw-kill.js'), SW_KILL_JS);
 console.log('[build] Wrote sw-kill.js (one-shot SW removal for legacy visitors)');
 
+// 合并首屏必加载的 6 个脚本为单一 assets/app.js，减少 5 次 HTTP 请求
+const APP_BUNDLE_PARTS = [
+  fs.readFileSync(path.join(DIST_DIR, 'assets', 'theme', 'shirone-reader.js'), 'utf8'),
+  fs.readFileSync(path.join(pluginDir, 'disclosure-anchor.js'), 'utf8'),
+  fs.readFileSync(path.join(pluginDir, 'site-root.js'), 'utf8'),
+  NAV_STRUCTURE_JS,
+  DRAWER_SYNC_JS,
+  SW_KILL_JS,
+];
+fs.writeFileSync(path.join(DIST_DIR, 'assets', 'app.js'), APP_BUNDLE_PARTS.join('\n;\n'));
+console.log('[build] Bundled assets/app.js (6 core scripts -> 1 request)');
+
 // 检索语料：渲染循环里逐页填，循环结束后统一建索引。
 const searchDocs = [];
 
@@ -1678,12 +1690,8 @@ for (const relPath of TARGET_FILES) {
     </div>
   </div>
 
-  <script src="${rootRel}${assetUrl('assets/theme/shirone-reader.js')}" defer></script>
-  <script src="${rootRel}${assetUrl('assets/plugins/disclosure-anchor.js')}" defer></script>
-  ${hasGlossary ? `<script type="application/json" id="${SYMBOL_JSON_SCRIPT_ID}">${JSON.stringify(glossaryJsonPayload).replace(/<\//g, '<\\/')}</script>\n  ` : ''}${hasGlossary ? `<script src="${rootRel}${assetUrl(SYMBOL_RUNTIME_ASSET)}" data-opt-asset="symbols-bubble" defer></script>\n  ` : ''}<script src="${rootRel}${assetUrl('assets/plugins/site-root.js')}" defer></script>
-  <script src="${rootRel}${assetUrl('assets/plugins/nav-structure.js')}" defer></script>
-  <script src="${rootRel}${assetUrl('assets/plugins/drawer-sync.js')}" defer></script>
-  <script src="${rootRel}${assetUrl('assets/plugins/sw-kill.js')}" defer></script>
+  <script src="${rootRel}${assetUrl('assets/app.js')}" defer></script>
+  ${hasGlossary ? `<script type="application/json" id="${SYMBOL_JSON_SCRIPT_ID}">${JSON.stringify(glossaryJsonPayload).replace(/<\//g, '<\\/')}</script>\n  ` : ''}${hasGlossary ? `<script src="${rootRel}${assetUrl(SYMBOL_RUNTIME_ASSET)}" data-opt-asset="symbols-bubble" defer></script>\n  ` : ''}
   <script>(function(){
     var CFG={sc:${JSON.stringify(SEARCH_CSS_ASSET_URL)},sj:${JSON.stringify(SEARCH_JS_ASSET_URL)},sp:${JSON.stringify(SPA_JS_ASSET_URL)},hp:${JSON.stringify(HELPERS_JS_ASSET_URL)}};
     var loaded={};

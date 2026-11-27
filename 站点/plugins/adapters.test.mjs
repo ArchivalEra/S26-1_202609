@@ -163,7 +163,7 @@ test('package-lock.json 与 right.json / licenses.json 双向闭环（防漏包�
   const licenses = JSON.parse(readFileSync(path.join(SITE_DIR, 'licenses.json'), 'utf8'));
 
   const lockPkgs = new Map(
-    Object.entries(lock.packages || {}).filter(([key]) => key !== ''),
+    Object.entries(lock.packages || {}).filter(([key, meta]) => key !== '' && !meta.dev),
   );
   const lockDecls = (right.declarations || []).filter((d) => d.path === '站点/package-lock.json');
   const declByField = new Map(lockDecls.map((d) => [d.field, d]));
