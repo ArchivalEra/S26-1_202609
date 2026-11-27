@@ -644,7 +644,14 @@
   }
   function initAnchorFocus() {
     window.__focusAnchorTarget = focusAnchorTarget;
-    window.addEventListener("hashchange", () => focusAnchorTarget(window.location.hash));
+    const onHash = () => {
+      if (window.location?.hash) setTimeout(() => focusAnchorTarget(window.location.hash), 60);
+    };
+    window.addEventListener("hashchange", onHash);
+    window.addEventListener("popstate", onHash);
+    if (window.navigation?.addEventListener) {
+      window.navigation.addEventListener("navigatesuccess", onHash);
+    }
     if (window.location?.hash) {
       const run = () => setTimeout(() => focusAnchorTarget(window.location.hash), 120);
       if (document.readyState === "complete") run();
