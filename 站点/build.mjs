@@ -722,6 +722,13 @@ const NAV_STRUCTURE = [
         children: [
           { label: "Walkthrough", path: "课程总览/通用电气/Walkthrough.md" },
           {
+            label: "教材解析",
+            path: "课程总览/通用电气/教材解析/index.md",
+            children: [
+              { label: "符号入门", path: "课程总览/通用电气/教材解析/符号入门.md" },
+            ]
+          },
+          {
             label: "交叉内容",
             path: "课程总览/通用电气/交叉内容/index.md",
             children: [
