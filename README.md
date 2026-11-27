@@ -65,6 +65,5 @@
 
 ## 维护与许可
 
-- **仓内规则**：`PRINCIPLES.md` · `AGENTS.md` · `STATE.md` · `HISTORY.md`（仅随 Git 仓库保存，不编入阅读站）
-- **原始资料与缺件**：各课原始资料索引记录来源、日期与范围，教材照片与转写底稿原件存本地 `/mnt/hdd/study/` 不入库；缺条件与缺图跟踪见 [GitHub issues](https://github.com/ArchivalEra/S26-1_202609/issues)
-- **许可**：自研代码（`站点/`）与原创文字按 AGPL-3.0-only 发布（[`licenses.json`](https://isui.ren/repo/S26-1_202609/licenses.json)，仓内 `./站点/licenses.json`）；教材题目归原书作者与出版社；站点主题 Shirone M3 Reader（MIT），第三方库 KaTeX、marked、js-yaml 依各自许可证分发
+- **缺件跟踪**：[GitHub issues](https://github.com/ArchivalEra/S26-1_202609/issues)（原始资料底稿存本地 `/mnt/hdd/study/` 不入库）
+- **许可**：自研代码与原创文字按 AGPL-3.0-only 发布（[`licenses.json`](https://isui.ren/repo/S26-1_202609/licenses.json)），教材原题版权归原书作者与出版社所有
