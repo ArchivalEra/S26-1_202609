@@ -398,6 +398,7 @@ const SITE_NAME = 'S26-1 课程知识库';
 // 侧栏若也有首页项，就会有两条指向同一页的链接、且形态不一（`/` 与 `index.html`）
 // ——「网址 / 侧栏 / 面包屑」四条一致就永远差这一格。去掉它，隐患消失。
 const NAV_STRUCTURE = [
+  { label: "通用符号包", path: "站点/符号包/通用.md" },
   {
     label: "课程总览",
     path: "课程总览/index.md",

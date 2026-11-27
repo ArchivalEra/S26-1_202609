@@ -613,23 +613,36 @@
   initTocScrollSpy();
 
   let anchorFlashTimer = null;
-  function focusAnchorTarget(rawHash) {
-    const id = decodeURIComponent(String(rawHash || "").replace(/^#/, ""));
-    if (!id) return;
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+  let anchorArriveTimer = null;
+  function startAnchorFlash(el) {
     el.classList.remove("anchor-flash");
     void el.offsetWidth;
     el.classList.add("anchor-flash");
     if (anchorFlashTimer) clearTimeout(anchorFlashTimer);
-    anchorFlashTimer = setTimeout(() => el.classList.remove("anchor-flash"), 5000);
+    anchorFlashTimer = setTimeout(() => el.classList.remove("anchor-flash"), 8000);
+  }
+  function focusAnchorTarget(rawHash) {
+    const id = decodeURIComponent(String(rawHash || "").replace(/^#/, ""));
+    const el = id ? document.getElementById(id) : null;
+    if (!el) return;
+    if (anchorArriveTimer) clearTimeout(anchorArriveTimer);
+    let started = false;
+    const trigger = () => {
+      if (started) return;
+      started = true;
+      startAnchorFlash(el);
+    };
+    el.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    window.addEventListener("scrollend", trigger, { once: true });
+    anchorArriveTimer = setTimeout(trigger, 500);
   }
   function initAnchorFocus() {
     window.__focusAnchorTarget = focusAnchorTarget;
     window.addEventListener("hashchange", () => focusAnchorTarget(window.location.hash));
     if (window.location?.hash) {
-      requestAnimationFrame(() => focusAnchorTarget(window.location.hash));
+      const run = () => setTimeout(() => focusAnchorTarget(window.location.hash), 60);
+      if (document.readyState === "complete") run();
+      else window.addEventListener("load", run, { once: true });
     }
   }
   initAnchorFocus();
