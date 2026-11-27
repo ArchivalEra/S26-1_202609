@@ -1450,6 +1450,18 @@ pre code {
  * 原生锚点滚动按「面板收起」的位置算落点（等于顶栏正下方 y≈0，被 60px 顶栏盖住），
  * 展开后整页回流又偏一截。scroll-margin-top 让落点稳定留出顶栏高度；
  * 展开后的重滚由 disclosure-anchor.js 负责（见该文件注释）。 */
+:root {
+  --anchor-flash-bg: rgba(66, 133, 244, 0.22);
+  --anchor-flash-ring: rgba(66, 133, 244, 0.6);
+}
+
+@supports (color: color-mix(in oklab, red, blue)) {
+  :root {
+    --anchor-flash-bg: color-mix(in oklab, var(--md-sys-color-primary-container) 55%, transparent);
+    --anchor-flash-ring: color-mix(in oklab, var(--md-sys-color-primary) 65%, transparent);
+  }
+}
+
 .article-content [id],
 .m3-disclosure[id] {
   scroll-margin-top: calc(var(--header-height) + 0.75rem);
@@ -1457,18 +1469,93 @@ pre code {
 
 @keyframes anchorFlash {
   0%, 100% {
-    background-color: transparent;
-    box-shadow: none;
+    box-shadow: 0 0 0 0 transparent;
   }
   50% {
-    background-color: color-mix(in oklab, var(--md-sys-color-primary-container) 55%, transparent);
-    box-shadow: 0 0 0 3px color-mix(in oklab, var(--md-sys-color-primary) 65%, transparent);
+    background-color: var(--anchor-flash-bg);
+    box-shadow: 0 0 0 3px var(--anchor-flash-ring);
   }
 }
 
-.anchor-flash {
-  animation: anchorFlash 1s ease-in-out 8;
+@keyframes anchorFlashRowCell {
+  0%, 100% {
+    box-shadow: inset 0 0 0 0 transparent;
+  }
+  50% {
+    background-color: var(--anchor-flash-bg);
+    box-shadow:
+      inset 0 2px 0 var(--anchor-flash-ring),
+      inset 0 -2px 0 var(--anchor-flash-ring);
+  }
+}
+
+@keyframes anchorFlashRowFirst {
+  0%, 100% {
+    box-shadow: inset 0 0 0 0 transparent;
+  }
+  50% {
+    background-color: var(--anchor-flash-bg);
+    box-shadow:
+      inset 2px 2px 0 var(--anchor-flash-ring),
+      inset 0 -2px 0 var(--anchor-flash-ring);
+  }
+}
+
+@keyframes anchorFlashRowLast {
+  0%, 100% {
+    box-shadow: inset 0 0 0 0 transparent;
+  }
+  50% {
+    background-color: var(--anchor-flash-bg);
+    box-shadow:
+      inset -2px 2px 0 var(--anchor-flash-ring),
+      inset 0 -2px 0 var(--anchor-flash-ring);
+  }
+}
+
+@keyframes anchorFlashRowOnly {
+  0%, 100% {
+    box-shadow: inset 0 0 0 0 transparent;
+  }
+  50% {
+    background-color: var(--anchor-flash-bg);
+    box-shadow: inset 0 0 0 2px var(--anchor-flash-ring);
+  }
+}
+
+.anchor-flash:not(tr) {
+  animation: anchorFlash 1s ease-in-out 6;
   border-radius: 6px;
+}
+
+tr.anchor-flash > td,
+tr.anchor-flash > th {
+  animation: anchorFlashRowCell 1s ease-in-out 6;
+}
+tr.anchor-flash > :first-child {
+  animation-name: anchorFlashRowFirst;
+}
+tr.anchor-flash > :last-child {
+  animation-name: anchorFlashRowLast;
+}
+tr.anchor-flash > :only-child {
+  animation-name: anchorFlashRowOnly;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anchor-flash:not(tr) {
+    animation: none !important;
+    background-color: var(--anchor-flash-bg);
+    box-shadow: 0 0 0 3px var(--anchor-flash-ring);
+  }
+  tr.anchor-flash > td,
+  tr.anchor-flash > th {
+    animation: none !important;
+    background-color: var(--anchor-flash-bg);
+    box-shadow:
+      inset 0 2px 0 var(--anchor-flash-ring),
+      inset 0 -2px 0 var(--anchor-flash-ring);
+  }
 }
 
 /* 符号气泡（站点/symbols/）：术语符号上**强调色**，无下划线、无链接框——

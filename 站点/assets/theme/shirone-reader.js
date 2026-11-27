@@ -612,50 +612,361 @@
   }
   initTocScrollSpy();
 
+  const ANCHOR_FLASH_MS = 6200;
+  let activeFlashEl = null;
   let anchorFlashTimer = null;
-  let anchorArriveTimer = null;
+  let activeRunController = null;
+  let pendingHashFrame = 0;
+
+  function clearAnchorFlash() {
+    if (anchorFlashTimer) {
+      clearTimeout(anchorFlashTimer);
+      anchorFlashTimer = null;
+    }
+    if (activeFlashEl) {
+      activeFlashEl.classList.remove("anchor-flash");
+      activeFlashEl = null;
+    }
+  }
+
   function startAnchorFlash(el) {
-    el.classList.remove("anchor-flash");
+    if (!el || !el.isConnected) return;
+    clearAnchorFlash();
+    activeFlashEl = el;
     void el.offsetWidth;
     el.classList.add("anchor-flash");
-    if (anchorFlashTimer) clearTimeout(anchorFlashTimer);
-    anchorFlashTimer = setTimeout(() => el.classList.remove("anchor-flash"), 8000);
+    anchorFlashTimer = setTimeout(() => {
+      if (activeFlashEl === el) {
+        el.classList.remove("anchor-flash");
+        activeFlashEl = null;
+      }
+      anchorFlashTimer = null;
+    }, ANCHOR_FLASH_MS);
   }
-  function focusAnchorTarget(rawHash) {
-    const id = decodeURIComponent(String(rawHash || "").replace(/^#/, ""));
-    const rawEl = id ? document.getElementById(id) : null;
-    if (!rawEl) return;
-    const rawRect = rawEl.getBoundingClientRect();
-    const el = (rawRect.width === 0 || rawRect.height === 0) && rawEl.parentElement
-      ? rawEl.parentElement
-      : rawEl;
-    if (anchorArriveTimer) clearTimeout(anchorArriveTimer);
-    let started = false;
-    const trigger = () => {
-      if (started) return;
-      started = true;
-      startAnchorFlash(el);
-    };
+
+  function findTargetByHash(rawHash) {
+    const cleaned = String(rawHash || "").replace(/^#/, "").split(":~:")[0];
+    if (!cleaned) return null;
+    let decoded = cleaned;
+    try {
+      decoded = decodeURIComponent(cleaned);
+    } catch {
+      // 保留原始字符串，避免非法 % 序列抛 URIError
+    }
+    return document.getElementById(decoded) || document.getElementById(cleaned);
+  }
+
+  function expandHiddenAncestors(rawEl) {
+    let changed = false;
+    let cur = rawEl.parentElement;
+    while (cur) {
+      if (cur.tagName === "DETAILS" && !cur.open) {
+        cur.open = true;
+        changed = true;
+      }
+      if (cur.getAttribute("hidden") === "until-found") {
+        cur.removeAttribute("hidden");
+        changed = true;
+      }
+      cur = cur.parentElement;
+    }
+    return changed;
+  }
+
+  function hasSize(el) {
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  }
+
+  function resolveVisualTarget(rawEl) {
+    if (hasSize(rawEl)) return rawEl;
+    const semantic = rawEl.closest(
+      "tr, h1, h2, h3, h4, h5, h6, summary, li, p, dt, dd, blockquote, pre, figure, .m3-disclosure"
+    );
+    if (semantic && hasSize(semantic)) return semantic;
+    let cur = rawEl.parentElement;
+    while (cur && cur !== document.body && cur !== document.documentElement) {
+      if (hasSize(cur)) return cur;
+      cur = cur.parentElement;
+    }
+    return rawEl;
+  }
+
+  function getViewportHeight() {
+    const vv = window.visualViewport;
+    if (vv && vv.scale <= 1.01 && vv.height > 0) return vv.height;
+    return window.innerHeight || document.documentElement.clientHeight;
+  }
+
+  function getMinTopOffset(el) {
+    const smt = parseFloat(getComputedStyle(el).scrollMarginTop);
+    if (Number.isFinite(smt) && smt > 0) return smt;
+    const headerHeight = parseFloat(
+      getComputedStyle(document.documentElement).getPropertyValue("--header-height")
+    );
+    return (Number.isFinite(headerHeight) ? headerHeight : 0) + 12;
+  }
+
+  function computeAlignment(el) {
     const rect = el.getBoundingClientRect();
-    const targetY = Math.max(0, window.scrollY + rect.top - Math.max(0, (window.innerHeight - rect.height) / 2));
-    window.scrollTo({ top: targetY, behavior: "smooth" });
-    window.addEventListener("scrollend", trigger, { once: true });
-    anchorArriveTimer = setTimeout(trigger, 550);
+    const vh = getViewportHeight();
+    const minTop = getMinTopOffset(el);
+    const usableHeight = Math.max(0, vh - minTop);
+    const desiredTop =
+      rect.height >= usableHeight
+        ? minTop
+        : minTop + (usableHeight - rect.height) / 2;
+    const delta = rect.top - desiredTop;
+    const targetY = Math.max(0, Math.round(window.scrollY + delta));
+    return { rect, vh, minTop, desiredTop, delta, targetY };
   }
+
+  function scrollInstantTo(y) {
+    try {
+      window.scrollTo({ top: y, left: window.scrollX, behavior: "instant" });
+    } catch {
+      const root = document.documentElement;
+      const prev = root.style.scrollBehavior;
+      root.style.scrollBehavior = "auto";
+      window.scrollTo(window.scrollX, y);
+      root.style.scrollBehavior = prev;
+    }
+  }
+
+  function waitForScrollSettle(signal, { maxWait = 1100, idleMs = 120, startWaitMs = 120 } = {}) {
+    return new Promise((resolve) => {
+      if (signal.aborted) return resolve(false);
+      let doneFlag = false;
+      let sawScroll = false;
+      let idleTimer = null;
+      let startTimer = null;
+      let maxTimer = null;
+
+      const finish = (ok) => {
+        if (doneFlag) return;
+        doneFlag = true;
+        clearTimeout(idleTimer);
+        clearTimeout(startTimer);
+        clearTimeout(maxTimer);
+        window.removeEventListener("scroll", onScroll);
+        window.removeEventListener("scrollend", onScrollEnd);
+        signal.removeEventListener("abort", onAbort);
+        resolve(ok);
+      };
+
+      const onAbort = () => finish(false);
+      const onScrollEnd = () => finish(true);
+      const onScroll = () => {
+        sawScroll = true;
+        clearTimeout(startTimer);
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => finish(true), idleMs);
+      };
+
+      signal.addEventListener("abort", onAbort, { once: true });
+      window.addEventListener("scroll", onScroll, { passive: true });
+      if ("onscrollend" in window) {
+        window.addEventListener("scrollend", onScrollEnd, { once: true });
+      }
+
+      startTimer = setTimeout(() => {
+        if (!sawScroll) finish(true);
+      }, startWaitMs);
+      maxTimer = setTimeout(() => finish(true), maxWait);
+    });
+  }
+
+  function isElementInView(el) {
+    const r = el.getBoundingClientRect();
+    const vh = getViewportHeight();
+    return r.bottom > 0 && r.top < vh;
+  }
+
+  function bindUserAbort(controller, signal) {
+    requestAnimationFrame(() => {
+      if (signal.aborted) return;
+      const onUserIntent = () => controller.abort();
+      const abortKeys = new Set(["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "]);
+      const onKey = (e) => { if (abortKeys.has(e.key)) controller.abort(); };
+      ["wheel", "touchstart", "pointerdown"].forEach((ev) =>
+        window.addEventListener(ev, onUserIntent, { passive: true, once: true, signal })
+      );
+      window.addEventListener("keydown", onKey, { passive: true, signal });
+    });
+  }
+
+  async function focusAnchorTarget(rawHash, options = {}) {
+    const mode = options.mode === "arrival" ? "arrival" : "inpage";
+    const rawEl = findTargetByHash(rawHash);
+    if (!rawEl) return;
+
+    activeRunController?.abort();
+    const controller = new AbortController();
+    const { signal } = controller;
+    activeRunController = controller;
+
+    expandHiddenAncestors(rawEl);
+    const el = resolveVisualTarget(rawEl);
+
+    const root = document.documentElement;
+    const prevOverflowAnchor = root.style.overflowAnchor;
+    root.style.overflowAnchor = "none";
+
+    const observers = [];
+    let cleanupTimer = null;
+    signal.addEventListener("abort", () => {
+      clearTimeout(cleanupTimer);
+      observers.forEach((o) => o.disconnect());
+      observers.length = 0;
+      root.style.overflowAnchor = prevOverflowAnchor;
+      if (activeRunController === controller) activeRunController = null;
+    }, { once: true });
+
+    bindUserAbort(controller, signal);
+
+    let flashed = false;
+    const ensureFlash = () => {
+      if (flashed || signal.aborted) return;
+      if (isElementInView(el)) {
+        flashed = true;
+        startAnchorFlash(el);
+      }
+    };
+
+    let programmaticUntil = 0;
+    let corrections = 0;
+    const alignInstant = () => {
+      if (signal.aborted || !el.isConnected || corrections >= 18) return false;
+      const a = computeAlignment(el);
+      if (Math.abs(a.delta) <= 5) {
+        ensureFlash();
+        return true;
+      }
+      const beforeY = window.scrollY;
+      programmaticUntil = performance.now() + 80;
+      corrections += 1;
+      scrollInstantTo(a.targetY);
+      const afterY = window.scrollY;
+      ensureFlash();
+      return Math.abs(afterY - beforeY) >= 1 || Math.abs(a.targetY - afterY) <= 5;
+    };
+
+    let alignRaf = 0;
+    const scheduleAlign = () => {
+      if (signal.aborted || alignRaf) return;
+      alignRaf = requestAnimationFrame(() => {
+        alignRaf = 0;
+        alignInstant();
+      });
+    };
+
+    const attachStabilizers = (windowMs) => {
+      if (signal.aborted) return;
+      if (typeof ResizeObserver === "function") {
+        const ro = new ResizeObserver(() => scheduleAlign());
+        ro.observe(document.querySelector(".article-content") || document.body);
+        ro.observe(el);
+        observers.push(ro);
+      }
+      window.visualViewport?.addEventListener("resize", scheduleAlign, { signal });
+      document.fonts?.ready?.then(() => !signal.aborted && scheduleAlign());
+      if (document.readyState !== "complete") {
+        window.addEventListener("load", () => {
+          scheduleAlign();
+          clearTimeout(cleanupTimer);
+          cleanupTimer = setTimeout(() => controller.abort(), 900);
+        }, { once: true, signal });
+      }
+      cleanupTimer = setTimeout(() => controller.abort(), windowMs);
+    };
+
+    const runArrivalMode = () => {
+      alignInstant();
+      requestAnimationFrame(() => alignInstant());
+      const nativeGuardEnd = performance.now() + 500;
+      window.addEventListener("scroll", () => {
+        if (signal.aborted || performance.now() < programmaticUntil || performance.now() > nativeGuardEnd) return;
+        const a = computeAlignment(el);
+        if (Math.abs(a.rect.top - a.minTop) <= 20 && Math.abs(a.delta) > 12) scheduleAlign();
+      }, { passive: true, signal });
+      attachStabilizers(document.readyState === "complete" ? 1200 : 3500);
+      setTimeout(() => { if (!flashed && !signal.aborted) { flashed = true; startAnchorFlash(el); } }, 150);
+    };
+
+    const runInpageMode = async () => {
+      const first = computeAlignment(el);
+      if (Math.abs(first.delta) <= 5) {
+        startAnchorFlash(el);
+        flashed = true;
+        attachStabilizers(450);
+        return;
+      }
+      programmaticUntil = performance.now() + 1200;
+      window.scrollTo({ top: first.targetY, left: window.scrollX, behavior: "smooth" });
+      const ok = await waitForScrollSettle(signal, { maxWait: 1100, idleMs: 120, startWaitMs: 120 });
+      if (!ok || signal.aborted) return;
+      alignInstant();
+      if (!flashed) { flashed = true; startAnchorFlash(el); }
+      attachStabilizers(450);
+    };
+
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (mode === "arrival" || reduceMotion) { runArrivalMode(); return; }
+    await runInpageMode();
+  }
+
+  function isSamePageAnchorLink(link) {
+    if (!link || link.hasAttribute("download") || (link.target && link.target !== "_self")) return null;
+    try {
+      const url = new URL(link.href, window.location.href);
+      const sameDoc = ["origin", "pathname", "search"].every((k) => url[k] === window.location[k]);
+      return sameDoc && url.hash ? url.hash : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function isPlainLeftClick(e) {
+    return !e.defaultPrevented && e.button === 0 && !(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey);
+  }
+
+  function handleAnchorLinkClick(e) {
+    if (!isPlainLeftClick(e)) return;
+    const hash = isSamePageAnchorLink(e.target?.closest?.("a[href]"));
+    if (!hash || !findTargetByHash(hash)) return;
+    e.preventDefault();
+    if (window.location.hash !== hash) history.pushState(null, "", hash);
+    focusAnchorTarget(hash, { mode: "inpage" });
+  }
+
   function initAnchorFocus() {
     window.__focusAnchorTarget = focusAnchorTarget;
-    const onHash = () => {
-      if (window.location?.hash) setTimeout(() => focusAnchorTarget(window.location.hash), 60);
+    document.addEventListener("click", handleAnchorLinkClick);
+
+    const scheduleHashFocus = () => {
+      if (!window.location?.hash) return;
+      if (pendingHashFrame) cancelAnimationFrame(pendingHashFrame);
+      pendingHashFrame = requestAnimationFrame(() => {
+        pendingHashFrame = 0;
+        focusAnchorTarget(window.location.hash, { mode: "inpage" });
+      });
     };
-    window.addEventListener("hashchange", onHash);
-    window.addEventListener("popstate", onHash);
-    if (window.navigation?.addEventListener) {
-      window.navigation.addEventListener("navigatesuccess", onHash);
-    }
+    window.addEventListener("hashchange", scheduleHashFocus);
+    window.addEventListener("popstate", scheduleHashFocus);
+
+    window.addEventListener("pageshow", (e) => {
+      if (e.persisted && window.location?.hash) {
+        focusAnchorTarget(window.location.hash, { mode: "arrival" });
+      }
+    });
+
     if (window.location?.hash) {
-      const run = () => setTimeout(() => focusAnchorTarget(window.location.hash), 120);
-      if (document.readyState === "complete") run();
-      else window.addEventListener("load", run, { once: true });
+      const boot = () => focusAnchorTarget(window.location.hash, { mode: "arrival" });
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", boot, { once: true });
+      } else {
+        boot();
+      }
     }
   }
   initAnchorFocus();
