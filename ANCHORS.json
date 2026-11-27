@@ -9,7 +9,7 @@
     "reflect-local/check_transcript_privacy.py": "3c9c29f237754a93d93633e3d3fff243b94e2864b7d58596ba862b3fd388a223",
     "reflect-local/check_walkthrough.py": "96218de8ade6c44b55d31d7532ca33a4a11cad5846aa002a8dff0b7e03bb1e70",
     "reflect-local/hook.py": "e37dc7910569dbb9d717498ee11d4623cb37c923a892b941b0480258da33056c",
-    "reflect-local/measure_edu.py": "ad5e06f5b91347e6eb6de52ef47ba2f56b4acaac591d1f68190051045ded2627",
+    "reflect-local/measure_edu.py": "cd6d7d0c5b0907bbf5762d91e07bdd775beeec2d8530c9ffb805f255ad207267",
     "reflect-local/principles.json": "284c8dfceb5dc6eac5e5ff69261fae308a5678ac70ead1eca01b5d4d4d0953ea"
   },
   "lock_core": true,

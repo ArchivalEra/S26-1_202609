@@ -47,7 +47,7 @@ PROBLEMS_CMD = (
 # PINNED: protocol marker / repo-specific data; retained verbatim in HISTORY.md
 GLOSSARY_CMD = (
     "" + "awk '/^:::glossary-dict/{f=1;next} /^:::/{f=0} f&&/^sym-/{n++} END{print n}' "
-    "站点/符号包/通用.md 课程总览/*/教材解析/符号入门.md"
+    "符号总览/*.md"
 )
 # PINNED: protocol marker / repo-specific data; retained verbatim in HISTORY.md
 # PINNED: protocol marker / repo-specific data; retained verbatim in HISTORY.md

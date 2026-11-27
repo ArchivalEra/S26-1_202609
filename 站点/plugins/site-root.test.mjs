@@ -154,7 +154,7 @@ const crumbDataPaths = (html, navClass) => {
 };
 
 test('票 A：顶层页面包屑的目录 crumb 用**目录形式** data-path，且没有「首页」', () => {
-  const rel = '课程总览/工程数学/教材解析/符号入门.html';
+  const rel = '符号总览/工程数学.html';
   const html = needDist(rel);
   // 2026-10-30 定案：全站只有顶栏一条面包屑（正文 .m3-breadcrumb 已删），
   // 且首项**不再挂「首页」** —— `/` 就是「S26-1 课程知识库」那一页本身。
@@ -164,17 +164,17 @@ test('票 A：顶层页面包屑的目录 crumb 用**目录形式** data-path，
     '正文面包屑已删，产物里不许再有 <nav class="m3-breadcrumb">（m3-breadcrumb-sep 是顶栏共用的分隔符类，不算）');
   assert.ok(!nav[1].includes('首页'), '面包屑不许出现「首页」（它就是站点根，重复）');
 
-  // 面包屑有几格 = 网址有几层目录。本页 4 层目录（课程总览/工程数学/教材解析…），
-  // 前 3 层是目录 crumb（带 data-path），末项是当前页名字。
+  // 面包屑有几格 = 网址有几层目录。符号包已平铺到 `符号总览/<包名>.md`，
+  // 本页只有 1 层目录（符号总览），末项是当前页名字。
   const dps = crumbDataPaths(html, 'top-bar-breadcrumbs');
-  assert.equal(dps.length, 3, '3 条目录 crumb 带 data-path（课程总览 / 工程数学 / 教材解析）');
+  assert.equal(dps.length, 1, '1 条目录 crumb 带 data-path（符号总览）');
   for (const dp of dps) {
     assert.ok(dp.length > 0, 'data-path 非空');
     assert.ok(!dp.startsWith('../'), `data-path 不得以 ../ 开头（${dp}）`);
     assert.ok(!dp.startsWith('/'), `data-path 不得以 / 开头（${dp}）`);
     assert.ok(dp.endsWith('/'), `目录形式必须以 / 结尾（${dp}）`);
   }
-  assert.ok(nav[1].includes('data-path="课程总览/"'), '课程总览 crumb 用目录形式');
+  assert.ok(nav[1].includes('data-path="符号总览/"'), '符号总览 crumb 用目录形式');
   assert.ok(!nav[1].includes('index.html'),
     '面包屑不得出现 index.html（读者看到的网址最后一段是层名，不是 index）');
 });
@@ -193,8 +193,8 @@ test('票 A：浅层页面包屑的 <a> 全带 data-path', () => {
 });
 
 test('票 A：分页卡带 data-path（在场时），值为仓库相对路径', () => {
-  // 教材解析顺序页有 prev/next；0.0-符号入门是首篇只有 next
-  const html = needDist('课程总览/工程数学/教材解析/符号入门.html');
+  // 顺序页有 prev/next；1.0-通关攻略是第 1 章首篇只有 next
+  const html = needDist('课程总览/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.0-通关攻略.html');
   const cards = [...html.matchAll(/<a class="paging-card[^>]*data-path="([^"]+)"/g)].map((x) => x[1]);
   assert.ok(cards.length >= 1, '该页应至少有一张分页卡');
   for (const dp of cards) {

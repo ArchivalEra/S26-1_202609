@@ -66,7 +66,10 @@ function () {
       a.className = "sym-gloss-pop__more";
       var anchorId = term && term.indexOf(":") >= 0 ? term.slice(term.indexOf(":") + 1) : term;
       a.href = entry.href.indexOf("#") >= 0 ? entry.href : entry.href + "#" + anchorId;
-      a.textContent = "详细 \u2197 符号入门";
+      // 链接文字跟着包名走：词条键形如「包名:词条id」，符号包已平铺到 符号总览/<包名>.md，
+      // 写死页名会在搬页后指着一个不存在的名字。（本段在 String.raw 模板里，别用反引号。）
+      var packName = term && term.indexOf(":") >= 0 ? term.slice(0, term.indexOf(":")) : "";
+      a.textContent = "详细 \u2197 " + (packName || "符号总览");
       pop.appendChild(a);
     }
     document.body.appendChild(pop);

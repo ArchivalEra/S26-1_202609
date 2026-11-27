@@ -398,7 +398,6 @@ const SITE_NAME = 'S26-1 课程知识库';
 // 侧栏若也有首页项，就会有两条指向同一页的链接、且形态不一（`/` 与 `index.html`）
 // ——「网址 / 侧栏 / 面包屑」四条一致就永远差这一格。去掉它，隐患消失。
 const NAV_STRUCTURE = [
-  { label: "通用符号包", path: "站点/符号包/通用.md" },
   {
     label: "课程总览",
     path: "课程总览/index.md",
@@ -440,7 +439,6 @@ const NAV_STRUCTURE = [
             label: "教材解析",
             path: "课程总览/工程数学/教材解析/index.md",
             children: [
-              { label: "符号入门", path: "课程总览/工程数学/教材解析/符号入门.md" },
               {
                 label: "第一部分-线性代数",
                 path: "课程总览/工程数学/教材解析/第一部分-线性代数/index.md",
@@ -559,11 +557,7 @@ const NAV_STRUCTURE = [
               { label: "习题册第九章", path: "课程总览/电路原理/作业/习题册第九章.md" }
             ]
           },
-          { label: "教材解析", path: "课程总览/电路原理/教材解析/index.md",
-            children: [
-              { label: "符号入门", path: "课程总览/电路原理/教材解析/符号入门.md" }
-            ]
-          },
+          { label: "教材解析", path: "课程总览/电路原理/教材解析/index.md" },
           { label: "课堂笔记", path: "课程总览/电路原理/课堂笔记/index.md",
             children: [
               { label: "09-21-开课与基本概念", path: "课程总览/电路原理/课堂笔记/09-21-开课与基本概念.md" },
@@ -617,11 +611,7 @@ const NAV_STRUCTURE = [
               { label: "2026-11-23作业", path: "课程总览/电子技术/作业/2026-11-23作业.md" }
             ]
           },
-          { label: "教材解析", path: "课程总览/电子技术/教材解析/index.md",
-            children: [
-              { label: "符号入门", path: "课程总览/电子技术/教材解析/符号入门.md" }
-            ]
-          },
+          { label: "教材解析", path: "课程总览/电子技术/教材解析/index.md" },
           { label: "课堂笔记", path: "课程总览/电子技术/课堂笔记/index.md",
             children: [
               { label: "09-21-开课与半导体基础", path: "课程总览/电子技术/课堂笔记/09-21-开课与半导体基础.md" },
@@ -675,7 +665,6 @@ const NAV_STRUCTURE = [
           },
           { label: "教材解析", path: "课程总览/电机学/教材解析/index.md",
             children: [
-              { label: "符号入门", path: "课程总览/电机学/教材解析/符号入门.md" },
               { label: "第01章-概述",
                 children: [
                   { label: "1.1-电机的分类", path: "课程总览/电机学/教材解析/第01章-概述/1.1-电机的分类.md" },
@@ -729,10 +718,7 @@ const NAV_STRUCTURE = [
           { label: "Walkthrough", path: "课程总览/通用电气/Walkthrough.md" },
           {
             label: "教材解析",
-            path: "课程总览/通用电气/教材解析/index.md",
-            children: [
-              { label: "符号入门", path: "课程总览/通用电气/教材解析/符号入门.md" },
-            ]
+            path: "课程总览/通用电气/教材解析/index.md"
           },
           {
             label: "交叉内容",
@@ -777,12 +763,23 @@ const NAV_STRUCTURE = [
         ]
       }
     ]
+  },
+  {
+    label: "符号总览",
+    path: "符号总览/index.md",
+    children: [
+      { label: "通用", path: "符号总览/通用.md" },
+      { label: "工程数学", path: "符号总览/工程数学.md" },
+      { label: "电机学", path: "符号总览/电机学.md" },
+      { label: "电路原理", path: "符号总览/电路原理.md" },
+      { label: "电子技术", path: "符号总览/电子技术.md" },
+      { label: "通用电气", path: "符号总览/通用电气.md" }
+    ]
   }
 ];
 
 // Linear sequence for textbook chapters and lecture notes
 const TEXTBOOK_ORDER = [
-  "课程总览/工程数学/教材解析/符号入门.md",
   "课程总览/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.0-通关攻略.md",
   "课程总览/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.1-二阶与三阶行列式.md",
   "课程总览/工程数学/教材解析/第一部分-线性代数/第1章-行列式/1.2-n阶行列式.md",
@@ -906,6 +903,16 @@ for (const relPath of TARGET_FILES) {
   const fmParsed = parseFrontmatter(raw, { strict: true, filePath: `${relPath}（渲染遍）` });
   const frontmatter = fmParsed.meta;
   raw = fmParsed.body.trim();
+
+  if (relPath === '符号总览/index.md') {
+    const rows = Object.values(symbolCatalog.packs).map((p) => {
+      const href = `./${p.name}.html`;
+      const count = p.byId ? p.byId.size : Object.keys(p.dict || {}).length;
+      return `| ${p.name} | ${count} | [进入](${href}) |`;
+    });
+    const table = `| 符号包 | 词条数 | 入口 |\n| :--- | ---: | :--- |\n${rows.join('\n')}`;
+    raw = raw.replace(/<!--\s*SYMBOL-CATALOG:START\s*-->[\s\S]*?<!--\s*SYMBOL-CATALOG:END\s*-->/, table);
+  }
 
   // Strip HTML comments (like AUTO-CATALOG)
   raw = raw.replace(/<!--[\s\S]*?-->/g, '');
