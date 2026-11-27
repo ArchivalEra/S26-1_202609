@@ -1672,13 +1672,13 @@ for (const relPath of TARGET_FILES) {
 
             <footer class="site-footer">
               <p class="site-footer__legal">
-                © 2026 ArchivalEra · 本站自研代码与解析文字以
-                <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="license noopener">AGPL-3.0</a>
-                许可发布 · <a href="https://isui.ren/repo/S26-1_202609/licenses.json" target="_blank" rel="noopener">许可清单</a> · <a href="https://github.com/ArchivalEra/S26-1_202609" target="_blank" rel="noopener">仓库源码</a>
+                © 2026 ArchivalEra ·
+                <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="license noopener">AGPL-3.0</a> ·
+                <a href="https://isui.ren/repo/S26-1_202609/licenses.json" target="_blank" rel="noopener">许可清单</a> ·
+                <a href="https://github.com/ArchivalEra/S26-1_202609" target="_blank" rel="noopener">GitHub</a>
               </p>
               <p class="site-footer__disclaimer">
-                本站涉及的教材题目原文与章节结构，版权归各原书作者与出版社所有，本站解析为个人学习笔记；
-                页面主题样式来自 Shirone Material 3 Reader（MIT）；KaTeX、marked 等第三方库依其自身许可证分发。
+                教材原题版权归原书作者与出版社所有，本站仅作个人学习整理。
               </p>
             </footer>
           </article>

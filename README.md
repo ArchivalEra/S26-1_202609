@@ -55,10 +55,13 @@
 
 <!-- AUTO-CATALOG:END -->
 
-## 机器与自动化入口
+## AGENT 与自动化入口
 
+> **架构定型声明**：本仓库阅读站与构建管线架构已于 2026-11-27 正式收尾定型，后续**不再进行架构层面改动**，仅持续更新课程笔记、作业与纠错内容。
+
+- [`AGENTS.md`](./AGENTS.md)：仓内常驻规则、课表红线与工作流总路由
 - [`HELPERS.md`](https://isui.ren/repo/S26-1_202609/HELPERS.md)（仓内 `./站点/HELPERS.md`）：页面 `?helpers=1` 便利函数文档
-- [`Birthright.html`](https://isui.ren/repo/S26-1_202609/machine/Birthright.html)：全站只读源文镜像树（全文检索索引在 [`search/index.json`](https://isui.ren/repo/S26-1_202609/search/index.json)，页内符号数据见 `#sym-glossary-json`）
+- [`Birthright.html`](https://isui.ren/repo/S26-1_202609/machine/Birthright.html)：全站只读源文镜像树（每页含 `_index.json` 小节目录、全文检索在 [`search/index.json`](https://isui.ren/repo/S26-1_202609/search/index.json)、页内符号数据见 `#sym-glossary-json`）
 
 ## 维护与许可
 
