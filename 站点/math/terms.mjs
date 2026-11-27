@@ -157,38 +157,12 @@ export function createResolver(dictionary, cfg = {}) {
     /** 判定一个节点是不是符号。返回 `{pack, entry, rule}` 或 null。 */
     decide(node, src) {
       const nodeShape = shapeKey(node);
-      // ① 作者显式指定（frontmatter「符号强制: {词条id: 包名}」，最高优先，不受排除影响）
-      for (const [entryId, targetPack] of Object.entries(force)) {
-        if (!targetPack) continue;
-        if (dictionary.packs[targetPack]?.get(nodeShape) === entryId) {
-          return { pack: targetPack, entry: entryId, rule: 'force' };
-        }
-        if (node.span) {
-          const slice = src.slice(node.span[0], node.span[1]);
-          for (const p of dictionary.patterns[targetPack] || []) {
-            if (p.entry !== entryId) continue;
-            p.re.lastIndex = 0;
-            const m = p.re.exec(slice);
-            if (m?.index === 0 && m[0].length === slice.length) {
-              return { pack: targetPack, entry: entryId, rule: 'force' };
-            }
-          }
-        }
-      }
-      // ② 排除表：只否决 auto 通道
-      //（在 ③ 命中后判断，这样 `exclude` 能精确到「这个词条在这类位置不自动取词」）
-      // ③ 自动：形状键
+      const forced = matchForced(force, dictionary, node, nodeShape, src);
+      if (forced) return forced;
       const byShape = lookupShape(nodeShape);
-      if (byShape) {
-        if (denyTex.has(byShape.entry)) return { ...byShape, rule: 'excluded' };
-        return { ...byShape, rule: 'atom' };
-      }
-      // ③b 自动：结构模式
+      if (byShape) return { ...byShape, rule: denyTex.has(byShape.entry) ? 'excluded' : 'atom' };
       const byPattern = lookupPattern(node, src);
-      if (byPattern) {
-        if (denyTex.has(byPattern.entry)) return { ...byPattern, rule: 'excluded' };
-        return { ...byPattern, rule: 'pattern' };
-      }
+      if (byPattern) return { ...byPattern, rule: denyTex.has(byPattern.entry) ? 'excluded' : 'pattern' };
       return null;
     },
     denyProse,
@@ -212,6 +186,63 @@ export function createResolver(dictionary, cfg = {}) {
  * @param {Resolver} resolver
  * @returns {{expr: MathExpr, decisions: Decision[], problems: Problem[]}}
  */
+function matchForcePattern(patterns, entryId, slice) {
+  for (const p of patterns || []) {
+    if (p.entry !== entryId) continue;
+    p.re.lastIndex = 0;
+    const m = p.re.exec(slice);
+    if (m?.index === 0 && m[0].length === slice.length) return true;
+  }
+  return false;
+}
+
+function matchForced(force, dictionary, node, nodeShape, src) {
+  for (const [entryId, targetPack] of Object.entries(force)) {
+    if (!targetPack) continue;
+    if (dictionary.packs[targetPack]?.get(nodeShape) === entryId) {
+      return { pack: targetPack, entry: entryId, rule: 'force' };
+    }
+    if (node.span && matchForcePattern(dictionary.patterns[targetPack], entryId, src.slice(node.span[0], node.span[1]))) {
+      return { pack: targetPack, entry: entryId, rule: 'force' };
+    }
+  }
+  return null;
+}
+
+function revokeSubtreeBindings(node, decisions) {
+  const revoked = [];
+  forEachChild(node, (child) => collectBound(child, revoked));
+  for (const old of revoked) {
+    old.term = null;
+    for (let i = decisions.length - 1; i >= 0; i -= 1) {
+      if (decisions[i].node === old.id) decisions.splice(i, 1);
+    }
+  }
+}
+
+function applyNodeDecision(node, d, src, boundBySpan, decisions, problems) {
+  if (d.rule === 'excluded') {
+    problems.push({
+      code: 'term-excluded',
+      severity: 'warn',
+      where: { node: node.id, span: node.span },
+      message: `「${src.slice(node.span[0], node.span[1])}」按本页排除规则不取词（词条 ${d.entry}）`,
+    });
+    return;
+  }
+  node.term = { pack: d.pack, entry: d.entry };
+  revokeSubtreeBindings(node, decisions);
+  if (node.span) boundBySpan.set(`${node.span[0]}:${node.span[1]}`, node.term);
+  decisions.push({
+    node: node.id,
+    ref: node.term,
+    rule: d.rule,
+    matched: src.slice(node.span[0], node.span[1]),
+    shape: shapeKey(node),
+  });
+  forEachChild(node, (child) => markShadowed(child));
+}
+
 export function bindTerms(expr, resolver) {
   const decisions = [];
   const problems = [];
@@ -225,91 +256,36 @@ export function bindTerms(expr, resolver) {
   // 自底向上会先绑内层、再绑外层，产生两条重复命中（实测 decisions 里同一段出现两次）。
   const boundBySpan = new Map();
 
-  const visit = (node, shadowed, isScriptArgument = false) => {
-    if (!node || typeof node !== 'object') return false;
-
-    // 字面子树：里面的任何东西都不是符号，也不许再往下找
-    if (node.kind === 'literal' || node.kind === 'raw') return false;
-
-    // 先处理子树（自底向上）
+  const visitChildren = (node, shadowed) => {
     const kids = [];
     forEachChild(node, (child) => kids.push(child));
     kids.forEach((child) => {
-      // 上下标的参数是「结构的一部分」，不是纯包装：`R_{L}` 的 sub 必须参与形状键
       const asScriptArg = node.kind === 'script' && (child === node.sub || child === node.sup);
       visit(child, shadowed, asScriptArg);
     });
+  };
 
-    // 已在外层命中 ⇒ 本节点被遮蔽，不再判定
-    if (shadowed) {
-      node.shadowed = true;
-      return true;
-    }
-    // 只绑操作数
+  const isPureWrapperGroup = (node, isScriptArgument) =>
+    !isScriptArgument && node.kind === 'group' && !node.fence && (node.items || []).length === 1;
+
+  const isAlreadyBound = (node, boundBySpan) =>
+    Boolean(node.span && !node.fence && boundBySpan.has(`${node.span[0]}:${node.span[1]}`));
+
+  const shouldSkipNode = (node, shadowed, isScriptArgument) => {
+    if (shadowed) { node.shadowed = true; return true; }
     if (node.role !== 'operand') return true;
+    if (isPureWrapperGroup(node, isScriptArgument)) return true;
+    if (isAlreadyBound(node, boundBySpan)) { node.shadowed = true; return true; }
+    return false;
+  };
 
-    // **纯包装组不参与判定**：`{\lambda}` 相对里面的 `\lambda` 只是多了一对花括号，
-    // 它不是一个独立的东西。若不跳过，`\frac{1}{\lambda}` 会命中两次
-    // （`\lambda` 一次、`{\lambda}` 一次，实测过）。
-    //
-    // 判据是「这个组**恰好只包一个子节点、且不是上下标的参数位置**」：
-    //   · `{\lambda}` 在分母里 ⇒ 跳过（内层的 `\lambda` 自己会命中）
-    //   · `R_{L}` 的 sub 是 `group(L)` ⇒ **不能跳过**，因为 `R_{L}` 的形状键
-    //     需要这一层结构；跳过就让「下标是组」这种最常见写法全部失效
-    //   · 带定界符的组 `(x)` ⇒ 不是纯包装，可整体成泡
-    const isPureWrapper = node.kind === 'group' && !node.fence
-      && (node.items || []).length === 1;
-    if (isPureWrapper && !isScriptArgument) return true;
-
-    // 同一 span 已绑过 ⇒ 跳过，避免重复命中
-    if (node.span && !node.fence) {
-      const key = `${node.span[0]}:${node.span[1]}`;
-      if (boundBySpan.has(key)) {
-        node.shadowed = true;
-        return true;
-      }
-    }
-
+  const visit = (node, shadowed, isScriptArgument = false) => {
+    if (!node || typeof node !== 'object') return false;
+    if (node.kind === 'literal' || node.kind === 'raw') return false;
+    visitChildren(node, shadowed);
+    if (shouldSkipNode(node, shadowed, isScriptArgument)) return true;
     const d = resolver.decide(node, src);
-    if (!d) return true;
-
-    if (d.rule === 'excluded') {
-      // 被排除：不算命中，但**记一条**——今天的排除是完全静默的，
-      // 改错的排除没人能发现。
-      problems.push({
-        code: 'term-excluded',
-        severity: 'warn',
-        where: { node: node.id, span: node.span },
-        message: `「${src.slice(node.span[0], node.span[1])}」按本页排除规则不取词（词条 ${d.entry}）`,
-      });
-      return true;
-    }
-
-    node.term = { pack: d.pack, entry: d.entry };
-
-    // **外层命中要撤回子树的既有命中**。
-    // 自底向上遍历时，`R_m` 里的 `m` 会先被单独命中（如果词典里有 `m`），
-    // 然后外层 `R_m` 命中——两条都留着就产生「气泡套气泡」。
-    // 判定语义是「最完整的那个赢」，所以外层命中后把子树已绑的撤掉。
-    const revoked = [];
-    forEachChild(node, (child) => collectBound(child, revoked));
-    for (const old of revoked) {
-      old.term = null;
-      for (let i = decisions.length - 1; i >= 0; i -= 1) {
-        if (decisions[i].node === old.id) decisions.splice(i, 1);
-      }
-    }
-
-    if (node.span) boundBySpan.set(`${node.span[0]}:${node.span[1]}`, node.term);
-    decisions.push({
-      node: node.id,
-      ref: node.term,
-      rule: d.rule,
-      matched: src.slice(node.span[0], node.span[1]),
-      shape: shapeKey(node),
-    });
-    // 命中后，子树全部遮蔽
-    forEachChild(node, (child) => markShadowed(child));
+    if (d) applyNodeDecision(node, d, src, boundBySpan, decisions, problems);
     return true;
   };
 
@@ -318,33 +294,22 @@ export function bindTerms(expr, resolver) {
   return { expr, decisions, problems };
 }
 
+const FOR_EACH_CHILD = {
+  group: (n, fn) => (n.items || []).forEach(fn),
+  script: (n, fn) => { if (n.base) fn(n.base); if (n.sub) fn(n.sub); if (n.sup) fn(n.sup); },
+  frac: (n, fn) => { fn(n.num); fn(n.den); },
+  styled: (n, fn) => { if (n.body) fn(n.body); },
+  accent: (n, fn) => { if (n.body) fn(n.body); },
+  root: (n, fn) => { if (n.index) fn(n.index); if (n.body) fn(n.body); },
+  arrow: (n, fn) => { if (n.above) fn(n.above); if (n.below) fn(n.below); },
+  stack: (n, fn) => (n.rows || []).forEach((r) => r.forEach(fn)),
+  env: (n, fn) => (n.rows || []).forEach((r) => r.forEach((c) => c.forEach(fn))),
+  phantom: (n, fn) => { if (n.body) fn(n.body); },
+  label: (n, fn) => (n.text || []).forEach(fn),
+};
+
 function forEachChild(node, fn) {
-  switch (node.kind) {
-    case 'group': (node.items || []).forEach(fn); break;
-    case 'script':
-      if (node.base) fn(node.base);
-      if (node.sub) fn(node.sub);
-      if (node.sup) fn(node.sup);
-      break;
-    case 'frac': fn(node.num); fn(node.den); break;
-    case 'styled': if (node.body) fn(node.body); break;
-    case 'accent': if (node.body) fn(node.body); break;
-    case 'root':
-      if (node.index) fn(node.index);
-      if (node.body) fn(node.body);
-      break;
-    case 'arrow':
-      if (node.above) fn(node.above);
-      if (node.below) fn(node.below);
-      break;
-    case 'stack': (node.rows || []).forEach((r) => r.forEach(fn)); break;
-    case 'env':
-      (node.rows || []).forEach((r) => r.forEach((c) => c.forEach(fn)));
-      break;
-    case 'phantom': if (node.body) fn(node.body); break;
-    case 'label': (node.text || []).forEach(fn); break;
-    default: break;
-  }
+  FOR_EACH_CHILD[node.kind]?.(node, fn);
 }
 
 /** 收集子树里所有已绑定的节点（供外层撤回）。 */

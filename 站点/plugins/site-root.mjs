@@ -48,35 +48,21 @@
  * 返回以 / 开头、以 / 结尾的绝对路径；无法探测时返回 null。
  */
 function detectSiteRoot() {
+  const decodePathname = () => {
+    try { return decodeURIComponent(location.pathname); } catch { return location.pathname; }
+  };
+  const matchDirFallback = (pathname, sp) => {
+    const dir = sp.replace(/[^/]*$/, '');
+    const di = dir ? pathname.lastIndexOf(dir) : -1;
+    return di >= 0 ? ensureSlash(pathname.slice(0, di)) : null;
+  };
   const sp = document.body?.getAttribute('data-site-path') || '';
   if (!sp) return null;
-  // pathname 解码后与 sitePath 对齐（构建期写的是未编码的仓库路径）
-  let pathname;
-  try { pathname = decodeURIComponent(location.pathname); } catch { pathname = location.pathname; }  // 坏编码按原样对齐
-  // 后缀对齐：sitePath 必须是 pathname 的尾部
+  const pathname = decodePathname();
   const idx = pathname.lastIndexOf(sp);
   if (idx >= 0 && idx + sp.length === pathname.length) return ensureSlash(pathname.slice(0, idx));
-
-  // ⚠️ 2026-10-29：网址改成「目录形式」后有两类失配，都要按**同一语义**兜住。
-  //
-  // ① 索引页：data-site-path = `课程总览/工程数学/`，pathname 也以它结尾 ⇒ 上面已命中。
-  //    但用户手打 `/课程总览/工程数学`（无尾斜杠）时浏览器先 301 补斜杠，仍会命中。
-  //
-  // ② 首页：它已不挂侧栏，data-site-path 写的是物理名 `index.html`，而 pathname 是 `/`
-  //    或 `/repo/S26-1_202609/`——`index.html` 根本不是它的尾部。此前靠「目录部分对齐」
-  //    兜（`index.html` 的目录部分是空串，lastIndexOf('') 恒为 pathname.length），
-  //    结果**在子路径部署下算出的根是错的**。
-  //
-  // 正确判据：`index.html` 结尾意味着「这一层目录本身就是页面」⇒ 根 = 把这段文件名
-  // 从 pathname 剥掉后的目录（也就是 pathname 本身，去掉末尾的 index.html）。
   if (/^index\.html$/.test(sp)) return ensureSlash(pathname);
-
-  // ③ 其余情况：pathname 是目录形式（以 / 结尾）、sitePath 是文件名 ⇒ 只按目录部分对齐。
-  const dir = sp.replace(/[^/]*$/, '');
-  if (!dir) return null;
-  const di = pathname.lastIndexOf(dir);
-  if (di < 0) return null;
-  return ensureSlash(pathname.slice(0, di));
+  return matchDirFallback(pathname, sp);
 }
 
 function ensureSlash(s) {
@@ -129,38 +115,24 @@ function fixSiteRoot() {
  * 只动构建期知道语义的三类元素，不碰正文链接（可能指外站/锚点/下载）。
  */
 function rewriteLinks(root) {
-  // 1) 侧栏 data-path 链接：仓库相对路径直接拼
-  const links = document.querySelectorAll('a[data-path]');
-  for (const link of links) {
+  const rewriteRelativeNav = (a, actual) => {
+    const href = a.getAttribute('href');
+    if (!href || /^(https?:|mailto:|#|javascript:)/i.test(href)) return;
+    try {
+      const abs = new URL(href, location.href);
+      if (abs.origin !== location.origin) return;
+      let rel = abs.pathname;
+      if (actual && actual !== '/' && rel.startsWith(actual)) rel = rel.slice(actual.length);
+      a.setAttribute('href', root + rel.replace(/^\/+/, ''));
+    } catch (_e) { /* 坏 href 跳过 */ }
+  };
+  for (const link of document.querySelectorAll('a[data-path]')) {
     const dp = link.getAttribute('data-path');
     if (dp) link.setAttribute('href', root + dp);
   }
-  // 2) 无 data-path 的站内导航（品牌/移动标题/旧式链接）：
-  //    它们的 href 是 data-root 相对值（如 ../../index.html），先解析成
-  //    绝对 URL，剥掉实际根得到仓库路径，再拼正式根。
-  //    ⚠️ 分工（票 A 引入，2026-10-22 补丁）：带 data-path 的元素（侧栏、面包屑、
-  //    分页卡）由上面第 1 分支负责——它们的 href 已被改写成「root + 仓库相对」
-  //    绝对路径；若本分支再命中它们，「剥掉实际根再拼正式根」会把已拼好的前缀
-  //    重复叠加（镜像入口场景 actual≠canonical 时出双前缀
-  //    /repo/S26-1_202609/repo/S26-1_202609/课程/index.html）。所以选择器用
-  //    :not([data-path]) 把它们排除，本分支只管无 data-path 的站内导航
-  //    （品牌/移动标题/将来漏埋 data-path 的旧式链接）。:not([attr]) 属性选择器
-  //    形态现代浏览器均支持，无兼容顾虑。
   const navs = document.querySelectorAll('.sidebar-brand, .top-bar-mobile-title, .top-bar-breadcrumbs a:not([data-path]), .paging-card:not([data-path])');
   const actual = siteRoot();
-  for (const a of navs) {
-    let href = a.getAttribute('href');
-    if (!href || /^(https?:|mailto:|#|javascript:)/i.test(href)) continue;
-    try {
-      let abs = new URL(href, location.href);
-      if (abs.origin !== location.origin) continue;
-      let rel = abs.pathname;
-      // 剥掉实际根前缀得到仓库相对路径（探测不出实际根时按整段处理）
-      if (actual && actual !== '/' && rel.startsWith(actual)) rel = rel.slice(actual.length);
-      rel = rel.replace(/^\/+/, '');
-      a.setAttribute('href', root + rel);
-    } catch (_e) { /* 坏 href 跳过 */ }
-  }
+  for (const a of navs) rewriteRelativeNav(a, actual);
 }
 
 // 全局暴露（写盘为 <script defer>，非 module；构建期、首屏延迟执行与测试都可调用）

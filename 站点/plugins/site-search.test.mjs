@@ -161,6 +161,22 @@ test('buildSearchBundle 产出 index/桶/正文三类文件', () => {
   assert.equal(index.docs[0].url, '/sand.html');
 });
 
+function docMatches(doc, grams, buckets, numBuckets, query) {
+  if (foldSearchText(doc.title).indexOf(query) >= 0) return true;
+  if (grams.bigrams.length) {
+    const perGram = grams.bigrams.map((gram) => {
+      const bucket = buckets.get(hashGram(gram) % numBuckets);
+      return bucket?.grams[gram]?.[doc.id];
+    });
+    return !perGram.some((postings) => !postings) && verifyPhrase(perGram).length > 0;
+  }
+  const lists = grams.unigrams.map((ch) => {
+    const bucket = buckets.get(hashGram(ch) % numBuckets);
+    return bucket?.uni[ch];
+  });
+  return !lists.some((list) => !list || list.indexOf(doc.id) < 0);
+}
+
 // 在 Node 里重放客户端那套流程（取桶 → 短语校验），验证真实检索行为。
 function searchInBundle(files, rawQuery) {
   const data = JSON.parse(files['search/index.json']);
@@ -173,24 +189,7 @@ function searchInBundle(files, rawQuery) {
   }
   const hitUrls = [];
   for (const doc of data.docs) {
-    let matched = false;
-    if (grams.bigrams.length) {
-      const perGram = grams.bigrams.map((gram) => {
-        const bucket = buckets.get(hashGram(gram) % data.buckets);
-        return bucket && bucket.grams[gram] ? bucket.grams[gram][doc.id] : undefined;
-      });
-      if (!perGram.some((postings) => !postings)) {
-        matched = verifyPhrase(perGram).length > 0;
-      }
-    } else {
-      const lists = grams.unigrams.map((ch) => {
-        const bucket = buckets.get(hashGram(ch) % data.buckets);
-        return bucket && bucket.uni[ch] ? bucket.uni[ch] : undefined;
-      });
-      matched = !lists.some((list) => !list || list.indexOf(doc.id) < 0);
-    }
-    if (!matched && foldSearchText(doc.title).indexOf(query) >= 0) matched = true;
-    if (matched) hitUrls.push(doc.url);
+    if (docMatches(doc, grams, buckets, data.buckets, query)) hitUrls.push(doc.url);
   }
   return hitUrls;
 }

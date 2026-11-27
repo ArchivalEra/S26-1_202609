@@ -152,43 +152,153 @@ export function renderMarkdown(root, opts) {
     return (el.textContent || '').replace(/\s+/g, ' ').trim();
   }
 
+  const INLINE_SIMPLE = {
+    CODE: (n) => '`' + (n.textContent || '') + '`',
+    STRONG: (n) => '**' + walkInlineAll(n) + '**',
+    B: (n) => '**' + walkInlineAll(n) + '**',
+    EM: (n) => '*' + walkInlineAll(n) + '*',
+    I: (n) => '*' + walkInlineAll(n) + '*',
+    BR: () => '\n',
+  };
+
+  function formatAnchorLink(node) {
+    const t = linkTarget(node.getAttribute?.('href'));
+    const label = walkInlineAll(node).trim();
+    if (!t || !label) return label;
+    return (t.kind === 'external' ? '⧉[' : '[') + label + '](' + t.href + ')';
+  }
+
+  function renderAnchorInline(node) {
+    if (hasClass(node, 'sym-gloss')) {
+      const k = childrenOf(node).find((c) => hasClass(c, 'katex'));
+      return k ? katexText(k) : (node.textContent || '');
+    }
+    return withLinks ? formatAnchorLink(node) : null;
+  }
+
+  function isHiddenInline(node, tag) {
+    return Boolean(SKIP[tag] || hasClass(node, 'katex-html') || hasClass(node, 'katex-mathml') || hasClass(node, 'm3-disclosure__indicator'));
+  }
+
+  function isMathInline(node) {
+    return Boolean(hasClass(node, 'katex') || hasClass(node, 'ML__latex') || node.getAttribute?.('data-math-plain'));
+  }
+
+  function walkInlineElement(node, tag) {
+    if (tag === 'A') {
+      const res = renderAnchorInline(node);
+      if (res !== null) return res;
+    }
+    if (INLINE_SIMPLE[tag]) return INLINE_SIMPLE[tag](node);
+    const kids = childrenOf(node);
+    return kids.length ? kids.map(walkInline).join('') : (node.textContent || '');
+  }
+
   function walkInline(node) {
     if (!node) return '';
     if (isTextNode(node)) return node.textContent || '';
     const tag = String(node.tagName || '').toUpperCase();
-    if (SKIP[tag]) return '';
-    if (hasClass(node, 'katex') || hasClass(node, 'ML__latex') || node.getAttribute?.('data-math-plain')) return katexText(node);
-    // KaTeX 的**内部**节点：外层 .katex 已经整体处理过，这里再遇到就是重复
-    //（实测正文里出现孤立的 `$...$` 行与 BBBHHH——都是 katex-html 副本被二次读取）
-    if (hasClass(node, 'katex-html') || hasClass(node, 'katex-mathml')) return '';
-    // 符号链接：只留符号本身（后面的气泡内容靠 site_show_symbol 取）。
-    // **不能直接取 textContent**——KaTeX 在 <math> 里同时有 <mi>B</mi> 与
-    // <annotation>B</annotation>，textContent 会给出 "BB"（实测页面出现 BBB）。
-    if (tag === 'A' && hasClass(node, 'sym-gloss')) {
-      const k = childrenOf(node).find((c) => hasClass(c, 'katex'));
-      return k ? katexText(k) : (node.textContent || '');
-    }
-    if (tag === 'A' && withLinks) {
-      const t = linkTarget(node.getAttribute?.('href'));
-      const label = walkInlineAll(node).trim();
-      if (!t || !label) return label;
-      // 外链加 ⧉ 前缀：模型据此知道 site_navigate 处理不了
-      return t.kind === 'external'
-        ? '⧉[' + label + '](' + t.href + ')'
-        : '[' + label + '](' + t.href + ')';
-    }
-    if (tag === 'CODE') return '`' + (node.textContent || '') + '`';
-    if (tag === 'STRONG' || tag === 'B') return '**' + walkInlineAll(node) + '**';
-    if (tag === 'EM' || tag === 'I') return '*' + walkInlineAll(node) + '*';
-    if (tag === 'BR') return '\n';
-    if (hasClass(node, 'm3-disclosure__indicator')) return '';
-    const kids = childrenOf(node);
-    if (!kids.length) return node.textContent || '';
-    return kids.map(walkInline).join('');
+    if (isHiddenInline(node, tag)) return '';
+    if (isMathInline(node)) return katexText(node);
+    return walkInlineElement(node, tag);
   }
 
   function walkInlineAll(node) {
     return childrenOf(node).map(walkInline).join('');
+  }
+
+  function walkBlockquote(node, depth) {
+    ensureNl(1);
+    const mark = out.length;
+    childrenOf(node).forEach((c) => walk(c, depth));
+    const inner = out.splice(mark).join('').trim();
+    if (inner) push(inner.split('\n').map((l) => '> ' + l).join('\n') + '\n\n');
+  }
+
+  function walkList(node, tag, depth) {
+    ensureNl(1);
+    const items = childrenOf(node).filter((c) => String(c.tagName || '').toUpperCase() === 'LI');
+    items.forEach((li, i) => {
+      const marker = tag === 'OL' ? `${i + 1}. ` : '- ';
+      const mark = out.length;
+      childrenOf(li).forEach((c) => walk(c, depth + 1));
+      const body = out.splice(mark).join('').trim()
+        .replace(/\n{2,}/g, '\n').replace(/\n/g, '\n  ');
+      push(marker + body + '\n');
+    });
+    push('\n');
+  }
+
+  function walkTable(node) {
+    ensureNl(2);
+    const rows = [];
+    (function collect(n) {
+      for (const c of childrenOf(n)) {
+        const ct = String(c.tagName || '').toUpperCase();
+        if (ct === 'TR') rows.push(c);
+        else if (ct === 'THEAD' || ct === 'TBODY' || ct === 'TFOOT') collect(c);
+      }
+    })(node);
+    const lines = rows.map((tr) => {
+      const cells = childrenOf(tr)
+        .filter((c) => /^T[HD]$/.test(String(c.tagName || '').toUpperCase()))
+        .map((c) => walkInlineAll(c).trim().replace(/\n+/g, ' ').replace(/\|/g, '\\|'));
+      return '| ' + cells.join(' | ') + ' |';
+    });
+    if (!lines.length) return;
+    const cols = (lines[0].match(/\|/g) || []).length - 1;
+    lines.splice(1, 0, '|' + Array(cols).fill(' --- ').join('|') + '|');
+    push(lines.join('\n') + '\n\n');
+  }
+
+  function walkPre(node) {
+    ensureNl(2);
+    const codeEl = childrenOf(node).find((c) => String(c.tagName || '').toUpperCase() === 'CODE');
+    const lang = codeEl ? (codeEl.getAttribute?.('class') || codeEl.className || '') : '';
+    const m = /language-([\w-]+)/.exec(String(lang));
+    push('```' + (m ? m[1] : '') + '\n' + ((codeEl || node).textContent || '').replace(/\n$/, '') + '\n```\n\n');
+  }
+
+  function walkDetails(node, depth) {
+    const open = node.open !== false;
+    if (!open && !includeCollapsed) return;
+    const kids = childrenOf(node);
+    const sum = kids.find((c) => String(c.tagName || '').toUpperCase() === 'SUMMARY');
+    ensureNl(2);
+    if (sum) {
+      const title = walkInline(sum).replace(/\s+/g, ' ').trim();
+      if (title) push('**' + title + '**' + (open ? '' : '〔折叠〕') + '\n\n');
+    } else if (!open) {
+      push('〔折叠〕\n\n');
+    }
+    kids.filter((c) => c !== sum).forEach((c) => walk(c, depth));
+    ensureNl(1);
+  }
+
+  const WALK_TAGS = {
+    A: (n) => push(walkInline(n)),
+    P: (n) => { const t = walkInline(n).trim(); if (t) { ensureNl(1); push(t + '\n\n'); } },
+    BLOCKQUOTE: (n, d) => walkBlockquote(n, d),
+    UL: (n, d) => walkList(n, 'UL', d),
+    OL: (n, d) => walkList(n, 'OL', d),
+    TABLE: (n) => walkTable(n),
+    PRE: (n) => walkPre(n),
+    HR: () => { ensureNl(2); push('---\n\n'); },
+    DETAILS: (n, d) => walkDetails(n, d),
+    SUMMARY: () => {},
+  };
+
+  function walkElement(node, tag, depth) {
+    if (hasClass(node, 'katex-scroll-container') || hasClass(node, 'katex-display')) { ensureNl(2); push(walkInline(node) + '\n\n'); return; }
+    if (/^H[1-6]$/.test(tag)) { ensureNl(2); push('\n' + '#'.repeat(Number(tag.slice(1))) + ' ' + walkInline(node).trim() + '\n\n'); return; }
+    if (WALK_TAGS[tag]) { WALK_TAGS[tag](node, depth); return; }
+    const kids = childrenOf(node);
+    if (kids.length) kids.forEach((c) => walk(c, depth));
+    else { const t = (node.textContent || '').trim(); if (t) { ensureNl(1); push(t + '\n'); } }
+  }
+
+  function isSkippableBlock(node, tag) {
+    return Boolean(SKIP[tag] || hasClass(node, 'katex-html') || hasClass(node, 'katex-mathml'));
   }
 
   function walk(node, depth) {
@@ -199,119 +309,9 @@ export function renderMarkdown(root, opts) {
       return;
     }
     const tag = String(node.tagName || '').toUpperCase();
-    if (SKIP[tag]) return;
-
-    if (hasClass(node, 'katex') || hasClass(node, 'ML__latex') || node.getAttribute?.('data-math-plain')) { push(katexText(node)); return; }
-    if (hasClass(node, 'katex-html') || hasClass(node, 'katex-mathml')) return;
-    if (tag === 'A') { push(walkInline(node)); return; }
-
-    // 公式块容器：整块出一个独立段落（display 公式本来就是块级）
-    if (hasClass(node, 'katex-scroll-container') || hasClass(node, 'katex-display')) {
-      ensureNl(2);
-      push(walkInline(node) + '\n\n');
-      return;
-    }
-
-    if (/^H[1-6]$/.test(tag)) {
-      ensureNl(2);
-      const lvl = Number(tag.slice(1));
-      push('\n' + '#'.repeat(lvl) + ' ' + walkInline(node).trim() + '\n\n');
-      return;
-    }
-    if (tag === 'P') {
-      const t = walkInline(node).trim();
-      if (t) { ensureNl(1); push(t + '\n\n'); }
-      return;
-    }
-    if (tag === 'BLOCKQUOTE') {
-      ensureNl(1);
-      // 用**局部渲染器**（同一份 out 缓冲），不要递归调 renderMarkdown——
-      // 那会从根节点重来，在嵌套结构上直接栈溢出（2026-10-19 真实页实测）。
-      const mark = out.length;
-      childrenOf(node).forEach((c) => walk(c, depth));
-      const inner = out.splice(mark).join('').trim();
-      if (inner) push(inner.split('\n').map((l) => '> ' + l).join('\n') + '\n\n');
-      return;
-    }
-    if (tag === 'UL' || tag === 'OL') {
-      ensureNl(1);
-      const items = childrenOf(node).filter((c) => String(c.tagName || '').toUpperCase() === 'LI');
-      items.forEach((li, i) => {
-        const marker = tag === 'OL' ? `${i + 1}. ` : '- ';
-        const mark = out.length;
-        childrenOf(li).forEach((c) => walk(c, depth + 1));
-        const body = out.splice(mark).join('').trim()
-          .replace(/\n{2,}/g, '\n').replace(/\n/g, '\n  ');
-        push(marker + body + '\n');
-      });
-      push('\n');
-      return;
-    }
-    if (tag === 'TABLE') {
-      ensureNl(2);
-      const rows = [];
-      (function collect(n) {
-        for (const c of childrenOf(n)) {
-          const ct = String(c.tagName || '').toUpperCase();
-          if (ct === 'TR') rows.push(c);
-          else if (ct === 'THEAD' || ct === 'TBODY' || ct === 'TFOOT') collect(c);
-        }
-      })(node);
-      const lines = rows.map((tr) => {
-        const cells = childrenOf(tr)
-          .filter((c) => /^T[HD]$/.test(String(c.tagName || '').toUpperCase()))
-          .map((c) => walkInlineAll(c).trim().replace(/\n+/g, ' ').replace(/\|/g, '\\|'));
-        return '| ' + cells.join(' | ') + ' |';
-      });
-      if (lines.length) {
-        // 数列分隔符：原写法 `lines[0].match(/\|/g).length` 被 A4 机械替换成了
-        // `/\|/g.exec(...)` —— exec 带 g 也只返回**第一个**匹配，列数恒为 0，
-        // 分隔行塌成 `||`（2026-11-07 插件测试抓出）。这里要的是**全部匹配的
-        // 个数**，用 match(g)（GitRoll 的 RegExp.exec 建议不适用于计数场景）。
-        const cols = (lines[0].match(/\|/g) || []).length - 1;
-        lines.splice(1, 0, '|' + Array(cols).fill(' --- ').join('|') + '|');
-        push(lines.join('\n') + '\n\n');
-      }
-      return;
-    }
-    if (tag === 'PRE') {
-      ensureNl(2);
-      const codeEl = childrenOf(node).find((c) => String(c.tagName || '').toUpperCase() === 'CODE');
-      // 真 DOM 里 class 属性与 className 是同一份；假 DOM 两者分开，都认一遍
-      const lang = codeEl
-        ? (codeEl.getAttribute && codeEl.getAttribute('class')) || codeEl.className || ''
-        : '';
-      const m = /language-([\w-]+)/.exec(String(lang));
-      push('```' + (m ? m[1] : '') + '\n' + ((codeEl || node).textContent || '').replace(/\n$/, '') + '\n```\n\n');
-      return;
-    }
-    if (tag === 'HR') { ensureNl(2); push('---\n\n'); return; }
-    if (tag === 'DETAILS') {
-      const open = node.open !== false;
-      if (!open && !includeCollapsed) return;
-      const kids = childrenOf(node);
-      const sum = kids.find((c) => String(c.tagName || '').toUpperCase() === 'SUMMARY');
-      ensureNl(2);
-      if (sum) {
-        // summary 里的标题/序号是内容的一部分；指示三角要滤掉
-        const title = walkInline(sum).replace(/\s+/g, ' ').trim();
-        if (title) push('**' + title + '**' + (open ? '' : '〔折叠〕') + '\n\n');
-      } else if (!open) {
-        push('〔折叠〕\n\n');
-      }
-      kids.filter((c) => c !== sum).forEach((c) => walk(c, depth));
-      ensureNl(1);
-      return;
-    }
-    if (tag === 'SUMMARY') return;   // 由 DETAILS 处理
-    // 其余块级/行内容器：继续下钻
-    const kids = childrenOf(node);
-    if (kids.length) {
-      kids.forEach((c) => walk(c, depth));
-    } else {
-      const t = (node.textContent || '').trim();
-      if (t) { ensureNl(1); push(t + '\n'); }
-    }
+    if (isSkippableBlock(node, tag)) return;
+    if (isMathInline(node)) { push(katexText(node)); return; }
+    walkElement(node, tag, depth);
   }
 
   walk(root, 0);
@@ -365,67 +365,78 @@ export function createPageView(doc, loc, winOverride) {
     return { total: ds.length, open: ds.filter((d) => d.open).length };
   }
 
-  /** 显示设置（主题 / 色相 / 侧栏）。 */
-  function viewState() {
-    const rootEl = (doc?.documentElement) || null;
-    let hue = null;
+  function tryReadInt(fn) {
     try {
-      // 真 DOM：样式表里 --hue 有默认值，getComputedStyle 读得到；
-      // 也认内联 style 与属性（测试/无计算样式环境）。
-      if (win?.getComputedStyle && rootEl) {
-        const v = win.getComputedStyle(rootEl).getPropertyValue('--hue');
-        if (v) hue = parseInt(v, 10);
-      }
-    } catch (_e) { /* 无计算样式 */ }
-    if (!Number.isFinite(hue) && rootEl) {
-      try {
-        const inline = typeof rootEl.style?.getPropertyValue === 'function'
-          ? rootEl.style.getPropertyValue('--hue') : '';
-        if (inline) hue = parseInt(inline, 10);
-        if (!Number.isFinite(hue) && rootEl.getAttribute) {
-          const attr = rootEl.getAttribute('data-hue');
-          if (attr) hue = parseInt(attr, 10);
-        }
-      } catch (_e) { /* 无内联样式 */ }
-    }
-    let sidebar = null;
-    const body = (doc?.body) || null;
+      const v = fn();
+      return v ? parseInt(v, 10) : null;
+    } catch (_e) { return null; }
+  }
+
+  /** 显示设置（主题 / 色相 / 侧栏）。 */
+  function readHue(rootEl) {
+    if (!rootEl) return null;
+    const computed = tryReadInt(() => win?.getComputedStyle?.(rootEl).getPropertyValue('--hue'));
+    if (computed !== null) return computed;
+    return tryReadInt(() => rootEl.style?.getPropertyValue?.('--hue') || rootEl.getAttribute?.('data-hue'));
+  }
+
+  function readSidebarState() {
     const drawer = byId('m3-drawer');
-    if (drawer && hasClass(drawer, 'open')) sidebar = 'open';
-    else if (body && hasClass(body, 'sidebar-collapsed')) sidebar = 'collapsed';
+    if (drawer && hasClass(drawer, 'open')) return 'open';
+    const body = doc?.body;
+    return body && hasClass(body, 'sidebar-collapsed') ? 'collapsed' : null;
+  }
+
+  function viewState() {
+    const rootEl = doc?.documentElement || null;
+    const hue = readHue(rootEl);
     return {
-      theme: rootEl ? (rootEl.getAttribute('data-theme') || null) : null,
+      theme: rootEl?.getAttribute('data-theme') || null,
       hue: Number.isFinite(hue) ? hue : null,
-      sidebar,
+      sidebar: readSidebarState(),
+    };
+  }
+
+  function calcScrollPct(y, docObj, winObj) {
+    const docHeight = docObj?.documentElement?.scrollHeight || 0;
+    const viewH = winObj?.innerHeight || 0;
+    return docHeight > viewH ? Math.min(100, Math.round(y / (docHeight - viewH) * 100)) : 0;
+  }
+
+  function readScrollPosition() {
+    try {
+      const y = Math.round(win?.scrollY || 0);
+      return { scrollY: y, scrollPct: calcScrollPct(y, doc, win) };
+    } catch (_e) {
+      return { scrollY: 0, scrollPct: 0 };
+    }
+  }
+
+  function readCourseLabel() {
+    const chip = courseChip();
+    return chip ? textOf(chip).replace(/^\S+\s*/, '') : '';
+  }
+
+  function readPageHeader() {
+    const titleEl = first(S.articleTitle);
+    return {
+      title: titleEl ? textOf(titleEl) : (doc.title || ''),
+      course: readCourseLabel(),
+      url: location.href || '',
+      path: doc?.body?.getAttribute('data-site-path') || '',
+      hash: String(location.hash || '').replace(/^#/, ''),
     };
   }
 
   /** 当前页信息（含状态）。 */
   function pageInfo() {
-    const titleEl = first(S.articleTitle);
-    const chip = courseChip();
-    const body = (doc?.body) || null;
-    let scrollY = 0, docHeight = 0, viewH = 0;
-    try {
-      scrollY = win ? Math.round(win.scrollY || 0) : 0;
-      docHeight = doc?.documentElement ? doc.documentElement.scrollHeight : 0;
-      viewH = win ? win.innerHeight || 0 : 0;
-    } catch (_e) { /* 无窗口 */ }
     return {
-      title: titleEl ? textOf(titleEl) : (doc.title || ''),
-      course: chip ? textOf(chip).replace(/^\S+\s*/, '') : '',
-      url: location.href || '',
-      path: body ? (body.getAttribute('data-site-path') || '') : '',
-      hash: String((location.hash || '')).replace(/^#/, ''),
+      ...readPageHeader(),
       sections: headings(),
       activeToc: activeToc(),
       panels: panelState(),
       view: viewState(),
-      position: {
-        scrollY,
-        scrollPct: docHeight > viewH && docHeight > 0
-          ? Math.min(100, Math.round(scrollY / (docHeight - viewH) * 100)) : 0,
-      },
+      position: readScrollPosition(),
     };
   }
 
@@ -433,44 +444,59 @@ export function createPageView(doc, loc, winOverride) {
    * 跳到某小节（按标题片段或锚点 id）。会**展开它所在的折叠面板**（与深链接同一条路径）。
    * @returns {{ok:boolean, title?:string, anchor?:string, reason?:string, available?:string[]}}
    */
-  function openSection(byTitle, byAnchor, win2) {
-    const list = headings();
-    let target = null;
+  function findSectionTarget(byTitle, byAnchor, list) {
     const needle = byTitle ? String(byTitle).trim() : '';
-    if (byAnchor) {
-      target = byId(byAnchor);
-    } else if (byTitle) {
-      // 与 site_read 同一条匹配规则：精确优先、歧义则**不猜**。
-      // （旧写法 `filter(...)[0]` 在同一页有近似标题时永远落第一个，见 matchHeadings 注释。）
-      const m = matchHeadings(list, needle);
-      if (m.hits.length > 1) {
-        return { ok: false, reason: 'ambiguous', query: needle, tier: m.tier,
-                 candidates: m.hits.slice(0, 10).map((h) => ({ title: h.title, anchor: h.anchor })),
-                 hint: '这个 query 同时命中多个小节。从 candidates 里挑一个，用它的 anchor 重发。' };
-      }
-      const hit = m.hits[0];
-      if (hit) target = byId(hit.anchor);
+    if (byAnchor) return { target: byId(byAnchor), needle };
+    if (!byTitle) return { target: null, needle };
+    const m = matchHeadings(list, needle);
+    if (m.hits.length > 1) {
+      return {
+        error: {
+          ok: false, reason: 'ambiguous', query: needle, tier: m.tier,
+          candidates: m.hits.slice(0, 10).map((h) => ({ title: h.title, anchor: h.anchor })),
+          hint: '这个 query 同时命中多个小节。从 candidates 里挑一个，用它的 anchor 重发。',
+        },
+      };
     }
-    if (!target) {
-      return { ok: false, reason: 'not_found', query: needle,
-               candidates: nearestTitles(needle, list.map((h) => h.title)),
-               hint: '标题里没有完全匹配。从 candidates 里挑一个最近的重试，或先调 site_read（what=outline）看全量标题。',
-               available: list.map((h) => h.title).slice(0, 30) };
-    }
+    return { target: m.hits[0] ? byId(m.hits[0].anchor) : null, needle };
+  }
+
+  function openParentDetails(target) {
     for (let node = target; node; node = node.parentElement) {
       if (String(node.tagName || '').toUpperCase() === 'DETAILS' && !node.open) node.open = true;
     }
-    // 走真人的深链接路径（会同步 URL hash 并触发 :target 高亮与抽屉同步）
-    if (target.id) {
-      try {
-        if (win2?.__disclosureOpen) win2.__disclosureOpen(target.id);
-        else if (location && typeof location === 'object') location.hash = target.id;
-      } catch (_e) { /* 无 hash 能力 */ }
-    }
+  }
+
+  function syncSectionHash(id, win2) {
+    if (!id) return;
+    try {
+      if (win2?.__disclosureOpen) win2.__disclosureOpen(id);
+      else if (location && typeof location === 'object') location.hash = id;
+    } catch (_e) { /* 无 hash 能力 */ }
+  }
+
+  function revealAndScroll(target, win2) {
+    openParentDetails(target);
+    syncSectionHash(target.id, win2);
     try { target.scrollIntoView({ block: 'start' }); } catch (_e) {
       try { target.scrollIntoView(); } catch (_e2) { /* 无滚动也能返回锚点 */ }
     }
-    return { ok: true, title: textOf(target), anchor: target.id };
+  }
+
+  function openSection(byTitle, byAnchor, win2) {
+    const list = headings();
+    const res = findSectionTarget(byTitle, byAnchor, list);
+    if (res.error) return res.error;
+    if (!res.target) {
+      return {
+        ok: false, reason: 'not_found', query: res.needle,
+        candidates: nearestTitles(res.needle, list.map((h) => h.title)),
+        hint: '标题里没有完全匹配。从 candidates 里挑一个最近的重试，或先调 site_read（what=outline）看全量标题。',
+        available: list.map((h) => h.title).slice(0, 30),
+      };
+    }
+    revealAndScroll(res.target, win2);
+    return { ok: true, title: textOf(res.target), anchor: res.target.id };
   }
 
   /** 展开/收起折叠面板（不传 open 则切换；match 只作用于标题匹配的那些）。 */
@@ -505,6 +531,13 @@ export function createPageView(doc, loc, winOverride) {
     } catch (_e) { return null; }
   }
 
+  function matchGlossaryEntry(entries, n) {
+    return entries.find(([k, e]) => e.id === n || k.endsWith(':' + n))
+      || entries.find(([, e]) => String(e.titleText || e.title || '').split(/[：:]/)[0].trim() === n)
+      || entries.find(([k, e]) => k.indexOf(n) >= 0 || String(e.titleText || e.title || '').indexOf(n) >= 0)
+      || null;
+  }
+
   /** 从 #sym-glossary-json 按规范 key / 裸 id / 标题精确或模糊查一条词条。 */
   function findGlossaryEntry(needle) {
     const n = String(needle || '').trim();
@@ -513,20 +546,8 @@ export function createPageView(doc, loc, winOverride) {
     const terms = data?.terms;
     if (!terms) return null;
     if (Object.hasOwn(terms, n)) return { key: n, entry: terms[n], data };
-    const entries = Object.entries(terms);
-    for (const [k, e] of entries) {
-      if (e.id === n || k.endsWith(':' + n)) return { key: k, entry: e, data };
-    }
-    for (const [k, e] of entries) {
-      const head = String(e.titleText || e.title || '').split(/[：:]/)[0].trim();
-      if (head && head === n) return { key: k, entry: e, data };
-    }
-    for (const [k, e] of entries) {
-      if (k.indexOf(n) >= 0 || String(e.titleText || e.title || '').indexOf(n) >= 0) {
-        return { key: k, entry: e, data };
-      }
-    }
-    return null;
+    const hit = matchGlossaryEntry(Object.entries(terms), n);
+    return hit ? { key: hit[0], entry: hit[1], data } : null;
   }
 
   /** 页面上首个匹配某符号的可点元素（没命中返回 null）。 */
@@ -540,32 +561,50 @@ export function createPageView(doc, loc, winOverride) {
       || null;
   }
 
+  function buildSymbolRec(id, text, meta) {
+    const rec = { id, text };
+    if (meta?.titleText) rec.titleText = meta.titleText;
+    if (meta?.pack) rec.pack = meta.pack;
+    return rec;
+  }
+
+  function collectDomSymbols(seen, out, terms, limit) {
+    for (const x of all(S.glossaryTerm)) {
+      const id = String(x.getAttribute?.('data-term') || '');
+      if (!id || seen[id]) continue;
+      seen[id] = 1;
+      out.push(buildSymbolRec(id, textOf(x), terms[id]));
+      if (limit && out.length >= limit) return true;
+    }
+    return false;
+  }
+
+  function collectGlossarySymbols(seen, out, terms, limit) {
+    for (const [id, meta] of Object.entries(terms)) {
+      if (seen[id]) continue;
+      seen[id] = 1;
+      out.push(buildSymbolRec(id, meta.titleText || meta.id || id, meta));
+      if (limit && out.length >= limit) break;
+    }
+  }
+
   /** 页面上全部符号（优先合并 #sym-glossary-json 的结构化元数据）。 */
   function listSymbols(limit) {
     const seen = {};
     const out = [];
     const terms = glossaryData()?.terms || {};
-    for (const x of all(S.glossaryTerm)) {
-      const id = x.getAttribute ? String(x.getAttribute('data-term') || '') : '';
-      if (!id || seen[id]) continue;
-      seen[id] = 1;
-      const meta = terms[id];
-      const rec = { id, text: textOf(x) };
-      if (meta?.titleText) rec.titleText = meta.titleText;
-      if (meta?.pack) rec.pack = meta.pack;
-      out.push(rec);
-      if (limit && out.length >= limit) return out;
-    }
-    for (const [id, meta] of Object.entries(terms)) {
-      if (seen[id]) continue;
-      seen[id] = 1;
-      const rec = { id, text: meta.titleText || meta.id || id };
-      if (meta.titleText) rec.titleText = meta.titleText;
-      if (meta.pack) rec.pack = meta.pack;
-      out.push(rec);
-      if (limit && out.length >= limit) break;
-    }
+    if (collectDomSymbols(seen, out, terms, limit)) return out;
+    collectGlossarySymbols(seen, out, terms, limit);
     return out;
+  }
+
+  function readJsonScript(id, isValid) {
+    const tag = byId(id);
+    if (!tag) return null;
+    try {
+      const data = JSON.parse(tag.textContent || '');
+      return isValid(data) ? data : null;
+    } catch { return null; }
   }
 
   /**
@@ -574,31 +613,15 @@ export function createPageView(doc, loc, winOverride) {
    * 返回 `{v, current, activeIds, expandedIds, nodes}`；缺失/损坏返回 null（调用方给明确 reason）。
    */
   function navStructure() {
-    const tag = byId(S.navJson);
-    if (tag) {
-      try {
-        const data = JSON.parse(tag.textContent || '');
-        if (data && Array.isArray(data.nodes)) return data;
-      } catch { /* fall through to runtime store */ }
-    }
-    if (win?.__navStructure?.readNavJson) {
-      return win.__navStructure.readNavJson();
-    }
-    return null;
+    return readJsonScript(S.navJson, (d) => Array.isArray(d?.nodes))
+      ?? win?.__navStructure?.readNavJson?.()
+      ?? null;
   }
 
   function sitePages() {
-    const tag = byId(S.pagesJson);
-    if (tag) {
-      try {
-        const data = JSON.parse(tag.textContent || '');
-        if (Array.isArray(data)) return data;
-      } catch { /* fall through to runtime store */ }
-    }
-    if (win?.__navStructure?.readPagesJson) {
-      return win.__navStructure.readPagesJson();
-    }
-    return null;
+    return readJsonScript(S.pagesJson, Array.isArray)
+      ?? win?.__navStructure?.readPagesJson?.()
+      ?? null;
   }
 
   /**
@@ -616,52 +639,49 @@ export function createPageView(doc, loc, winOverride) {
    * 部署前缀（`/repo/S26-1_202609/`）不能写死——它随部署环境变，而且本站还有
    * 无前缀镜像入口。所以给绝对路径时不猜前缀，而是**按已知页面做后缀对齐**。
    */
-  function canonicalPagePath(raw, known) {
-    let p = String(raw || '').trim();
-    if (!p) return '';
+  function matchAbsoluteSuffix(p, known) {
+    const hit = known
+      .filter((k) => k && (p === k || p.slice(-(k.length + 1)) === '/' + k))
+      .sort((a, b) => b.length - a.length);
+    return hit.length ? hit[0] : null;
+  }
+
+  function matchStemPath(p, known) {
+    if (/\.html?$/i.test(p) || /[.][a-z0-9]+$/i.test(p)) return p;
+    if (known.indexOf(p + '/') >= 0) return p + '/';
+    return known.indexOf(p + '.html') >= 0 ? p + '.html' : p;
+  }
+
+  function matchKnownPath(p, wasAbsolute, known) {
+    if (!known?.length) return p;
+    if (wasAbsolute && known.indexOf(p) < 0) {
+      const hit = matchAbsoluteSuffix(p, known);
+      if (hit) return hit;
+    }
+    return known.indexOf(p) >= 0 ? p : matchStemPath(p, known);
+  }
+
+  function safeDecodeUri(s) {
+    try { return decodeURI(s); } catch (_e) { return s; }
+  }
+
+  function parsePathInput(raw) {
+    let p = safeDecodeUri(String(raw || '').trim());
     let wasAbsolute = /^https?:\/\//i.test(p) || p.charAt(0) === '/';
-    try { p = decodeURI(p); } catch (_e) { /* 保持原样 */ }
-    // 绝对 URL → 只取 pathname。⚠️ `new URL().pathname` 返回**百分号编码**路径，
-    // 中文段会被编码回去，所以提取后必须**再解一次码**，否则与清单里的未编码
-    // 中文路径永远匹配不上（实测：只有未编码的 `index.html` 命中，把
-    // `…/工程数学/…/index.html` 错配成了根 `index.html`）。
     if (/^https?:\/\//i.test(p)) {
-      try { p = new URL(p).pathname; } catch (_e) { /* 保持原样 */ }
-      try { p = decodeURI(p); } catch (_e) { /* 保持原样 */ }
+      try { p = safeDecodeUri(new URL(p).pathname); } catch (_e) { /* 保持原样 */ }
       wasAbsolute = true;
     }
-    p = p.replace(/^\.\//, '').replace(/^\/+/, '');
+    return { p, wasAbsolute };
+  }
 
-    // 旧写法兼容（2026-10-29）：`…/index.html` 与 `…/` 是同一页（目录索引页）。
-    // 网址规则已统一成目录形式，但模型可能按旧习惯给文件名。收敛到目录形式，
-    // 避免「同一页两个网址」——那正是本轮要消灭的分叉。
-    // 根 `index.html` 也归到首页的 `''`。
+  function canonicalPagePath(raw, known) {
+    if (!String(raw || '').trim()) return '';
+    let { p, wasAbsolute } = parsePathInput(raw);
+    p = p.replace(/^\.\//, '').replace(/^\/+/, '');
     if (/^index\.html$/i.test(p)) p = '';
     else p = p.replace(/\/index\.html$/i, '/');
-
-    // 绝对路径带的部署前缀：按已知页面后缀对齐，不猜前缀长度。
-    // 命中条件：这条绝对路径**以 `/页面` 结尾**（带 `/` 边界，否则
-    // `x/index.html` 会被当成任何 `…index.html` 的后缀）。
-    if (wasAbsolute && known?.length && known.indexOf(p) < 0) {
-      // 多个命中时取**最长**（最具体）——`index.html` 是所有索引页的合法后缀，
-      // 只按长度比会把具体的 `课程总览/…/` 让给更短的。
-      const hit = known
-        .filter((k) => k && (p === k || p.slice(-(k.length + 1)) === '/' + k))
-        .sort((a, b) => b.length - a.length);
-      if (hit.length) return hit[0];
-    }
-    if (known && known.indexOf(p) >= 0) return p;
-
-    // 没后缀也没尾斜杠：可能是目录索引页（`课程总览/x` → `课程总览/x/`），
-    // 也可能是省略了 .html 的页面（`课程总览/x` → `课程总览/x.html`）。
-    // 两种都试，谁在清单里就归谁；都不在就原样返回（随后报不存在）。
-    if (!/\.html?$/i.test(p) && !/[.][a-z0-9]+$/i.test(p)) {
-      const asDir = p + '/';
-      const asPage = p + '.html';
-      if (known && known.indexOf(asDir) >= 0) return asDir;
-      if (known && known.indexOf(asPage) >= 0) return asPage;
-    }
-    return p;
+    return matchKnownPath(p, wasAbsolute, known);
   }
 
   /**
@@ -732,15 +752,8 @@ export function createPageView(doc, loc, winOverride) {
       else if (ns.endsWith(nn)) tiers.suffix.push(h);
       else if (ns.indexOf(nn) >= 0) tiers.substr.push(h);
     }
-    // 同档全部返回，**不按长度裁剪**。
-    // 2026-10-29 站长叫停：长度启发式是在替模型做判断（「页标题和小节谁更像」），
-    // 而模型自己会先读 outline 或全文，看得到全貌。这里只做两件确定的事：
-    //   ① 精确/后缀命中优先于子串（tier 顺序）；
-    //   ② 同档多个命中就**全给**，由调用方报 ambiguous 让模型挑——绝不静默取第一个。
-    for (const tier of ['exact', 'suffix', 'substr']) {
-      if (tiers[tier].length) return { tier, hits: tiers[tier] };
-    }
-    return { tier: 'none', hits: [] };
+    const found = ['exact', 'suffix', 'substr'].find((t) => tiers[t].length);
+    return found ? { tier: found, hits: tiers[found] } : { tier: 'none', hits: [] };
   }
 
   function nearestTitles(needle, titles, max) {
@@ -788,16 +801,7 @@ export function createPageView(doc, loc, winOverride) {
    *   · 50000  → 拒           超硬上限，hint 写明上限
    * 宽容是安全网，不替代 schema——枚举/范围/必填仍在 schema 里。
    */
-  function asInt(raw, opt) {
-    const o = opt || {};
-    if (raw === undefined || raw === null || raw === '') return { ok: true, value: o.def };
-    const n = typeof raw === 'number' ? raw : Number(String(raw).trim());
-    if (!Number.isFinite(n)) {
-      return { ok: false, reason: 'bad_type', hint: o.name + ' 必须是数字，收到的是「' + raw + '」' };
-    }
-    if (!Number.isInteger(n)) {
-      return { ok: false, reason: 'bad_type', hint: o.name + ' 必须是整数，收到的是 ' + n };
-    }
+  function validateIntRange(n, o) {
     if (o.min !== undefined && n < o.min) {
       return { ok: false, reason: 'out_of_range', hint: o.name + ' 不能小于 ' + o.min + '，收到的是 ' + n };
     }
@@ -805,6 +809,15 @@ export function createPageView(doc, loc, winOverride) {
       return { ok: false, reason: 'out_of_range', hint: o.name + ' 上限是 ' + o.max + '，收到的是 ' + n + '（请用 offset 分页读）' };
     }
     return { ok: true, value: n };
+  }
+
+  function asInt(raw, opt) {
+    const o = opt || {};
+    if (raw === undefined || raw === null || raw === '') return { ok: true, value: o.def };
+    const n = typeof raw === 'number' ? raw : Number(String(raw).trim());
+    if (!Number.isFinite(n)) return { ok: false, reason: 'bad_type', hint: o.name + ' 必须是数字，收到的是「' + raw + '」' };
+    if (!Number.isInteger(n)) return { ok: false, reason: 'bad_type', hint: o.name + ' 必须是整数，收到的是 ' + n };
+    return validateIntRange(n, o);
   }
 
   /**
@@ -816,215 +829,186 @@ export function createPageView(doc, loc, winOverride) {
    * @param {number} [o.offset=0]  字符偏移（2026-10-23：分页读长页）
    * @param {boolean} [o.includeCollapsed=true]
    */
-  function readContent(o) {
-    const opt = o || {};
-    const what = opt.what || 'page';
-    // ⚠️ 2026-10-26（站长定案）：**默认只给前 30 行**，不再默认 8000 字符。
-    //
-    // 为什么换口径：node 侧实测，工具循环每轮把整份回喂重发一遍，上游按**累计**
-    // 算输入额——4 轮 × 1224 字就撞「输入信息过长」。回喂层截到 1100 字是被动的
-    // 补救；真正的源头是这里默认给太多。改成 30 行后，单个信封约 300–600 字，
-    // 同样的总预算能跑十倍以上的轮次。
-    //
-    // 两个独立的量，别混：
-    //   · limit   行数（默认 30，硬上限 400 行）——**主口径**
-    //   · maxChars 字符硬顶（默认 12000，兜底防单行超长把一页撑爆）
-    // 只给行数会让「一行一万字」的页面失控，所以字符顶同时保留。
-    const ln = asInt(opt.limit != null ? opt.limit : opt.maxLines,
-      { name: 'limit', def: 30, min: 1, max: 400 });
-    if (!ln.ok) return { ok: false, reason: ln.reason, hint: ln.hint, param: 'limit' };
+  function parseReadWindow(opt) {
+    const ln = asInt(opt.limit != null ? opt.limit : opt.maxLines, { name: 'limit', def: 30, min: 1, max: 400 });
+    if (!ln.ok) return { error: { ok: false, reason: ln.reason, hint: ln.hint, param: 'limit' } };
     const of = asInt(opt.offset, { name: 'offset', def: 0, min: 0 });
-    if (!of.ok) return { ok: false, reason: of.reason, hint: of.hint, param: 'offset' };
+    if (!of.ok) return { error: { ok: false, reason: of.reason, hint: of.hint, param: 'offset' } };
     const mc = asInt(opt.maxChars, { name: 'maxChars', def: 12000, min: 1, max: 20000 });
-    if (!mc.ok) return { ok: false, reason: mc.reason, hint: mc.hint, param: 'maxChars' };
-    const limitLines = ln.value;
-    const offset = of.value;      // 行号偏移（注意：旧版这里是字符偏移，语义已变）
-    const maxChars = mc.value;
-    // ⚠️ 2026-10-29：**不回退到 body**。原先 `first(S.article) || doc.body` 在
-    // 正文容器缺失时会读整个 body——页脚免责声明、侧栏导航、搜索面板全被当成
-    // 「页面正文」喂给模型，白占上下文（站长实测：一次读常读到页脚）。
-    // 找不到正文容器就明确报错，让模型知道「这页不是标准页面」，而不是给一坨杂物。
-    const article = first(S.article);
-    if (!article) {
-      return {
-        ok: false,
-        reason: 'article_not_found',
-        hint: `当前页没有 ${S.article} 容器（不是站点标准页），读不到正文。可用 site_get_page_info 看这是什么页。`,
-      };
-    }
+    if (!mc.ok) return { error: { ok: false, reason: mc.reason, hint: mc.hint, param: 'maxChars' } };
+    return { limitLines: ln.value, offset: of.value, maxChars: mc.value };
+  }
 
-    // ⭐ 2026-10-23 分页（Coze MCP-Builder Phase 1 的 offset+limit 口径）。
-    // 2026-10-26 改口径：**offset/limit 现在是行号，不是字符数**。
-    // 理由是模型读写文本天然按行思考（「读第 30 行往后」比「从第 1204 个字符起」自然），
-    // 而且行数切分不会把一行表格拦腰截断。
-    // 字符顶 maxChars 仍然兜底：单行超长时按字符切，并在 has_more 里如实反映。
-    const clip = (s) => {
+  function pickWindowLines(lines, fromLine, limitLines, maxChars) {
+    const picked = [];
+    let used = 0;
+    for (let i = fromLine; i < lines.length && picked.length < limitLines; i++) {
+      const one = lines[i];
+      if (used + one.length + 1 > maxChars && picked.length > 0) break;
+      picked.push(one);
+      used += one.length + 1;
+    }
+    return picked;
+  }
+
+  function makeClipper(what, { limitLines, offset, maxChars }) {
+    return (s) => {
       const t = String(s || '');
       const lines = t.split('\n');
       const totalLines = lines.length;
-      const totalChars = t.length;
       const fromLine = Math.min(offset, totalLines);
-      // 按行取窗口；同时用字符顶二次收窄（防单行超长）
-      const picked = [];
-      let used = 0;
-      let i = fromLine;
-      for (; i < totalLines && picked.length < limitLines; i++) {
-        const one = lines[i];
-        if (used + one.length + 1 > maxChars && picked.length > 0) break;
-        picked.push(one);
-        used += one.length + 1;
-      }
+      const picked = pickWindowLines(lines, fromLine, limitLines, maxChars);
       const text = picked.join('\n');
       const nextOffset = fromLine + picked.length;
       const hasMore = nextOffset < totalLines;
       return {
         text,
-        // ── 完整变量集（站长要求：一次给全，别让模型猜）──
-        total_chars: totalChars,
-        totalChars,                       // 双写：camelCase 是站内惯用名
-        total_lines: totalLines,
-        totalLines,
-        offset: fromLine,                 // 本段起始**行号**
-        limit: limitLines,                // 请求的**行数**
-        returned_lines: picked.length,    // 实际给了几行
-        returnedLines: picked.length,
-        chars: text.length,               // 本段字符数（用于估回喂预算）
-        next_offset: hasMore ? nextOffset : null,   // 续读就用这个值
+        total_chars: t.length, totalChars: t.length,
+        total_lines: totalLines, totalLines,
+        offset: fromLine, limit: limitLines,
+        returned_lines: picked.length, returnedLines: picked.length,
+        chars: text.length,
+        next_offset: hasMore ? nextOffset : null,
         nextOffset: hasMore ? nextOffset : null,
-        has_more: hasMore,
-        truncated: hasMore,
-        // 给人/模型看的一句话：默认口径 + 怎么要更长
+        has_more: hasMore, truncated: hasMore,
         hint: hasMore
-          ? `默认只给 ${limitLines} 行（本段 ${picked.length}/${totalLines} 行）。`
-            + `要接着读后半段：site_read，what=${what}，offset=${nextOffset}，limit=${limitLines}`
-            + `（或一次多要点：limit=100；行数硬上限 400）`
+          ? `默认只给 ${limitLines} 行（本段 ${picked.length}/${totalLines} 行）。要接着读后半段：site_read，what=${what}，offset=${nextOffset}，limit=${limitLines}（或一次多要点：limit=100；行数硬上限 400）`
           : undefined,
       };
     };
+  }
 
-    if (what === 'outline') {
-      const hs = headings();
+  function resolveSectionHit(hs, needle) {
+    if (needle && byId(needle)) {
+      const byAnchor = hs.find((h) => h.anchor === needle);
+      if (byAnchor) return { hit: byAnchor };
+    }
+    const matched = matchHeadings(hs, needle);
+    if (matched.hits.length > 1) {
       return {
-        ok: true, what, outline: hs, count: hs.length,
-        text: hs.map((h) => '  '.repeat(Math.max(0, h.level - 2)) + '- ' + h.title).join('\n'),
+        error: {
+          ok: false, reason: 'ambiguous', query: needle, tier: matched.tier,
+          candidates: matched.hits.slice(0, 10).map((h) => ({ title: h.title, anchor: h.anchor })),
+          hint: '这个 query 同时命中多个小节。从 candidates 里挑一个，用**它的 anchor**重发（query 填 anchor 值可精确命中，不会再歧义）。',
+        },
       };
     }
-    if (what === 'symbols') {
-      const list = listSymbols(80);
-      return { ok: true, what, symbols: list, count: list.length };
-    }
-    if (what === 'section' || what === 'panel') {
-      const needle = String(opt.query || '').trim();
-      if (!needle) return { ok: false, reason: 'empty_query', hint: '给 query（标题片段）' };
-      if (what === 'section') {
-        const hs = headings();
-        // 锚点精确命中优先于标题匹配（anchor 是唯一 id，不会有歧义）
-        let hit = needle && byId(needle) ? hs.find((h) => h.anchor === needle) : null;
-        let matched;
-        if (!hit) {
-          // 2026-10-29：**精确优先 + 全部命中**。
-          // 旧写法 `filter(...)[0]` 在同一页有「习题 2.4(2)：求秩」与「习题 2.4(3)：求秩」
-          // 这种近似标题时，永远读第一个，第 4 题死命读不出来。
-          matched = matchHeadings(hs, needle);
-          if (matched.hits.length > 1) {
-            // 多个同档命中：不猜，把候选交给模型挑。
-            // 这是「不猜补」在工具层的落地——猜一个读错比让模型重问一次糟得多。
-            return {
-              ok: false,
-              reason: 'ambiguous',
-              query: needle,
-              tier: matched.tier,
-              candidates: matched.hits.slice(0, 10).map((h) => ({ title: h.title, anchor: h.anchor })),
-              hint: '这个 query 同时命中多个小节。从 candidates 里挑一个，用**它的 anchor**重发'
-                + '（query 填 anchor 值可精确命中，不会再歧义）。',
-            };
-          }
-          hit = matched.hits[0];
-        }
-        if (!hit) {
-          // 2026-10-23（实测）：候选为空时 hint 必须换说法——
-          // 「从 candidates 里挑」而 candidates 是空数组，模型会照着重试空值。
-          // 空候选的正确含义是「这一页没有相关内容」，该换页而不是换词。
-          const cand = nearestTitles(needle, hs.map((h) => h.title));
-          return {
-            ok: false, reason: 'not_found', query: needle, candidates: cand,
-            hint: cand.length
-              ? '小节标题里没有匹配。从 candidates 里挑最近的一个重试。'
-              : '这一页没有相关小节（候选为空）。别在本页重试——换一页：先用 site_search 搜全站，或 site_index 看站点地图。',
-            available: hs.map((h) => h.title).slice(0, 30),
-          };
-        }
-        const target = byId(hit.anchor);
-        if (!target) return { ok: false, reason: 'anchor_missing', anchor: hit.anchor };
+    return { hit: matched.hits[0] || null };
+  }
 
-        // ⚠️ 2026-10-19 实测：真实页有 **18000+ 节点**（KaTeX 每公式 ~30 个 span）。
-        // 旧实现把整棵树摊平成数组再逐对做祖先检查（O(n²)），在真实页上直接卡死/抛错
-        // ——「Tool execution failed」就是这么来的。
-        // 新实现：从目标标题开始，**沿 DOM 顺序线性前进**，遇到同级或更高级标题就停。
-        const body = [];
-        let node = target;
-        const LEVEL = hit.level;
-        while (node) {
-          const tag = String(node.tagName || '').toUpperCase();
-          if (node !== target && /^H[1-4]$/.test(tag) && Number(tag.slice(1)) <= LEVEL) break;
-          body.push(node);
-          // 深度优先取下一个节点（不进入已收元素的子树，交给 renderMarkdown 下钻）
-          node = nextInDoc(node, target);
-        }
-        // 只保留「直接属于这一节」的顶层块：跳过被已收元素包含的节点
-        const top = [];
-        for (const el of body) {
-          if (el === target) { top.push(el); continue; }
-          if (!isAncestor(target, el) && !top.some((t) => isAncestor(t, el))) top.push(el);
-        }
-        const md = renderMarkdown({ children: top, tagName: 'DIV' }, { includeCollapsed: opt.includeCollapsed, links: opt.links });
-        const c = clip(md);
-        return { ok: true, what, title: hit.title, anchor: hit.anchor, level: hit.level, ...c };
-      }
-      // panel：按标题匹配 details
-      const ds = all(S.details).filter((d) => {
-        const sum = d.querySelector ? d.querySelector('summary') : null;
-        return (textOf(sum) + ' ' + textOf(d)).indexOf(needle) >= 0;
-      });
-      if (!ds.length) {
-        return {
-          ok: false, reason: 'not_found',
-          available: all(S.details).map((d) => {
-            const sum = d.querySelector ? d.querySelector('summary') : null;
-            return textOf(sum).slice(0, 60);
-          }).slice(0, 30),
-        };
-      }
-      const md = ds.map((d) => renderMarkdown(d, { includeCollapsed: true, links: opt.links })).join('\n\n');
-      const c = clip(md);
-      return { ok: true, what, count: ds.length, ...c };
+  function readSectionContent(needle, opt, clip) {
+    const hs = headings();
+    const { hit, error } = resolveSectionHit(hs, needle);
+    if (error) return error;
+    if (!hit) {
+      const cand = nearestTitles(needle, hs.map((h) => h.title));
+      return {
+        ok: false, reason: 'not_found', query: needle, candidates: cand,
+        hint: cand.length
+          ? '小节标题里没有匹配。从 candidates 里挑最近的一个重试。'
+          : '这一页没有相关小节（候选为空）。别在本页重试——换一页：先用 site_search 搜全站，或 site_index 看站点地图。',
+        available: hs.map((h) => h.title).slice(0, 30),
+      };
     }
-    // page
+    const target = byId(hit.anchor);
+    if (!target) return { ok: false, reason: 'anchor_missing', anchor: hit.anchor };
+    const top = collectSectionTopNodes(target, hit.level);
+    const md = renderMarkdown({ children: top, tagName: 'DIV' }, { includeCollapsed: opt.includeCollapsed, links: opt.links });
+    return { ok: true, what: 'section', title: hit.title, anchor: hit.anchor, level: hit.level, ...clip(md) };
+  }
+
+  function readTargetedContent(what, opt, clip) {
+    const needle = String(opt.query || '').trim();
+    if (!needle) return { ok: false, reason: 'empty_query', hint: '给 query（标题片段）' };
+    return what === 'section' ? readSectionContent(needle, opt, clip) : readPanelContent(needle, opt, clip);
+  }
+
+  function readOutline() {
+    const hs = headings();
+    return { ok: true, what: 'outline', outline: hs, count: hs.length, text: hs.map((h) => '  '.repeat(Math.max(0, h.level - 2)) + '- ' + h.title).join('\n') };
+  }
+
+  function readSymbolsList() {
+    const list = listSymbols(80);
+    return { ok: true, what: 'symbols', symbols: list, count: list.length };
+  }
+
+  function readPageMarkdown(article, opt, clip) {
     const md = renderMarkdown(article, { includeCollapsed: opt.includeCollapsed, links: opt.links });
-    const c = clip(md);
-    return { ok: true, what: 'page', title: pageInfo().title, sections: headings().length, ...c };
+    return { ok: true, what: 'page', title: pageInfo().title, sections: headings().length, ...clip(md) };
+  }
+
+  function readContent(o) {
+    const opt = o || {};
+    const what = opt.what || 'page';
+    const winCfg = parseReadWindow(opt);
+    if (winCfg.error) return winCfg.error;
+    const article = first(S.article);
+    if (!article) {
+      return {
+        ok: false, reason: 'article_not_found',
+        hint: `当前页没有 ${S.article} 容器（不是站点标准页），读不到正文。可用 site_get_page_info 看这是什么页。`,
+      };
+    }
+    const simple = { outline: readOutline, symbols: readSymbolsList }[what];
+    if (simple) return simple();
+    const clip = makeClipper(what, winCfg);
+    return (what === 'section' || what === 'panel')
+      ? readTargetedContent(what, opt, clip)
+      : readPageMarkdown(article, opt, clip);
+  }
+
+  function isHeadingStop(node, target, level) {
+    if (node === target) return false;
+    const tag = String(node.tagName || '').toUpperCase();
+    return /^H[1-4]$/.test(tag) && Number(tag.slice(1)) <= level;
+  }
+
+  function collectSectionTopNodes(target, level) {
+    const body = [];
+    for (let node = target; node && !isHeadingStop(node, target, level); node = nextInDoc(node, target)) {
+      body.push(node);
+    }
+    const top = [];
+    for (const el of body) {
+      if (el === target || (!isAncestor(target, el) && !top.some((t) => isAncestor(t, el)))) top.push(el);
+    }
+    return top;
+  }
+
+  function readPanelContent(needle, opt, clip) {
+    const ds = all(S.details).filter((d) => {
+      const sum = d.querySelector ? d.querySelector('summary') : null;
+      return (textOf(sum) + ' ' + textOf(d)).indexOf(needle) >= 0;
+    });
+    if (!ds.length) {
+      return {
+        ok: false, reason: 'not_found',
+        available: all(S.details).map((d) => textOf(d.querySelector?.('summary')).slice(0, 60)).slice(0, 30),
+      };
+    }
+    const md = ds.map((d) => renderMarkdown(d, { includeCollapsed: true, links: opt.links })).join('\n\n');
+    return { ok: true, what: 'panel', count: ds.length, ...clip(md) };
   }
 
   /**
    * DOM 顺序的下一个节点（先子后兄弟后上溯），但不进入 `stopAt` 之前已收元素的内部。
    * 用于「从某标题开始读到下一个同级标题」——线性、不摊平整棵树。
    */
+  function nextSiblingOf(cur) {
+    if (cur.nextElementSibling) return cur.nextElementSibling;
+    const par = cur.parentElement;
+    if (!par) return null;
+    const sibs = Array.prototype.slice.call(par.children || []);
+    const at = sibs.indexOf(cur);
+    return at >= 0 && at + 1 < sibs.length ? sibs[at + 1] : null;
+  }
+
   function nextInDoc(node, _stopAt) {
-    const kids = node.children;
-    if (kids?.length) return kids[0];
-    // 真实 DOM 有 nextElementSibling；假 DOM 没有 → 退化成「父节点里找我的下一个兄弟」
-    let cur = node;
-    while (cur) {
-      if (cur.nextElementSibling) return cur.nextElementSibling;
-      const par = cur.parentElement;
-      if (!par) return null;
-      // ⚠️ 真实 DOM 的 children 是 **HTMLCollection（没有 indexOf）**——
-      // 2026-10-19 在真实页上炸出 `sibs.indexOf is not a function`。
-      // 转成数组再找；假 DOM 的数组也照样能跑。
-      const sibs = Array.prototype.slice.call(par.children || []);
-      const at = sibs.indexOf(cur);
-      if (at >= 0 && at + 1 < sibs.length) return sibs[at + 1];
-      cur = par;
+    if (node.children?.length) return node.children[0];
+    for (let cur = node; cur; cur = cur.parentElement) {
+      const sib = nextSiblingOf(cur);
+      if (sib) return sib;
     }
     return null;
   }
@@ -1034,28 +1018,12 @@ export function createPageView(doc, loc, winOverride) {
     return false;
   }
 
-  /** 页内查找（Ctrl+F 的语义）：返回命中片段与所在小节。 */
-  function findInPage(query, limit) {
-    const q = String(query || '').trim();
-    if (!q) return { ok: false, reason: 'empty_query' };
-    const hs = headings();
-    const hits = [];
-    const cap = limit || 10;
-    // 逐节取文本（比整页扫更可定位）。用 renderMarkdown 而不是 textContent——
-    // 后者会把 KaTeX 的 mathml/annotation/html 三份副本都算进去（实测片段里 BBB BBB BB…）。
+  function collectSectionBuckets(article, hs) {
     const buckets = hs.map((h) => ({ h, text: '' }));
-    // 同 ①：不回退到整个 document——那会扫到页脚与侧栏，且逐节读时
-    // 会把「不在正文里的 h2/h3」也算成小节。
-    const article = first(S.article);
-    if (!article) {
-      return { ok: false, reason: 'article_not_found', hint: '当前页没有正文容器（不是站点标准页），读不到小节。' };
-    }
     const flat = [];
     (function collect(n) {
       for (const c of childrenOf(n)) {
-        if (isTextNode(c)) continue;
-        flat.push(c);
-        collect(c);
+        if (!isTextNode(c)) { flat.push(c); collect(c); }
       }
     })(article);
     let cur = -1;
@@ -1064,33 +1032,216 @@ export function createPageView(doc, loc, winOverride) {
       if (/^H[2-4]$/.test(t)) {
         const hit = hs.findIndex((h) => h.anchor && h.anchor === el.id);
         if (hit >= 0) cur = hit;
-        continue;   // 标题本身不进正文桶
+        continue;
       }
-      if (cur >= 0) {
-        // 只取「块级」节点：段落/列表/表格，避免把每个行内 span 重复计入
-        if (/^(P|LI|TD|TH|BLOCKQUOTE|PRE|DD|DT)$/.test(t)) {
-          const md = renderMarkdown(el);
-          if (md) buckets[cur].text += ' ' + md;
-        }
+      if (cur >= 0 && /^(P|LI|TD|TH|BLOCKQUOTE|PRE|DD|DT)$/.test(t)) {
+        const md = renderMarkdown(el);
+        if (md) buckets[cur].text += ' ' + md;
       }
     }
+    return buckets;
+  }
+
+  function collectBucketHits(b, q, lowerQ, hits, cap) {
+    const hay = b.text.toLowerCase();
+    for (let from = 0; hits.length < cap;) {
+      const at = hay.indexOf(lowerQ, from);
+      if (at < 0) break;
+      hits.push({
+        section: b.h.title,
+        anchor: b.h.anchor,
+        snippet: b.text.slice(Math.max(0, at - 40), at + q.length + 40).replace(/\s+/g, ' ').trim(),
+      });
+      from = at + lowerQ.length;
+    }
+  }
+
+  /** 页内查找（Ctrl+F 的语义）：返回命中片段与所在小节。 */
+  function findInPage(query, limit) {
+    const q = String(query || '').trim();
+    if (!q) return { ok: false, reason: 'empty_query' };
+    const article = first(S.article);
+    if (!article) {
+      return { ok: false, reason: 'article_not_found', hint: '当前页没有正文容器（不是站点标准页），读不到小节。' };
+    }
+    const buckets = collectSectionBuckets(article, headings());
+    const hits = [];
+    const cap = limit || 10;
     const lowerQ = q.toLowerCase();
     for (const b of buckets) {
-      const hay = b.text.toLowerCase();
-      let from = 0;
-      while (hits.length < cap) {
-        const at = hay.indexOf(lowerQ, from);
-        if (at < 0) break;
-        hits.push({
-          section: b.h.title,
-          anchor: b.h.anchor,
-          snippet: b.text.slice(Math.max(0, at - 40), at + q.length + 40).replace(/\s+/g, ' ').trim(),
-        });
-        from = at + lowerQ.length;
-      }
       if (hits.length >= cap) break;
+      collectBucketHits(b, q, lowerQ, hits, cap);
     }
     return { ok: true, query: q, total: hits.length, hits, truncated: hits.length >= cap };
+  }
+
+  function currentCourseName() {
+    const segs = (doc?.body?.getAttribute?.('data-site-path') || '').split('/');
+    return segs.length > 2 && segs[0] === '课程总览' ? segs[1] : '';
+  }
+
+  function matchLinkPools(pools, labels, needle, bare) {
+    const matchers = [
+      (pool) => pool.filter((x) => labels[x.i]?.includes(needle)),
+      (pool) => (bare && bare !== needle ? pool.filter((x) => labels[x.i]?.includes(bare)) : []),
+      (pool) => pool.filter((x) => labels[x.i] && needle.includes(labels[x.i])),
+    ];
+    for (const pool of pools) {
+      for (const fn of matchers) {
+        const hits = fn(pool);
+        if (hits.length) return hits;
+      }
+    }
+    return [];
+  }
+
+  function dedupeLinkHits(hits, labels) {
+    const uniq = [];
+    const seen = {};
+    for (const x of hits) {
+      const key = x.a.getAttribute?.('data-path') || labels[x.i];
+      if (!seen[key]) { seen[key] = 1; uniq.push(x); }
+    }
+    return uniq;
+  }
+
+  function buildLinkPools(links, scopeCourse) {
+    const allItems = links.map((a, i) => ({ a, i }));
+    if (!scopeCourse) return [allItems];
+    const prefix = '课程总览/' + scopeCourse + '/';
+    const scopedPool = allItems.filter((x) => (x.a.getAttribute?.('data-path') || '').startsWith(prefix));
+    return scopedPool.length ? [scopedPool, allItems] : [allItems];
+  }
+
+  function clickNavLink(el, click) {
+    return click(el)
+      ? { ok: true, to: 'link', title: textOf(el), path: el.getAttribute?.('data-path') || '' }
+      : { ok: false, reason: 'click_failed' };
+  }
+
+  function findCourseInQuery(needle) {
+    return ['工程数学', '电力大数据与人工智能', '形势与政策', '电路原理', '电子技术', '电机学']
+      .find((c) => needle.includes(c)) || '';
+  }
+
+  function linkMatchError(uniq, needle, scopeCourse, labels) {
+    if (!uniq.length) {
+      return { ok: false, reason: 'not_found', query: needle, course: scopeCourse || undefined, available: labels.filter(Boolean).slice(0, 40) };
+    }
+    return {
+      ok: false, reason: 'ambiguous', query: needle, course: scopeCourse || undefined,
+      candidates: uniq.map((x) => labels[x.i]).slice(0, 20),
+      hint: '侧栏里有多个匹配项，把 query 写得更具体（或改用 to=page 直接给路径）。',
+    };
+  }
+
+  function navigateLink(opt, click) {
+    const needle = String(opt.query || '').trim();
+    if (!needle) return { ok: false, reason: 'empty_query' };
+    const links = all(S.navLink);
+    const labels = links.map((a) => textOf(a));
+    const courseFromQuery = findCourseInQuery(needle);
+    const scopeCourse = currentCourseName() || courseFromQuery;
+    const bare = courseFromQuery ? needle.replace(courseFromQuery, '').trim() : needle;
+    const uniq = dedupeLinkHits(matchLinkPools(buildLinkPools(links, scopeCourse), labels, needle, bare), labels);
+    return uniq.length === 1 ? clickNavLink(uniq[0].a, click) : linkMatchError(uniq, needle, scopeCourse, labels);
+  }
+
+  function pageNotFoundPayload(normalized, pool) {
+    const curCourse = currentCourseName();
+    const sameCourse = curCourse ? pool.filter((x) => x.startsWith('课程总览/' + curCourse + '/')) : [];
+    const tail = normalized.split('/').pop() || '';
+    const basePool = sameCourse.length ? sameCourse : pool;
+    const sameName = basePool.filter((x) => x.split('/').pop() === tail);
+    const candidates = (sameName.length ? sameName : basePool).slice(0, 20);
+    return {
+      ok: false, reason: 'no_such_page', path: normalized,
+      hint: '站点里没有这一页，跳不过去。下面是真实存在的路径，从里面挑一个；不确定整站结构就先用 site_index 看地图。',
+      candidates,
+    };
+  }
+
+  function runSpaNavigate(w, normalized, hash, verified) {
+    const rootAttr = doc.documentElement?.getAttribute('data-root') || './';
+    const url = new URL(rootAttr + normalized, location.href).pathname;
+    return Promise.resolve(w.__spaRouter.navigate(url, hash, true, { soft: true }))
+      .then(() => ({ ok: true, to: 'page', path: normalized, hash, via: 'spa', verified }),
+            (err) => ({ ok: false, reason: 'navigate_failed', path: normalized,
+                        hint: '路由换页失败（页面可能已失效）。别重试同一路径，换个候选。',
+                        error: String(err?.message || err) }));
+  }
+
+  function finishPageNav(navData, pages, path, hash) {
+    const w = win || {};
+    const navPaths = navData ? navTargets(navData) : [];
+    const pool = pages || navPaths;
+    const normalized = canonicalPagePath(path, pool);
+    if (pool.indexOf(normalized) < 0) return pageNotFoundPayload(normalized, pool);
+    if (typeof w.__spaRouter?.navigate !== 'function') {
+      return { ok: false, reason: 'no_spa_router', path: normalized,
+               hint: '当前页面没有站内路由，跳转会整页重载并中断助手会话，已放弃跳转。' };
+    }
+    return runSpaNavigate(w, normalized, hash, navPaths.indexOf(normalized) >= 0);
+  }
+
+  function resolveJsonStore(syncVal, loader) {
+    if (syncVal) return Promise.resolve(syncVal);
+    return loader ? loader().catch(() => null) : Promise.resolve(null);
+  }
+
+  function canFinishPageSync(syncNav, syncPages, loadNavJson, loadPagesJson) {
+    return (syncNav || !loadNavJson) && (syncPages || !loadPagesJson);
+  }
+
+  function navigatePage(opt) {
+    const { loadNavJson, loadPagesJson } = win?.__navStructure || {};
+    const path = String(opt.path || '').trim();
+    if (!path) return { ok: false, reason: 'empty_path' };
+    const hash = String(opt.hash || '').trim();
+    const syncNav = navStructure();
+    const syncPages = sitePages();
+    if (canFinishPageSync(syncNav, syncPages, loadNavJson, loadPagesJson)) {
+      return finishPageNav(syncNav, syncPages, path, hash);
+    }
+    return Promise.all([resolveJsonStore(syncNav, loadNavJson), resolveJsonStore(syncPages, loadPagesJson)])
+      .then(([navData, pages]) => finishPageNav(navData, pages, path, hash));
+  }
+
+  function clickElement(el, w) {
+    if (!el) return false;
+    try {
+      if (typeof el.click === 'function') { el.click(); return true; }
+      const Ev = w.MouseEvent || (typeof MouseEvent !== 'undefined' ? MouseEvent : null);
+      if (Ev && el.dispatchEvent) {
+        el.dispatchEvent(new Ev('click', { bubbles: true, cancelable: true, view: w }));
+        return true;
+      }
+    } catch (_e) { /* 无事件能力 */ }
+    return false;
+  }
+
+  function navigateScroll(to, w) {
+    try {
+      const y = to === 'top' ? 0 : (doc.documentElement?.scrollHeight || 0);
+      if (!w.scrollTo) return { ok: false, reason: 'scroll_unavailable' };
+      w.scrollTo({ top: y, behavior: 'smooth' });
+      return { ok: true, to, y };
+    } catch { return { ok: false, reason: 'scroll_unavailable' }; }
+  }
+
+  function navigateBack(w) {
+    try {
+      if (w.history?.back) { w.history.back(); return { ok: true, to: 'back' }; }
+    } catch (_e) { /* 无 history */ }
+    return { ok: false, reason: 'history_unavailable' };
+  }
+
+  function navigatePaging(to, click) {
+    const el = first(to === 'prev' ? S.pagingPrev : S.pagingNext);
+    if (!el) return { ok: false, reason: 'no_paging', hint: to === 'prev' ? '本页没有上一节' : '本页没有下一节' };
+    const href = el.getAttribute ? el.getAttribute('href') : '';
+    const title = textOf(el.querySelector ? el.querySelector('.paging-title') : null);
+    return click(el) ? { ok: true, to, href, title } : { ok: false, reason: 'click_failed' };
   }
 
   /** 跳转（页面级）。 */
@@ -1098,243 +1249,83 @@ export function createPageView(doc, loc, winOverride) {
     const opt = o || {};
     const to = opt.to || 'section';
     const w = win || {};
-
-    const click = (el) => {
-      if (!el) return false;
-      try {
-        if (typeof el.click === 'function') { el.click(); return true; }
-        const Ev = w.MouseEvent || (typeof MouseEvent !== 'undefined' ? MouseEvent : null);
-        if (Ev && el.dispatchEvent) {
-          el.dispatchEvent(new Ev('click', { bubbles: true, cancelable: true, view: w }));
-          return true;
-        }
-      } catch (_e) { /* 无事件能力 */ }
-      return false;
+    const click = (el) => clickElement(el, w);
+    const routes = {
+      section: () => openSection(opt.query || opt.title, opt.anchor, w),
+      top: () => navigateScroll('top', w),
+      bottom: () => navigateScroll('bottom', w),
+      back: () => navigateBack(w),
+      prev: () => navigatePaging('prev', click),
+      next: () => navigatePaging('next', click),
+      home: () => {
+        const el = first(S.brand);
+        return !el ? { ok: false, reason: 'no_brand' } : (click(el) ? { ok: true, to } : { ok: false, reason: 'click_failed' });
+      },
+      link: () => navigateLink(opt, click),
+      page: () => navigatePage(opt),
     };
+    return routes[to] ? routes[to]() : { ok: false, reason: 'unknown_target', to };
+  }
 
-    if (to === 'section') return openSection(opt.query || opt.title, opt.anchor, w);
-
-    if (to === 'top' || to === 'bottom') {
-      try {
-        const y = to === 'top' ? 0 : (doc.documentElement?.scrollHeight || 0);
-        if (!w.scrollTo) return { ok: false, reason: 'scroll_unavailable' };
-        w.scrollTo({ top: y, behavior: 'smooth' });
-        return { ok: true, to, y };
-      } catch { return { ok: false, reason: 'scroll_unavailable' }; }
+  function setHueDom(hue, rootEl) {
+    if (rootEl?.style?.setProperty) {
+      rootEl.style.setProperty('--hue', String(hue));
+      rootEl.style.setProperty('--primary-h', String(hue));
     }
+    const slider = byId('hue-slider');
+    if (slider) slider.value = String(hue);
+    const badge = byId('palette-hue-badge');
+    if (badge) badge.textContent = 'Hue ' + hue + '°';
+  }
 
-    if (to === 'back') {
-      try { if (w.history && w.history.back) { w.history.back(); return { ok: true, to }; } } catch (_e) { /* 无 history */ }
-      return { ok: false, reason: 'history_unavailable' };
+  function applyHueView(hueRaw, rootEl, w) {
+    const hue = Math.max(0, Math.min(360, parseInt(hueRaw, 10) || 0));
+    setHueDom(hue, rootEl);
+    try { w.localStorage?.setItem('theme-hue', String(hue)); } catch (_e) { /* 无存储 */ }
+    return hue;
+  }
+
+  function toggleSidebarDom(drawer, want) {
+    drawer.classList.toggle('open', want);
+    byId('drawer-backdrop')?.classList?.toggle('open', want);
+    return want ? 'open' : 'closed';
+  }
+
+  function applySidebarView(sidebarOpt, body) {
+    const drawer = byId('m3-drawer');
+    const isOpen = Boolean(drawer && hasClass(drawer, 'open'));
+    const want = sidebarOpt === 'toggle' ? !isOpen : sidebarOpt === 'open';
+    if (drawer?.classList) return toggleSidebarDom(drawer, want);
+    if (body?.classList) {
+      body.classList.toggle('sidebar-collapsed', !want);
+      return want ? 'open' : 'collapsed';
     }
+    return undefined;
+  }
 
-    if (to === 'prev' || to === 'next') {
-      const el = first(to === 'prev' ? S.pagingPrev : S.pagingNext);
-      if (!el) return { ok: false, reason: 'no_paging', hint: to === 'prev' ? '本页没有上一节' : '本页没有下一节' };
-      const href = el.getAttribute ? el.getAttribute('href') : '';
-      const title = textOf(el.querySelector ? el.querySelector('.paging-title') : null);
-      return click(el) ? { ok: true, to, href, title } : { ok: false, reason: 'click_failed' };
-    }
+  function applyThemeView(theme, rootEl, w) {
+    if (theme !== 'light' && theme !== 'dark') return undefined;
+    rootEl?.setAttribute?.('data-theme', theme);
+    try { w.localStorage?.setItem('theme', theme); } catch (_e) { /* 无存储 */ }
+    return theme;
+  }
 
-    if (to === 'home') {
-      const el = first(S.brand);
-      if (!el) return { ok: false, reason: 'no_brand' };
-      return click(el) ? { ok: true, to } : { ok: false, reason: 'click_failed' };
-    }
-
-    if (to === 'link') {
-      const needle = String(opt.query || '').trim();
-      if (!needle) return { ok: false, reason: 'empty_query' };
-      const links = all(S.navLink);
-      const labels = links.map((a) => textOf(a));
-
-      // 2026-10-23 修（Node 桥实测）：模型给的是**带课程名的完整说法**
-      // （「工程数学作业2」），而侧栏链接文本只有「作业2」——单向 indexOf 匹配不上，
-      // 于是 navigate 返回 not_found、页面纹丝不动（用户看到「跳转没反应」）。
-      //
-      // 匹配按「候选池收窄 → 精确优先」两段走：
-      //   ① 候选池：**当前课程子树里的链接优先**（侧栏有 6 门课，每门都有「作业」
-      //      「课堂笔记」等同名项；不收窄会命中 4 个「作业」判成 ambiguous）。
-      //      当前课程从 body[data-site-path] 取；拿不到就用全量。
-      //   ② 在池内按三级强度取：文本包含 query > query 包含文本 > 去掉课程名后再比。
-      const courseName = (function () {
-        const bodyEl = (doc?.body) || null;
-        const p = bodyEl?.getAttribute ? (bodyEl.getAttribute('data-site-path') || '') : '';
-        // 目录 2026-10-29 改名为「课程总览/」：第二段才是课程名。
-        // 写死 `课程/` 取到的是课程名，但下面的路径前缀比对会恒为空 ⇒ 作用域失效、
-        // 每次「作业」都判成歧义。
-        const segs = p.split('/');
-        return segs.length > 2 && segs[0] === '课程总览' ? segs[1] : '';
-      })();
-      // 当前课程作用域：链接的 data-path 以「课程总览/<当前课>/」开头。
-      // ⚠️ 2026-10-23 补：在**首页/课程总览页**上 body[data-site-path] 里没有课程名
-      // （README.html），此时「当前课程」不成立——但 query 自己可能带着课程名
-      // （「工程数学作业2」）。所以再补一条：**query 里出现的课程名**也当作作用域。
-      // 两条都不成立才用全量池（这时多命中就是真歧义，该让模型自己选）。
-      const COURSE_NAMES = ['工程数学', '电力大数据与人工智能', '形势与政策', '电路原理', '电子技术', '电机学'];
-      const courseFromQuery = COURSE_NAMES.filter((c) => needle.indexOf(c) >= 0)[0] || '';
-      const scopeCourse = courseName || courseFromQuery;
-      const inCourse = links.map((a, i) => ({ a, i, path: a.getAttribute ? (a.getAttribute('data-path') || '') : '' }))
-        .filter((x) => scopeCourse && x.path.startsWith('课程总览/' + scopeCourse + '/'));
-      const pools = inCourse.length ? [inCourse, links.map((a, i) => ({ a, i }))] : [links.map((a, i) => ({ a, i }))];
-
-      const tier1 = (pool) => pool.filter((x) => labels[x.i].indexOf(needle) >= 0);
-      const tier2 = (pool) => pool.filter((x) => labels[x.i] && needle.indexOf(labels[x.i]) >= 0);
-      const bare = scopeCourse ? needle.split(scopeCourse).join('') : needle;
-      const tier3 = (pool) => (bare && bare !== needle
-        ? pool.filter((x) => labels[x.i] && labels[x.i].indexOf(bare) >= 0)
-        : []);
-
-      let hits = [];
-      for (const pool of pools) {
-        // 强度顺序（2026-10-23 调整）：tier1 文本含 query > tier3 **去掉课程名后精确**
-        // > tier2 query 含文本。tier2 最宽松——它会把「工程数学」也算命中
-        // （「工程数学作业2」包含「工程数学」），排前面会让真目标「作业2」被歧义化。
-        // tier3 剥掉课程名后是「作业2」，与侧栏文本精确对上，更该优先。
-        for (const fn of [tier1, tier3, tier2]) {
-          hits = fn(pool);
-          if (hits.length) break;
-        }
-        if (hits.length) break;
-      }
-
-      if (!hits.length) {
-        return { ok: false, reason: "not_found", query: needle, course: scopeCourse || undefined,
-                 available: labels.filter(Boolean).slice(0, 40) };
-      }
-      // 同一目标出现多次（侧栏父子都指向同一页）时按 data-path 去重，避免假 ambiguous
-      const uniq = [];
-      const seen = {};
-      for (const x of hits) {
-        const key = (x.a.getAttribute ? x.a.getAttribute('data-path') : '') || labels[x.i];
-        if (seen[key]) continue;
-        seen[key] = 1;
-        uniq.push(x);
-      }
-      if (uniq.length > 1) {
-        return { ok: false, reason: "ambiguous", query: needle, course: scopeCourse || undefined,
-                 candidates: uniq.map((x) => labels[x.i]).slice(0, 20),
-                 hint: '侧栏里有多个匹配项，把 query 写得更具体（或改用 to=page 直接给路径）。' };
-      }
-      const el = uniq[0].a;
-      return click(el) ? { ok: true, to, title: textOf(el), path: el.getAttribute ? el.getAttribute('data-path') : '' }
-                       : { ok: false, reason: 'click_failed' };
-    }
-
-    if (to === 'page') {
-      const path = String(opt.path || '').trim();
-      const hash = String(opt.hash || '').trim();
-      if (!path) return { ok: false, reason: 'empty_path' };
-
-      // 存在性校验（2026-10-29 重写）：判据从「像不像索引页」换成**站点真的生成了这一页**。
-      // 数据源：构建期从 `页面清单.mjs` 烘焙的 `#site-pages-json`（见 file:// 注释）。
-      //
-      // 旧实现的漏洞（站长实测）：`…/index.html` 一律放行，理由是「数据缺失时的兜底」。
-      // 结果模型把 `课程总览/工程数学/教材解析/index.html` 记成 `教材解析/index.html`
-      // （少了课程层），照样通过，SPA 去 fetch 得到 404，用户看到直接跳 404 页。
-      // 浏览器跳转本身没有对错可言——**能不能跳，只应该由这一页在不在决定**。
-      //
-      // 现在两道判据，缺一不可：
-      //   ① 有 `#site-pages-json` ⇒ 必须是产物清单里的条目（README/符号包都在内）；
-      //   ② 没有那份清单（老产物/夹具）⇒ 退回侧栏白名单，不再给索引页开后门。
-      // 未命中一律拒绝并回喂「没有这一页」+ 同课程的合法路径，让模型挑，不许它跳到 404 上。
-      const finishPageNav = (navData, pages) => {
-        const navPaths = navData ? navTargets(navData) : [];
-        const pool = pages || navPaths;
-        const normalized = canonicalPagePath(path, pool);
-        const known = pool.indexOf(normalized) >= 0;
-        if (!known) {
-          const bodyEl = (doc?.body) || null;
-          const curPath = bodyEl?.getAttribute ? (bodyEl.getAttribute('data-site-path') || '') : '';
-          const segs = curPath.split('/');
-          const curCourse = segs.length > 2 && segs[0] === '课程总览' ? segs[1] : '';
-          const sameCourse = curCourse
-            ? pool.filter((x) => x.startsWith('课程总览/' + curCourse + '/'))
-            : [];
-          const tail = normalized.split('/').pop() || '';
-          const sameName = (sameCourse.length ? sameCourse : pool).filter((x) => x.split('/').pop() === tail);
-          const candidates = (sameName.length ? sameName : (sameCourse.length ? sameCourse : pool)).slice(0, 20);
-          return {
-            ok: false, reason: 'no_such_page', path: normalized,
-            hint: '站点里没有这一页，跳不过去。下面是真实存在的路径，从里面挑一个；'
-              + '不确定整站结构就先用 site_index 看地图。',
-            candidates,
-          };
-        }
-
-        if (w.__spaRouter && typeof w.__spaRouter.navigate === 'function') {
-          const rootAttr = (doc.documentElement && doc.documentElement.getAttribute('data-root')) || './';
-          const url = new URL(rootAttr + normalized, location.href).pathname;
-          const verified = navPaths.indexOf(normalized) >= 0;
-          return Promise.resolve(w.__spaRouter.navigate(url, hash, true, { soft: true }))
-            .then(() => ({ ok: true, to, path: normalized, hash, via: 'spa', verified }),
-                  (err) => ({ ok: false, reason: 'navigate_failed', path: normalized,
-                              hint: '路由换页失败（页面可能已失效）。别重试同一路径，换个候选。',
-                              error: String((err?.message) || err) }));
-        }
-        return { ok: false, reason: 'no_spa_router', path: normalized,
-                 hint: '当前页面没有站内路由，跳转会整页重载并中断助手会话，已放弃跳转。' };
-      };
-
-      const syncNav = navStructure();
-      const syncPages = sitePages();
-      if ((syncNav || !w?.__navStructure?.loadNavJson) && (syncPages || !w?.__navStructure?.loadPagesJson)) {
-        return finishPageNav(syncNav, syncPages);
-      }
-      return Promise.all([
-        syncNav ? Promise.resolve(syncNav) : (w?.__navStructure?.loadNavJson ? w.__navStructure.loadNavJson().catch(() => null) : Promise.resolve(null)),
-        syncPages ? Promise.resolve(syncPages) : (w?.__navStructure?.loadPagesJson ? w.__navStructure.loadPagesJson().catch(() => null) : Promise.resolve(null)),
-      ]).then(([navData, pages]) => finishPageNav(navData, pages));
-    }
-
-    return { ok: false, reason: 'unknown_target', to };
+  function applySidebarIfRequested(sidebar, done) {
+    if (!['open', 'closed', 'toggle'].includes(sidebar)) return;
+    const s = applySidebarView(sidebar, doc?.body || null);
+    if (s !== undefined) done.sidebar = s;
   }
 
   /** 显示设置（明暗 / 色相 / 侧栏）。 */
   function setView(o) {
     const opt = o || {};
     const w = win || {};
-    const rootEl = (doc?.documentElement) || null;
-    const body = (doc?.body) || null;
+    const rootEl = doc?.documentElement || null;
     const done = {};
-
-    if (opt.theme === 'light' || opt.theme === 'dark') {
-      if (rootEl?.setAttribute) rootEl.setAttribute('data-theme', opt.theme);
-      try { if (w.localStorage) w.localStorage.setItem('theme', opt.theme); } catch (_e) { /* 无存储 */ }
-      done.theme = opt.theme;
-    }
-    if (opt.hue !== undefined && opt.hue !== null) {
-      const hue = Math.max(0, Math.min(360, parseInt(opt.hue, 10) || 0));
-      if (typeof rootEl?.style?.setProperty === 'function') {
-        rootEl.style.setProperty('--hue', String(hue));
-        rootEl.style.setProperty('--primary-h', String(hue));
-      }
-      // 让面板上的滑块/徽标同步（人看得到变化）
-      const slider = byId('hue-slider');
-      if (slider) slider.value = String(hue);
-      const badge = byId('palette-hue-badge');
-      if (badge) badge.textContent = 'Hue ' + hue + '°';
-      try { if (w.localStorage) w.localStorage.setItem('theme-hue', String(hue)); } catch (_e) { /* 无存储 */ }
-      done.hue = hue;
-    }
-    if (opt.sidebar === 'open' || opt.sidebar === 'closed' || opt.sidebar === 'toggle') {
-      const drawer = byId('m3-drawer');
-      const backdrop = byId('drawer-backdrop');
-      const isOpen = drawer && hasClass(drawer, 'open');
-      const want = opt.sidebar === 'toggle' ? !isOpen : opt.sidebar === 'open';
-      if (drawer?.classList) {
-        if (want) drawer.classList.add('open'); else drawer.classList.remove('open');
-        if (backdrop?.classList) {
-          if (want) backdrop.classList.add('open'); else backdrop.classList.remove('open');
-        }
-        done.sidebar = want ? 'open' : 'closed';
-      } else if (body?.classList) {
-        // 桌面形态：折叠与否是 body 上的类
-        if (want) body.classList.remove('sidebar-collapsed');
-        else body.classList.add('sidebar-collapsed');
-        done.sidebar = want ? 'open' : 'collapsed';
-      }
-    }
+    const theme = applyThemeView(opt.theme, rootEl, w);
+    if (theme) done.theme = theme;
+    if (opt.hue != null) done.hue = applyHueView(opt.hue, rootEl, w);
+    applySidebarIfRequested(opt.sidebar, done);
     if (!Object.keys(done).length) {
       return { ok: false, reason: 'nothing_to_do', hint: '给 theme / hue / sidebar 之一', state: viewState() };
     }
@@ -1348,64 +1339,78 @@ export function createPageView(doc, loc, winOverride) {
    * 由宿主拿——扩展用 `chrome.tabs.captureVisibleTab`，无头环境用 CDP
    * `Page.captureScreenshot`。两条路都返回同一形状，产品侧不必分叉。
    */
+  function pickDim(a, b) { return a || b || 0; }
+
+  function viewportSize(w, el) {
+    return { w: pickDim(w?.innerWidth, el?.clientWidth), h: pickDim(w?.innerHeight, el?.clientHeight) };
+  }
+
+  function docTitleAndUrl() {
+    return { title: doc?.title || '', url: location?.href || '' };
+  }
+
+  function buildCaptureMeta(o, w) {
+    const el = doc?.documentElement || null;
+    return {
+      ...docTitleAndUrl(),
+      scrollY: Math.round(w?.scrollY || 0),
+      docHeight: el ? el.scrollHeight : 0,
+      viewport: viewportSize(w, el),
+      reason: String(o.reason || ''),
+    };
+  }
+
+  function dataUrlBytes(dataUrl) {
+    const b64 = String(dataUrl).split(',')[1] || '';
+    return Math.round(b64.length * 3 / 4);
+  }
+
+  function formatCaptureResult(res, meta, format) {
+    if (!res?.dataUrl) {
+      return { ...meta, ok: false, reason: 'capture_failed', detail: String(res?.error || '') };
+    }
+    return {
+      ...meta,
+      ok: true, mimeType: res.mimeType || `image/${format}`, dataUrl: res.dataUrl,
+      width: res.width || meta.viewport.w, height: res.height || meta.viewport.h,
+      bytes: dataUrlBytes(res.dataUrl),
+    };
+  }
+
+  function captureUnavailablePayload(meta) {
+    return {
+      ...meta, ok: false, reason: 'capture_unavailable',
+      hint: '宿主未注入整屏截图能力。替代：给 selector（如 "article"）或 rect 用页面内 canvas 截指定区域，'
+        + '或先调 site_list_images + site_image 取具体图片。',
+      alternatives: { selector: '.article-content', rect: { x: 0, y: 0, w: meta.viewport.w, h: meta.viewport.h } },
+    };
+  }
+
+  function runCaptureProvider(provider, o, format, quality, meta) {
+    return Promise.resolve()
+      .then(() => provider({ format, quality, fullPage: !!o.fullPage, meta }))
+      .then((res) => formatCaptureResult(res, meta, format))
+      .catch((e) => ({ ...meta, ok: false, reason: 'capture_error', detail: String(e?.message || e) }));
+  }
+
+  function parseCaptureOpts(o, meta) {
+    return {
+      format: o.format === 'png' ? 'png' : 'jpeg',
+      quality: Math.max(1, Math.min(100, Number(o.quality) || 80)),
+      meta,
+    };
+  }
+
   function captureView(opts, win2) {
     const o = opts || {};
     const w = win2 || win || null;
-    // ⚠️ 2026-10-26 修（真机实测：截图元信息报 viewport 0×0）：
-    // `innerWidth/innerHeight` 在**窗口失焦/后台**时会报 0——实测同一页面
-    // `outerWidth=0`、`hasFocus=false`，而 `documentElement.clientWidth` 仍是 1265。
-    // 元信息带 0×0 会让调用方（模型/面板）判定「页面没尺寸」而放弃截图。
-    // 补一条 documentElement 兜底：它量布局视口，与窗口焦点无关。
-    const el = (doc?.documentElement) || null;
-    const vw = (w?.innerWidth) || (el?.clientWidth) || 0;
-    const vh = (w?.innerHeight) || (el?.clientHeight) || 0;
-    const viewport = { w: vw, h: vh };
-    const meta = {
-      title: (doc?.title) || '',
-      url: (location?.href) || '',
-      scrollY: w ? Math.round(w.scrollY || 0) : 0,
-      docHeight: el ? el.scrollHeight : 0,
-      viewport,
-      reason: String(o.reason || ''),
-    };
-    const format = (o.format === 'png') ? 'png' : 'jpeg';
-    const quality = Math.max(1, Math.min(100, Number(o.quality) || 80));
-
-    // ── 区域/元素截图（2026-10-19 补）：优先走页面内 canvas ──────────
-    // 元素截图不需要浏览器 chrome，同源图/文字/canvas 都能画。这解决了「只想看
-    // 某个电路图」时截整屏的问题（整屏 1400px 宽会把图缩到看不清）。
-    // 目标：selector 命中的元素，或 rect={x,y,w,h}（视口坐标），或整页（fullPage+canvas）。
-    if (o.selector || o.rect) {
-      return captureRegion(o, { format, quality, meta });
-    }
-
-    // 宿主能力：**整屏**截图只能由宿主给（页面截不到浏览器 chrome）。
-    const provider = (w && typeof w.__siteCapture === 'function') ? w.__siteCapture : null;
-    if (!provider) {
-      // 没有宿主能力时，退一步：整页/可视区用 canvas 画不出来（跨域资源会污染），
-      // 但**正文区域**可以——给出可执行的替代方案，而不是干巴巴报错。
-      return Promise.resolve({
-        ...meta, ok: false, reason: 'capture_unavailable',
-        hint: '宿主未注入整屏截图能力。替代：给 selector（如 "article"）或 rect 用页面内 canvas 截指定区域，'
-          + '或先调 site_list_images + site_image 取具体图片。',
-        alternatives: { selector: '.article-content', rect: { x: 0, y: 0, w: viewport.w, h: viewport.h } },
-      });
-    }
-    return Promise.resolve()
-      .then(() => provider({ format, quality, fullPage: !!o.fullPage, meta }))
-      .then((res) => {
-        if (!res || !res.dataUrl) {
-          return { ...meta, ok: false, reason: 'capture_failed', detail: res?.error ? String(res.error) : '' };
-        }
-        const b64 = String(res.dataUrl).split(',')[1] || '';
-        return {
-          ...meta,
-          ok: true, mimeType: res.mimeType || `image/${format}`, dataUrl: res.dataUrl,
-          width: res.width || viewport.w, height: res.height || viewport.h,
-          bytes: Math.round(b64.length * 3 / 4),
-        };
-      })
-      .catch((e) => ({ ...meta, ok: false, reason: 'capture_error', detail: String((e?.message) || e) }));
+    const meta = buildCaptureMeta(o, w);
+    const cfg = parseCaptureOpts(o, meta);
+    if (o.selector || o.rect) return captureRegion(o, cfg);
+    const provider = w?.__siteCapture;
+    return typeof provider === 'function'
+      ? runCaptureProvider(provider, o, cfg.format, cfg.quality, meta)
+      : Promise.resolve(captureUnavailablePayload(meta));
   }
 
   /**
@@ -1415,74 +1420,78 @@ export function createPageView(doc, loc, winOverride) {
    * 跨域图片会污染画布导致 toDataURL 抛错——本站全同源，所以可用；
    * 若将来有外链图，会返回 capture_tainted 而不是半白图。
    */
-  function captureRegion(o, ctx0) {
-    const w = win || {};
-    const format = ctx0.format, quality = ctx0.quality, meta = ctx0.meta;
-    let rect = null;
-    let target = null;
+  function resolveSelectorRect(selector) {
+    let target;
+    try { target = doc.querySelector(String(selector)); } catch { target = null; }
+    if (!target) return { error: { ok: false, reason: 'selector_not_found', selector } };
+    try {
+      const r = target.getBoundingClientRect();
+      return { target, rect: { x: r.left, y: r.top, w: r.width, h: r.height } };
+    } catch { return { error: { ok: false, reason: 'no_layout' } }; }
+  }
 
-    if (o.selector) {
-      try { target = doc.querySelector(String(o.selector)); } catch { target = null; }   // 坏选择器按未找到
-      if (!target) return Promise.resolve({ ...meta, ok: false, reason: 'selector_not_found', selector: o.selector });
-      try {
-        const r = target.getBoundingClientRect();
-        rect = { x: r.left, y: r.top, w: r.width, h: r.height };
-      } catch { return Promise.resolve({ ...meta, ok: false, reason: 'no_layout' }); }
-    } else {
-      const r = o.rect || {};
-      rect = { x: Number(r.x) || 0, y: Number(r.y) || 0, w: Number(r.w) || 0, h: Number(r.h) || 0 };
-    }
-    if (!rect.w || !rect.h) {
-      return Promise.resolve({ ...meta, ok: false, reason: 'empty_rect', rect });
-    }
+  function resolveRegionRect(o) {
+    if (o.selector) return resolveSelectorRect(o.selector);
+    const r = o.rect || {};
+    return { target: null, rect: { x: Number(r.x) || 0, y: Number(r.y) || 0, w: Number(r.w) || 0, h: Number(r.h) || 0 } };
+  }
 
-    // 缩放：区域宽度超 maxWidth 就等比缩
-    const maxWidth = Math.max(64, Number(o.maxWidth) || 1400);
-    const scale = rect.w > maxWidth ? maxWidth / rect.w : 1;
-    const cw = Math.max(1, Math.round(rect.w * scale));
-    const ch = Math.max(1, Math.round(rect.h * scale));
-
-    const canvas = (w.document && w.document.createElement)
-      ? w.document.createElement('canvas')
-      : (doc.createElement ? doc.createElement('canvas') : null);
-    if (!canvas || !canvas.getContext) {
-      return Promise.resolve({ ...meta, ok: false, reason: 'canvas_unavailable' });
-    }
+  function createRegionCanvas(w, cw, ch) {
+    const canvas = w.document?.createElement ? w.document.createElement('canvas') : doc.createElement?.('canvas');
+    if (!canvas?.getContext) return null;
     canvas.width = cw;
     canvas.height = ch;
-    const g = canvas.getContext('2d');
+    return canvas;
+  }
 
-    // 用 html2canvas 式的「画整页再裁」不可行（无依赖）。这里用 SVG foreignObject
-    // 把目标元素的 HTML 序列化后画进来——对同源、无外链的静态页足够。
-    const xml = serializeTarget(target, rect, cw, ch, scale);
+  function drawRegionToDataUrl(canvas, img, ctx) {
+    const { cw, ch, format, quality, meta, selector, rect, scale } = ctx;
+    const g = canvas.getContext('2d');
+    if (format === 'jpeg') { g.fillStyle = '#ffffff'; g.fillRect(0, 0, cw, ch); }
+    g.drawImage(img, 0, 0, cw, ch);
+    const mime = format === 'png' ? 'image/png' : 'image/jpeg';
+    const dataUrl = canvas.toDataURL(mime, quality / 100);
+    const b64 = dataUrl.split(',')[1] || '';
+    return {
+      ...meta, ok: true, mode: 'region', selector: selector || null, rect,
+      mimeType: mime, dataUrl, width: cw, height: ch, resized: scale < 1,
+      bytes: Math.round(b64.length * 3 / 4),
+    };
+  }
+
+  function prepareRegionCtx(o, meta) {
+    const resolved = resolveRegionRect(o);
+    if (resolved.error) return { error: { ...meta, ...resolved.error } };
+    const { target, rect } = resolved;
+    if (!rect.w || !rect.h) return { error: { ...meta, ok: false, reason: 'empty_rect', rect } };
+    const maxWidth = Math.max(64, Number(o.maxWidth) || 1400);
+    const scale = rect.w > maxWidth ? maxWidth / rect.w : 1;
+    return { target, rect, scale, cw: Math.max(1, Math.round(rect.w * scale)), ch: Math.max(1, Math.round(rect.h * scale)) };
+  }
+
+  function captureRegion(o, ctx0) {
+    const w = win || {};
+    const { format, quality, meta } = ctx0;
+    const prep = prepareRegionCtx(o, meta);
+    if (prep.error) return Promise.resolve(prep.error);
+    const { target, rect, scale, cw, ch } = prep;
+    const canvas = createRegionCanvas(w, cw, ch);
+    const xml = canvas ? serializeTarget(target, rect, cw, ch, scale) : null;
+    const SvgImage = w.Image || globalThis.Image;
+    if (!canvas || !SvgImage) return Promise.resolve({ ...meta, ok: false, reason: 'canvas_unavailable' });
     if (!xml) return Promise.resolve({ ...meta, ok: false, reason: 'serialize_failed' });
-    const SvgImage = w.Image || (typeof Image !== 'undefined' ? Image : null);
-    if (!SvgImage) return Promise.resolve({ ...meta, ok: false, reason: 'canvas_unavailable' });
 
     return new Promise((resolve) => {
       const img = new SvgImage();
       let settled = false;
       const done = (v) => { if (!settled) { settled = true; resolve(v); } };
-      const setT = w.setTimeout ?? setTimeout;
-      const clrT = w.clearTimeout ? w.clearTimeout : clearTimeout;
-      const timer = setT(() => done({ ...meta, ok: false, reason: 'region_timeout' }), 15000);
+      const timer = (w.setTimeout ?? setTimeout)(() => done({ ...meta, ok: false, reason: 'region_timeout' }), 15000);
+      const clrT = w.clearTimeout || clearTimeout;
       img.onerror = () => { clrT(timer); done({ ...meta, ok: false, reason: 'region_render_failed', hint: 'SVG 渲染失败（可能是跨域字体/图片）' }); };
       img.onload = () => {
         clrT(timer);
-        try {
-          if (format === 'jpeg') { g.fillStyle = '#ffffff'; g.fillRect(0, 0, cw, ch); }
-          g.drawImage(img, 0, 0, cw, ch);
-          const dataUrl = canvas.toDataURL(format === 'png' ? 'image/png' : 'image/jpeg', quality / 100);
-          const b64 = dataUrl.split(',')[1] || '';
-          done({
-            ...meta, ok: true, mode: 'region', selector: o.selector || null, rect,
-            mimeType: format === 'png' ? 'image/png' : 'image/jpeg',
-            dataUrl, width: cw, height: ch, resized: scale < 1,
-            bytes: Math.round(b64.length * 3 / 4),
-          });
-        } catch (e) {
-          done({ ...meta, ok: false, reason: 'capture_tainted', detail: String((e?.message) || e) });
-        }
+        try { done(drawRegionToDataUrl(canvas, img, { cw, ch, format, quality, meta, selector: o.selector, rect, scale })); }
+        catch (e) { done({ ...meta, ok: false, reason: 'capture_tainted', detail: String(e?.message || e) }); }
       };
       img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);
     });
@@ -1522,6 +1531,24 @@ export function createPageView(doc, loc, winOverride) {
    * @param {number} [o.limit=20] 命中上限
    * @param {boolean} [o.includeHeadings=true] 是否返回页内小节命中
    */
+  function matchDocSections(headingsList, needle) {
+    return (headingsList || [])
+      .filter((h) => String(h.t || h.d || '').toLowerCase().includes(needle))
+      .slice(0, 8)
+      .map((h) => ({ title: h.d || h.t, anchor: h.a, level: h.l }));
+  }
+
+  function matchIndexDoc(d, needle, withHeadings) {
+    const titleHit = String(d.title || '').toLowerCase().includes(needle);
+    const sections = withHeadings ? matchDocSections(d.headings, needle) : [];
+    if (!titleHit && !sections.length) return null;
+    let path = String(d.url || '').replace(/^\//, '');
+    try { path = decodeURI(path); } catch (_e) { /* 原样 */ }
+    const hit = { title: d.title, path, chars: d.chars };
+    if (sections.length) hit.sections = sections;
+    return hit;
+  }
+
   function searchIndex(q, o) {
     const opt = o || {};
     const query = String(q || '').trim();
@@ -1535,40 +1562,17 @@ export function createPageView(doc, loc, winOverride) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
     }).then((idx) => {
-      const docs = (idx?.docs) || [];
+      const docs = idx?.docs || [];
       const needle = query.toLowerCase();
       const hits = [];
       for (const d of docs) {
-        // ① 标题命中
-        const titleHit = String(d.title || '').toLowerCase().indexOf(needle) >= 0;
-        // ② 小节标题命中
-        const secHits = withHeadings
-          ? (d.headings || []).filter((h) => String(h.t || h.d || '').toLowerCase().indexOf(needle) >= 0)
-          : [];
-        if (!titleHit && !secHits.length) continue;
-        const hit = {
-          title: d.title,
-          path: String(d.url || '').replace(/^\//, ''),
-          chars: d.chars,
-        };
-        if (secHits.length) {
-          hit.sections = secHits.slice(0, 8).map((h) => ({
-            title: h.d || h.t, anchor: h.a, level: h.l,
-          }));
-        }
-        hits.push(hit);
+        const hit = matchIndexDoc(d, needle, withHeadings);
+        if (hit) hits.push(hit);
         if (hits.length >= limit) break;
-      }
-      // 站内路径解码（索引里是百分号编码）
-      for (const h of hits) {
-        try { h.path = decodeURI(h.path); } catch (_e) { /* 原样 */ }
       }
       return {
         ok: true, query, scope: 'index',
-        total: hits.length,
-        totalPages: docs.length,
-        truncated: hits.length >= limit,
-        hits,
+        total: hits.length, totalPages: docs.length, truncated: hits.length >= limit, hits,
         hint: hits.length
           ? '跳页用 site_navigate(to="page", path=…)，需要节内定位再加 hash'
           : '索引里没有匹配的标题/小节；试试换个词，或用 site_index 看全站结构',
@@ -1594,60 +1598,57 @@ export function createPageView(doc, loc, winOverride) {
    * @param {'course'|'all'} [o.scope='course']
    * @param {number} [o.max] 节点上限（默认 course=60 / all=140）
    */
+  function withNavData(fn) {
+    const syncNav = navStructure();
+    const loadNav = win?.__navStructure?.loadNavJson;
+    if (syncNav || !loadNav) return fn(syncNav);
+    return loadNav().catch(() => null).then(fn);
+  }
+
   function siteIndex(o) {
     const opt = o || {};
     const scope = opt.scope === 'all' ? 'all' : 'course';
     const max = Math.max(1, Number(opt.max) || (scope === 'all' ? 140 : 60));
+    return withNavData((navData) => (navData
+      ? finishSiteIndex(navData, opt, scope, max)
+      : { ok: false, reason: 'no_sidebar', hint: '本页没有侧栏导航数据（nav-structure 数据缺失或损坏）' }));
+  }
 
-    const finishIndex = (navData) => {
-      if (!navData) {
-        return { ok: false, reason: 'no_sidebar', hint: '本页没有侧栏导航数据（nav-structure 数据缺失或损坏）' };
-      }
-      return finishSiteIndex(navData, opt, scope, max);
-    };
+  function siteIndexHint(needle, scope) {
+    if (needle) return '已按 match 过滤（含该词的子树，保留祖先以看清层级）。要看全量就去掉 match。';
+    return scope === 'course'
+      ? '这是当前课程的全部页面，层级与侧边栏一致。只想找某类内容就用 match（例如 match="作业"）；要精确路径用 paths:true。'
+      : '全站导航树。跳页用 site_navigate(to="page", path=…)，path 可从 paths:true 拿到。';
+  }
 
-    const syncNav = navStructure();
-    if (syncNav || !win?.__navStructure?.loadNavJson) {
-      return finishIndex(syncNav);
+  function toSiteIndexNode(n) {
+    const isGroup = !!n.children?.length;
+    const node = { name: n.label, depth: n.depth };
+    if (isGroup) {
+      if (n.indexHref) node.path = n.indexHref;
+      node.children = n.children.map(toSiteIndexNode);
+    } else if (n.href) {
+      node.path = n.href;
     }
-    return win.__navStructure.loadNavJson().catch(() => null).then(finishIndex);
+    return node;
+  }
+
+  function pickSiteIndexScope(nodes, scope) {
+    const curPath = doc?.body?.getAttribute('data-site-path') || '';
+    const curCourse = currentCourseName();
+    const coursesNode = nodes.find((n) => n.name === '课程总览');
+    const courseChildren = coursesNode?.children || [];
+    const only = scope === 'course' ? courseChildren.find((n) => n.name === curCourse) : null;
+    return {
+      curPath, curCourse,
+      picked: only ? [only] : nodes,
+      allCourses: courseChildren.map((n) => n.name),
+    };
   }
 
   function finishSiteIndex(navData, opt, scope, max) {
-
-    // JSON 节点 → site_index 输出形态：组节点带 indexHref（若有）作 path，叶子带 href。
-    const toNode = (n) => {
-      const isGroup = !!n.children?.length;
-      const node = { name: n.label, depth: n.depth };
-      if (isGroup) {
-        if (n.indexHref) node.path = n.indexHref;
-        node.children = n.children.map(toNode);
-      } else if (n.href) {
-        node.path = n.href;
-      }
-      return node;
-    };
-    const nodes = navData.nodes.map(toNode);
-
-    // 当前课程：从 body[data-site-path] 取「课程总览/<课名>/…」的第二段。
-    // 不能只看下标 1——README.html、课程总览/index.html 这些页的第二段不是课程名，
-    // 会拿它去匹配课程节点、静默落空。显式要求首段是课程总览。
-    const body = (doc?.body) || null;
-    const curPath = body?.getAttribute ? (body.getAttribute('data-site-path') || '') : '';
-    const curSegs = curPath.split('/');
-    const curCourse = curSegs.length > 2 && curSegs[0] === '课程总览' ? curSegs[1] : '';
-
-    // 找「课程总览」子树，再按课程名筛选
-    const coursesNode = nodes.find((n) => n.name === '课程总览');
-    let picked = nodes;
-    if (scope === 'course' && coursesNode?.children) {
-      const only = coursesNode.children.find((n) => n.name === curCourse);
-      picked = only ? [only] : nodes;
-    }
-
-    // 同时把「其余课程入口」告诉模型（一行提示，不展开）
-    const allCourses = (coursesNode?.children ? coursesNode.children : [])
-      .map((n) => n.name);
+    const nodes = navData.nodes.map(toSiteIndexNode);
+    const { curPath, curCourse, picked, allCourses } = pickSiteIndexScope(nodes, scope);
 
     // 渲染：**照侧边栏的样子**（层级 + 标签），而不是把完整仓库路径铺在每行。
     //
@@ -1679,23 +1680,22 @@ export function createPageView(doc, loc, winOverride) {
     };
     const shownTree = filterTree(picked);
 
+    const formatLeaf = (n, indent) => {
+      const tail = wantPaths
+        ? (n.path ? '  `' + n.path + '`' : '')
+        : (n.path ? '  → ' + shortOf(n.path) : '');
+      return indent + '- ' + n.name + tail;
+    };
+
     const lines = [];
     const flatten = (arr, indent) => {
       for (const n of arr) {
         if (lines.length >= max) { lines.push(indent + '…（已达上限，可用 match 缩小范围）'); return; }
-        const isGroup = !!(n.children && n.children.length);
-        if (isGroup) {
-          // 组节点：侧边栏里就是「分类」这一层，给标签 + 可选路径
+        if (n.children?.length) {
           lines.push(indent + n.name + (wantPaths && n.path ? '  `' + n.path + '`' : ''));
           flatten(n.children, indent + '  ');
         } else {
-          // 叶子（页面）：标签 + 短文件名（不是完整路径）
-          const tail = wantPaths ? (n.path ? '  `' + n.path + '`' : '')
-            : (n.path ? '  → ' + shortOf(n.path) : '');
-          lines.push(indent + '- ' + n.name + tail);
-          if (!lines[lines.length - 1].includes('→') && n.path && !wantPaths) {
-            lines[lines.length - 1] += '  → ' + shortOf(n.path);
-          }
+          lines.push(formatLeaf(n, indent));
         }
       }
     };
@@ -1710,11 +1710,7 @@ export function createPageView(doc, loc, winOverride) {
       shown: lines.length,
       filtered: needle ? countNodes(shownTree) : undefined,
       text: lines.join('\n'),
-      hint: needle
-        ? '已按 match 过滤（含该词的子树，保留祖先以看清层级）。要看全量就去掉 match。'
-        : (scope === 'course'
-          ? '这是当前课程的全部页面，层级与侧边栏一致。只想找某类内容就用 match（例如 match="作业"）；要精确路径用 paths:true。'
-          : '全站导航树。跳页用 site_navigate(to="page", path=…)，path 可从 paths:true 拿到。'),
+      hint: siteIndexHint(needle, scope),
     };
   }
 
@@ -1728,34 +1724,43 @@ export function createPageView(doc, loc, winOverride) {
    * 列出本页图片（正文内的，不含站点头像）。
    * 常见外部客户端通常只接收 jpg/png，而本站配图主要是 webp——模型需要知道格式并在必要时转码。
    */
+  function imageBox(el) {
+    try {
+      const r = el.getBoundingClientRect?.();
+      return r ? { top: Math.round(r.top + (win?.scrollY || 0)), w: Math.round(r.width), h: Math.round(r.height) } : undefined;
+    } catch (_e) { return undefined; }
+  }
+
+  function imageAbsUrl(src) {
+    try { return new URL(src, location.href).href; } catch (_e) { return src; }
+  }
+
+  function imageMetrics(el) {
+    return {
+      alt: el.getAttribute?.('alt') || '',
+      natural: el.naturalWidth ? { w: el.naturalWidth, h: el.naturalHeight } : undefined,
+      box: imageBox(el),
+    };
+  }
+
   function listImages(o) {
     const opt = o || {};
-    const includeIcons = !!opt.includeIcons;
+    const includeIcons = Boolean(opt.includeIcons);
     const max = Math.max(1, Number(opt.max) || 50);
+    const buildImageRec = (el, index) => {
+      const src = String(el.getAttribute?.('src') || '');
+      if (!src || (!includeIcons && /assets\/favicon|site-title-icon/.test(src))) return null;
+      const ext = ((/[/.]([a-z0-9]+)$/i.exec(src.split('?')[0]) || [])[1] || '').toLowerCase();
+      return {
+        index, src, abs: imageAbsUrl(src), ext,
+        ...imageMetrics(el),
+        uploadable: /^(jpe?g|png)$/i.test(ext),
+      };
+    };
     const out = [];
     for (const el of all(S.articleImages)) {
-      const src = String((el.getAttribute && el.getAttribute('src')) || '');
-      if (!src) continue;
-      if (!includeIcons && /assets\/favicon|site-title-icon/.test(src)) continue;
-      const ext = (/[/.]([a-z0-9]+)$/i.exec(src.split('?')[0]) || [])[1] || '';
-      let abs = src;
-      try { abs = new URL(src, location.href).href; } catch (_e) { /* 相对原样 */ }
-      let box = null;
-      try {
-        if (el.getBoundingClientRect) {
-          const r = el.getBoundingClientRect();
-          box = { top: Math.round(r.top + (win ? win.scrollY || 0 : 0)), w: Math.round(r.width), h: Math.round(r.height) };
-        }
-      } catch (_e) { /* 无布局 */ }
-      out.push({
-        index: out.length,
-        src, abs, ext: ext.toLowerCase(),
-        alt: el.getAttribute?.('alt') || '',
-        natural: el.naturalWidth ? { w: el.naturalWidth, h: el.naturalHeight } : undefined,
-        box: box || undefined,
-        // 常见客户端能直接接收的格式；webp/jxl/avif/gif 等需先转码
-        uploadable: /^(jpe?g|png)$/i.test(ext),
-      });
+      const rec = buildImageRec(el, out.length);
+      if (rec) out.push(rec);
       if (out.length >= max) break;
     }
     const needConvert = out.filter((x) => !x.uploadable).length;
@@ -1781,96 +1786,101 @@ export function createPageView(doc, loc, winOverride) {
    * @param {number} [o.maxWidth] 超过则等比缩小，默认 1400
    * @param {number} [o.maxBytes] 目标体积上限（默认 120000）——超了自动降质量重编
    */
-  function imageToDataUrl(o) {
-    const opt = o || {};
-    const w = win || {};
-    const format = opt.format === 'png' ? 'png' : 'jpeg';
-    const mime = format === 'png' ? 'image/png' : 'image/jpeg';
-    const quality = Math.max(1, Math.min(100, Number(opt.quality) || 82));
-    const maxWidth = Math.max(64, Number(opt.maxWidth) || 1400);
-    const maxBytes = Math.max(1000, Number(opt.maxBytes) || 120000);
+  function resolveImageSrc(opt) {
+    const src = String(opt.src || '').trim();
+    if (src) return { src };
+    if (opt.index == null) return { error: { ok: false, reason: 'empty_src', hint: '给 index（先用 site_list_images 取）或 src' } };
+    const list = all(S.articleImages).filter((el) => {
+      const s = String(el.getAttribute?.('src') || '');
+      return s && !/assets\/favicon|site-title-icon/.test(s);
+    });
+    const el = list[Number(opt.index)];
+    return el ? { src: String(el.getAttribute('src')) } : { error: { ok: false, reason: 'index_out_of_range', total: list.length } };
+  }
 
-    // 定位图片元素
-    let src = String(opt.src || '').trim();
-    if (!src && opt.index !== undefined && opt.index !== null) {
-      const list = all(S.articleImages).filter((el) => {
-        const s = String((el.getAttribute && el.getAttribute('src')) || '');
-        return s && !/assets\/favicon|site-title-icon/.test(s);
-      });
-      const el = list[Number(opt.index)];
-      if (!el) return Promise.resolve({ ok: false, reason: 'index_out_of_range', total: list.length });
-      src = String(el.getAttribute('src'));
+  function createImageEnv(w) {
+    const Ctor = w.Image || globalThis.Image;
+    const canvas = (w.document || doc).createElement?.('canvas');
+    return Ctor && canvas?.getContext ? { Ctor, canvas } : null;
+  }
+
+  function compressJpegToBudget(canvas, mime, quality, maxBytes) {
+    let q = quality;
+    let dataUrl = canvas.toDataURL(mime, q / 100);
+    let bytes = Math.round(((dataUrl.split(',')[1] || '').length) * 3 / 4);
+    for (let tries = 0; bytes > maxBytes && q > 40 && tries < 6; tries += 1) {
+      q = Math.max(40, q - 12);
+      dataUrl = canvas.toDataURL(mime, q / 100);
+      bytes = Math.round(((dataUrl.split(',')[1] || '').length) * 3 / 4);
     }
-    if (!src) return Promise.resolve({ ok: false, reason: 'empty_src', hint: '给 index（先用 site_list_images 取）或 src' });
-    let abs = src;
-    try { abs = new URL(src, location.href).href; } catch (_e) { /* 相对原样 */ }
+    return { q, dataUrl, bytes };
+  }
 
-    const Ctor = w.Image || (typeof Image !== 'undefined' ? Image : null);
-    const canvas = (w.document && w.document.createElement)
-      ? w.document.createElement('canvas')
-      : (doc.createElement ? doc.createElement('canvas') : null);
-    if (!Ctor || !canvas || !canvas.getContext) {
+  function encodeImageCanvas(canvas, img, cfg) {
+    const { format, mime, quality, maxWidth, maxBytes } = cfg;
+    const nw = img.naturalWidth || img.width || 0;
+    const nh = img.naturalHeight || img.height || 0;
+    const scale = nw > maxWidth ? maxWidth / nw : 1;
+    const cw = Math.max(1, Math.round(nw * scale));
+    const ch = Math.max(1, Math.round(nh * scale));
+    canvas.width = cw;
+    canvas.height = ch;
+    const ctx = canvas.getContext('2d');
+    if (format === 'jpeg') { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, cw, ch); }
+    ctx.drawImage(img, 0, 0, cw, ch);
+    const enc = format === 'jpeg'
+      ? compressJpegToBudget(canvas, mime, quality, maxBytes)
+      : (() => {
+          const dataUrl = canvas.toDataURL(mime, quality / 100);
+          return { q: null, dataUrl, bytes: Math.round(((dataUrl.split(',')[1] || '').length) * 3 / 4) };
+        })();
+    return {
+      ok: true, format, mimeType: mime, width: cw, height: ch,
+      originalWidth: nw, originalHeight: nh, resized: scale < 1,
+      quality: enc.q, bytes: enc.bytes, dataUrl: enc.dataUrl, overLimit: enc.bytes > maxBytes,
+    };
+  }
+
+  function parseImageOptions(o) {
+    const opt = o || {};
+    const format = opt.format === 'png' ? 'png' : 'jpeg';
+    return {
+      opt,
+      cfg: {
+        format,
+        mime: format === 'png' ? 'image/png' : 'image/jpeg',
+        quality: Math.max(1, Math.min(100, Number(opt.quality) || 82)),
+        maxWidth: Math.max(64, Number(opt.maxWidth) || 1400),
+        maxBytes: Math.max(1000, Number(opt.maxBytes) || 120000),
+      },
+    };
+  }
+
+  function imageToDataUrl(o) {
+    const w = win || {};
+    const { opt, cfg } = parseImageOptions(o);
+    const resolved = resolveImageSrc(opt);
+    if (resolved.error) return Promise.resolve(resolved.error);
+    const abs = imageAbsUrl(resolved.src);
+    const env = createImageEnv(w);
+    if (!env) {
       return Promise.resolve({
         ok: false, reason: 'canvas_unavailable',
         hint: '当前环境不能解码图片：需要浏览器 canvas（扩展/Playwright 里可用）',
       });
     }
-
     return new Promise((resolve) => {
-      const img = new Ctor();
+      const img = new env.Ctor();
       let settled = false;
       const done = (v) => { if (!settled) { settled = true; resolve(v); } };
-      const setT = w.setTimeout ? w.setTimeout : setTimeout;
-      const clrT = w.clearTimeout ? w.clearTimeout : clearTimeout;
-      const timer = setT(() => done({ ok: false, reason: 'image_timeout', src: abs }), 20000);
-
+      const timer = (w.setTimeout || setTimeout)(() => done({ ok: false, reason: 'image_timeout', src: abs }), 20000);
+      const clrT = w.clearTimeout || clearTimeout;
       img.onerror = () => { clrT(timer); done({ ok: false, reason: 'image_load_failed', src: abs }); };
       img.onload = () => {
-        try {
-          const nw = img.naturalWidth || img.width || 0;
-          const nh = img.naturalHeight || img.height || 0;
-          const scale = nw > maxWidth ? maxWidth / nw : 1;
-          const cw = Math.max(1, Math.round(nw * scale));
-          const ch = Math.max(1, Math.round(nh * scale));
-          canvas.width = cw;
-          canvas.height = ch;
-          const ctx = canvas.getContext('2d');
-          // JPEG 不支持透明：先铺白底，否则透明区会变黑
-          if (format === 'jpeg') {
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, cw, ch);
-          }
-          ctx.drawImage(img, 0, 0, cw, ch);
-
-          // 体积控制：超上限就逐档降质量（最低 40）
-          let q = quality;
-          let dataUrl = canvas.toDataURL(mime, q / 100);
-          let bytes = Math.round(((dataUrl.split(',')[1] || '').length) * 3 / 4);
-          let tries = 0;
-          if (format === 'jpeg') {
-            while (bytes > maxBytes && q > 40 && tries < 6) {
-              q = Math.max(40, q - 12);
-              dataUrl = canvas.toDataURL(mime, q / 100);
-              bytes = Math.round(((dataUrl.split(',')[1] || '').length) * 3 / 4);
-              tries += 1;
-            }
-          }
-          clrT(timer);
-          done({
-            ok: true, src: abs, format, mimeType: mime,
-            width: cw, height: ch,
-            originalWidth: nw, originalHeight: nh,
-            resized: scale < 1,
-            quality: format === 'jpeg' ? q : null,
-            bytes, dataUrl,
-            overLimit: bytes > maxBytes,
-          });
-        } catch (e) {
-          clrT(timer);
-          done({ ok: false, reason: 'convert_failed', detail: String((e?.message) || e), src: abs });
-        }
+        clrT(timer);
+        try { done({ ...encodeImageCanvas(env.canvas, img, cfg), src: abs }); }
+        catch (e) { done({ ok: false, reason: 'convert_failed', detail: String(e?.message || e), src: abs }); }
       };
-      // 同源图不需要 crossOrigin；设了反而在部分环境触发 CORS 预检
       try { img.src = abs; } catch (e) {
         clrT(timer);
         done({ ok: false, reason: 'image_load_failed', detail: String(e.message || e), src: abs });
@@ -2028,89 +2038,85 @@ export function buildToolDefs(doc, win) {
           const one = (m ? m[0] : flat).trim();
           return one.length > cap ? one.slice(0, cap) + '…' : one;
         };
-        const wantPopup = a?.popup === true;
-        const jsonHit = view.findGlossaryEntry ? view.findGlossaryEntry(needle) : null;
-
-        const el = view.findSymbol(needle);
-        if (wantPopup && el) {
+        const clickSymbolEl = (el) => {
           try { el.scrollIntoView({ block: 'center' }); } catch (_e) { /* 无滚动不影响点击 */ }
           const win2 = w || {};
           const ClickEvent = win2.MouseEvent || (typeof MouseEvent !== 'undefined' ? MouseEvent : null);
-          if (ClickEvent) {
-            el.dispatchEvent(new ClickEvent('click', { bubbles: true, cancelable: true, view: win2 }));
-          } else if (el.click) {
-            el.click();
-          }
-        }
+          if (ClickEvent) el.dispatchEvent(new ClickEvent('click', { bubbles: true, cancelable: true, view: win2 }));
+          else el.click?.();
+        };
+        const formatSenses = (entry) => (Array.isArray(entry.senses) && entry.senses.length
+          ? entry.senses.map((s) => ({
+              ctx: s.ctx,
+              brief: firstSentence(s.plainText || s.text || '', 80),
+              here: s.here === true || (Boolean(entry.ctx) && s.ctx === entry.ctx),
+            }))
+          : undefined);
+  function splitTermKey(key) {
+    const colon = key.indexOf(':');
+    return colon >= 0 ? [key.slice(0, colon), key.slice(colon + 1)] : [undefined, key];
+  }
 
-        if (jsonHit) {
-          const { key, entry, data } = jsonHit;
-          const rawTitle = entry.titleText || entry.title || '';
-          const rawText = entry.plainText || entry.text || '';
-          const senses = Array.isArray(entry.senses) && entry.senses.length
-            ? entry.senses.map((s) => ({
-                ctx: s.ctx,
-                brief: firstSentence(s.plainText || s.text || '', 80),
-                here: s.here === true || (!!entry.ctx && s.ctx === entry.ctx),
-              }))
-            : undefined;
-          const id = entry.id || (key.indexOf(':') >= 0 ? key.slice(key.indexOf(':') + 1) : key);
-          const pack = entry.pack || (key.indexOf(':') >= 0 ? key.slice(0, key.indexOf(':')) : undefined);
+  function jsonHitBrief(rawTitle, entry) {
+    const prefix = rawTitle ? rawTitle + '：' : '';
+    return firstSentence(prefix + (entry.plainText || entry.text || ''), 120);
+  }
+
+  function formatJsonHit({ key, entry, data }) {
+    const rawTitle = entry.titleText || entry.title || '';
+    const [p0, p1] = splitTermKey(key);
+    return {
+      ok: true, term: key, id: entry.id || p1, pack: entry.pack || p0,
+      title: rawTitle,
+      brief: jsonHitBrief(rawTitle, entry),
+      senses: formatSenses(entry),
+      ctx: entry.ctx || data?.ctx,
+      detailHref: entry.href,
+      source: 'sym-glossary-json',
+      hint: '要看全文就 site_read 那个 detailHref 指向的页面（用 what=section 或 what=page）',
+    };
+  }
+        const formatBubbleSenses = (senses) => (senses.length > 1
+          ? senses.map((x) => ({ brief: firstSentence(x.text, 80), here: x.here }))
+          : undefined);
+        const queryGlossaryBubble = () => {
+          try { return doc.querySelector(PAGE_SELECTORS.glossaryBubble); } catch (_e) { return null; }
+        };
+        const readBubbleSenses = (bubble) => {
+          const lis = bubble?.querySelectorAll?.('li') || [];
+          return Array.prototype.slice.call(lis).map((li) => ({
+            text: renderMarkdown(li), here: hasClass(li, 'is-here'),
+          }));
+        };
+        const readBubbleDom = (el) => {
+          const bubble = queryGlossaryBubble();
+          const moreHref = bubble?.querySelector?.('a')?.getAttribute?.('href');
           return {
             ok: true,
-            term: key,
-            id,
-            pack,
-            title: rawTitle,
-            brief: firstSentence((rawTitle ? rawTitle + '：' : '') + rawText, 120),
-            senses,
-            ctx: entry.ctx || data?.ctx || undefined,
-            detailHref: entry.href || undefined,
-            source: 'sym-glossary-json',
-            hint: '要看全文就 site_read 那个 detailHref 指向的页面（用 what=section 或 what=page）',
-          };
-        }
-
-        if (!el) {
-          const all = view.listSymbols(200);
-          return { ok: false, reason: 'symbol_not_on_page', total: all.length, available: all.slice(0, 40) };
-        }
-        try { el.scrollIntoView({ block: 'center' }); } catch (_e) { /* 无滚动不影响点击 */ }
-        // 兼容无 #sym-glossary-json 的极简夹具：回退到点击 + 气泡 DOM 读取
-        const win2 = w || {};
-        const ClickEvent = win2.MouseEvent || (typeof MouseEvent !== 'undefined' ? MouseEvent : null);
-        if (ClickEvent) {
-          el.dispatchEvent(new ClickEvent('click', { bubbles: true, cancelable: true, view: win2 }));
-        } else if (el.click) {
-          el.click();
-        }
-        const read = () => {
-          let bubble = null;
-          try { bubble = doc.querySelector(PAGE_SELECTORS.glossaryBubble); } catch (_e) { /* 假 DOM */ }
-          const senses = [];
-          if (bubble?.querySelectorAll) {
-            try {
-              Array.prototype.slice.call(bubble.querySelectorAll('li')).forEach((li) => {
-                senses.push({ text: renderMarkdown(li), here: hasClass(li, 'is-here') });
-              });
-            } catch (_e) { /* 无子查询 */ }
-          }
-          const more = bubble?.querySelector ? bubble.querySelector('a') : null;
-          const fullText = bubble ? renderMarkdown(bubble) : '';
-          return {
-            ok: true,
-            term: el.getAttribute ? el.getAttribute('data-term') : needle,
-            brief: firstSentence(fullText, 120),
-            senses: senses.length > 1
-              ? senses.map((x) => ({ brief: firstSentence(x.text, 80), here: x.here }))
-              : undefined,
-            detailHref: more?.getAttribute ? more.getAttribute('href') : undefined,
+            term: el.getAttribute?.('data-term') || needle,
+            brief: firstSentence(bubble ? renderMarkdown(bubble) : '', 120),
+            senses: formatBubbleSenses(readBubbleSenses(bubble)),
+            detailHref: moreHref,
             hint: '要看全文就 site_read 那个 detailHref 指向的页面（用 what=section 或 what=page）',
           };
         };
-        return new Promise((resolve) => {
-          (win2.setTimeout ? win2.setTimeout : setTimeout)(() => resolve(read()), 250);
-        });
+
+        const readBubbleWithRaf = (read) => (typeof w?.requestAnimationFrame === 'function'
+          ? new Promise((resolve) => w.requestAnimationFrame(() => resolve(read())))
+          : read());
+        const dispatchShowSymbol = () => {
+          const jsonHit = view.findGlossaryEntry ? view.findGlossaryEntry(needle) : null;
+          const el = view.findSymbol(needle);
+          if (a?.popup && el) clickSymbolEl(el);
+          if (jsonHit) return formatJsonHit(jsonHit);
+          if (!el) {
+            const all = view.listSymbols(200);
+            return { ok: false, reason: 'symbol_not_on_page', total: all.length, available: all.slice(0, 40) };
+          }
+          clickSymbolEl(el);
+          return readBubbleWithRaf(() => readBubbleDom(el));
+        };
+        return dispatchShowSymbol();
       },
     },
     {
@@ -2302,113 +2308,99 @@ export function feedText(name, args, r) {
     .join(' | ');
   const head = feedHead(name, argStr, !(r?.ok));
 
-  if (!r || !r.ok) {
-    // 失败原因有两个来源，必须都读（2026-10-29 修）：
-    //   · `r.error`   —— runTool 抛异常（工具不存在、代码炸了）
-    //   · `r.value.reason` —— 工具**正常返回**了 `{ok:false, reason, hint, candidates}`
-    // 此前只读前者，于是「这页不存在」「不在导航里」这类**最有用的失败**到了模型那里
-    // 统一变成「执行失败」四个字，hint 与候选全丢——模型只能瞎猜下一跳。
-    // 实测后果：它拼错路径 → 只看到「执行失败」→ 换个同样错的路径再试。
-    const v = r?.value && typeof r.value === 'object' ? r.value : null;
-    const code = String((r?.error) || (v?.reason) || '');
-    // 枚举值给人话（2026-10-29 站长）：`原因：no_such_page` 是机器码，
-    // 模型很可能原样复述成「原因：no_such_page」。这里换成一句听得懂的话。
-    // 枚举本身不删——`reason` 字段仍在返回值里，机器侧判据照旧。
-    const reason = reasonText(code);
-    const lines = [head, '- 原因：' + reason];
-    const seen = {};
+  const nextStepHint = (code, hasCand) => {
+    if (code === 'ambiguous' && hasCand) return '建议下一步：从上一条候选里挑一个准确的名字重试，别再用现在这个词。';
+    if (/no_such_page|not_found|not_in_nav|unknown_target|empty_query|empty_path/.test(code)) {
+      return '建议下一步：换一个更短的关键词重试，或先用 site_read，what=outline 看全部标题。';
+    }
+    return '建议下一步：换个参数重试；连续失败就直接告诉用户当前做不到。';
+  };
+
+  const listSnippet = (arr, label) => (Array.isArray(arr) && arr.length
+    ? label + '：' + arr.slice(0, 12).map((c) => '「' + c + '」').join(' / ')
+    : null);
+
+  const formatCandidateLine = (v) => listSnippet(v?.candidates, '候选') || listSnippet(v?.available, '可选');
+
+  const appendFailureExtras = (lines, v, code) => {
+    const hasCand = Boolean(v?.candidates?.length);
     if (v?.hint) lines.push('提示：' + String(v.hint).slice(0, 200));
-    if (v && Array.isArray(v.candidates) && v.candidates.length) {
-      lines.push('候选：' + v.candidates.slice(0, 12).map((c) => '「' + c + '」').join(' / '));
-      seen.cand = 1;
-    }
-    if (v && Array.isArray(v.available) && v.available.length && !seen.cand) {
-      lines.push('可选：' + v.available.slice(0, 12).map((c) => '「' + c + '」').join(' / '));
-    }
-    // 通用建议只在工具自己没给 hint 时补，否则会和具体指示打架。
-    // 分档按**下一步真该做什么**排，不是一个笼统的「换个参数重试」：
-    //   · ambiguous —— 候选已经列出来了，该挑一个，不是换参数瞎试；
-    //   · not_found  —— 目标不存在，该换关键词或先看大纲；
-    //   · 其余       —— 参数或环境问题，换个参数；再不行就说做不到。
-    if (!(v?.hint)) {
-      if (code === 'ambiguous' && seen.cand) {
-        lines.push('建议下一步：从上一条候选里挑一个准确的名字重试，别再用现在这个词。');
-      } else if (/no_such_page|not_found|not_in_nav|unknown_target|empty_query|empty_path/.test(code)) {
-        lines.push('建议下一步：换一个更短的关键词重试，或先用 site_read，what=outline 看全部标题。');
-      } else {
-        lines.push('建议下一步：换个参数重试；连续失败就直接告诉用户当前做不到。');
-      }
-    }
+    const candLine = formatCandidateLine(v);
+    if (candLine) lines.push(candLine);
+    if (!v?.hint) lines.push(nextStepHint(code, hasCand));
+  };
+
+  const feedFailure = () => {
+    const v = r?.value && typeof r.value === 'object' ? r.value : null;
+    const code = String(r?.error || v?.reason || '');
+    const lines = [head, '- 原因：' + reasonText(code)];
+    appendFailureExtras(lines, v, code);
     return lines.join('\n').slice(0, SINGLE_MSG_LIMIT);
-  }
+  };
 
-  const v = r.value;
-  if (!v || typeof v !== 'object') {
-    return (head + '\n' + String(v == null ? '' : v)).slice(0, SINGLE_MSG_LIMIT);
-  }
+  const appendPagingMeta = (meta, v) => {
+    if (v.total_lines != null) meta.push('本段 ' + (v.returned_lines ?? '?') + '/' + v.total_lines + ' 行');
+    if (v.has_more) meta.push('还有更多：下一段用 offset=' + v.next_offset + '（或一次多要点 limit=100）');
+  };
 
-  // ── 元数据在前（模型据此判断要不要续读）──
-  const meta = [];
-  if (v.ok === false) meta.push('执行未成功：' + String(v.reason || ''));
-  if (v.title) meta.push('标题：' + v.title);
-  if (v.what) meta.push('类型：' + v.what);
-  // 行/字符分页（site_read 的主口径）
-  if (v.total_lines != null) {
-    meta.push('本段 ' + (v.returned_lines != null ? v.returned_lines : '?') + '/' + v.total_lines + ' 行');
-  }
-  if (v.has_more) {
-    meta.push('还有更多：下一段用 offset=' + v.next_offset + '（或一次多要点 limit=100）');
-  }
-  if (v.total_chars != null && v.total_lines == null) meta.push('总字数：' + v.total_chars);
-  if (Array.isArray(v.outline)) meta.push('小节数：' + v.outline.length);
-  if (v.count != null) meta.push('条目数：' + v.count);
-  if (Array.isArray(v.candidates) && v.candidates.length) {
-    meta.push('候选：' + v.candidates.map((c) => '「' + c + '」').join(' / '));
-  }
-  if (v.hint) meta.push('提示：' + String(v.hint).slice(0, 200));
+  const buildMeta = (v) => {
+    const meta = [];
+    if (v.ok === false) meta.push('执行未成功：' + String(v.reason || ''));
+    if (v.title) meta.push('标题：' + v.title);
+    if (v.what) meta.push('类型：' + v.what);
+    appendPagingMeta(meta, v);
+    const cand = listSnippet(v.candidates, '候选');
+    if (cand) meta.push(cand);
+    if (v.hint) meta.push('提示：' + String(v.hint).slice(0, 200));
+    return meta;
+  };
 
-  // ⭐ site_index 的**按结构降级**（2026-10-26，从 node 侧搬过来）：
-  // 全站树铺开远超单条上限，硬砍会在某门课中间截断 ⇒ 模型只看到前一两门，
-  // 于是自信地说「本站只有工程数学」（2026-10-19 实测教训：**截断让工具撒谎**）。
-  // 这里按顶层缩进分组，每门课压成「课程名（N 页）」一行——每门课都还在，
-  // 模型知道有哪些课、也知道自己看不到细节，可以再 site_index(scope=course)。
-  if (name === 'site_index' && typeof v.text === 'string') {
-    const lines = String(v.text).replace(/%[0-9A-Fa-f]{2}/g, '').replace(/`/g, '').split('\n');
-    const cleaned = lines.join('\n');
-    if (cleaned.length > 700) {
-      const groups = [];
-      let cur = null;
-      for (const ln of lines) {
-        const isCourse = /^\s{2}\S/.test(ln) && !/^\s{2}-/.test(ln);
-        if (isCourse) { cur = { title: ln.trim(), count: 0 }; groups.push(cur); }
-        else if (cur && /^\s+-/.test(ln)) cur.count += 1;
-        else if (!cur) groups.push({ title: ln.trim(), count: 0, raw: true });
-      }
-      const compressed = groups.map((g) => g.raw ? g.title : '  ' + g.title + '（' + g.count + ' 页）');
-      return (head + '\n'
-        + '- 全站共 ' + groups.filter((g) => !g.raw).length + ' 门课（清单较大，已压缩为课程级摘要）\n'
-        + '---正文开始---\n' + compressed.join('\n') + '\n---正文结束---\n'
-        + '（要看某门课的完整页面清单，用 site_index，scope=course）').slice(0, SINGLE_MSG_LIMIT);
+  const groupIndexLines = (lines) => {
+    const groups = [];
+    let cur = null;
+    for (const ln of lines) {
+      if (/^\s{2}\S/.test(ln) && !/^\s{2}-/.test(ln)) { cur = { title: ln.trim(), count: 0 }; groups.push(cur); }
+      else if (cur && /^\s+-/.test(ln)) cur.count += 1;
+      else if (!cur) groups.push({ title: ln.trim(), count: 0, raw: true });
     }
-  }
+    return groups;
+  };
 
-  // 正文：优先 text；没有 text 就压成紧凑 JSON（不整段 dump 原始对象）
-  let body;
-  if (typeof v.text === 'string' && v.text) body = v.text;
-  else {
-    try { body = JSON.stringify(v); } catch { body = String(v); }
-  }
+  const formatCompressedIndex = (groups) => {
+    const compressed = groups.map((g) => (g.raw ? g.title : '  ' + g.title + '（' + g.count + ' 页）'));
+    const courseCount = groups.filter((g) => !g.raw).length;
+    return (head + '\n'
+      + '- 全站共 ' + courseCount + ' 门课（清单较大，已压缩为课程级摘要）\n'
+      + '---正文开始---\n' + compressed.join('\n') + '\n---正文结束---\n'
+      + '（要看某门课的完整页面清单，用 site_index，scope=course）').slice(0, SINGLE_MSG_LIMIT);
+  };
 
-  const headLen = head.length + 1 + meta.join('\n').length + 1;
-  const room = Math.max(120, SINGLE_MSG_LIMIT - headLen);
-  let cut = '';
-  if (body.length > room) {
-    cut = '\n…（本条已截断：原文 ' + body.length + ' 字，只给了开头。需要更多用 offset/limit 续读）';
-    body = body.slice(0, Math.max(80, room - cut.length));
-  }
-  const out = head + '\n' + (meta.length ? meta.join('\n') + '\n' : '')
-    + '---正文开始---\n' + body + '\n---正文结束---' + cut;
-  return out.slice(0, SINGLE_MSG_LIMIT);
+  const compressSiteIndex = (v) => {
+    const text = String(v.text).replace(/%[0-9A-Fa-f]{2}/g, '').replace(/`/g, '');
+    if (text.length <= 700) return null;
+    return formatCompressedIndex(groupIndexLines(text.split('\n')));
+  };
+
+  const stringifyResultBody = (v) => {
+    if (typeof v.text === 'string' && v.text) return v.text;
+    try { return JSON.stringify(v); } catch { return String(v); }
+  };
+
+  const feedSuccess = (v) => {
+    if (!v || typeof v !== 'object') {
+      return (head + '\n' + String(v ?? '')).slice(0, SINGLE_MSG_LIMIT);
+    }
+    const meta = buildMeta(v);
+    if (name === 'site_index' && typeof v.text === 'string') {
+      const compressed = compressSiteIndex(v);
+      if (compressed) return compressed;
+    }
+    const metaBlock = meta.length ? meta.map((m) => '- ' + m).join('\n') + '\n' : '';
+    return (head + '\n' + metaBlock + '---正文开始---\n' + stringifyResultBody(v) + '\n---正文结束---').slice(0, SINGLE_MSG_LIMIT);
+  };
+
+  if (!r || !r.ok) return feedFailure();
+  return feedSuccess(r.value);
 }
 
 export async function runTool(doc, name, args) {
@@ -2417,24 +2409,19 @@ export async function runTool(doc, name, args) {
   // 此前这里有一份手写 MAP，参数解包与 buildToolDefs 各活各的：
   // site_panels 把 {action:"close"} 整个塞给标量参数 open（对象恒真 → close 变 open）、
   // site_show_symbol 把 {term} 塞给字符串参数（String() 出 "[object Object]" → 永远查不到）。
-  const defs = buildToolDefs(doc, (doc?.defaultView) || null);
+  const defs = buildToolDefs(doc, doc?.defaultView);
   const def = defs.find((d) => d.name === name);
-  if (!def || typeof def.execute !== 'function') {
-    return { ok: false, error: '页面没有工具 ' + String(name) };
-  }
+  if (!def || typeof def.execute !== 'function') return { ok: false, error: '页面没有工具 ' + String(name) };
+  const safeArgs = args || {};
+  let out;
   try {
-    const value = await def.execute(args || {});
-    const ok = !(value && typeof value === 'object' && value.ok === false);
-    const out = { ok, value };
-    // ⭐ 2026-10-26：**信封在 MCP 侧产出**（feedText），随结果一起交出去。
-    // 调用方（站点协议栈 / 桥）只管搬运，不认识任何工具名、不按名字分叉。
-    out.feed = feedText(name, args || {}, out);
-    return out;
+    const value = await def.execute(safeArgs);
+    out = { ok: value?.ok !== false, value };
   } catch (e) {
-    const out = { ok: false, error: String((e?.message) || e) };
-    out.feed = feedText(name, args || {}, out);
-    return out;
+    out = { ok: false, error: String(e) };
   }
+  out.feed = feedText(name, safeArgs, out);
+  return out;
 }
 
 /**

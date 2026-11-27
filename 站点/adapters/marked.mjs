@@ -15,22 +15,21 @@ export function createMarkedProvider(marked) {
       const tables = new WeakMap();
       let pendingMode = null;
       let lastHeading = '';
-      const walk = (items) => {
-        for (const token of items) {
-          if (token.type === 'heading') {
-            lastHeading = token.text.replace(/\s*\{[^}\s]+\}\s*$/, '').replace(/\s+/g, ' ').trim();
-          }
-          if (token.type === 'html') {
-            const hint = /<!--\s*table:(compact|cards|matrix)\s*-->/.exec(token.text || '');
-            if (hint) pendingMode = 't-' + hint[1];
-          }
-          if (token.type === 'table') {
-            tables.set(token, { mode: pendingMode, label: lastHeading });
-            pendingMode = null;
-          }
-          if (token.tokens) walk(token.tokens);
-          if (token.items) walk(token.items);
+      const visitToken = (token) => {
+        if (token.type === 'heading') {
+          lastHeading = token.text.replace(/\s*\{[^}\s]+\}\s*$/, '').replace(/\s+/g, ' ').trim();
+        } else if (token.type === 'html') {
+          const hint = /<!--\s*table:(compact|cards|matrix)\s*-->/.exec(token.text || '');
+          if (hint) pendingMode = 't-' + hint[1];
+        } else if (token.type === 'table') {
+          tables.set(token, { mode: pendingMode, label: lastHeading });
+          pendingMode = null;
         }
+        if (token.tokens) walk(token.tokens);
+        if (token.items) walk(token.items);
+      };
+      const walk = (items) => {
+        for (const token of items) visitToken(token);
       };
       walk(tokens);
       renderer.heading = function (token) {

@@ -49,96 +49,112 @@ export function autoWrapTerms(source, dict = {}) {
     .join('\n');
 }
 
-export function renderGlossary(source, opts = {}) {
-  if (typeof source !== 'string') return source;
-  const {
-    dict = {},
-    tokenDict = null,
-    packs = null,
-    pins = null,
-    envName = '',
-    renderTex = null,
-    resolvePlaceholderTex = null,
-    notationHref = '',
-    dictTable = null,
-    onWarn = null,
-    onHit = null,
-  } = opts;
-  const tokens = tokenDict || dict;
-  const warn = (msg) => onWarn?.(msg);
+function resolvePackTerm(packs, pack, term) {
+  const p = packs?.[pack];
+  if (!p) return { miss: `令牌指向未注册的符号包「${pack}」` };
+  const e = p.dict[term];
+  if (!e || e.bubble === false) return { miss: `包「${pack}」没有词条 ${term}` };
+  return { key: e.key || `${pack}:${term}`, entry: e, href: `${p.hrefBase}#${term}` };
+}
 
-  const resolveTerm = (pack, term) => {
-    if (pack !== undefined) {
-      const p = packs?.[pack];
-      if (!p) return { miss: `令牌指向未注册的符号包「${pack}」` };
-      const e = p.dict[term];
-      if (!e || e.bubble === false) return { miss: `包「${pack}」没有词条 ${term}` };
-      return { key: e.key || `${pack}:${term}`, entry: e, href: `${p.hrefBase}#${term}` };
-    }
-    if (pins && Object.hasOwn(pins, term)) {
-      const packName = pins[term];
-      const p = packs?.[packName];
-      const e = p?.dict[term];
-      if (!e || e.bubble === false) {
-        return { miss: `符号强制指向的包「${packName}」没有词条 ${term}` };
-      }
-      return { key: e.key || `${packName}:${term}`, entry: e, href: `${p.hrefBase}#${term}` };
-    }
-    if (Object.hasOwn(tokens, term)) {
-      const e = tokens[term];
-      if (e.bubble === false) {
-        return { miss: `词条 ${term} 只声明了形式、没有气泡内容（补词典行才会生效）` };
-      }
-      const key = e.key || (e.pack ? `${e.pack}:${term}` : term);
-      return { key, entry: e, href: e.href || `${notationHref}#${term}` };
-    }
+function resolvePinnedTerm(packs, pins, term) {
+  const packName = pins[term];
+  const p = packs?.[packName];
+  const e = p?.dict[term];
+  if (!e || e.bubble === false) {
+    return { miss: `符号强制指向的包「${packName}」没有词条 ${term}` };
+  }
+  return { key: e.key || `${packName}:${term}`, entry: e, href: `${p.hrefBase}#${term}` };
+}
+
+function resolveEnvTerm(tokens, notationHref, envName, term) {
+  if (!Object.hasOwn(tokens, term)) {
     return { miss: `环境包「${envName}」没有词条 ${term}，令牌原样保留` };
-  };
+  }
+  const e = tokens[term];
+  if (e.bubble === false) {
+    return { miss: `词条 ${term} 只声明了形式、没有气泡内容（补词典行才会生效）` };
+  }
+  const key = e.key || (e.pack ? `${e.pack}:${term}` : term);
+  return { key, entry: e, href: e.href || `${notationHref}#${term}` };
+}
 
-  const tables = [];
-  const stripped = stripDictFences(
-    source.split(/\r?\n/),
-    dictTable
-      ? (entries) => {
-          tables.push(dictTable(entries));
-          return `@@GLOSS_TABLE_${tables.length - 1}@@`;
-        }
-      : null,
-  ).join('\n');
-  const wrapped = autoWrapTerms(stripped, dict);
-  const hasWork =
+function resolveTermWithContext(ctx, pack, term) {
+  if (pack !== undefined) return resolvePackTerm(ctx.packs, pack, term);
+  if (ctx.pins && Object.hasOwn(ctx.pins, term)) return resolvePinnedTerm(ctx.packs, ctx.pins, term);
+  return resolveEnvTerm(ctx.tokens, ctx.notationHref, ctx.envName, term);
+}
+
+function renderInnerTex(tex, opts) {
+  const realTex = opts.resolvePlaceholderTex ? opts.resolvePlaceholderTex(tex) : tex;
+  return opts.renderTex && realTex.trim() !== '' ? opts.renderTex(realTex) : escHtml(realTex);
+}
+
+function emitGlossaryHit(onHit, key, entry, pack, pins, term, href) {
+  if (!onHit) return;
+  const hit = {
+    pack: entry.pack || pack || pins?.[term] || '',
+    id: entry.id || term,
+    title: entry.title,
+    text: entry.text,
+    href,
+  };
+  if (entry.senses) hit.senses = entry.senses;
+  onHit(key, hit);
+}
+
+function hasGlossaryWork(source, wrapped) {
+  const hit =
     source.includes(':::glossary-dict') ||
     source.includes(':::glossary-match') ||
     TOKEN_RE.test(wrapped);
   TOKEN_RE.lastIndex = 0;
-  if (!hasWork) return source;
+  return hit;
+}
+
+function buildGlossaryReplacer(ctx, opts) {
+  const { renderTex, resolvePlaceholderTex, onWarn, onHit, pins } = opts;
+  return (match, tex, pack, term) => {
+    const r = resolveTermWithContext(ctx, pack, term);
+    if (r.miss) {
+      onWarn?.(r.miss);
+      return match;
+    }
+    const { key, entry, href } = r;
+    const inner = renderInnerTex(tex, { renderTex, resolvePlaceholderTex });
+    const label = entry.titleText || entry.title;
+    emitGlossaryHit(onHit, key, entry, pack, pins, term, href);
+    return formatSymbolAnchor({ key, href, label, innerHtml: inner });
+  };
+}
+
+function buildGlossaryCtx(opts, dict) {
+  return {
+    tokens: opts.tokenDict || dict,
+    packs: opts.packs ?? null,
+    pins: opts.pins ?? null,
+    envName: opts.envName ?? '',
+    notationHref: opts.notationHref ?? '',
+  };
+}
+
+export function renderGlossary(source, opts = {}) {
+  if (typeof source !== 'string') return source;
+  const dict = opts.dict || {};
+  const ctx = buildGlossaryCtx(opts, dict);
+
+  const tables = [];
+  const tableReplacer = opts.dictTable
+    ? (entries) => {
+        tables.push(opts.dictTable(entries));
+        return `@@GLOSS_TABLE_${tables.length - 1}@@`;
+      }
+    : null;
+  const stripped = stripDictFences(source.split(/\r?\n/), tableReplacer).join('\n');
+  const wrapped = autoWrapTerms(stripped, dict);
+  if (!hasGlossaryWork(source, wrapped)) return source;
 
   return wrapped
-    .replace(TOKEN_RE, (match, tex, pack, term) => {
-      const r = resolveTerm(pack, term);
-      if (r.miss) {
-        warn(r.miss);
-        return match;
-      }
-      const { key, entry, href } = r;
-      const realTex = resolvePlaceholderTex ? resolvePlaceholderTex(tex) : tex;
-      const inner =
-        renderTex && realTex.trim() !== ''
-          ? renderTex(realTex)
-          : escHtml(realTex);
-      const label = entry.titleText || entry.title;
-      if (onHit) {
-        const hit = {
-          pack: entry.pack || pack || (pins?.[term]) || '',
-          id: entry.id || term,
-          title: entry.title,
-          text: entry.text,
-          href,
-        };
-        if (entry.senses) hit.senses = entry.senses;
-        onHit(key, hit);
-      }
-      return formatSymbolAnchor({ key, href, label, innerHtml: inner });
-    })
+    .replace(TOKEN_RE, buildGlossaryReplacer(ctx, opts))
     .replace(/@@GLOSS_TABLE_(\d+)@@/g, (match, i) => tables[Number(i)] ?? '');
 }

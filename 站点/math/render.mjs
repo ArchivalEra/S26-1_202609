@@ -35,126 +35,89 @@ export function replaceKatexWithText(html) {
  * 旧实现在 TeX 字符串上找位置插宏，于是要写 `ARG_COMMANDS` 防劈命令、
  * `braceBareArgs` 补花括号——两个补丁都在防同一类事故。这里没有这个位置。
  */
-export function irToTex(node, opts = {}) {
-  const { decorate = true, dialect = 'katex' } = opts;
-  const dialectName = dialect;
-  if (!node) return '';
-  const childOpts = opts._nested ? opts : { ...opts, _nested: true };
+const STYLE_COMMANDS = {
+  bold: 'mathbf',
+  upright: 'mathrm',
+  italic: 'mathit',
+  cal: 'mathcal',
+  'double-struck': 'mathbb',
+  fraktur: 'mathfrak',
+  sans: 'mathsf',
+  mono: 'mathtt',
+  'bold-italic': 'boldsymbol',
+};
 
+const isPrimeTex = (t) => t === "'" || t === '′' || /^'+$/.test(t);
+
+function needsGroupSpace(items, k) {
+  if (k <= 0) return false;
+  const prevTex = String(items[k - 1].tex || '').trim();
+  const curTex = String(items[k].tex || '').trim();
+  return !isPrimeTex(prevTex) && !isPrimeTex(curTex);
+}
+
+function renderGroupTex(node, childOpts, opts, wrap) {
+  const items = node.items || [];
+  let inner = '';
+  for (let k = 0; k < items.length; k += 1) {
+    if (needsGroupSpace(items, k)) inner += ' ';
+    inner += irToTex(items[k], childOpts);
+  }
+  if (node.fence) return wrap(`${node.fence.open}${inner}${node.fence.close}`);
+  return opts._nested ? wrap(`{${inner}}`) : wrap(inner);
+}
+
+const TEX_RENDERERS = {
+  sym: (n, _c, _o, wrap) => wrap(n.tex),
+  num: (n, _c, _o, wrap) => wrap(n.literal),
+  op: (n, _c, _o, wrap) => wrap(n.tex),
+  ellipsis: (n, _c, _o, wrap) => wrap(n.tex),
+  bigop: (n, _c, _o, wrap) => wrap(n.tex),
+  fence: (n, _c, _o, wrap) => n.tex || wrap(n.glyph || ''),
+  script: (n, c, _o, wrap) => {
+    let s = irToTex(n.base, c);
+    if (n.sub) s += `_{${irToTex(n.sub, c)}}`;
+    if (n.sup) s += `^{${irToTex(n.sup, c)}}`;
+    return wrap(s);
+  },
+  frac: (n, c, _o, wrap) => wrap(`\\${fracCommand(n.fractionStyle)}{${irToTex(n.num, c)}}{${irToTex(n.den, c)}}`),
+  group: (n, c, o, wrap) => renderGroupTex(n, c, o, wrap),
+  styled: (n, c, _o, wrap) => {
+    const body = irToTex(n.body, c);
+    if (n.style === 'operator-name') return wrap(`\\operatorname{${body}}`);
+    return wrap(`\\${STYLE_COMMANDS[n.style] || 'mathrm'}{${body}}`);
+  },
+  accent: (n, c, _o, wrap) => wrap(`\\${n.accent}{${irToTex(n.body, c)}}`),
+  root: (n, c, _o, wrap) => wrap(`\\sqrt${n.index ? `[${irToTex(n.index, c)}]` : ''}{${irToTex(n.body, c)}}`),
+  arrow: (n, c, _o, wrap) => wrap(`${n.tex}${n.below ? `[${irToTex(n.below, c)}]` : ''}{${irToTex(n.above, c)}}`),
+  stack: (n, c, _o, wrap) => {
+    const rows = (n.rows || []).map((r) => r.map((x) => irToTex(x, c)).join(' ')).join(' \\\\ ');
+    return n.stackKind === 'substack' ? wrap(`\\substack{${rows}}`) : wrap(`\\begin{matrix}${rows}\\end{matrix}`);
+  },
+  env: (n, c, _o, wrap) => {
+    const body = (n.rows || []).map((r) => r.map((col) => col.map((x) => irToTex(x, c)).join(' ')).join(' & ')).join(' \\\\ ');
+    const colSpec = n.columnSpec ? `{${n.columnSpec}}` : '';
+    return wrap(`\\begin{${n.env}}${colSpec}${body}\\end{${n.env}}`);
+  },
+  literal: (n, _c, _o, wrap) => wrap(`\\text{${n.text}}`),
+  space: (n) => n.tex || '\\,',
+  rowbreak: () => ' \\\\ ',
+  phantom: (n, c) => `\\phantom{${irToTex(n.body, c)}}`,
+  label: (n, c, o) => (o.dialect === 'katex' ? `\\tag{${(n.text || []).map((x) => irToTex(x, c)).join(' ')}}` : ''),
+  raw: (n) => n.tex,
+};
+
+export function irToTex(node, opts = {}) {
+  if (!node) return '';
+  const { decorate = true } = opts;
+  const childOpts = opts._nested ? opts : { ...opts, _nested: true };
   const wrap = (inner) => {
     if (!decorate || !node.term) return inner;
-    // 门牌号用词条键；escape 进属性值
     const key = `${node.term.pack}:${node.term.entry}`.replace(/[{}]/g, '');
     return `\\htmlData{term=${key}}{${inner}}`;
   };
-
-  switch (node.kind) {
-    case 'sym':
-      return wrap(node.tex);
-    case 'num':
-      return wrap(node.literal);
-    case 'op':
-      return wrap(node.tex);
-    case 'ellipsis':
-      return wrap(node.tex);
-    case 'bigop':
-      return wrap(node.tex);
-    case 'fence':
-      // `\left(` / `\right)` 这类：tex 已含命令名
-      return node.tex || wrap(node.glyph || '');
-    case 'script': {
-      const base = irToTex(node.base, childOpts);
-      let s = base;
-      if (node.sub) s += `_{${irToTex(node.sub, childOpts)}}`;
-      if (node.sup) s += `^{${irToTex(node.sup, childOpts)}}`;
-      return wrap(s);
-    }
-    case 'frac':
-      return wrap(`\\${fracCommand(node.fractionStyle)}{${irToTex(node.num, childOpts)}}{${irToTex(node.den, childOpts)}}`);
-    case 'group': {
-      // ⚠️ 2026-10-30 真 bug（KaTeX 报 9 处 katex-error）：原先一律 `.join(' ')`，
-      // 于是 `T''_{d3}` 的两个撇号被编成 `T ' '_{{d3}}` ——
-      // MathLive 容忍，**KaTeX 直接 parse error**（`' '` 不是合法序列）。
-      //
-      // 撇号是**后缀运算符**，必须紧贴前一项：`T''` 要编成 `T''`，不是 `T ' '`。
-      // 这里逐项拼接：遇到 tex 为撇号（单/双/三）的项就不加分隔空格。
-      const items = node.items || [];
-      let inner = '';
-      for (let k = 0; k < items.length; k += 1) {
-        const piece = irToTex(items[k], childOpts);
-        if (k > 0) {
-          const prevTex = String(items[k - 1].tex || '').trim();
-          const curTex = String(items[k].tex || '').trim();
-          // 上一项是撇号链、或当前项是撇号 ⇒ 都不插空格
-          const isPrime = (t) => t === "'" || t === '′' || /^'+$/.test(t);
-          if (!isPrime(prevTex) && !isPrime(curTex)) inner += ' ';
-        }
-        inner += piece;
-      }
-      if (node.fence) return wrap(`${node.fence.open}${inner}${node.fence.close}`);
-      // 顶层透明组不包外层 `{…}`：包一层会把整条公式变成不可断行的单一 mathord，
-      // 导致手机端长行内公式无法在 `=`/`+` 处折行而被横向裁断。
-      if (!opts._nested) return wrap(inner);
-      return wrap(`{${inner}}`);
-    }
-    case 'styled': {
-      const body = irToTex(node.body, childOpts);
-      if (node.style === 'operator-name') return wrap(`\\operatorname{${body}}`);
-      const cmd = { bold: 'mathbf', upright: 'mathrm', italic: 'mathit', cal: 'mathcal',
-        'double-struck': 'mathbb', fraktur: 'mathfrak', sans: 'mathsf',
-        mono: 'mathtt', 'bold-italic': 'boldsymbol' }[node.style] || 'mathrm';
-      return wrap(`\\${cmd}{${body}}`);
-    }
-    case 'accent':
-      return wrap(`\\${node.accent}{${irToTex(node.body, childOpts)}}`);
-    case 'root': {
-      const idx = node.index ? `[${irToTex(node.index, childOpts)}]` : '';
-      return wrap(`\\sqrt${idx}{${irToTex(node.body, childOpts)}}`);
-    }
-    case 'arrow': {
-      const below = node.below ? `[${irToTex(node.below, childOpts)}]` : '';
-      // node.tex 已是 `\\xrightarrow` 这种自带反斜杠的形式，不要再加一个
-      return wrap(`${node.tex}${below}{${irToTex(node.above, childOpts)}}`);
-    }
-    case 'stack': {
-      if (node.stackKind === 'substack') {
-        const rows = (node.rows || []).map((r) => r.map((n) => irToTex(n, childOpts)).join(' ')).join(' \\\\ ');
-        return wrap(`\\substack{${rows}}`);
-      }
-      const rows = (node.rows || []).map((r) => r.map((n) => irToTex(n, childOpts)).join(' ')).join(' \\\\ ');
-      return wrap(`\\begin{matrix}${rows}\\end{matrix}`);
-    }
-    case 'env': {
-      const body = (node.rows || [])
-        .map((r) => r.map((c) => c.map((n) => irToTex(n, childOpts)).join(' ')).join(' & '))
-        .join(' \\\\ ');
-      const colSpec = node.columnSpec ? `{${node.columnSpec}}` : '';
-      return wrap(`\\begin{${node.env}}${colSpec}${body}\\end{${node.env}}`);
-    }
-    case 'literal':
-      return wrap(`\\text{${node.text}}`);
-    case 'space':
-      return node.tex || '\\,';
-    case 'rowbreak':
-      return ' \\\\ ';
-    case 'phantom':
-      return `\\phantom{${irToTex(node.body, childOpts)}}`;
-    case 'label': {
-      // ⚠️ 2026-10-30 改：原来一律返回 ''（「网页上没有 equation 计数器」），
-      // 于是 `\tag{1-31}` 被静默丢掉——而**丢掉比留着更糟**：
-      // 读者看不到这些编号，正文里「由式（1-31）」就再也对不上。
-      // KaTeX 原生支持 `\tag{}`（需 displayMode），所以按结点类型分派：
-      //   · katex   → 编回 `\tag{…}`（编号显示在公式右侧）
-      //   · 其他引擎 → 仍丢弃（MathLive 不支持）
-      const body = (node.text || []).map((n) => irToTex(n, childOpts)).join(' ');
-      if (dialectName === 'katex') return `\\tag{${body}}`;
-      return '';
-    }
-    case 'raw':
-      return node.tex;
-    default:
-      return '';
-  }
+  const fn = TEX_RENDERERS[node.kind];
+  return fn ? fn(node, childOpts, opts, wrap) : '';
 }
 
 const fracCommand = (style) => {
@@ -185,42 +148,44 @@ export const DIALECTS = {
   },
 };
 
+function findMatchingBrace(s, open) {
+  let depth = 0;
+  let i = open;
+  while (i < s.length) {
+    if (s[i] === '\\') { i += 2; continue; }
+    if (s[i] === '{') depth += 1;
+    else if (s[i] === '}') {
+      depth -= 1;
+      if (depth === 0) return i;
+    }
+    i += 1;
+  }
+  return -1;
+}
+
+function rewriteSubstack(s, rewrites) {
+  if (!/\\substack\{/.test(s)) return s;
+  let out = s;
+  for (let guard = 0; guard < 20 && out.includes('\\substack{'); guard += 1) {
+    const at = out.indexOf('\\substack{');
+    const open = at + '\\substack'.length;
+    const close = findMatchingBrace(out, open);
+    if (close < 0) break;
+    out = `${out.slice(0, at)}\\begin{smallmatrix}${out.slice(open + 1, close)}\\end{smallmatrix}${out.slice(close + 1)}`;
+  }
+  rewrites.push('\\substack→smallmatrix');
+  return out;
+}
+
 export function toDialect(tex, dialectName) {
   if (dialectName !== 'mathlive') return { tex, rewrites: [] };
   const rewrites = [];
   let s = tex;
-
   if (/\\dots(?![a-zA-Z])/.test(s)) {
     s = s.replace(/\\dots(?![a-zA-Z])/g, '\\ldots');
     rewrites.push('\\dots→\\ldots');
   }
-  if (/\\substack\{/.test(s)) {
-    // `\substack` 的内容常含嵌套花括号（`a_{12}A_{12}`），所以不能用一个固定层数的
-    // 正则——实测 `\xrightarrow[\substack{a_{12}A_{12}+…}]` 这种就漏掉了，
-    // 改成**按花括号配平**找到配对的 `}`，逐处替换。
-    let guard = 0;
-    while (s.includes('\\substack{') && guard < 20) {
-      guard += 1;
-      const at = s.indexOf('\\substack{');
-      const open = at + '\\substack'.length;   // 指向 `{`
-      let depth = 0;
-      let close = -1;
-      let i = open;
-      while (i < s.length) {
-        if (s[i] === '\\') { i += 2; continue; }   // 跳过被转义的字符
-        if (s[i] === '{') depth += 1;
-        else if (s[i] === '}') {
-          depth -= 1;
-          if (depth === 0) { close = i; break; }
-        }
-        i += 1;
-      }
-      if (close < 0) break;   // 配不平：留给渲染器的结构诊断
-      const inner = s.slice(open + 1, close);
-      s = `${s.slice(0, at)}\\begin{smallmatrix}${inner}\\end{smallmatrix}${s.slice(close + 1)}`;
-    }
-    rewrites.push('\\substack→smallmatrix');
-  }
+  s = rewriteSubstack(s, rewrites);
   if (/\\tag\*?\{/.test(s)) {
     s = s.replace(/\\tag\*?\{[^{}]*\}/g, '');
     rewrites.push('\\tag→外置');
@@ -283,6 +248,20 @@ export function toDialect(tex, dialectName) {
  * @param {{renderToString: Function, version?: string}} katex
  * @returns {Renderer}
  */
+function renderKatexSafe(katex, tex, opts, expr, problems) {
+  try {
+    const html = katex.renderToString(tex, opts);
+    if (/katex-error/.test(html)) {
+      problems.push({ code: 'render-error-markup', severity: 'error', where: { source: expr.source }, message: '产物里出现 katex-error（这条公式排不了）', hint: tex.slice(0, 120) });
+      return null;
+    }
+    return html;
+  } catch (e) {
+    problems.push({ code: 'render-failed', severity: 'error', where: { source: expr.source }, message: `KaTeX 渲染失败：${e.message}`, hint: tex.slice(0, 120) });
+    return null;
+  }
+}
+
 export function createKatexRenderer(katex) {
   const OPTS = {
     throwOnError: false,
@@ -301,40 +280,10 @@ export function createKatexRenderer(katex) {
     render(expr) {
       const problems = [];
       const raw = irToTex(expr.root, { decorate: true, dialect: 'katex' });
-      // KaTeX 是「全支持」方言：`toDialect` 对 katex 原样返回，方言表里 unsupported 为空。
       const { tex, rewrites } = toDialect(raw, 'katex');
-
-      // ⚠️ displayMode 必须跟着公式的 mode 走（2026-10-30 实测）：
-      // `\tag{1-31}` 这类编号宏**只在 displayMode 下可用**，inline 模式直接 parse error
-      // （电机学 1.2 / 1.3 两页就栽在这——9 处 katex-error 里有 2 处是它）。
       const opts = expr.mode === 'display' ? { ...OPTS, displayMode: true } : OPTS;
-
-      let html;
-      try {
-        html = katex.renderToString(tex, opts);
-      } catch (e) {
-        problems.push({
-          code: 'render-failed',
-          severity: 'error',
-          where: { source: expr.source },
-          message: `KaTeX 渲染失败：${e.message}`,
-          hint: tex.slice(0, 120),
-        });
-        return { html: fallbackHtml(expr), tex, problems, rewrites };
-      }
-
-      // 结构判据：KaTeX 的 `throwOnError:false` 会在产物里塞 `.katex-error`，
-      // 那是「这条公式它排不了」的明确标记——不嗅探别的字符串。
-      if (/katex-error/.test(html)) {
-        problems.push({
-          code: 'render-error-markup',
-          severity: 'error',
-          where: { source: expr.source },
-          message: '产物里出现 katex-error（这条公式排不了）',
-          hint: tex.slice(0, 120),
-        });
-        return { html: fallbackHtml(expr), tex, problems, rewrites };
-      }
+      let html = renderKatexSafe(katex, tex, opts, expr, problems);
+      if (html === null) return { html: fallbackHtml(expr), tex, problems, rewrites };
 
       // 把 IR 的纯文本投影烘进 aria-label / data-math-plain（与 MathLive 版同一套约定）：
       // 读屏念人话、AI 与搜索索引拿同一份文本，都不必从产物里剥 LaTeX。
@@ -402,45 +351,32 @@ const escapeAttr = (s) => escapeHtml(s).replace(/"/g, '&quot;');
  * @param {{resolve: (key: string) => {href: string, label?: string} | null}} opts
  * @returns {{html: string, decorated: number, missing: string[]}}
  */
+function findSpanClose(html, from) {
+  let depth = 1;
+  let i = from;
+  while (i < html.length && depth > 0) {
+    const nextOpen = html.indexOf('<span', i);
+    const nextClose = html.indexOf('</span>', i);
+    if (nextClose < 0) return -1;
+    if (nextOpen >= 0 && nextOpen < nextClose) { depth++; i = nextOpen + 5; }
+    else { depth--; i = nextClose + 7; }
+  }
+  return depth === 0 ? i : -1;
+}
+
 export function decorateAnchors(html, opts) {
   const missing = [];
   let decorated = 0;
-
-  // ⚠️ 2026-10-30 真 bug（站长报「没几个公式是对的」，实测一条分式只剩 `η(β`）：
-  // 原实现用非贪婪正则 `/<span data-term="…">([\s\S]*?)<\/span>/`。
-  // 它的隐含假设是「被包的 span 里没有嵌套 span」——**这个假设是错的**：
-  // MathLive 的 `<span data-term>` 里恰恰嵌着 `<span class="ML__mathit">η</span>`，
-  // 于是非贪婪匹配到**内层那个** `</span>` 就收工，产出 `…η</a></span>` 这种畸形：
-  // 外层 span 的闭合被吃掉、`</a>` 出现在 span 内部。
-  // 浏览器的错误恢复策略会在这里把整个公式截断——DOM 里只剩前几个字符，
-  // 后面的分式、下标**根本没被解析**。所以问题不是「字体小」，是**结构坏了**。
-  //
-  // 修法：不用非贪婪正则，改成**标签配对扫描**——从 `<span data-term` 起数嵌套深度，
-  // 深度回到 0 的那个 `</span>` 才是它自己的收尾。
   const out = [];
-  // ⚠️ 2026-10-30：KaTeX 产的形状是 `<span class="enclosing" data-term="…">`——
-  // `data-term` 不在属性首位。原正则写死 `<span data-term="` 只认 MathLive 的形状，
-  // 换 KaTeX 后一个锚点都包不上（实测 9 处 data-term 全成了裸 span，气泡点了不弹）。
-  // 放宽成「`<span` 后面任意属性、其中含 data-term」。
   const openRe = /<span\b[^>]*?\bdata-term="([^"]*)"[^>]*>/g;
   let last = 0;
   let m;
   while ((m = openRe.exec(html)) !== null) {
+    const end = findSpanClose(html, openRe.lastIndex);
+    if (end < 0) continue;
     const start = m.index;
     const key = m[1];
-    // 从开标签之后数深度（开标签本身已算一层）
-    let depth = 1;
-    let i = openRe.lastIndex;
-    while (i < html.length && depth > 0) {
-      const nextOpen = html.indexOf('<span', i);
-      const nextClose = html.indexOf('</span>', i);
-      if (nextClose < 0) break;                       // 结构不完整，放弃这一处
-      if (nextOpen >= 0 && nextOpen < nextClose) { depth++; i = nextOpen + 5; }
-      else { depth--; if (depth === 0) { i = nextClose + 7; break; } i = nextClose + 7; }
-    }
-    if (depth !== 0) continue;                        // 没配平 ⇒ 不碰它（宁可不动，不要弄坏）
-    const end = i;                                    // 指向闭合 `</span>` 之后
-    const inner = html.slice(openRe.lastIndex, i - 7);
+    const inner = html.slice(openRe.lastIndex, end - 7);
     const hit = opts.resolve(key);
     if (!hit) {
       missing.push(key);

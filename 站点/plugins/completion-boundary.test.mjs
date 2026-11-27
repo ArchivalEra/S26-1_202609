@@ -33,20 +33,22 @@ function wbSection(text) {
   return m ? m[1] : null;
 }
 
+function parseYamlList(block) {
+  const items = [];
+  for (const line of block.split('\n')) {
+    if (/^\s+-\s+/.test(line)) items.push(line.replace(/^\s+-\s+/, '').trim());
+    else if (items.length && /^\s{2,}\S/.test(line)) items[items.length - 1] += line.trim();
+    else if (line.trim()) break;
+  }
+  return items;
+}
+
 function sourcesOf(text) {
   if (!text.startsWith('---')) return null;
   const fm = text.split('---', 2)[1];
   const m = /^sources:\s*(\[\])?\s*$/m.exec(fm);
   if (!m) return null;
-  if (m[1]) return [];
-  const lines = fm.slice(m.index + m[0].length).split('\n');
-  const items = [];
-  for (const line of lines) {
-    if (/^\s+-\s+/.test(line)) items.push(line.replace(/^\s+-\s+/, '').trim());
-    else if (items.length && line.trim() && /^\s{2,}/.test(line)) items[items.length - 1] += line.trim();
-    else if (line.trim()) break;
-  }
-  return items;
+  return m[1] ? [] : parseYamlList(fm.slice(m.index + m[0].length));
 }
 
 test('完成边界：仅允许单一 issue 指针，严禁写缺件/双签/已解析等第二产地文本', () => {

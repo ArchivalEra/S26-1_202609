@@ -112,9 +112,9 @@ function () {
       var geo = termAtPoint(e.clientX, e.clientY);
       if (geo) link = geo;
     }
-    if (link) { e.preventDefault(); openFor(link); return; }
+    if (link) { e.preventDefault(); e.stopPropagation(); openFor(link); return; }
     if (pop && !pop.contains(e.target)) close();
-  });
+  }, true);
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape") close();
   });

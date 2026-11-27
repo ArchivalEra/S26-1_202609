@@ -57,133 +57,89 @@ const isDelimiterToken = (tok) =>
  *   envs: string[],          // 出现过哪些环境
  * }}
  */
-export function tokenize(src) {
-  const tokens = [];
-  const problems = [];
-  const commands = new Set();
-  const envs = [];
-  const text = String(src);
-  let i = 0;
-  const n = text.length;
+const STRUCT_CHARS = { '{': 'open', '}': 'close', _: 'sub', '^': 'sup', '&': 'amp' };
 
-  const push = (kind, value, start, end, extra) => {
-    tokens.push({ kind, value, start, end, ...extra });
-  };
-
-  while (i < n) {
-    const ch = text[i];
-
-    // ── 控制序列 / 控制符号 ──────────────────────────────────────────
-    if (ch === '\\') {
-      const start = i;
-      i += 1;
-      if (i >= n) {
-        // 末尾孤零零一个反斜杠：这是写错了，但要给出位置而不是崩掉
-        problems.push({
-          code: 'lex-dangling-backslash',
-          severity: 'error',
-          start, end: start + 1,
-          message: '公式末尾有一个孤立的反斜杠，后面缺命令名',
-        });
-        push('sym', '\\', start, start + 1);
-        continue;
-      }
-      const next = text[i];
-      if (/[a-zA-Z]/.test(next)) {
-        // 控制字：吃连续的字母
-        let j = i;
-        while (j < n && /[a-zA-Z]/.test(text[j])) j += 1;
-        const name = text.slice(i, j);
-        i = j;
-        commands.add(name);
-        if (name === 'begin' || name === 'end') {
-          // 读环境名：跳过空白与 `{`
-          let k = i;
-          while (k < n && /[\t \n]/.test(text[k])) k += 1;
-          if (text[k] === '{') {
-            const close = text.indexOf('}', k + 1);
-            if (close < 0) {
-              problems.push({
-                code: 'lex-unclosed-env-name',
-                severity: 'error',
-                start: k, end: n,
-                message: `\\${name} 后面的环境名缺右花括号`,
-              });
-              push('cs', name, start, i, { envName: text.slice(k + 1).trim() });
-              i = n;
-              continue;
-            }
-            const envName = text.slice(k + 1, close).trim();
-            if (name === 'begin') envs.push(envName);
-            push('cs', name, start, close + 1, { envName });
-            i = close + 1;
-            continue;
-          }
-          problems.push({
-            code: 'lex-env-name-missing',
-            severity: 'error',
-            start, end: i,
-            message: `\\${name} 后面没有环境名（应写成 \\${name}{pmatrix}）`,
-          });
-          push('cs', name, start, i, { envName: null });
-          continue;
-        }
-        push('cs', name, start, i);
-        continue;
-      }
-      // 控制符号：反斜杠 + 单个非字母字符（`\\`、`\,`、`\{`）
-      i += 1;
-      // ⚠️ 2026-10-30：必须记下「这是一个被转义的字符」。`\{` `\}` `\|` 在 TeX 里
-      // 是**转义的字面字符**，与裸 `{` `}` `|` 是两种东西：
-      //   · 裸 `}` 是分组结束；
-      //   · `\}` 是一个字面右大括号（做定界符时必须写成 `\right\}`）。
-      // 原来两者都成 `sym value="}"`，信息在词法层就丢了——于是
-      // `\left. … \right\}`（方程组/分段定义的标准写法）编回时变成 `\right}`，
-      // KaTeX 直接 parse error。
-      push('sym', next, start, i, { escaped: true });
-      continue;
-    }
-
-    // ── 空白 ───────────────────────────────────────────────────────
-    if (/[\t \n\r]/.test(ch)) {
-      const start = i;
-      while (i < n && /[\t \n\r]/.test(text[i])) i += 1;
-      push('space', text.slice(start, i), start, i);
-      continue;
-    }
-
-    // ── 结构字符 ───────────────────────────────────────────────────
-    if (ch === '{') { push('open', ch, i, i + 1); i += 1; continue; }
-    if (ch === '}') { push('close', ch, i, i + 1); i += 1; continue; }
-    if (ch === '_') { push('sub', ch, i, i + 1); i += 1; continue; }
-    if (ch === '^') { push('sup', ch, i, i + 1); i += 1; continue; }
-    if (ch === '&') { push('amp', ch, i, i + 1); i += 1; continue; }
-
-    // `\\` 换行：反斜杠后面跟反斜杠，上一分支已把它当控制符号；
-    // 这里单独识别「命令形式的换行」以外的普通字符路径。
-    // ── 普通字符 ───────────────────────────────────────────────────
-    const start = i;
-    // 数字与小数点合成一个记号：`3.14` 是一个数，不是 3 . 1 4 四个记号。
-    // 但 `2.3.4` 这种畸形要拆开，所以只在「前面是数字」时吃小数点。
-    if (/\d/.test(ch)) {
-      while (i < n && /\d/.test(text[i])) i += 1;
-      if (text[i] === '.' && /\d/.test(text[i + 1] || '')) {
-        i += 1;
-        while (i < n && /\d/.test(text[i])) i += 1;
-      }
-      push('char', text.slice(start, i), start, i, { numeric: true });
-      continue;
-    }
-    // 单个字符（含 Unicode 汉字、希腊字母、运算符）
-    i += 1;
-    // 代理对（emoji 之类）：别把半个码元当字符
-    if (ch >= '\uD800' && ch <= '\uDBFF' && i < n) i += 1;
-    push('char', text.slice(start, i), start, i);
+function readEnvName(text, i, n, start, name, state) {
+  let k = i;
+  while (k < n && /[\t \n]/.test(text[k])) k += 1;
+  if (text[k] !== '{') {
+    state.problems.push({
+      code: 'lex-env-name-missing',
+      severity: 'error',
+      start, end: i,
+      message: `\\${name} 后面没有环境名（应写成 \\${name}{pmatrix}）`,
+    });
+    state.push('cs', name, start, i, { envName: null });
+    return i;
   }
+  const close = text.indexOf('}', k + 1);
+  if (close < 0) {
+    state.problems.push({
+      code: 'lex-unclosed-env-name',
+      severity: 'error',
+      start: k, end: n,
+      message: `\\${name} 后面的环境名缺右花括号`,
+    });
+    state.push('cs', name, start, i, { envName: text.slice(k + 1).trim() });
+    return n;
+  }
+  const envName = text.slice(k + 1, close).trim();
+  if (name === 'begin') state.envs.push(envName);
+  state.push('cs', name, start, close + 1, { envName });
+  return close + 1;
+}
 
-  // ── 结构性检查：花括号配平 ────────────────────────────────────────
-  // 这一步放在切词之后而不是解析器里，因为「不配平」是词法层就能确定的事实，
-  // 而解析器只有在那儿撞墙才知道（那时报出的位置往往是错的）。
+function readBackslash(text, i, n, state) {
+  const start = i;
+  let cur = i + 1;
+  if (cur >= n) {
+    state.problems.push({
+      code: 'lex-dangling-backslash',
+      severity: 'error',
+      start, end: start + 1,
+      message: '公式末尾有一个孤立的反斜杠，后面缺命令名',
+    });
+    state.push('sym', '\\', start, start + 1);
+    return cur;
+  }
+  if (/[a-zA-Z]/.test(text[cur])) {
+    let j = cur;
+    while (j < n && /[a-zA-Z]/.test(text[j])) j += 1;
+    const name = text.slice(cur, j);
+    state.commands.add(name);
+    if (name === 'begin' || name === 'end') return readEnvName(text, j, n, start, name, state);
+    state.push('cs', name, start, j);
+    return j;
+  }
+  const next = text[cur];
+  cur += 1;
+  state.push('sym', next, start, cur, { escaped: true });
+  return cur;
+}
+
+function readNumber(text, i, n, state) {
+  const start = i;
+  let cur = i;
+  while (cur < n && /\d/.test(text[cur])) cur += 1;
+  if (text[cur] === '.' && /\d/.test(text[cur + 1] || '')) {
+    cur += 1;
+    while (cur < n && /\d/.test(text[cur])) cur += 1;
+  }
+  state.push('char', text.slice(start, cur), start, cur, { numeric: true });
+  return cur;
+}
+
+function readNumberOrChar(text, i, n, state) {
+  if (/\d/.test(text[i])) return readNumber(text, i, n, state);
+  const start = i;
+  let cur = i + 1;
+  const ch = text[i];
+  if (ch >= '\uD800' && ch <= '\uDBFF' && cur < n) cur += 1;
+  state.push('char', text.slice(start, cur), start, cur);
+  return cur;
+}
+
+function checkBraceBalance(tokens, problems) {
   const stack = [];
   for (const tok of tokens) {
     if (tok.kind === 'open') stack.push(tok);
@@ -206,8 +162,53 @@ export function tokenize(src) {
       message: '这个左花括号 `{` 没有配对的 `}`',
     });
   }
+}
 
+export function tokenize(src) {
+  const tokens = [];
+  const problems = [];
+  const commands = new Set();
+  const envs = [];
+  const text = String(src);
+  const n = text.length;
+  const push = (kind, value, start, end, extra) => tokens.push({ kind, value, start, end, ...extra });
+  const state = { tokens, problems, commands, envs, push };
+
+  let i = 0;
+  while (i < n) {
+    const ch = text[i];
+    if (ch === '\\') { i = readBackslash(text, i, n, state); continue; }
+    if (/[\t \n\r]/.test(ch)) {
+      const start = i;
+      while (i < n && /[\t \n\r]/.test(text[i])) i += 1;
+      push('space', text.slice(start, i), start, i);
+      continue;
+    }
+    if (STRUCT_CHARS[ch]) { push(STRUCT_CHARS[ch], ch, i, i + 1); i += 1; continue; }
+    i = readNumberOrChar(text, i, n, state);
+  }
+
+  checkBraceBalance(tokens, problems);
   return { tokens, problems, commands, envs, isDelimiterToken };
+}
+
+function handleEndEnv(tok, stack, problems) {
+  const open = stack.pop();
+  if (!open) {
+    problems.push({
+      code: 'env-unmatched-end',
+      severity: 'error',
+      start: tok.start, end: tok.end,
+      message: `\\end{${tok.envName || '?'}} 没有对应的 \\begin`,
+    });
+  } else if (open.envName !== tok.envName) {
+    problems.push({
+      code: 'env-name-mismatch',
+      severity: 'error',
+      start: tok.start, end: tok.end,
+      message: `\\begin{${open.envName}} 与 \\end{${tok.envName}} 不配对`,
+    });
+  }
 }
 
 /**
@@ -224,26 +225,8 @@ export function checkEnvironments(tokens) {
   const stack = [];
   for (const tok of tokens) {
     if (tok.kind !== 'cs') continue;
-    if (tok.value === 'begin') {
-      stack.push(tok);
-    } else if (tok.value === 'end') {
-      const open = stack.pop();
-      if (!open) {
-        problems.push({
-          code: 'env-unmatched-end',
-          severity: 'error',
-          start: tok.start, end: tok.end,
-          message: `\\end{${tok.envName || '?'}} 没有对应的 \\begin`,
-        });
-      } else if (open.envName !== tok.envName) {
-        problems.push({
-          code: 'env-name-mismatch',
-          severity: 'error',
-          start: tok.start, end: tok.end,
-          message: `\\begin{${open.envName}} 与 \\end{${tok.envName}} 不配对`,
-        });
-      }
-    }
+    if (tok.value === 'begin') stack.push(tok);
+    else if (tok.value === 'end') handleEndEnv(tok, stack, problems);
   }
   for (const open of stack) {
     problems.push({

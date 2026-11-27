@@ -202,14 +202,8 @@ console.log(`[符号] 包：${Object.entries(symbolCatalog.packs).map(([n, p]) =
  * @param {{record?: boolean}} [o]
  * @returns {{rendered: string, plain: string}}
  */
-function renderOneMath(src, mode, relPath, symSession, o = {}) {
-  const env = o.record === false
-    ? { dictionary: symbolCatalog.mathDictionary, packs: [] }
-    : symSession.mathEnv();
-  const compiled = compileMath({ blocks: [{ raw: src, mode }] }, env);
-  const doc = compiled.docs[0];
-
-  for (const prob of compiled.problems) {
+function reportCompileProblems(problems, relPath, src) {
+  for (const prob of problems) {
     if (prob.severity === 'error') {
       formulaErrors++;
       console.warn(`[build] ⚠ 公式渲染失败 ${relPath}：${prob.message}｜${src.slice(0, 60)}`);
@@ -217,7 +211,15 @@ function renderOneMath(src, mode, relPath, symSession, o = {}) {
       console.warn(`[build] ⚠ ${relPath}：${prob.message}`);
     }
   }
+}
 
+function renderOneMath(src, mode, relPath, symSession, o = {}) {
+  const env = o.record === false
+    ? { dictionary: symbolCatalog.mathDictionary, packs: [] }
+    : symSession.mathEnv();
+  const compiled = compileMath({ blocks: [{ raw: src, mode }] }, env);
+  const doc = compiled.docs[0];
+  reportCompileProblems(compiled.problems, relPath, src);
   if (o.record !== false) symSession.recordMathDoc(doc);
 
   const out = renderMathDoc(doc, mathRenderer, {
@@ -309,6 +311,17 @@ const pageMetaMap = new Map();
 // 课程状态的**唯一产地** = README 的 COURSE-STATUS 块（2026-10-11 定案）：
 // 只允许「开课 / 结课」两档；课程页与各资料页顶端的状态都从这里继承，
 // 资料文件不再自己写 `status`。README 缺块 ⇒ 明确报错（不静默降级成空状态）。
+function parseCourseRow(line, map) {
+  const row = /^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*$/.exec(line);
+  if (!row) return;
+  const [, name, status] = row;
+  if (name === '课程' || /^[-: ]+$/.test(name)) return;
+  if (status !== '开课' && status !== '结课') {
+    throw new Error(`README 课程状态表：${name} 的状态「${status}」非法——只允许「开课」或「结课」。`);
+  }
+  map.set(name, status);
+}
+
 function loadCourseStatus() {
   const p = path.join(ROOT, 'README.md');
   const text = fs.readFileSync(p, 'utf-8');
@@ -317,17 +330,7 @@ function loadCourseStatus() {
     throw new Error('README.md 缺 COURSE-STATUS 块——课程状态的唯一产地，别删（见 README「课程状态」节）。');
   }
   const map = new Map();
-  for (const line of m[1].split('\n')) {
-    const row = /^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*$/.exec(line);
-    if (!row) continue;
-    const [, name, status] = row;
-    // 跳过表头与分隔行（`| :--- | :--- |`）
-    if (name === '课程' || /^[-: ]+$/.test(name)) continue;
-    if (status !== '开课' && status !== '结课') {
-      throw new Error(`README 课程状态表：${name} 的状态「${status}」非法——只允许「开课」或「结课」。`);
-    }
-    map.set(name, status);
-  }
+  for (const line of m[1].split('\n')) parseCourseRow(line, map);
   if (!map.size) throw new Error('README 的 COURSE-STATUS 块里一条课程都没有——空不是通过。');
   return map;
 }
@@ -1038,26 +1041,22 @@ for (const relPath of TARGET_FILES) {
   //   · 以 `index.md` 结尾 → 去掉 `index.md`，保留目录部分（含尾斜杠）
   //   · 其余 `.md` → `.html`
   // 锚点挂在目录上：`index.md#foo` → `#foo`。
-  raw = raw.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, href) => {
-    if (href.startsWith('http://') || href.startsWith('https://') || href.startsWith('#') || href.startsWith('mailto:')) {
-      return match;
-    }
+  const rewriteMdLink = (match, text, href) => {
+    if (/^(https?:\/\/|#|mailto:)/.test(href)) return match;
     try {
       const decoded = decodeURIComponent(href);
-      if (decoded.includes('.md')) {
-        const m = /^(.*?)index\.md(#.*)?$/.exec(decoded);
-        if (m) {
-          // `./index.md` → `./`、`../index.md` → `../`、`../a/index.md` → `../a/`。
-          // base 为空（裸 `index.md`）时补 `./`——否则会变成空串，浏览器把它当「本页」。
-          const base = m[1] || './';
-          return `[${text}](${encodeURI(base + (m[2] || ''))})`;
-        }
-        const rewritten = decoded.replace(/\.md(#.*)?$/, '.html$1');
-        return `[${text}](${encodeURI(rewritten)})`;
+      if (!decoded.includes('.md')) return match;
+      const m = /^(.*?)index\.md(#.*)?$/.exec(decoded);
+      if (m) {
+        const base = m[1] || './';
+        return `[${text}](${encodeURI(base + (m[2] || ''))})`;
       }
-    } catch (_e) { /* 忽略畸形 URI，保留原样 */ }
-    return match;
-  });
+      return `[${text}](${encodeURI(decoded.replace(/\.md(#.*)?$/, '.html$1'))})`;
+    } catch {
+      return match;
+    }
+  };
+  raw = raw.replace(/\[([^\]]+)\]\(([^)]+)\)/g, rewriteMdLink);
 
   // Step 5: Render Markdown to HTML
   //
@@ -1308,20 +1307,14 @@ for (const relPath of TARGET_FILES) {
   // Render Sidebar Tree HTML with Collapsible Groups
   // 每个 <li> 带 data-node-id（归一化节点 id）：SPA 换页后 drawer-sync 据此对齐 active。
   const attrEsc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-  function renderNav(nodes) {
-    let out = '<ul class="drawer-nav-list">';
-    for (const node of nodes) {
-      const hasChildren = node.children && node.children.length > 0;
-      const nodeActive = isActive(node, relPath);
-      const nodeExpanded = isExpanded(node, relPath);
-
-      if (hasChildren) {
-        const titleHtml = node.indexHref
-          ? `<a href="${rootRel}${node.indexHref}" data-path="${node.indexHref}" class="drawer-nav-link"><span>${node.label}</span></a>`
-          : `<span class="drawer-section-title-text">${node.label}</span>`;
-        const childrenHtml = nodeExpanded ? renderNav(node.children) : '';
-        const lazyAttr = nodeExpanded ? '' : ' data-nav-lazy="1"';
-        out += `<li class="drawer-nav-group ${nodeActive ? 'active' : ''} ${nodeExpanded ? 'expanded' : 'collapsed'}" data-node-id="${attrEsc(node.id)}"${lazyAttr}>
+  const renderNavGroup = (node, nodeActive, nodeExpanded) => {
+    const titleHtml = node.indexHref
+      ? `<a href="${rootRel}${node.indexHref}" data-path="${node.indexHref}" class="drawer-nav-link"><span>${node.label}</span></a>`
+      : `<span class="drawer-section-title-text">${node.label}</span>`;
+    const childrenHtml = nodeExpanded ? renderNav(node.children) : '';
+    const lazyAttr = nodeExpanded ? '' : ' data-nav-lazy="1"';
+    let out = '';
+    out += `<li class="drawer-nav-group ${nodeActive ? 'active' : ''} ${nodeExpanded ? 'expanded' : 'collapsed'}" data-node-id="${attrEsc(node.id)}"${lazyAttr}>
           <div class="nav-group-header ${node.indexHref ? '' : 'nav-header-clickable'}">
             ${titleHtml}
             <button class="nav-collapse-btn" aria-label="折叠或展开 ${node.label}" title="折叠/展开">
@@ -1334,17 +1327,22 @@ for (const relPath of TARGET_FILES) {
             </div>
           </div>
         </li>`;
-      } else {
-        if (node.href) {
-          out += `<li class="drawer-nav-item ${nodeActive ? 'active' : ''}" data-node-id="${attrEsc(node.id)}">
+    return out;
+  };
+  const renderNavLeaf = (node, nodeActive) => (node.href
+    ? `<li class="drawer-nav-item ${nodeActive ? 'active' : ''}" data-node-id="${attrEsc(node.id)}">
             <a href="${rootRel}${node.href}" data-path="${node.href}" class="drawer-nav-link">
               <span>${node.label}</span>
             </a>
-          </li>`;
-        } else {
-          out += `<li class="drawer-section-title" data-node-id="${attrEsc(node.id)}">${node.label}</li>`;
-        }
-      }
+          </li>`
+    : `<li class="drawer-section-title" data-node-id="${attrEsc(node.id)}">${node.label}</li>`);
+  function renderNav(nodes) {
+    let out = '<ul class="drawer-nav-list">';
+    for (const node of nodes) {
+      const nodeActive = isActive(node, relPath);
+      out += node.children?.length
+        ? renderNavGroup(node, nodeActive, isExpanded(node, relPath))
+        : renderNavLeaf(node, nodeActive);
     }
     out += '</ul>';
     return out;
@@ -1418,6 +1416,7 @@ for (const relPath of TARGET_FILES) {
   let tocHtml = '';
   if (toc.length > 0) {
     tocHtml = `<aside class="m3-toc">
+      <div class="toc-resizer" id="toc-resizer" title="按住拖拽调整目录宽度，双击恢复默认宽度"></div>
       <div class="toc-title">目录</div>
       <ul class="toc-list">
         ${toc.map(item => `<li class="toc-item level-${item.level}"><a href="#${item.id}">${item.title}</a></li>`).join('')}
@@ -1564,7 +1563,7 @@ for (const relPath of TARGET_FILES) {
                 字号 <span class="palette-font-sample" id="font-sample">Aa</span>
                 <span class="palette-font-value" id="font-size-value">16px</span>
               </span>
-              <input type="range" min="12" max="20" step="1" value="16" class="palette-slider" id="font-size-slider">
+              <input type="range" min="14" max="25" step="1" value="16" class="palette-slider" id="font-size-slider">
             </div>
             <div>
               <div class="palette-swatches-title">预设配色</div>

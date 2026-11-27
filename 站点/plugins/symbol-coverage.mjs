@@ -96,30 +96,32 @@ export function measurePage(html) {
  *          literalTokens?: string[], bareSpans?: string[]}} p
  * @returns {{page: string, kind: string, detail: string}[]}
  */
-export function diagnosePage({ relPath, pageWarns = [], missingHrefs = [], literalTokens = [], bareSpans = [] }) {
-  const out = [];
+function makeDedupPusher(relPath, out) {
   const seen = new Set();
-  const push = (kind, detail, dedup = null) => {
+  return (kind, detail, dedup = null) => {
     const k = dedup ? `${relPath}:${dedup}` : null;
     if (k && seen.has(k)) return;
     if (k) seen.add(k);
     out.push({ page: relPath, kind, detail });
   };
+}
 
-  // ① 公式内符号：判定成功却找不到链接目标（render() 已升为 error）。
-  for (const k of missingHrefs) push('term-href-missing', `词条 ${k} 找不到链接目标`, `href:${k}`);
-  // ② 公式内符号：渲染成裸 span，没包成可点锚点。
-  for (const k of bareSpans) push('bare-term-span', `词条 ${k} 是裸 span，没包成可点锚点`, `span:${k}`);
-  // ③ 正文字面残留令牌：最直观的「冒不了泡」，按词条 id 去重。
+function pushTokenProblems(push, literalTokens, pageWarns) {
   for (const t of literalTokens) {
     const id = /\{#(?:[^:{}]+:)?([A-Za-z_][A-Za-z0-9_-]*)\}/.exec(t)?.[1] || t;
     push('literal-token', `未解析令牌 ${t}`, `token:${id}`);
   }
-  // ④ 其余逐页警告：坏令牌那条与 ③ 重复（同样按词条 id 去重），别的结构问题照记。
   for (const w of pageWarns) {
     const tokMiss = /没有词条\s+([A-Za-z_][A-Za-z0-9_-]*)[，,]\s*令牌原样保留/.exec(w);
     push('glossary-warn', w, tokMiss ? `token:${tokMiss[1]}` : null);
   }
+}
 
+export function diagnosePage({ relPath, pageWarns = [], missingHrefs = [], literalTokens = [], bareSpans = [] }) {
+  const out = [];
+  const push = makeDedupPusher(relPath, out);
+  for (const k of missingHrefs) push('term-href-missing', `词条 ${k} 找不到链接目标`, `href:${k}`);
+  for (const k of bareSpans) push('bare-term-span', `词条 ${k} 是裸 span，没包成可点锚点`, `span:${k}`);
+  pushTokenProblems(push, literalTokens, pageWarns);
   return out;
 }

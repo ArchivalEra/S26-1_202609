@@ -19,29 +19,31 @@ const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
  *   meta: Record<string, any>, body: string, rawFrontmatter: string, hasFrontmatter: boolean
  * }}
  */
+function parseYamlSafe(provider, rawFrontmatter, opts) {
+  try {
+    const loaded = provider.parse(rawFrontmatter);
+    return loaded && typeof loaded === 'object' && !Array.isArray(loaded) ? loaded : {};
+  } catch (err) {
+    if (opts.strict) {
+      const label = opts.filePath ? ` ${opts.filePath}` : '';
+      throw new Error(`frontmatter 解析失败${label}: ${err.message}`, { cause: err });
+    }
+    return {};
+  }
+}
+
 export function createFrontmatterParser(provider = defaultYamlProvider) {
   return function parseFrontmatter(source, opts = {}) {
     const text = String(source || '');
     const m = FM_RE.exec(text);
-    if (!m) {
-      return { meta: {}, body: text, rawFrontmatter: '', hasFrontmatter: false };
-    }
+    if (!m) return { meta: {}, body: text, rawFrontmatter: '', hasFrontmatter: false };
     const rawFrontmatter = m[1];
-    const body = text.slice(m[0].length);
-    let parsed = {};
-    try {
-      const loaded = provider.parse(rawFrontmatter);
-      if (loaded && typeof loaded === 'object' && !Array.isArray(loaded)) {
-        parsed = loaded;
-      }
-    } catch (err) {
-      if (opts.strict) {
-        const label = opts.filePath ? ` ${opts.filePath}` : '';
-        throw new Error(`frontmatter 解析失败${label}: ${err.message}`, { cause: err });
-      }
-      parsed = {};
-    }
-    return { meta: parsed, body, rawFrontmatter, hasFrontmatter: true };
+    return {
+      meta: parseYamlSafe(provider, rawFrontmatter, opts),
+      body: text.slice(m[0].length),
+      rawFrontmatter,
+      hasFrontmatter: true,
+    };
   };
 }
 
@@ -65,20 +67,22 @@ function asIdList(v) {
  *   exclude: { prose: string[], tex: string[] },
  * }}
  */
-export function readPageSymbolPolicy(meta = {}) {
-  const rawPins = meta['符号强制'];
+function readPins(rawPins) {
   const pins = {};
-  if (rawPins && typeof rawPins === 'object' && !Array.isArray(rawPins)) {
-    for (const [k, v] of Object.entries(rawPins)) {
-      const id = String(k).trim();
-      const pack = String(v || '').trim();
-      if (id && pack) pins[id] = pack;
-    }
+  if (!rawPins || typeof rawPins !== 'object' || Array.isArray(rawPins)) return pins;
+  for (const [k, v] of Object.entries(rawPins)) {
+    const id = String(k).trim();
+    const pack = String(v || '').trim();
+    if (id && pack) pins[id] = pack;
   }
+  return pins;
+}
+
+export function readPageSymbolPolicy(meta = {}) {
   return {
     okfId: meta.id ? String(meta.id).trim() : '',
     course: meta.course ? String(meta.course).trim() : '',
-    pins,
+    pins: readPins(meta['符号强制']),
     exclude: {
       prose: asIdList(meta['符号排除']),
       tex: asIdList(meta['符号排除公式']),

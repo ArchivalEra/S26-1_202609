@@ -110,34 +110,25 @@ export function parse(src, opts = {}) {
    *   · `tex`    可以原样拼进 TeX 字符串的形式（`\}`；普通字符就是它自己）
    * 编回时用 `tex`，显示/判定时用 `glyph`。
    */
+  const takeCsOrSymDelimiter = (t) => {
+    pos += 1;
+    const g = t.value === '.' ? '' : t.value;
+    let tex = t.value;
+    if (t.value === '.') tex = '.';
+    else if (t.kind === 'cs' || t.escaped) tex = `\\${t.value}`;
+    return { glyph: t.kind === 'sym' ? t.value : g, tex, span: [t.start, t.end] };
+  };
+
   const takeDelimiter = () => {
     skipSpace();
     const t = peek();
     if (!t) return { glyph: '', tex: '', span: null };
     if (t.kind === 'char') {
       pos += 1;
-      // `{ } $ & # ^ _ % ~ \` 在 TeX 里必须转义；做定界符时同理。
       const needsEscape = '{}%$#&_'.includes(t.value);
-      return {
-        glyph: t.value,
-        tex: needsEscape ? `\\${t.value}` : t.value,
-        span: [t.start, t.end],
-      };
+      return { glyph: t.value, tex: needsEscape ? `\\${t.value}` : t.value, span: [t.start, t.end] };
     }
-    if (t.kind === 'cs' || t.kind === 'sym') {
-      pos += 1;
-      const g = t.value === '.' ? '' : t.value;
-      // 三种来源要分清（2026-10-30）：
-      //   · `cs`（`\langle`）：值就是命令名 → 拼回要带反斜杠；
-      //   · `sym` + `escaped`（`\}` `\{` `\|`）：**转义的字面字符** → 也要带反斜杠；
-      //   · 裸 `sym`（`|` `(`）：字面字符 → 原样。
-      // `\.`（空定界符）保持 `.` 本身。
-      let tex;
-      if (t.value === '.') tex = '.';
-      else if (t.kind === 'cs' || t.escaped) tex = `\\${t.value}`;
-      else tex = t.value;
-      return { glyph: t.kind === 'sym' ? t.value : g, tex, span: [t.start, t.end] };
-    }
+    if (t.kind === 'cs' || t.kind === 'sym') return takeCsOrSymDelimiter(t);
     return { glyph: '', tex: '', span: null };
   };
 
@@ -145,41 +136,34 @@ export function parse(src, opts = {}) {
    * 读一个参数：`{…}` 整组，或单个原子。
    * 这是 I6（花括号组）的落地点：**返回值永远是 group 或原子节点，不会是「裸参数」**。
    */
+  const takeSingleDigit = (t) => {
+    pos += 1;
+    tokens.splice(pos, 0, {
+      kind: 'char', value: t.value.slice(1),
+      start: t.start + 1, end: t.end, numeric: true,
+    });
+    return node('num', 'operand', { literal: t.value[0] }, t.start, t.start + 1);
+  };
+
+  const takeBraceGroup = (t) => {
+    const start = t.start;
+    pos += 1;
+    const items = parseList(/* untilClose */ true);
+    const endTok = peek();
+    const end = endTok?.kind === 'close' ? endTok.end : (items.at(-1)?.span?.[1] ?? start);
+    if (endTok?.kind === 'close') pos += 1;
+    return node('group', 'operand', { items, fence: null }, start, end);
+  };
+
   const takeArg = (what) => {
     skipSpace();
     const t = peek();
-    // 裸数字参数：`\frac14` 是 `\frac{1}{4}`，TeX 把**一个字符**当参数。
-    // 旧实现靠 `braceBareArgs` 事后补花括号，补丁本身就是事故来源
-    // （补错位置会把 `\frac1\lambda` 变成 `\frac1\htmlData{…}{\lambda}` → 宏参数报错）。
-    // 在解析期直接按「一位数字」取，从根上不会出现裸参数残留。
-    if (t?.kind === 'char' && t.numeric && t.value.length > 1) {
-      pos += 1;
-      const first = t.value[0];
-      // 把剩下的位数塞回记号流：构造一个「残片」记号原位补齐
-      tokens.splice(pos, 0, {
-        kind: 'char', value: t.value.slice(1),
-        start: t.start + 1, end: t.end, numeric: true,
-      });
-      return node('num', 'operand', { literal: first }, t.start, t.start + 1);
-    }
+    if (t?.kind === 'char' && t.numeric && t.value.length > 1) return takeSingleDigit(t);
     if (!t) {
-      problems.push({
-        code: 'parse-missing-arg',
-        severity: 'error',
-        start: source.length, end: source.length,
-        message: `${what} 缺少参数`,
-      });
+      problems.push({ code: 'parse-missing-arg', severity: 'error', start: source.length, end: source.length, message: `${what} 缺少参数` });
       return node('group', 'operand', { items: [], fence: null }, source.length, source.length);
     }
-    if (t.kind === 'open') {
-      const start = t.start;
-      pos += 1;
-      const items = parseList(/* untilClose */ true);
-      const endTok = peek();
-      const end = endTok?.kind === 'close' ? endTok.end : (items.at(-1)?.span?.[1] ?? start);
-      if (endTok?.kind === 'close') pos += 1;
-      return node('group', 'operand', { items, fence: null }, start, end);
-    }
+    if (t.kind === 'open') return takeBraceGroup(t);
     return parseAtom();
   };
 
@@ -217,40 +201,49 @@ export function parse(src, opts = {}) {
     return parseScripts(base);
   };
 
+  const takeScriptArg = (existing, label, code, base) => {
+    pos += 1;
+    if (!existing) return takeArg(label);
+    problems.push({
+      code,
+      severity: 'warn',
+      start: base.span[0], end: base.span[1],
+      message: `同一个基上出现了两个${label}，后一个被忽略`,
+    });
+    return existing;
+  };
+
   /** 给一个基吃上下标。 */
   const parseScripts = (base) => {
     let sub = null;
     let sup = null;
     for (;;) {
       skipSpace();
-      if (at('sub')) {
-        pos += 1;
-        if (sub) {
-          problems.push({
-            code: 'parse-double-sub',
-            severity: 'warn',
-            start: base.span[0], end: base.span[1],
-            message: '同一个基上出现了两个下标，后一个被忽略',
-          });
-        } else sub = takeArg('下标');
-        continue;
-      }
-      if (at('sup')) {
-        pos += 1;
-        if (sup) {
-          problems.push({
-            code: 'parse-double-sup',
-            severity: 'warn',
-            start: base.span[0], end: base.span[1],
-            message: '同一个基上出现了两个上标，后一个被忽略',
-          });
-        } else sup = takeArg('上标');
-        continue;
-      }
+      if (at('sub')) { sub = takeScriptArg(sub, '下标', 'parse-double-sub', base); continue; }
+      if (at('sup')) { sup = takeScriptArg(sup, '上标', 'parse-double-sup', base); continue; }
       break;
     }
     if (!sub && !sup) return base;
     return node('script', base.role, { base, sub, sup }, base.span[0], (sup || sub).span[1]);
+  };
+
+  const parseCharAtom = (t) => {
+    pos += 1;
+    const c = t.value;
+    if (t.numeric) return node('num', 'operand', { literal: c }, t.start, t.end);
+    if (/[\u4e00-\u9fff]/.test(c)) {
+      return node('literal', 'operand', { text: c, literalMode: 'text' }, t.start, t.end);
+    }
+    const role = charRole(c);
+    return node(role === 'operand' ? 'sym' : 'op', role, { tex: c, glyph: c }, t.start, t.end);
+  };
+
+  const parseSymAtom = (t) => {
+    pos += 1;
+    if (t.value === '\\' || t.value === 'cr') return node('rowbreak', 'separator', {}, t.start, t.end);
+    if (isSpaceCommand(t.value)) return node('space', 'separator', { tex: `\\${t.value}` }, t.start, t.end);
+    const glyph = t.value;
+    return node('op', OPEN_FENCE.has(glyph) || CLOSE_FENCE.has(glyph) ? 'fence' : 'operand', { tex: `\\${glyph}`, glyph }, t.start, t.end);
   };
 
   /** 解析一个原子（不含上下标）。返回 null 表示「没有可解析的东西」。 */
@@ -258,68 +251,11 @@ export function parse(src, opts = {}) {
     skipSpace();
     const t = peek();
     if (!t) return null;
-
-    if (t.kind === 'open') {
-      const start = t.start;
-      pos += 1;
-      const items = parseList(true);
-      const endTok = peek();
-      const end = endTok?.kind === 'close' ? endTok.end : (items.at(-1)?.span?.[1] ?? start);
-      if (endTok?.kind === 'close') pos += 1;
-      return node('group', 'operand', { items, fence: null }, start, end);
-    }
-
-    if (t.kind === 'char') {
-      pos += 1;
-      const c = t.value;
-      if (t.numeric) {
-        return node('num', 'operand', { literal: c }, t.start, t.end);
-      }
-      if (t.kind === 'char' && /[\u4e00-\u9fff]/.test(c)) {
-        // 数学模式里的裸中文：按「当文字排」处理（渲染期包 \text{}），不参与符号判定。
-        // 这是旧代码 wrapBareCJK 在做的事，现在由结构表达。
-        return node('literal', 'operand', { text: c, literalMode: 'text' }, t.start, t.end);
-      }
-      const role = charRole(c);
-      // 操作数位置的字母是**符号**（可被词典绑定），不是运算符。
-      // 旧实现在这一步就丢了「这是变量还是运算符」的区分，导致形状键里
-      // `R` 与 `+` 同类，`R_L` 与 `R_{L}` 也就对不上词典。
-      if (role === 'operand') {
-        return node('sym', 'operand', { tex: c, glyph: c }, t.start, t.end);
-      }
-      return node('op', role, { tex: c, glyph: c }, t.start, t.end);
-    }
-
-    if (t.kind === 'sym') {
-      // 控制符号：`\,` `\;` `\{` `\\`
-      pos += 1;
-      if (t.value === '\\') {
-        return node('rowbreak', 'separator', {}, t.start, t.end);
-      }
-      // `\cr` 也是**合法的行分隔符**（LaTeX 老写法，MathLive 编辑矩阵时可能产出）。
-      // 2026-11-06 站长实测：矩阵改 border 成行列式后再算，报「不认识的命令 \cr」。
-      if (t.value === 'cr') {
-        return node('rowbreak', 'separator', {}, t.start, t.end);
-      }
-      if (isSpaceCommand(t.value)) {
-        return node('space', 'separator', { tex: `\\${t.value}` }, t.start, t.end);
-      }
-      // `\{` `\}` 等定界符
-      const glyph = t.value;
-      return node('op', OPEN_FENCE.has(glyph) || CLOSE_FENCE.has(glyph) ? 'fence' : 'operand',
-        { tex: `\\${glyph}`, glyph }, t.start, t.end);
-    }
-
+    if (t.kind === 'open') return takeBraceGroup(t);
+    if (t.kind === 'char') return parseCharAtom(t);
+    if (t.kind === 'sym') return parseSymAtom(t);
     if (t.kind === 'cs') {
-      // ⚠️ `\cr` 是 LaTeX 老写法的**行分隔符**，与 `\\` 等价（矩阵换行）。
-      // 2026-11-06 站长实测：矩阵在编辑器里把 border 改成行列式竖线后点计算，
-      // 出不了结果——MathLive 编辑矩阵时产出 `\cr`，而命令表里没有它，
-      // 直接报「不认识的命令 \cr」。
-      // 必须在 parseCommand 之前拦：那条路会按「未知命令」报错。
-      if (t.value === 'cr') {
-        pos += 1;
-        return node('rowbreak', 'separator', {}, t.start, t.end);
-      }
+      if (t.value === 'cr') { pos += 1; return node('rowbreak', 'separator', {}, t.start, t.end); }
       return parseCommand();
     }
 
@@ -334,110 +270,71 @@ export function parse(src, opts = {}) {
     return null;
   };
 
+  const TEXT_CMDS = new Set(['text', 'mbox', 'hbox', 'textnormal', 'textrm', 'textsf', 'texttt']);
+  const ELLIPSIS_CMDS = new Set(['cdots', 'ldots', 'dots', 'vdots', 'ddots']);
+  const BIGOP_CMDS = new Set(['int', 'oint', 'sum', 'prod', 'coprod']);
+
+  const symbolRole = (glyph) => {
+    if (REL_OPS.has(glyph)) return 'relation';
+    if (BIN_OPS.has(glyph)) return 'operator';
+    if (OPEN_FENCE.has(glyph) || CLOSE_FENCE.has(glyph)) return 'fence';
+    return 'operand';
+  };
+
+  const parseStyleCmd = (t, cls, start) => {
+    pos += 1;
+    const arg = takeArg(`\\${t.value}`);
+    const asLiteral = ['upright', 'operator-name', 'sans', 'mono'].includes(cls.style);
+    if (asLiteral && arg.kind === 'group') {
+      const text = arg.items.map((n) => n.text ?? n.glyph ?? n.tex ?? '').join('');
+      return node('literal', 'operand', { text, literalMode: cls.style === 'operator-name' ? 'operator-name' : 'unit' }, start, arg.span[1]);
+    }
+    return node('styled', arg.role, { style: cls.style, body: arg }, start, arg.span[1]);
+  };
+
+  const parseSymbolCmd = (t, cls, start) => {
+    pos += 1;
+    const glyph = cls.glyph;
+    if (ELLIPSIS_CMDS.has(t.value)) return node('ellipsis', 'operator', { tex: `\\${t.value}`, glyph }, start, t.end);
+    if (BIGOP_CMDS.has(t.value)) return node('bigop', 'operator', { tex: `\\${t.value}`, glyph }, start, t.end);
+    return node('sym', symbolRole(glyph), { tex: `\\${t.value}`, glyph }, start, t.end);
+  };
+
+  const CMD_ROLE_HANDLERS = {
+    style: parseStyleCmd,
+    frac: (t, cls, start) => {
+      pos += 1;
+      const num = takeArg(`\\${t.value}`);
+      const den = takeArg(`\\${t.value}`);
+      return node('frac', 'operand', { num, den, fractionStyle: cls.style }, start, den.span[1]);
+    },
+    accent: (t, cls, start) => {
+      pos += 1;
+      const body = takeArg(`\\${t.value}`);
+      return node('accent', 'operand', { accent: cls.kind, body }, start, body.span[1]);
+    },
+    function: (t, _cls, start) => {
+      pos += 1;
+      return node('sym', 'operand', { tex: `\\${t.value}`, glyph: t.value, upright: true, isFunctionName: true }, start, t.end);
+    },
+    symbol: parseSymbolCmd,
+    special: (t, _cls, start) => parseSpecial(t, start),
+  };
+
   /** 解析一个控制序列。 */
   const parseCommand = () => {
     const t = peek();
     const start = t.start;
-
-    // ── 环境：\begin{name} … \end{name}
-    if (t.value === 'begin') {
-      return parseEnvironment();
-    }
-    if (t.value === 'end') {
-      // 环境配平已由词法层检查；这里遇到游离的 \end 直接跳过
-      pos += 1;
-      return null;
-    }
-
-    // ── 文字模式：\text{…} 内容原样保留
-    if (t.value === 'text' || t.value === 'mbox' || t.value === 'hbox'
-      || t.value === 'textnormal' || t.value === 'textrm'
-      || t.value === 'textsf' || t.value === 'texttt') {
+    if (t.value === 'begin') return parseEnvironment();
+    if (t.value === 'end') { pos += 1; return null; }
+    if (TEXT_CMDS.has(t.value)) {
       pos += 1;
       const arg = takeRawText();
-      return node('literal', 'operand',
-        { text: arg.text, literalMode: 'text' }, start, arg.end);
+      return node('literal', 'operand', { text: arg.text, literalMode: 'text' }, start, arg.end);
     }
-
-    // ── 字体样式：\mathbf{…} 吃一个组，改外观不改语义
     const cls = classifyCommand(t.value);
-    if (cls?.role === 'style') {
-      pos += 1;
-      const arg = takeArg(`\\${t.value}`);
-      // **正体类命令下的内容一律当「字面」**：`\mathrm{H/m}` 里的 H、m 是单位，
-      // 不是变量；`\operatorname{rank}` 是函数名。
-      // 这是 `\mathrm{H/m}` 事故的结构性根治——那类节点根本不进判定候选集，
-      // 不是靠正则护住（旧实现写了几条正则去躲，仍会漏）。
-      //
-      // 只对 `mathrm` / `operatorname` / `mathsf` / `mathtt` 这类「排成正体文字」的
-      // 生效；`\mathbf{F}`、`\boldsymbol{\alpha}` 仍是**数学内容**（粗体变量，
-      // 该取词），不能一并当字面。
-      const asLiteral = ['upright', 'operator-name', 'sans', 'mono'].includes(cls.style);
-      if (asLiteral && arg.kind === 'group') {
-        const text = arg.items.map(n => n.text ?? n.glyph ?? n.tex ?? '').join('');
-        return node('literal', 'operand',
-          { text, literalMode: cls.style === 'operator-name' ? 'operator-name' : 'unit' },
-          start, arg.span[1]);
-      }
-      return node('styled', arg.role, { style: cls.style, body: arg }, start, arg.span[1]);
-    }
-
-    // ── 分数
-    if (cls?.role === 'frac') {
-      pos += 1;
-      const num = takeArg(`\\${t.value}`);
-      const den = takeArg(`\\${t.value}`);
-      return node('frac', 'operand',
-        { num, den, fractionStyle: cls.style }, start, den.span[1]);
-    }
-
-    // ── 重音
-    if (cls?.role === 'accent') {
-      pos += 1;
-      const body = takeArg(`\\${t.value}`);
-      return node('accent', 'operand',
-        { accent: cls.kind, body }, start, body.span[1]);
-    }
-
-    // ── 函数名（正体排的原子，可带上下标）
-    if (cls?.role === 'function') {
-      pos += 1;
-      return node('sym', 'operand',
-        { tex: `\\${t.value}`, glyph: t.value, upright: true, isFunctionName: true },
-        start, t.end);
-    }
-
-    // ── 自带字形的符号
-    if (cls?.role === 'symbol') {
-      pos += 1;
-      const glyph = cls.glyph;
-      let role = 'operand';
-      if (REL_OPS.has(glyph)) role = 'relation';
-      else if (BIN_OPS.has(glyph)) role = 'operator';
-      else if (OPEN_FENCE.has(glyph) || CLOSE_FENCE.has(glyph)) role = 'fence';
-      if (t.value === 'cdots' || t.value === 'ldots' || t.value === 'dots'
-        || t.value === 'vdots' || t.value === 'ddots') {
-        return node('ellipsis', 'operator', { tex: `\\${t.value}`, glyph }, start, t.end);
-      }
-      if (t.value === 'int' || t.value === 'oint' || t.value === 'sum'
-        || t.value === 'prod' || t.value === 'coprod') {
-        return node('bigop', 'operator', { tex: `\\${t.value}`, glyph }, start, t.end);
-      }
-      return node('sym', role, { tex: `\\${t.value}`, glyph }, start, t.end);
-    }
-
-    // ── 空白命令
-    if (isSpaceCommand(t.value)) {
-      pos += 1;
-      return node('space', 'separator', { tex: `\\${t.value}` }, start, t.end);
-    }
-
-    // ── 特殊命令
-    if (cls?.role === 'special') {
-      return parseSpecial(t, start);
-    }
-
-    // ── 不认识：零回退，报错并原样保留
+    if (cls && CMD_ROLE_HANDLERS[cls.role]) return CMD_ROLE_HANDLERS[cls.role](t, cls, start);
+    if (isSpaceCommand(t.value)) { pos += 1; return node('space', 'separator', { tex: `\\${t.value}` }, start, t.end); }
     pos += 1;
     problems.push({
       code: 'parse-unknown-command',
@@ -449,131 +346,106 @@ export function parse(src, opts = {}) {
   };
 
   /** `\text{…}` 的内容**原样**取出（不解析其中的 TeX）。 */
-  const takeRawText = () => {
-    skipSpace();
-    const t = peek();
-    if (!t || t.kind !== 'open') {
-      const arg = takeArg('\\text');
-      const text = arg.items?.map(n => n.glyph ?? n.tex ?? '').join('') ?? '';
-      return { text, end: arg.span[1] };
-    }
-    // 从当前 `{` 到匹配的 `}`，按原文切
-    const openStart = t.start;
-    pos += 1;
+  const scanRawClose = (openStart) => {
     let depth = 1;
     let last = null;
     while (pos < tokens.length) {
       const cur = peek();
       pos += 1;
       if (cur.kind === 'open') depth += 1;
-      else if (cur.kind === 'close') {
-        depth -= 1;
-        if (depth === 0) { last = cur; break; }
-      }
+      else if (cur.kind === 'close' && --depth === 0) { last = cur; break; }
     }
-    const end = last ? last.end : (tokens[pos - 1]?.end ?? openStart);
+    return last ? last.end : (tokens[pos - 1]?.end ?? openStart);
+  };
+
+  const takeRawText = () => {
+    skipSpace();
+    const t = peek();
+    if (!t || t.kind !== 'open') {
+      const arg = takeArg('\\text');
+      const text = arg.items ? arg.items.map((n) => n.glyph ?? n.tex ?? '').join('') : '';
+      return { text, end: arg.span[1] };
+    }
+    const openStart = t.start;
+    pos += 1;
+    const end = scanRawClose(openStart);
     return { text: source.slice(openStart + 1, end - 1), end };
   };
+
+  const parseSubstack = (start) => {
+    pos += 1;
+    const arg = takeArg('\\substack');
+    const rows = [];
+    let cur = [];
+    for (const item of arg.items || []) {
+      if (item.kind === 'rowbreak') { rows.push(cur); cur = []; continue; }
+      cur.push(item);
+    }
+    if (cur.length || !rows.length) rows.push(cur);
+    return node('stack', 'operand', { rows, stackKind: 'substack' }, start, arg.span[1]);
+  };
+
+  const SPECIAL_HANDLERS = {
+    left: (t, start) => { pos += 1; const d = takeDelimiter(); return node('fence', 'fence', { tex: `\\left${d.tex}`, glyph: d.glyph, side: 'left' }, start, d.span?.[1] ?? t.end); },
+    right: (t, start) => { pos += 1; const d = takeDelimiter(); return node('fence', 'fence', { tex: `\\right${d.tex}`, glyph: d.glyph, side: 'right' }, start, d.span?.[1] ?? t.end); },
+    middle: (t, start) => { pos += 1; const d = takeDelimiter(); return node('fence', 'fence', { tex: `\\middle${d.tex}`, glyph: d.glyph, side: 'middle' }, start, d.span?.[1] ?? t.end); },
+    sqrt: (_t, start) => {
+      pos += 1;
+      skipSpace();
+      const index = at('char', '[') ? takeBracketArg() : null;
+      const body = takeArg('\\sqrt');
+      return node('root', 'operand', { index, body }, start, body.span[1]);
+    },
+    xrightarrow: (t, start) => {
+      pos += 1;
+      skipSpace();
+      const below = at('char', '[') ? takeBracketArg() : null;
+      const above = takeArg(`\\${t.value}`);
+      return node('arrow', 'relation', { tex: `\\${t.value}`, dir: 'right', above, below }, start, above.span[1]);
+    },
+    xleftarrow: (t, start) => {
+      pos += 1;
+      skipSpace();
+      const below = at('char', '[') ? takeBracketArg() : null;
+      const above = takeArg(`\\${t.value}`);
+      return node('arrow', 'relation', { tex: `\\${t.value}`, dir: 'left', above, below }, start, above.span[1]);
+    },
+    overset: (t, start) => { pos += 1; const a = takeArg(`\\${t.value}`); const b = takeArg(`\\${t.value}`); return node('stack', 'operand', { rows: [[b], [a]], stackKind: t.value }, start, b.span[1]); },
+    underset: (t, start) => { pos += 1; const a = takeArg(`\\${t.value}`); const b = takeArg(`\\${t.value}`); return node('stack', 'operand', { rows: [[a], [b]], stackKind: t.value }, start, b.span[1]); },
+    stackrel: (t, start) => { pos += 1; const a = takeArg(`\\${t.value}`); const b = takeArg(`\\${t.value}`); return node('stack', 'operand', { rows: [[b], [a]], stackKind: t.value }, start, b.span[1]); },
+    substack: (_t, start) => parseSubstack(start),
+    tag: (_t, start) => {
+      pos += 1;
+      skipSpace();
+      if (at('char', '*')) pos += 1;
+      const arg = takeArg('\\tag');
+      return node('label', 'separator', { text: arg.items || [] }, start, arg.span[1]);
+    },
+    limits: (t, start) => { pos += 1; return node('space', 'separator', { tex: `\\${t.value}` }, start, t.end); },
+    nolimits: (t, start) => { pos += 1; return node('space', 'separator', { tex: `\\${t.value}` }, start, t.end); },
+    phantom: (t, start) => { pos += 1; const arg = takeArg(`\\${t.value}`); return node('phantom', 'separator', { body: arg }, start, arg.span[1]); },
+    hphantom: (t, start) => { pos += 1; const arg = takeArg(`\\${t.value}`); return node('phantom', 'separator', { body: arg }, start, arg.span[1]); },
+    vphantom: (t, start) => { pos += 1; const arg = takeArg(`\\${t.value}`); return node('phantom', 'separator', { body: arg }, start, arg.span[1]); },
+    color: (t, start) => { pos += 1; const c = takeArg(`\\${t.value}`); return node('space', 'separator', { tex: '\\color' }, start, c.span[1]); },
+    textcolor: (t, start) => {
+      pos += 1;
+      const c = takeArg(`\\${t.value}`);
+      const body = takeArg('\\textcolor');
+      return node('styled', body.role, { style: 'color', colorArg: c, body }, start, body.span[1]);
+    },
+  };
+
+  const BIG_FENCES = new Set(['big', 'Big', 'bigg', 'Bigg', 'bigl', 'bigr', 'Bigl', 'Bigr']);
 
   /** 特殊命令。 */
   const parseSpecial = (t, start) => {
     const name = t.value;
-
-    if (name === 'left' || name === 'right' || name === 'middle') {
+    if (SPECIAL_HANDLERS[name]) return SPECIAL_HANDLERS[name](t, start);
+    if (BIG_FENCES.has(name)) {
       pos += 1;
       const d = takeDelimiter();
-      return node('fence', 'fence',
-        { tex: `\\${name}${d.tex}`, glyph: d.glyph, side: name }, start, d.span?.[1] ?? t.end);
+      return node('fence', 'fence', { tex: `\\${name}${d.glyph}`, glyph: d.glyph, side: name }, start, d.span?.[1] ?? t.end);
     }
-
-    if (name === 'sqrt') {
-      pos += 1;
-      let index = null;
-      skipSpace();
-      if (at('char', '[')) index = takeBracketArg();
-      const body = takeArg('\\sqrt');
-      return node('root', 'operand', { index, body }, start, body.span[1]);
-    }
-
-    if (name === 'xrightarrow' || name === 'xleftarrow') {
-      pos += 1;
-      // 可选参数 `[…]` 在下、必选 `{…}` 在上
-      let below = null;
-      skipSpace();
-      if (at('char', '[')) {
-        below = takeBracketArg();
-      }
-      const above = takeArg(`\\${name}`);
-      return node('arrow', 'relation',
-        { tex: `\\${name}`, dir: name === 'xrightarrow' ? 'right' : 'left', above, below },
-        start, above.span[1]);
-    }
-
-    if (name === 'overset' || name === 'underset' || name === 'stackrel') {
-      pos += 1;
-      const first = takeArg(`\\${name}`);
-      const second = takeArg(`\\${name}`);
-      const over = name !== 'underset';
-      return node('stack', 'operand',
-        { rows: over ? [[second], [first]] : [[first], [second]], stackKind: name },
-        start, second.span[1]);
-    }
-
-    if (name === 'substack') {
-      pos += 1;
-      const arg = takeArg('\\substack');
-      // 组内按 `\\` 断行
-      const rows = [];
-      let cur = [];
-      for (const item of arg.items || []) {
-        if (item.kind === 'rowbreak') { rows.push(cur); cur = []; continue; }
-        cur.push(item);
-      }
-      if (cur.length || !rows.length) rows.push(cur);
-      return node('stack', 'operand', { rows, stackKind: 'substack' }, start, arg.span[1]);
-    }
-
-    if (name === 'tag') {
-      pos += 1;
-      skipSpace();
-      // `\tag*{…}` 的星号
-      if (at('char', '*')) pos += 1;
-      const arg = takeArg('\\tag');
-      return node('label', 'separator',
-        { text: arg.items || [] }, start, arg.span[1]);
-    }
-
-    if (name === 'limits' || name === 'nolimits') {
-      pos += 1;
-      return node('space', 'separator', { tex: `\\${name}` }, start, t.end);
-    }
-
-    if (name === 'phantom' || name === 'hphantom' || name === 'vphantom') {
-      pos += 1;
-      const arg = takeArg(`\\${name}`);
-      return node('phantom', 'separator', { body: arg }, start, arg.span[1]);
-    }
-
-    if (name === 'color' || name === 'textcolor') {
-      pos += 1;
-      const c = takeArg(`\\${name}`);
-      if (name === 'textcolor') {
-        const body = takeArg('\\textcolor');
-        return node('styled', body.role,
-          { style: 'color', colorArg: c, body }, start, body.span[1]);
-      }
-      return node('space', 'separator', { tex: '\\color' }, start, c.span[1]);
-    }
-
-    if (name === 'big' || name === 'Big' || name === 'bigg' || name === 'Bigg'
-      || name === 'bigl' || name === 'bigr' || name === 'Bigl' || name === 'Bigr') {
-      pos += 1;
-      const d = takeDelimiter();
-      return node('fence', 'fence',
-        { tex: `\\${name}${d.glyph}`, glyph: d.glyph, side: name }, start, d.span?.[1] ?? t.end);
-    }
-
-    // 其余 special（`left.` 之类）当空白处理
     pos += 1;
     return node('space', 'separator', { tex: `\\${name}` }, start, t.end);
   };
@@ -620,54 +492,52 @@ export function parse(src, opts = {}) {
       }
     }
     // 读到配对的 \end{同名}
+  const splitEnvGrid = (rows) => rows.map((row) => {
+    const cells = [[]];
+    for (const item of row) {
+      if (item.marker === 'col') cells.push([]);
+      else cells.at(-1).push(item);
+    }
+    return cells;
+  });
+
+  const stepEnvCs = (cur, rows, curRow) => {
+    if (cur.value === 'begin') { const nested = parseEnvironment(); if (nested) curRow.push(nested); return null; }
+    if (cur.value === 'end') { pos += 1; return { end: cur.end }; }
+    if (cur.value === 'cr') { pos += 1; rows.push([...curRow]); curRow.length = 0; return null; }
+    const n = parseScripted();
+    if (n) curRow.push(n);
+    return null;
+  };
+
+  const stepEnvToken = (cur, rows, curRow) => {
+    if (cur.kind === 'cs') return stepEnvCs(cur, rows, curRow);
+    if (cur.kind === 'amp') { pos += 1; curRow.push({ marker: 'col' }); return null; }
+    if (cur.kind === 'sym' && cur.value === '\\') { pos += 1; rows.push([...curRow]); curRow.length = 0; return null; }
+    if (cur.kind === 'space') { pos += 1; return null; }
+    const n = parseScripted();
+    if (n) curRow.push(n);
+    return null;
+  };
+
+  const readEnvRows = (beginTok) => {
     const rows = [];
-    let curRow = [];
+    const curRow = [];
     let end = beginTok.end;
     while (pos < tokens.length) {
-      const cur = peek();
-      if (cur.kind === 'cs' && cur.value === 'begin') {
-        // 嵌套环境：整段当一个原子（内部再解析）
-        const nested = parseEnvironment();
-        if (nested) curRow.push(nested);
-        continue;
-      }
-      if (cur.kind === 'cs' && cur.value === 'end') {
-        pos += 1;
-        end = cur.end;
-        break;
-      }
-      if (cur.kind === 'amp') { pos += 1; curRow.push({ marker: 'col' }); continue; }
-      // 行分隔符有两种写法：`\\`（sym 反斜杠）与 `\cr`（cs 控制字）。
-      // 2026-11-06：只认前者时，编辑器产出 `\cr` 的矩阵会被当成「一行里的
-      // 一个 rowbreak 节点」，到 to-octave 那里报「换行符不是表达式的一部分」。
-      if ((cur.kind === 'sym' && cur.value === '\\')
-          || (cur.kind === 'cs' && cur.value === 'cr')) {
-        pos += 1;
-        rows.push(curRow); curRow = [];
-        continue;
-      }
-      if (cur.kind === 'space') { pos += 1; continue; }
-      const n = parseScripted();
-      if (n) curRow.push(n);
+      const res = stepEnvToken(peek(), rows, curRow);
+      if (res) { end = res.end; break; }
     }
     rows.push(curRow);
-
-    // 把列分隔记号拆成二维
-    const grid = rows.map((row) => {
-      const cells = [[]];
-      for (const item of row) {
-        if (item.marker === 'col') cells.push([]);
-        else cells.at(-1).push(item);
-      }
-      return cells;
-    });
-
-    return node('env', 'operand', {
-      env: envName,
-      delims: spec ? spec.delims : ['', ''],
-      columnSpec,
-      rows: grid,
-    }, start, end);
+    return { rows, end };
+  };
+  const { rows, end } = readEnvRows(beginTok);
+  return node('env', 'operand', {
+    env: envName,
+    delims: spec ? spec.delims : ['', ''],
+    columnSpec,
+    rows: splitEnvGrid(rows),
+  }, start, end);
   };
 
   // 顶层：解析成透明组

@@ -141,6 +141,21 @@ test('KaTeX 兼容实现可注入，公式渲染与目录投影契约完整', ()
   assert.equal(replaceKatexWithText('前<span class="katex"><span><annotation encoding="application/x-tex">A&amp;B</annotation></span></span></span>后'), '前A&B后');
 });
 
+function assertDirectDeps(pkg, lockPkgs, licenses) {
+  for (const depName of Object.keys(pkg.dependencies || {})) {
+    const compKey = depName.replace(/-/g, '_');
+    const comp = licenses.components?.[compKey];
+    const lockMeta = lockPkgs.get(`node_modules/${depName}`);
+    assert.ok(lockMeta, `package.json 依赖未写入 package-lock.json: ${depName}`);
+    assert.ok(comp, `licenses.json.components 漏登记直接依赖 ${depName}（期望键 ${compKey}）`);
+    assert.equal(comp.license, lockMeta.license, `${depName} 许可在 licenses.json 与锁文件中不一致`);
+    assert.equal(comp.version, lockMeta.version, `${depName} 版本在 licenses.json 与锁文件中不一致`);
+    assert.ok(typeof comp.copyright === 'string' && comp.copyright.trim(), `${depName} 缺少 copyright 声明`);
+    const licText = readFileSync(path.join(SITE_DIR, 'node_modules', depName, 'LICENSE'), 'utf8');
+    assert.ok(licText.includes(comp.copyright), `${depName} 的 copyright 与上游 LICENSE 原文不一致`);
+  }
+}
+
 test('package-lock.json 与 right.json / licenses.json 双向闭环（防漏包与防空扫）', () => {
   const pkg = JSON.parse(readFileSync(path.join(SITE_DIR, 'package.json'), 'utf8'));
   const lock = JSON.parse(readFileSync(path.join(SITE_DIR, 'package-lock.json'), 'utf8'));
@@ -177,18 +192,7 @@ test('package-lock.json 与 right.json / licenses.json 双向闭环（防漏包�
   }
 
   // 3. package.json 的直接依赖必须全部落在 licenses.json 的 components 中且许可/版本/版权一致
-  for (const depName of Object.keys(pkg.dependencies || {})) {
-    const compKey = depName.replace(/-/g, '_');
-    const comp = licenses.components?.[compKey];
-    const lockMeta = lockPkgs.get(`node_modules/${depName}`);
-    assert.ok(lockMeta, `package.json 依赖未写入 package-lock.json: ${depName}`);
-    assert.ok(comp, `licenses.json.components 漏登记直接依赖 ${depName}（期望键 ${compKey}）`);
-    assert.equal(comp.license, lockMeta.license, `${depName} 许可在 licenses.json 与锁文件中不一致`);
-    assert.equal(comp.version, lockMeta.version, `${depName} 版本在 licenses.json 与锁文件中不一致`);
-    assert.ok(typeof comp.copyright === 'string' && comp.copyright.trim(), `${depName} 缺少 copyright 声明`);
-    const licText = readFileSync(path.join(SITE_DIR, 'node_modules', depName, 'LICENSE'), 'utf8');
-    assert.ok(licText.includes(comp.copyright), `${depName} 的 copyright 与上游 LICENSE 原文不一致`);
-  }
+  assertDirectDeps(pkg, lockPkgs, licenses);
 
   // 4. 顺跑真实 check_right.py --spec right.json，确保源清单当下可过门禁
   execFileSync('python3', [path.join(ROOT_DIR, 'zreflect', 'check_right.py'), '--spec', 'right.json'], {

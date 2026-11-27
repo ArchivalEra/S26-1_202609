@@ -38,26 +38,27 @@ function walkHtml(dir, out = []) {
   return out;
 }
 
+function scanFileAnchors(file, bad) {
+  const s = readFileSync(file, 'utf8');
+  let i = 0;
+  while ((i = s.indexOf('<a class="sym-gloss"', i)) >= 0 && bad.length < 5) {
+    const end = s.indexOf('</a>', i);
+    if (end < 0) break;
+    const inner = s.slice(i, end);
+    const opens = (inner.match(/<span[\s>]/g) || []).length;
+    const closes = (inner.match(/<\/span>/g) || []).length;
+    if (opens !== closes) {
+      bad.push(`${path.relative(DIST, file)}: 锚点内 span 开 ${opens} / 闭 ${closes}`);
+    }
+    i = end + 4;
+  }
+}
+
 test('★ bug A 回归：sym-gloss 锚点的标签必须成对（不许 <span>…</a></span>）', () => {
   assert.ok(existsSync(DIST), 'dist 不存在——先跑 node build.mjs');
   const bad = [];
   for (const file of walkHtml(DIST)) {
-    const s = readFileSync(file, 'utf8');
-    // 畸形形态：`<span …>` 里直接跟 `</a>`（中间没有它的 `</span>`）
-    // 用逐段扫描而不是正则回溯，避免自己又踩「非贪婪」的老坑。
-    let i = 0;
-    while ((i = s.indexOf('<a class="sym-gloss"', i)) >= 0) {
-      const end = s.indexOf('</a>', i);
-      if (end < 0) break;
-      const inner = s.slice(i, end);
-      const opens = (inner.match(/<span[\s>]/g) || []).length;
-      const closes = (inner.match(/<\/span>/g) || []).length;
-      if (opens !== closes) {
-        bad.push(`${path.relative(DIST, file)}: 锚点内 span 开 ${opens} / 闭 ${closes}`);
-      }
-      i = end + 4;
-      if (bad.length >= 5) break;
-    }
+    scanFileAnchors(file, bad);
     if (bad.length >= 5) break;
   }
   assert.deepEqual(bad, [], `这些 sym-gloss 锚点标签不配对（会把公式截断）：\n${bad.join('\n')}`);

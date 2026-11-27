@@ -83,25 +83,26 @@ print(' '.join(str(c) for c in sorted(cmap)))
   return null;
 }
 
+function isCjkOrControl(cp, ch, ignore) {
+  if (ignore.has(ch)) return true;
+  return (cp >= 0x4e00 && cp <= 0x9fff) || (cp >= 0x3000 && cp <= 0x303f) || (cp >= 0xff00 && cp <= 0xffef);
+}
+
 test('数学字体子集必须覆盖全站公式用到的所有字符', () => {
   assert.ok(existsSync(FONT), '缺数学字体：assets/fonts/stix2math-subset.woff2');
   const cps = fontCodepoints();
   if (!cps) {
-    // 不能假装通过：明确标出「这一项没查」。
     assert.fail('读不到字体 cmap——本项未检查，不等于通过。'
       + '需要 uv（或 python3 带 fontTools+brotli）：uv run --with fonttools --with brotli python -c ...');
   }
 
-  const used = usedMathChars();
-  // 空格不是字形，跳过；换行同理。
   const ignore = new Set([' ', '\n', '\t', '\u00a0', '\u200b', '\u200c', '\u200d']);
   const missing = [];
-  for (const ch of used) {
-    if (ignore.has(ch)) continue;
+  for (const ch of usedMathChars()) {
     const cp = ch.codePointAt(0);
-    // 中文由正文回退字体渲染，数学字体不管——跳过 CJK 与全角标点
-    if ((cp >= 0x4e00 && cp <= 0x9fff) || (cp >= 0x3000 && cp <= 0x303f) || (cp >= 0xff00 && cp <= 0xffef)) continue;
-    if (!cps.has(cp)) missing.push({ ch, cp: 'U+' + cp.toString(16).toUpperCase().padStart(4, '0') });
+    if (!isCjkOrControl(cp, ch, ignore) && !cps.has(cp)) {
+      missing.push({ ch, cp: 'U+' + cp.toString(16).toUpperCase().padStart(4, '0') });
+    }
   }
 
   assert.deepEqual(missing, [],

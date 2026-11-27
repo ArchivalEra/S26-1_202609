@@ -69,21 +69,22 @@ function el(tag, text, props = {}) {
 
 /** 单个复合选择器（`a.sym-gloss[data-term]` / `.toc-item.active` / `h2`）的匹配。
  *  真实 DOM 的复合语义：tag + 任意个 .class + 任意个 [attr] 同时成立。 */
-function matchesSimple(node, s) {
-  // 拆成 tag / .class / [attr] 三段
+function parseSelectorParts(s) {
   const tagMatch = s.match(/^([a-zA-Z][\w-]*)/);
-  const tag = tagMatch ? tagMatch[1] : '';
-  const classes = (s.match(/\.([\w-]+)/g) || []).map((x) => x.slice(1));
-  const attrs = (s.match(/\[([^\]=]+)(?:[~*^$|]?=[^\]]*)?\]/g) || [])
-    .map((x) => x.slice(1, -1).split(/[~*^$|]?=/)[0]);
+  return {
+    tag: tagMatch ? tagMatch[1] : '',
+    classes: (s.match(/\.([\w-]+)/g) || []).map((x) => x.slice(1)),
+    attrs: (s.match(/\[([^\]=]+)(?:[~*^$|]?=[^\]]*)?\]/g) || [])
+      .map((x) => x.slice(1, -1).split(/[~*^$|]?=/)[0]),
+  };
+}
 
+function matchesSimple(node, s) {
+  const { tag, classes, attrs } = parseSelectorParts(s);
   if (tag && node.tagName !== tag.toUpperCase()) return false;
-  for (const c of classes) {
-    if (!String(node.className).split(/\s+/).includes(c)) return false;
-  }
-  for (const a of attrs) {
-    if (node.getAttribute(a) === null) return false;
-  }
+  const nodeClasses = String(node.className).split(/\s+/);
+  if (classes.some((c) => !nodeClasses.includes(c))) return false;
+  if (attrs.some((a) => node.getAttribute(a) === null)) return false;
   return Boolean(tag || classes.length || attrs.length);
 }
 
@@ -111,8 +112,42 @@ function matchIn(root, sel) {
   return flatten(root).filter((n) => matches(n, sel));
 }
 
-/** 造一个像 document 的对象。 */
-function fakeDoc({ title = '测试页', url = 'http://x/y.html', withSearch = true, withPaging = true, long = false, pages = null } = {}) {
+function buildFakeNavJson(drawerRootUl, navLink) {
+  const walkGroup = (li, head, kids, depth) => {
+    const wrap = kids.find((c) => hasClass(c, 'nav-nested-wrapper'));
+    const title = head.querySelector('.drawer-section-title-text');
+    const label = (title ? title.textContent : head.textContent) || '';
+    const innerUl = wrap?.querySelector('ul');
+    const children = innerUl ? (innerUl.children || []).map((c) => walk(c, depth + 1)).filter(Boolean) : null;
+    const p = li.getAttribute('data-path') || null;
+    return { id: p || ('#' + label), label, path: p, href: p, depth, indexHref: null, children };
+  };
+  const walk = (li, depth) => {
+    const kids = li.children || [];
+    const head = kids.find((c) => hasClass(c, 'nav-group-header'));
+    if (head) return walkGroup(li, head, kids, depth);
+    const a = kids.find((c) => c.tagName === 'A' && hasClass(c, 'drawer-nav-link'));
+    if (!a) return null;
+    const p = a.getAttribute('data-path');
+    return { id: p, label: a.textContent, path: p, href: p, depth, indexHref: null, children: null };
+  };
+  const nodes = (drawerRootUl.children || []).map((li) => walk(li, 0)).filter(Boolean);
+  const extraPath = navLink.getAttribute('data-path');
+  if (extraPath) {
+    const overview = nodes.find((n) => n.label === '课程总览');
+    const courseGroup = overview?.children?.find((n) => n.label === '电机学');
+    if (courseGroup) {
+      courseGroup.children = courseGroup.children || [];
+      courseGroup.children.unshift({
+        id: extraPath, label: '第二章 变压器', path: extraPath, href: extraPath,
+        depth: (courseGroup.depth || 0) + 1, indexHref: null, children: null,
+      });
+    }
+  }
+  return { v: 1, current: '课程总览/电机学/第二章.html', activeIds: [], expandedIds: [], nodes };
+}
+
+function buildFakeDocCore(withSearch, withPaging, long) {
   const h1 = el('h1', '变压器额定电流', { id: 'h1' });
   const chip = el('span', '📚 电机学', { className: 'meta-chip primary' });
   const chip2 = el('span', '🏷️ 教材解析', { className: 'meta-chip' });
@@ -122,7 +157,6 @@ function fakeDoc({ title = '测试页', url = 'http://x/y.html', withSearch = tr
   const p2 = el('p', '小节 A 正文，提到铁芯损耗。');
   const h2b = el('h2', '第二节', { id: 'sec-2' });
   const p3 = el('p', '第二节正文，讲磁路。');
-
   const details1 = el('details', '', { open: false, id: 'panel-1' });
   const sum1 = el('summary', '折叠里的标题');
   const innerP = el('p', '折叠里的正文内容。');
@@ -132,29 +166,30 @@ function fakeDoc({ title = '测试页', url = 'http://x/y.html', withSearch = tr
   innerH3.parentElement = details1;
   innerP.parentElement = details1;
 
-  // 真实结构：data-term 在 <a class="sym-gloss"> 上，而它在 .katex **内部**（祖先关系）
   const katex = el('span', '', { className: 'katex' });
   const annotation = el('annotation', 'U');
   const term = el('a', 'U', { className: 'sym-gloss', attrs: { 'data-term': 'sym-U' } });
   katex.children = [annotation, term];
   annotation.parentElement = katex;
   term.parentElement = katex;
-
-  // 正文里的符号（不在 .katex 内）——2026-10-19 修：旧选择器只认公式内
   const proseTerm = el('a', 'I', { className: 'sym-gloss', attrs: { 'data-term': 'sym-I' } });
-
   const bubble = el('div', '电压：两点间的电位差', { className: 'sym-gloss-pop' });
-
   const panel = el('div', '', { id: 'search-panel', hidden: true });
   const input = el('input', '', { id: 'search-input' });
   const results = el('div', '仅显示相关度最高的 2 页（共 7 页命中）', { id: 'search-results' });
   const hitTitle = el('span', '电机学 2026-10-08', { className: 'search-hit-title' });
   const hit = el('a', '', { className: 'search-hit', attrs: { href: '课程总览/电机学/x.html' } });
   hit.children = [hitTitle];
+  return {
+    h1, chip, chip2, h2a, p1, h3, p2, h2b, p3, details1, katex, term, proseTerm,
+    bubble, panel, input, results, hit,
+    longP: long ? el('p', '很长的一段。'.repeat(500)) : null,
+    withSearch, withPaging,
+  };
+}
 
-  // 侧栏
+function buildFakeNavTree() {
   const navLink = el('a', '第二章 变压器', { className: 'drawer-nav-link', attrs: { 'data-path': '课程总览/电机学/第二章.html', href: '第二章.html' } });
-  // 侧栏树（site_index 的数据源）：课程总览 → 电机学 → 分类 → 页面
   const mkLeaf = (label, path) => {
     const li = el('li', '', { className: 'drawer-nav-item' });
     const a = el('a', label, { className: 'drawer-nav-link', attrs: { 'data-path': path } });
@@ -174,13 +209,10 @@ function fakeDoc({ title = '测试页', url = 'http://x/y.html', withSearch = tr
     li.children = [head, wrap]; head.parentElement = li; wrap.parentElement = li;
     return li;
   };
-  const notesGroup = mkGroup('课堂笔记', [
-    mkLeaf('10-08 磁路', '课程总览/电机学/课堂笔记/2026-10-08-磁路.html'),
+  const motorGroup = mkGroup('电机学', [
+    mkGroup('课堂笔记', [mkLeaf('10-08 磁路', '课程总览/电机学/课堂笔记/2026-10-08-磁路.html')]),
+    mkGroup('作业', [mkLeaf('作业1', '课程总览/电机学/作业/2026-09-28-作业1.html')]),
   ]);
-  const assignGroup = mkGroup('作业', [
-    mkLeaf('作业1', '课程总览/电机学/作业/2026-09-28-作业1.html'),
-  ]);
-  const motorGroup = mkGroup('电机学', [notesGroup, assignGroup]);
   const otherCourse = mkGroup('电路原理', [mkLeaf('习题册第一章', '课程/电路原理/作业/x.html')]);
   const overviewGroup = mkGroup('课程总览', [motorGroup, otherCourse]);
   const drawerRootUl = el('ul', '', { className: 'drawer-nav-list' });
@@ -189,105 +221,41 @@ function fakeDoc({ title = '测试页', url = 'http://x/y.html', withSearch = tr
   const drawerArea = el('div', '', { className: 'drawer-nav-scroll-area' });
   drawerArea.children = [drawerRootUl]; drawerRootUl.parentElement = drawerArea;
   const brand = el('a', 'S26', { className: 'sidebar-brand', attrs: { href: '../index.html' } });
+  return { navLink, drawerRootUl, drawerArea, brand };
+}
 
-  // ── 侧栏形状 JSON（阶段一，2026-10-21）──────────────────────
-  // site_index / site_navigate 的**唯一数据源**已从「爬侧栏 DOM」改为「读 #nav-structure-json」。
-  // 这份 JSON 由 build.mjs 构建期烘焙（nav-structure.mjs 的 buildNavModel 产出）。
-  //
-  // ⚠️ 为什么不手写第二份树：手写会与上面的 DOM 夹具漂移——正是这轮反复踩的坑
-  // （夹具与现实不符 ⇒ 测试恒绿、功能恒坏）。这里**从 DOM 夹具派生**，两者永远同步。
-  const navJson = (() => {
-    const walk = (li, depth) => {
-      const kids = li.children || [];
-      const head = kids.find((c) => hasClass(c, 'nav-group-header'));
-      const wrap = kids.find((c) => hasClass(c, 'nav-nested-wrapper'));
-      const a = kids.find((c) => c.tagName === 'A' && hasClass(c, 'drawer-nav-link'));
-      if (head) {
-        const title = head.querySelector('.drawer-section-title-text');
-        const label = (title ? title.textContent : head.textContent) || '';
-        const innerUl = wrap && wrap.querySelector('ul');
-        const children = innerUl
-          ? (innerUl.children || []).map((c) => walk(c, depth + 1)).filter(Boolean)
-          : null;
-        const p = li.getAttribute ? li.getAttribute('data-path') : null;
-        return { id: p || ('#' + label), label, path: p, href: p, depth, indexHref: null, children };
-      }
-      if (a) {
-        const p = a.getAttribute('data-path');
-        return { id: p, label: a.textContent, path: p, href: p, depth, indexHref: null, children: null };
-      }
-      return null;
-    };
-    const nodes = (drawerRootUl.children || []).map((li) => walk(li, 0)).filter(Boolean);
-    // 夹具里还有一条**树外**的 navLink（`课程总览/电机学/第二章.html`）——真实页面里
-    // 它就是「课程总览/电机学」组下的一个叶子。派生时补进对应课程组，保证
-    // site_navigate 的白名单与旧 DOM 夹具一致（否则那几个 navigate 测试会误报 not_in_nav）。
-    const extraPath = navLink.getAttribute('data-path');
-    if (extraPath) {
-      const courseGroup = nodes.find((n) => n.label === '课程总览')
-        && (nodes.find((n) => n.label === '课程总览').children || []).find((n) => n.label === '电机学');
-      if (courseGroup) {
-        courseGroup.children = courseGroup.children || [];
-        courseGroup.children.unshift({
-          id: extraPath, label: '第二章 变压器', path: extraPath, href: extraPath,
-          depth: (courseGroup.depth || 0) + 1, indexHref: null, children: null,
-        });
-      }
-    }
-    // 夹具里的组节点都不带 path ⇒ indexHref 全 null（真实构建里 index.md 组才有）
-    return { v: 1, current: '课程总览/电机学/第二章.html', activeIds: [], expandedIds: [], nodes };
-  })();
-  const navJsonTag = el('script', JSON.stringify(navJson), { id: 'nav-structure-json' });
-  navJsonTag.setAttribute('type', 'application/json');
-
-  // 站点产物清单（`#site-pages-json`）。默认**不给**——多数测试验证的是「没有这份
-  // 清单时退回侧栏白名单」的降级行为；需要验清单判据的测试用 options.pages 传入。
-  let pagesJsonTag = null;
-  if (Array.isArray(pages)) {
-    pagesJsonTag = el('script', JSON.stringify(pages), { id: 'site-pages-json' });
-    pagesJsonTag.setAttribute('type', 'application/json');
+function buildFakeArticle(core, long) {
+  const { h1, chip, chip2, h2a, p1, h3, p2, h2b, p3, details1, katex, proseTerm, bubble } = core;
+  const article = el('div', '', { className: 'article-content' });
+  article.children = [h1, chip, chip2, h2a, p1, h3, p2, h2b, p3, details1, katex, proseTerm, bubble];
+  if (long) {
+    for (let i = 0; i < 60; i++) article.children.push(el('p', '第 ' + (i + 1) + ' 段正文。'));
   }
+  for (const c of article.children) c.parentElement = article;
+  return article;
+}
 
-  // 上一节/下一节
+function buildFakePagingAndToc() {
   const prev = el('a', '上一节：第一章', { className: 'paging-card paging-prev', attrs: { href: 'prev.html' } });
   const prevTitle = el('span', '第一章 概述', { className: 'paging-title' });
   prev.children = [prevTitle];
   const next = el('a', '下一节：第三章', { className: 'paging-card paging-next', attrs: { href: 'next.html' } });
   const nextTitle = el('span', '第三章 直流电机', { className: 'paging-title' });
   next.children = [nextTitle];
-
   const tocActive = el('li', '第二节', { className: 'toc-item level-2 active' });
-  const tocA = el('a', '第二节', { attrs: { href: '#sec-2' } });
-  tocActive.children = [tocA];
-
-  // 符号词典
+  tocActive.children = [el('a', '第二节', { attrs: { href: '#sec-2' } })];
   const glossJson = el('script', JSON.stringify({
     terms: { 'sym-U': { title: 'U', text: '电压', senses: [{ ctx: '电路原理', text: '电压' }, { ctx: '电机学', text: '线电压' }] } },
   }), { id: 'sym-glossary-json' });
+  return { prev, next, tocActive, glossJson };
+}
 
-  const article = el('div', '', { className: 'article-content' });
-  article.children = [h1, chip, chip2, h2a, p1, h3, p2, h2b, p3, details1, katex, proseTerm, bubble];
-  if (long) {
-    // 长页夹具（2026-10-26）：默认 30 行的分页判据需要一页超过 30 行。
-    // 每段用短句，凑够行数而不撑大文件。
-    for (let i = 0; i < 60; i++) article.children.push(el('p', '第 ' + (i + 1) + ' 段正文。'));
-  }
-  for (const c of article.children) c.parentElement = article;
-  // 让 p2 与 h3 的祖先关系成立（h3 在 h2a 后）
-  const all = [article, prev, next, navLink, brand, tocActive, glossJson, drawerArea, navJsonTag];
-  if (pagesJsonTag) all.push(pagesJsonTag);
-  if (withSearch) all.push(panel, input, results, hit);
-  if (withPaging) all.push(prev, next);
-  // 建父子链（details 里放一个标题，测「开面板」）
-
+function assembleFakeDoc(title, url, all) {
   const body = el('body', '', { attrs: { 'data-site-path': '课程总览/电机学/教材解析/x.html' } });
   const documentElement = el('html', '', { attrs: { 'data-theme': 'light', 'data-root': '../../../' } });
   documentElement.style._v['--hue'] = '248';
-
   const doc = {
-    title,
-    body,
-    documentElement,
+    title, body, documentElement,
     location: { href: url, hash: '' },
     defaultView: { setTimeout: (fn) => setTimeout(fn, 0), scrollY: 100, innerHeight: 800, innerWidth: 1200 },
     querySelectorAll(sel) { return matchIn(doc, sel); },
@@ -296,6 +264,35 @@ function fakeDoc({ title = '测试页', url = 'http://x/y.html', withSearch = tr
     _all: all,
   };
   doc.children = all;
+  return doc;
+}
+
+function buildFakeAllList(core, extras, pages) {
+  const { article, prev, next, navLink, brand, tocActive, glossJson, drawerArea, navJsonTag } = extras;
+  const all = [article, prev, next, navLink, brand, tocActive, glossJson, drawerArea, navJsonTag];
+  if (Array.isArray(pages)) {
+    const pagesJsonTag = el('script', JSON.stringify(pages), { id: 'site-pages-json' });
+    pagesJsonTag.setAttribute('type', 'application/json');
+    all.push(pagesJsonTag);
+  }
+  if (core.withSearch) all.push(core.panel, core.input, core.results, core.hit);
+  if (core.withPaging) all.push(prev, next);
+  return all;
+}
+
+/** 造一个像 document 的对象。 */
+function fakeDoc({ title = '测试页', url = 'http://x/y.html', withSearch = true, withPaging = true, long = false, pages = null } = {}) {
+  const core = buildFakeDocCore(withSearch, withPaging, long);
+  const { details1 } = core;
+  const { navLink, drawerRootUl, drawerArea, brand } = buildFakeNavTree();
+  const navJsonTag = el('script', JSON.stringify(buildFakeNavJson(drawerRootUl, navLink)), { id: 'nav-structure-json' });
+  navJsonTag.setAttribute('type', 'application/json');
+  const { prev, next, tocActive, glossJson } = buildFakePagingAndToc();
+  const article = buildFakeArticle(core, long);
+  const all = buildFakeAllList(core, { article, prev, next, navLink, brand, tocActive, glossJson, drawerArea, navJsonTag }, pages);
+  // 建父子链（details 里放一个标题，测「开面板」）
+
+  const doc = assembleFakeDoc(title, url, all);
   // 把 details 的父链接上（openSection 要沿 parentElement 上溯）
   details1.parentElement = article;
   return doc;
@@ -1526,6 +1523,20 @@ test('feedText：失败抬头不许混入成功措辞', () => {
 // 判据：模板里每个 `var X = <某函数>.toString()` 的内联体，如果它调用了**另一个
 // 也在内联清单里的项目函数**，那个函数必须真的在模板里有 `var Y =` 定义。
 // 只查「项目函数之间的依赖」，不碰语言内置与 DOM（整段扫会刷出几十个假阳性）。
+function extractInlinedBodies(projectFns) {
+  const marks = projectFns
+    .map((fn) => ({ fn, i: SITE_HELPERS_JS.indexOf('var ' + fn + ' = ') }))
+    .filter((m) => m.i > -1)
+    .sort((a, b) => a.i - b.i);
+  const bodies = {};
+  for (let k = 0; k < marks.length; k++) {
+    const from = marks[k].i;
+    const to = k + 1 < marks.length ? marks[k + 1].i : SITE_HELPERS_JS.length;
+    bodies[marks[k].fn] = SITE_HELPERS_JS.slice(from, to);
+  }
+  return bodies;
+}
+
 test('内联完整性：被内联函数之间的依赖不能断', () => {
   const defined = new Set();
   const defRe = /^var (\w+) = /gm;
@@ -1539,19 +1550,7 @@ test('内联完整性：被内联函数之间的依赖不能断', () => {
     'feedText', 'runTool',
   ];
 
-  // 从模板中把每个函数的**实际源码段**切出来：`var X = ` 到下一个 `var Y = ` 之间
-  const bodies = {};
-  const marks = [];
-  for (const fn of projectFns) {
-    const i = SITE_HELPERS_JS.indexOf('var ' + fn + ' = ');
-    if (i > -1) marks.push({ fn, i });
-  }
-  marks.sort((a, b) => a.i - b.i);
-  for (let k = 0; k < marks.length; k++) {
-    const from = marks[k].i;
-    const to = k + 1 < marks.length ? marks[k + 1].i : SITE_HELPERS_JS.length;
-    bodies[marks[k].fn] = SITE_HELPERS_JS.slice(from, to);
-  }
+  const bodies = extractInlinedBodies(projectFns);
 
   const problems = [];
   for (const [fn, body] of Object.entries(bodies)) {

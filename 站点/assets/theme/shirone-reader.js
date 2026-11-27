@@ -1,18 +1,9 @@
 // Shirone M3E Reader Interactive Script
 (function () {
-  // Theme Toggle
-  // 2026-10-19：明暗切换从顶栏按钮**收进调色盘**（用户定案）。
-  // 顶栏位置改成调色盘的手形图标；切换在弹层里做。
   const currentTheme = localStorage.getItem("theme") ||
     (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  document.documentElement.setAttribute("data-theme", currentTheme === "dark" ? "dark" : "light");
 
-  if (currentTheme === "dark") {
-    document.documentElement.setAttribute("data-theme", "dark");
-  } else {
-    document.documentElement.setAttribute("data-theme", "light");
-  }
-
-  /** 把当前主题同步到弹层里的两个按钮（选中态 + aria-pressed）。 */
   function syncThemeButtons() {
     const active = document.documentElement.getAttribute("data-theme") || "light";
     document.querySelectorAll("[data-theme-set]").forEach((btn) => {
@@ -33,30 +24,24 @@
   syncThemeButtons();
   document.querySelectorAll("[data-theme-set]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
-      e.stopPropagation();   // 别让弹层的「点外部关闭」把这次点击吃掉
+      e.stopPropagation();
       setTheme(btn.getAttribute("data-theme-set"));
     });
   });
 
-  // Drawer Toggle (Mobile slide-out & Desktop sidebar collapse)
   const drawerToggleBtn = document.getElementById("drawer-toggle");
   const drawer = document.getElementById("m3-drawer");
   const backdrop = document.getElementById("drawer-backdrop");
 
   function toggleDrawer() {
-    if (window.innerWidth <= 860) {
-      if (!drawer) return;
-      const isOpen = drawer.classList.contains("open");
-      if (isOpen) {
-        drawer.classList.remove("open");
-        if (backdrop) backdrop.classList.remove("open");
-      } else {
-        drawer.classList.add("open");
-        if (backdrop) backdrop.classList.add("open");
-      }
-    } else {
+    if (window.innerWidth > 860) {
       document.body.classList.toggle("sidebar-collapsed");
+      return;
     }
+    if (!drawer) return;
+    const isOpen = drawer.classList.contains("open");
+    drawer.classList.toggle("open", !isOpen);
+    if (backdrop) backdrop.classList.toggle("open", !isOpen);
   }
 
   if (drawerToggleBtn) drawerToggleBtn.addEventListener("click", toggleDrawer);
@@ -78,22 +63,20 @@
     }
   });
 
-  // Sidebar Resizer (Desktop drag-to-resize & double-click reset)
-  const resizer = document.getElementById("sidebar-resizer");
-  const DEFAULT_SIDEBAR_WIDTH = 320;
-  const MIN_SIDEBAR_WIDTH = 240;
-  const MAX_SIDEBAR_WIDTH = 580;
+  function initSidebarResizer() {
+    const resizer = document.getElementById("sidebar-resizer");
+    const DEFAULT_SIDEBAR_WIDTH = 320;
+    const MIN_SIDEBAR_WIDTH = 240;
+    const MAX_SIDEBAR_WIDTH = 580;
 
-  // Restore saved width on desktop
-  const savedWidth = localStorage.getItem("shirone-sidebar-width");
-  if (savedWidth && window.innerWidth > 860) {
-    const num = parseInt(savedWidth, 10);
-    if (!isNaN(num) && num >= MIN_SIDEBAR_WIDTH && num <= MAX_SIDEBAR_WIDTH) {
-      document.documentElement.style.setProperty("--sidebar-width", num + "px");
+    const savedWidth = localStorage.getItem("shirone-sidebar-width");
+    if (savedWidth && window.innerWidth > 860) {
+      const num = parseInt(savedWidth, 10);
+      if (!isNaN(num) && num >= MIN_SIDEBAR_WIDTH && num <= MAX_SIDEBAR_WIDTH) {
+        document.documentElement.style.setProperty("--sidebar-width", num + "px");
+      }
     }
-  }
-
-  if (resizer) {
+    if (!resizer) return;
     let isResizing = false;
     let startX = 0;
     let startWidth = 0;
@@ -102,8 +85,7 @@
       if (window.innerWidth <= 860) return;
       isResizing = true;
       startX = e.clientX;
-      const currentW = drawer ? drawer.getBoundingClientRect().width : DEFAULT_SIDEBAR_WIDTH;
-      startWidth = currentW;
+      startWidth = drawer ? drawer.getBoundingClientRect().width : DEFAULT_SIDEBAR_WIDTH;
       resizer.classList.add("resizing");
       document.body.classList.add("sidebar-resizing");
       document.body.style.cursor = "col-resize";
@@ -113,10 +95,7 @@
 
     window.addEventListener("mousemove", (e) => {
       if (!isResizing) return;
-      const dx = e.clientX - startX;
-      let newWidth = Math.round(startWidth + dx);
-      if (newWidth < MIN_SIDEBAR_WIDTH) newWidth = MIN_SIDEBAR_WIDTH;
-      if (newWidth > MAX_SIDEBAR_WIDTH) newWidth = MAX_SIDEBAR_WIDTH;
+      const newWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, Math.round(startWidth + e.clientX - startX)));
       document.documentElement.style.setProperty("--sidebar-width", newWidth + "px");
     });
 
@@ -127,10 +106,7 @@
       document.body.classList.remove("sidebar-resizing");
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
-      if (drawer) {
-        const finalW = Math.round(drawer.getBoundingClientRect().width);
-        localStorage.setItem("shirone-sidebar-width", finalW);
-      }
+      if (drawer) localStorage.setItem("shirone-sidebar-width", Math.round(drawer.getBoundingClientRect().width));
     });
 
     resizer.addEventListener("dblclick", () => {
@@ -138,84 +114,104 @@
       localStorage.setItem("shirone-sidebar-width", DEFAULT_SIDEBAR_WIDTH);
     });
   }
+  initSidebarResizer();
 
-  // Collapsible Navigation Groups (Delegated Accordion, Lazy Hydration & Collapse-All)
-  const toggleAllBtn = document.getElementById("toggle-all-groups-btn");
-  const toggleAllText = document.getElementById("toggle-all-text");
-
-  function getNavGroups() {
-    return document.querySelectorAll(".drawer-nav-group");
-  }
-
-  function updateToggleAllButtonState() {
-    if (!toggleAllBtn || !toggleAllText) return;
-    const hasExpanded = Array.from(getNavGroups()).some(g => g.classList.contains("expanded"));
-    toggleAllText.textContent = hasExpanded ? "全部收起" : "全部展开";
-  }
-
-  function toggleGroup(group) {
-    if (!group) return;
-    const isExpanded = group.classList.contains("expanded");
-    if (isExpanded) {
-      group.classList.remove("expanded");
-      group.classList.add("collapsed");
-      updateToggleAllButtonState();
-      return;
+  function initTocResizer() {
+    const resizer = document.getElementById("toc-resizer");
+    const tocEl = document.querySelector(".m3-toc");
+    const DEF = 240, MIN = 180, MAX = 420;
+    const saved = localStorage.getItem("shirone-toc-width");
+    const num = saved ? parseInt(saved, 10) : NaN;
+    if (window.innerWidth > 860 && num >= MIN && num <= MAX) {
+      document.documentElement.style.setProperty("--toc-width", num + "px");
     }
-    const finishExpand = () => {
-      group.classList.remove("collapsed");
-      group.classList.add("expanded");
-      updateToggleAllButtonState();
-    };
-    if (group.hasAttribute("data-nav-lazy") && window.__navStructure?.ensureHydrated) {
-      window.__navStructure.ensureHydrated(group).then(finishExpand);
-    } else {
-      finishExpand();
-    }
-  }
-
-  if (drawer) {
-    drawer.addEventListener("click", (e) => {
-      const btn = e.target?.closest(".nav-collapse-btn") || null;
-      if (btn) {
-        e.stopPropagation();
-        toggleGroup(btn.closest(".drawer-nav-group"));
-        return;
-      }
-      const header = e.target?.closest(".nav-group-header.nav-header-clickable") || null;
-      if (header) {
-        e.stopPropagation();
-        toggleGroup(header.closest(".drawer-nav-group"));
-      }
+    if (!resizer || !tocEl) return;
+    let active = false, startX = 0, startW = 0;
+    resizer.addEventListener("mousedown", (e) => {
+      if (window.innerWidth <= 860) return;
+      active = true;
+      startX = e.clientX;
+      startW = tocEl.getBoundingClientRect().width;
+      resizer.classList.add("resizing");
+      document.body.classList.add("sidebar-resizing");
+      e.preventDefault();
+    });
+    window.addEventListener("mousemove", (e) => {
+      if (!active) return;
+      const w = Math.max(MIN, Math.min(MAX, Math.round(startW + startX - e.clientX)));
+      document.documentElement.style.setProperty("--toc-width", w + "px");
+    });
+    window.addEventListener("mouseup", () => {
+      if (!active) return;
+      active = false;
+      resizer.classList.remove("resizing");
+      document.body.classList.remove("sidebar-resizing");
+      localStorage.setItem("shirone-toc-width", Math.round(tocEl.getBoundingClientRect().width));
+    });
+    resizer.addEventListener("dblclick", () => {
+      document.documentElement.style.setProperty("--toc-width", DEF + "px");
+      localStorage.setItem("shirone-toc-width", DEF);
     });
   }
+  initTocResizer();
 
-  if (toggleAllBtn) {
-    toggleAllBtn.addEventListener("click", () => {
-      const groups = Array.from(getNavGroups());
-      const hasExpanded = groups.some(g => g.classList.contains("expanded"));
-      if (hasExpanded) {
-        groups.forEach(group => {
-          group.classList.remove("expanded");
-          group.classList.add("collapsed");
-        });
+  function initNavGroups() {
+    const toggleAllBtn = document.getElementById("toggle-all-groups-btn");
+    const toggleAllText = document.getElementById("toggle-all-text");
+    const getNavGroups = () => document.querySelectorAll(".drawer-nav-group");
+
+    function updateToggleAllButtonState() {
+      if (!toggleAllBtn || !toggleAllText) return;
+      const hasExpanded = Array.from(getNavGroups()).some(g => g.classList.contains("expanded"));
+      toggleAllText.textContent = hasExpanded ? "全部收起" : "全部展开";
+    }
+
+    function toggleGroup(group) {
+      if (!group) return;
+      if (group.classList.contains("expanded")) {
+        group.classList.remove("expanded");
+        group.classList.add("collapsed");
         updateToggleAllButtonState();
         return;
       }
-      const applyExpandAll = () => {
-        getNavGroups().forEach(group => {
-          group.classList.remove("collapsed");
-          group.classList.add("expanded");
-        });
+      const finishExpand = () => {
+        group.classList.remove("collapsed");
+        group.classList.add("expanded");
         updateToggleAllButtonState();
       };
-      if (document.querySelector("li[data-nav-lazy='1']") && window.__navStructure?.hydrateAll) {
-        window.__navStructure.hydrateAll().then(applyExpandAll);
-      } else {
-        applyExpandAll();
-      }
-    });
+      if (group.hasAttribute("data-nav-lazy") && window.__navStructure?.ensureHydrated) {
+        window.__navStructure.ensureHydrated(group).then(finishExpand);
+      } else finishExpand();
+    }
+
+    if (drawer) {
+      drawer.addEventListener("click", (e) => {
+        const btn = e.target?.closest(".nav-collapse-btn") || null;
+        if (btn) { e.stopPropagation(); toggleGroup(btn.closest(".drawer-nav-group")); return; }
+        const header = e.target?.closest(".nav-group-header.nav-header-clickable") || null;
+        if (header) { e.stopPropagation(); toggleGroup(header.closest(".drawer-nav-group")); }
+      });
+    }
+
+    if (toggleAllBtn) {
+      toggleAllBtn.addEventListener("click", () => {
+        const groups = Array.from(getNavGroups());
+        if (groups.some(g => g.classList.contains("expanded"))) {
+          groups.forEach(g => { g.classList.remove("expanded"); g.classList.add("collapsed"); });
+          updateToggleAllButtonState();
+          return;
+        }
+        const applyExpandAll = () => {
+          getNavGroups().forEach(g => { g.classList.remove("collapsed"); g.classList.add("expanded"); });
+          updateToggleAllButtonState();
+        };
+        if (document.querySelector("li[data-nav-lazy='1']") && window.__navStructure?.hydrateAll) {
+          window.__navStructure.hydrateAll().then(applyExpandAll);
+        } else applyExpandAll();
+      });
+    }
   }
+  initNavGroups();
 
   // Copy Code —— **事件委托**（2026-10-31 修 issue #17）。
   //
@@ -246,111 +242,98 @@
     }
   });
 
-  // Theme Palette (Color Picker & Presets)
-  const DEFAULT_HUE = 248;
-  const paletteToggleBtn = document.getElementById("palette-toggle");
-  const palettePopover = document.getElementById("palette-popover");
-  const hueSlider = document.getElementById("hue-slider");
-  const hueBadge = document.getElementById("palette-hue-badge");
-  const resetBtn = document.getElementById("palette-reset-btn");
-  const swatchButtons = document.querySelectorAll(".palette-swatch-item");
+  function initPalette() {
+    const DEFAULT_HUE = 248;
+    const paletteToggleBtn = document.getElementById("palette-toggle");
+    const palettePopover = document.getElementById("palette-popover");
+    const hueSlider = document.getElementById("hue-slider");
+    const hueBadge = document.getElementById("palette-hue-badge");
+    const swatchButtons = document.querySelectorAll(".palette-swatch-item");
+
+    function applyHue(hue, save = true) {
+      const val = parseInt(hue, 10);
+      document.documentElement.style.setProperty("--hue", val);
+      document.documentElement.style.setProperty("--primary-h", val);
+      if (hueBadge) hueBadge.textContent = `Hue ${val}°`;
+      if (hueSlider) hueSlider.value = val;
+      swatchButtons.forEach(btn => {
+        btn.classList.toggle("active", parseInt(btn.getAttribute("data-hue"), 10) === val);
+      });
+      if (save) localStorage.setItem("theme-hue", val);
+    }
+
+    const savedHue = localStorage.getItem("theme-hue");
+    applyHue(savedHue !== null ? savedHue : DEFAULT_HUE, false);
+
+    const setExpanded = (open) => {
+      if (paletteToggleBtn) paletteToggleBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    };
+    if (paletteToggleBtn && palettePopover) {
+      const closeSearchIfOpen = () => {
+        const sp = document.getElementById("search-panel");
+        const sb = document.getElementById("search-toggle");
+        if (sp && !sp.hidden) sp.hidden = true;
+        document.body.classList.remove("search-open");
+        if (sb) sb.setAttribute("aria-expanded", "false");
+      };
+      paletteToggleBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const willOpen = !palettePopover.classList.contains("open");
+        if (willOpen) closeSearchIfOpen();
+        palettePopover.classList.toggle("open", willOpen);
+        setExpanded(willOpen);
+      });
+      palettePopover.addEventListener("click", (e) => e.stopPropagation());
+    }
+    return { applyHue, hueSlider, DEFAULT_HUE, swatchButtons, setExpanded };
+  }
   const fontSlider = document.getElementById("font-size-slider");
   const fontSizeValue = document.getElementById("font-size-value");
   const fontSample = document.getElementById("font-sample");
-
-  function applyHue(hue, save = true) {
-    const val = parseInt(hue, 10);
-    document.documentElement.style.setProperty("--hue", val);
-    document.documentElement.style.setProperty("--primary-h", val);
-    if (hueBadge) hueBadge.textContent = `Hue ${val}°`;
-    if (hueSlider) hueSlider.value = val;
-
-    swatchButtons.forEach(btn => {
-      const btnHue = parseInt(btn.getAttribute("data-hue"), 10);
-      if (btnHue === val) {
-        btn.classList.add("active");
-      } else {
-        btn.classList.remove("active");
-      }
-    });
-
-    if (save) {
-      localStorage.setItem("theme-hue", val);
+  const resetBtn = document.getElementById("palette-reset-btn");
+  const { applyHue, hueSlider, DEFAULT_HUE, swatchButtons, setExpanded } = initPalette();
+  const paletteToggleBtn = document.getElementById("palette-toggle");
+  const palettePopover = document.getElementById("palette-popover");
+  function initPaletteEvents() {
+    if (paletteToggleBtn && palettePopover) {
+      document.addEventListener("click", () => {
+        palettePopover.classList.remove("open");
+        setExpanded(false);
+      });
     }
-  }
-
-  // Load saved hue or default
-  const savedHue = localStorage.getItem("theme-hue");
-  if (savedHue !== null) {
-    applyHue(savedHue, false);
-  } else {
-    applyHue(DEFAULT_HUE, false);
-  }
-
-  if (paletteToggleBtn && palettePopover) {
-    // aria-expanded 是顶栏按钮「展开态高亮」的判据（2026-11-01 统一）：
-    // 入口按钮都靠这个属性点亮，调色盘不能只切 .open 类。
-    const setExpanded = (open) => paletteToggleBtn.setAttribute("aria-expanded", open ? "true" : "false");
-    const closeSearchIfOpen = () => {
-      const sp = document.getElementById("search-panel");
-      const sb = document.getElementById("search-toggle");
-      if (sp && !sp.hidden) sp.hidden = true;
-      document.body.classList.remove("search-open");
-      if (sb) sb.setAttribute("aria-expanded", "false");
-    };
-    paletteToggleBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const willOpen = !palettePopover.classList.contains("open");
-      if (willOpen) closeSearchIfOpen();
-      palettePopover.classList.toggle("open", willOpen);
-      setExpanded(willOpen);
-    });
-
-    palettePopover.addEventListener("click", (e) => {
-      e.stopPropagation();
-    });
-
-    document.addEventListener("click", () => {
-      palettePopover.classList.remove("open");
-      setExpanded(false);
+    if (hueSlider) {
+      hueSlider.addEventListener("input", (e) => applyHue(e.target.value, true));
+    }
+    swatchButtons.forEach(btn => {
+      btn.addEventListener("click", () => {
+        const hue = btn.getAttribute("data-hue");
+        if (hue) applyHue(hue, true);
+      });
     });
   }
+  initPaletteEvents();
 
-  if (hueSlider) {
-    hueSlider.addEventListener("input", (e) => {
-      applyHue(e.target.value, true);
-    });
-  }
-
-  swatchButtons.forEach(btn => {
-    btn.addEventListener("click", () => {
-      const hue = btn.getAttribute("data-hue");
-      if (hue) {
-        applyHue(hue, true);
-      }
-    });
-  });
-
-  // 字号（2026-10-29）：全站缩放只改一处 —— html 的 font-size。
-  // 站内所有尺寸都是 rem，所以正文/侧栏/代码块/公式（MathLive 继承字号）一起变。
-  // 范围与默认值照 Octave-UI 的 ThemeManager（12–20px / 16px）。
   const FONT_KEY = "site-font-size";
   const FONT_DEFAULT = 16;
-  const FONT_MIN = 12;
-  const FONT_MAX = 20;
 
-  function applyFontSize(px, save = true) {
-    const n = Math.max(FONT_MIN, Math.min(FONT_MAX, parseInt(px, 10) || FONT_DEFAULT));
-    document.documentElement.style.fontSize = n + "px";
-    document.documentElement.style.setProperty("--base-font-size", n + "px");
-    if (fontSizeValue) fontSizeValue.textContent = n + "px";
-    if (fontSlider) fontSlider.value = n;
-    if (fontSample) fontSample.style.fontSize = n + "px";
-    if (save) {
-      try { localStorage.setItem(FONT_KEY, String(n)); } catch (_e) { /* 隐私模式 */ }
-    }
-    if (typeof scheduleInlineMathOverflow === "function") scheduleInlineMathOverflow();
+  function initFontSize() {
+    const FONT_MIN = 14;
+    const FONT_MAX = 25;
+    const syncFontSizeUi = (n) => {
+      if (fontSizeValue) fontSizeValue.textContent = n + "px";
+      if (fontSlider) fontSlider.value = n;
+      if (fontSample) fontSample.style.fontSize = n + "px";
+    };
+    return function applyFontSize(px, save = true) {
+      const n = Math.max(FONT_MIN, Math.min(FONT_MAX, parseInt(px, 10) || FONT_DEFAULT));
+      document.documentElement.style.fontSize = n + "px";
+      document.documentElement.style.setProperty("--base-font-size", n + "px");
+      syncFontSizeUi(n);
+      if (save) { try { localStorage.setItem(FONT_KEY, String(n)); } catch (_e) { /* 隐私模式 */ } }
+      if (typeof scheduleInlineMathOverflow === "function") scheduleInlineMathOverflow();
+    };
   }
+  const applyFontSize = initFontSize();
 
   // 窄屏超宽行内公式兜底：仅对单块 .base 仍超出所在行宽的 .katex 挂 .katex-inline-scroll，
   // 使其就地横向可滑，避免被 .layout-container 的 overflow-x: clip 裁断，同时不动正常折行的公式。
@@ -391,28 +374,32 @@
     });
   }
   scheduleInlineMathOverflow();
-  if (document.fonts && typeof document.fonts.ready?.then === "function") {
-    document.fonts.ready.then(scheduleInlineMathOverflow);
+  function initMathOverflow() {
+    scheduleInlineMathOverflow();
+    if (document.fonts && typeof document.fonts.ready?.then === "function") {
+      document.fonts.ready.then(scheduleInlineMathOverflow);
+    }
+    window.addEventListener("resize", scheduleInlineMathOverflow);
+    document.addEventListener("toggle", scheduleInlineMathOverflow, true);
   }
-  window.addEventListener("resize", scheduleInlineMathOverflow);
-  document.addEventListener("toggle", scheduleInlineMathOverflow, true);
+  initMathOverflow();
 
-  const savedFont = localStorage.getItem(FONT_KEY);
-  applyFontSize(savedFont !== null ? savedFont : FONT_DEFAULT, false);
-
-  if (fontSlider) {
-    fontSlider.addEventListener("input", (e) => applyFontSize(e.target.value, true));
+  function initFontAndReset() {
+    const savedFont = localStorage.getItem(FONT_KEY);
+    applyFontSize(savedFont !== null ? savedFont : FONT_DEFAULT, false);
+    if (fontSlider) {
+      fontSlider.addEventListener("input", (e) => applyFontSize(e.target.value, true));
+    }
+    if (resetBtn) {
+      resetBtn.addEventListener("click", () => {
+        localStorage.removeItem("theme-hue");
+        applyHue(DEFAULT_HUE, false);
+        try { localStorage.removeItem(FONT_KEY); } catch (_e) { /* 隐私模式 */ }
+        applyFontSize(FONT_DEFAULT, false);
+      });
+    }
   }
-
-  if (resetBtn) {
-    resetBtn.addEventListener("click", () => {
-      localStorage.removeItem("theme-hue");
-      applyHue(DEFAULT_HUE, false);
-      // 字号也一并复位——这个按钮的语义是「回到默认」，两样都算默认的一部分。
-      try { localStorage.removeItem(FONT_KEY); } catch (_e) { /* 隐私模式 */ }
-      applyFontSize(FONT_DEFAULT, false);
-    });
-  }
+  initFontAndReset();
 
   // Table of Contents ScrollSpy
   // SPA 换页钩子（2026-10-17）：tocLinks/headings 换页后要重扫。
@@ -420,29 +407,22 @@
   let headings = Array.from(document.querySelectorAll(".article-content h2, .article-content h3"))
     .filter((h) => h.id);
   // 透明底黑线配图自动对比度检测与反色呈现
+  function parseAlpha(raw) {
+    if (raw === undefined) return 1;
+    const a = raw.endsWith("%") ? parseFloat(raw) / 100 : parseFloat(raw);
+    return Number.isFinite(a) ? a : 1;
+  }
+
   function parseCssColor(str) {
     if (!str || str === "transparent") return null;
     const s = String(str).trim();
     const mRgb = /^rgba?\(\s*([0-9.]+)\s*[,\s]\s*([0-9.]+)\s*[,\s]\s*([0-9.]+)(?:\s*[,/]\s*([0-9.]+%?))?\s*\)$/i.exec(s);
     if (mRgb) {
-      let a = 1;
-      if (mRgb[4] !== undefined) {
-        a = mRgb[4].endsWith("%") ? parseFloat(mRgb[4]) / 100 : parseFloat(mRgb[4]);
-      }
-      return { r: Number(mRgb[1]), g: Number(mRgb[2]), b: Number(mRgb[3]), a: Number.isFinite(a) ? a : 1 };
+      return { r: Number(mRgb[1]), g: Number(mRgb[2]), b: Number(mRgb[3]), a: parseAlpha(mRgb[4]) };
     }
     const mSrgb = /^color\(\s*srgb\s+([0-9.]+)\s+([0-9.]+)\s+([0-9.]+)(?:\s*\/\s*([0-9.]+%?))?\s*\)$/i.exec(s);
     if (mSrgb) {
-      let a = 1;
-      if (mSrgb[4] !== undefined) {
-        a = mSrgb[4].endsWith("%") ? parseFloat(mSrgb[4]) / 100 : parseFloat(mSrgb[4]);
-      }
-      return {
-        r: Number(mSrgb[1]) * 255,
-        g: Number(mSrgb[2]) * 255,
-        b: Number(mSrgb[3]) * 255,
-        a: Number.isFinite(a) ? a : 1,
-      };
+      return { r: Number(mSrgb[1]) * 255, g: Number(mSrgb[2]) * 255, b: Number(mSrgb[3]) * 255, a: parseAlpha(mSrgb[4]) };
     }
     return null;
   }
@@ -486,24 +466,25 @@
     return acc;
   }
 
-  function shouldInvertSamples(rgba, bgRgb) {
-    if (!rgba || rgba.length < 4 || !bgRgb) return false;
-    const total = rgba.length / 4;
+  function summarizeSamples(rgba) {
     let transparentCount = 0;
     let inkWeight = 0;
     let fgLumSum = 0;
     let invLumSum = 0;
     for (let i = 0; i < rgba.length; i += 4) {
       const a = rgba[i + 3] / 255;
-      if (a < 0.1) {
-        transparentCount++;
-        continue;
-      }
+      if (a < 0.1) { transparentCount++; continue; }
       inkWeight += a;
       fgLumSum += a * relLuminance(rgba[i], rgba[i + 1], rgba[i + 2]);
       invLumSum += a * relLuminance(255 - rgba[i], 255 - rgba[i + 1], 255 - rgba[i + 2]);
     }
-    if (inkWeight === 0 || transparentCount / total < 0.08) return false;
+    return { transparentCount, inkWeight, fgLumSum, invLumSum };
+  }
+
+  function shouldInvertSamples(rgba, bgRgb) {
+    if (!rgba || rgba.length < 4 || !bgRgb) return false;
+    const { transparentCount, inkWeight, fgLumSum, invLumSum } = summarizeSamples(rgba);
+    if (inkWeight === 0 || transparentCount / (rgba.length / 4) < 0.08) return false;
     const bgLum = relLuminance(bgRgb.r, bgRgb.g, bgRgb.b);
     const curContrast = contrastRatio(fgLumSum / inkWeight, bgLum);
     const invContrast = contrastRatio(invLumSum / inkWeight, bgLum);
@@ -511,25 +492,27 @@
   }
 
   let sampleCanvas = null;
+  function sampleImageData(img) {
+    const w = Math.max(16, Math.min(64, img.naturalWidth));
+    const h = Math.max(16, Math.min(64, img.naturalHeight));
+    if (!sampleCanvas) sampleCanvas = document.createElement("canvas");
+    sampleCanvas.width = w;
+    sampleCanvas.height = h;
+    const ctx = sampleCanvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+    return ctx.getImageData(0, 0, w, h).data;
+  }
+
   function evaluateImageContrast(img) {
     if (!img?.complete || !(img.naturalWidth > 0)) return;
     const bgRgb = resolveBgRgb(img);
     try {
-      const w = Math.max(16, Math.min(64, img.naturalWidth));
-      const h = Math.max(16, Math.min(64, img.naturalHeight));
-      if (!sampleCanvas) sampleCanvas = document.createElement("canvas");
-      sampleCanvas.width = w;
-      sampleCanvas.height = h;
-      const ctx = sampleCanvas.getContext("2d", { willReadFrequently: true });
-      if (!ctx) return;
-      ctx.clearRect(0, 0, w, h);
-      ctx.drawImage(img, 0, 0, w, h);
-      const data = ctx.getImageData(0, 0, w, h).data;
-      img.classList.toggle("img-auto-invert", shouldInvertSamples(data, bgRgb));
+      const data = sampleImageData(img);
+      if (data) img.classList.toggle("img-auto-invert", shouldInvertSamples(data, bgRgb));
     } catch (_) {
-      // file:// 预览下 canvas 读取同源 SVG 可能受限：深色底对透明 SVG 回落反色
-      const src = img.getAttribute("src") || "";
-      const isSvg = /\.svg(?:[?#]|$)/i.test(src);
+      const isSvg = /\.svg(?:[?#]|$)/i.test(img.getAttribute("src") || "");
       const isDarkBg = relLuminance(bgRgb.r, bgRgb.g, bgRgb.b) < 0.25;
       img.classList.toggle("img-auto-invert", isSvg && isDarkBg);
     }
@@ -553,24 +536,27 @@
     updateAllImageContrast: updateAllImageContrast,
   };
 
-  if (typeof MutationObserver === "function") {
-    new MutationObserver(() => {
-      updateAllImageContrast();
-    }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-  }
-  if (window.matchMedia) {
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    if (typeof mq.addEventListener === "function") {
-      mq.addEventListener("change", () => {
-        if (!localStorage.getItem("theme")) {
-          document.documentElement.setAttribute("data-theme", mq.matches ? "dark" : "light");
-          syncThemeButtons();
-        }
+  function initThemeObservers() {
+    if (typeof MutationObserver === "function") {
+      new MutationObserver(() => {
         updateAllImageContrast();
-      });
+      }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     }
+    if (window.matchMedia) {
+      const mq = window.matchMedia("(prefers-color-scheme: dark)");
+      if (typeof mq.addEventListener === "function") {
+        mq.addEventListener("change", () => {
+          if (!localStorage.getItem("theme")) {
+            document.documentElement.setAttribute("data-theme", mq.matches ? "dark" : "light");
+            syncThemeButtons();
+          }
+          updateAllImageContrast();
+        });
+      }
+    }
+    updateAllImageContrast();
   }
-  updateAllImageContrast();
+  initThemeObservers();
 
   let onScroll = null;
 
@@ -582,19 +568,12 @@
     scheduleInlineMathOverflow();
     updateAllImageContrast();
   };
-  if (tocLinks.length > 0) {
-
+  function initTocScrollSpy() {
+    if (tocLinks.length === 0) return;
     onScroll = function () {
       const scrollY = window.scrollY || window.pageYOffset;
       let currentHeadingId = "";
       let currentTop = -Infinity;
-
-      // 取「已越过视口顶线、且文档位置最靠下」的那个标题 = 当前所在。
-      // 不能像以前那样遇到第一个未越过的就 break：折叠面板（:::collapse）里的标题
-      // 是**收起面板中的 h3**，原生 <details> 收起时其内容仍占布局位、位置与展开后
-      // 不一致，DOM 顺序与纵向顺序就此错开——一 break 就永远停在错的那一项
-      // （2026-10-13 用户报「跟着算一遍相关锚点会漂移」）。
-      // 同时跳过收起面板里的标题：它此刻并不可见，不该被高亮。
       for (let i = 0; i < headings.length; i++) {
         const h = headings[i];
         const det = h.closest("details");
@@ -605,27 +584,14 @@
           currentHeadingId = h.id;
         }
       }
-
       tocLinks.forEach((link) => {
         const item = link.closest(".toc-item");
         if (!item) return;
-        if (link.getAttribute("href") === "#" + currentHeadingId) {
-          item.classList.add("active");
-        } else {
-          item.classList.remove("active");
-        }
+        item.classList.toggle("active", link.getAttribute("href") === "#" + currentHeadingId);
       });
-    }
-
-    // 高亮除了滚动，还要在**导航发生时**重算：点目录/深链接会让
-    // disclosure-anchor.mjs 展开折叠面板并重滚，页面位置由脚本改变，
-    // 只靠 scroll 事件可能漏掉（且 hashchange 先于展开后的重滚）。
+    };
     window.addEventListener("hashchange", onScroll);
-    // 用户手动开合面板同样改变布局，重算一次。
     document.addEventListener("toggle", onScroll, true);
-    // 滚动用 rAF 合并（2026-10-19）：onScroll 对每个标题调 getBoundingClientRect，
-    // 会强制同步布局。移动端 scroll 事件的密度高于帧率，逐个处理就是白烧主线程——
-    // 一帧最多算一次。
     let scrollQueued = false;
     window.addEventListener("scroll", () => {
       if (scrollQueued) return;
@@ -634,4 +600,5 @@
     }, { passive: true });
     onScroll();
   }
+  initTocScrollSpy();
 })();

@@ -474,6 +474,15 @@ body {
   cursor: pointer;
 }
 
+#font-size-slider {
+  background: linear-gradient(
+    to right,
+    var(--md-sys-color-primary) 0%,
+    var(--md-sys-color-primary) var(--font-pct, 18%),
+    var(--md-sys-color-surface-container-highest) var(--font-pct, 18%)
+  );
+}
+
 .palette-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
@@ -676,14 +685,52 @@ body {
 }
 
 .sidebar-resizer:hover,
-.sidebar-resizer.resizing {
+.sidebar-resizer.resizing,
+.toc-resizer:hover,
+.toc-resizer.resizing {
   background-color: var(--md-sys-color-primary);
+}
+
+.toc-resizer {
+  position: absolute;
+  top: 0;
+  left: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 50;
+  transition: background-color 0.15s;
+}
+
+/* Global dynamic scrollbar (Chromium/WebKit + Firefox) */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--md-sys-color-outline-variant) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--md-sys-color-outline-variant);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--md-sys-color-primary);
 }
 
 body.sidebar-resizing,
 body.sidebar-resizing * {
   cursor: col-resize !important;
   user-select: none !important;
+  transition: none !important;
 }
 
 body.sidebar-resizing .m3-drawer {
@@ -1114,6 +1161,11 @@ body.sidebar-resizing .m3-drawer {
 
 /* 显示公式容器（2026-10-29 换引擎：旧类名 katex-display 换成 math-display，
    后者由 build.mjs 的 .math-display 包出来；保留旧类是过渡期的兼容）。 */
+.katex .x-arrow .sizing.reset-size6.size3,
+.katex .x-arrow .fontsize-ensurer.reset-size6.size3 {
+  font-size: 0.85em;
+}
+
 .katex-display,
 .math-display {
   margin: 0 !important;

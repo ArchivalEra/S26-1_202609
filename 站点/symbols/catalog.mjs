@@ -32,21 +32,257 @@ function parseSlashRegex(raw) {
   }
 }
 
+function matchesSingleForm(f, q) {
+  if (f === q || f.replace(/^\\/, '') === q.replace(/^\\/, '')) return true;
+  const rx = parseSlashRegex(f);
+  if (!rx) return false;
+  rx.lastIndex = 0;
+  const m = rx.exec(q);
+  return Boolean(m && m[0] === q);
+}
+
 function matchesForm(entry, formNeedle) {
   const q = String(formNeedle || '').trim();
   if (!q) return false;
   const plainTitle = plainBubbleText(entry.title).replace(/[：:].*$/, '').trim();
   if (plainTitle === q) return true;
-  for (const f of [...(entry.prose || []), ...(entry.tex || [])]) {
-    if (f === q || f.replace(/^\\/, '') === q.replace(/^\\/, '')) return true;
-    const rx = parseSlashRegex(f);
-    if (rx) {
-      rx.lastIndex = 0;
-      const m = rx.exec(q);
-      if (m && m[0] === q) return true;
-    }
+  return [...(entry.prose || []), ...(entry.tex || [])].some((f) => matchesSingleForm(f, q));
+}
+
+function loadPackSource(root, relPage, provided, warnings, packName) {
+  if (provided?.source != null) return provided.source;
+  const abs = path.join(root, relPage);
+  if (!fs.existsSync(abs)) {
+    warnings.push(`包「${packName}」的页面不在仓库里：${relPage}`);
+    return null;
   }
-  return false;
+  return fs.readFileSync(abs, 'utf-8');
+}
+
+function buildPackDict(packName, source, warnings) {
+  const entries = parseGlossaryDict(source);
+  const matches = parseGlossaryMatch(source);
+  warnings.push(...validateMatchSyntax(packName, matches));
+
+  const dict = {};
+  for (const [id, e] of Object.entries(entries)) {
+    dict[id] = {
+      ...e,
+      key: `${packName}:${id}`,
+      pack: packName,
+      id,
+      titleText: plainBubbleText(e.title),
+      bubble: true,
+    };
+  }
+  for (const [id, m] of Object.entries(matches)) {
+    if (dict[id]) dict[id] = { ...dict[id], prose: m.prose, tex: m.tex };
+    else warnings.push(`包「${packName}」的 ${id} 只声明了形式、没有词条内容——自动取词不生效`);
+  }
+  return dict;
+}
+
+function lookupByKey(key, packs) {
+  const idx = String(key).indexOf(':');
+  if (idx <= 0) return [];
+  const p = packs[String(key).slice(0, idx)];
+  const e = p?.dict?.[String(key).slice(idx + 1)];
+  return e ? [{ ...e, page: p.page }] : [];
+}
+
+function lookupByCourse(q, packs, packChainFor) {
+  const chainInfo = packChainFor({ course: q.course, relPath: q.relPath || '' });
+  const merged = new Map();
+  for (const name of chainInfo.packNames) {
+    const p = packs[name];
+    if (!p) continue;
+    for (const [id, e] of Object.entries(p.dict)) merged.set(id, { ...e, page: p.page });
+  }
+  return { chainInfo, rawEntries: [...merged.values()] };
+}
+
+function collectLookupEntries(q, packs, packChainFor) {
+  if (q.key) return { chainInfo: null, rawEntries: lookupByKey(q.key, packs) };
+  if (q.pack) {
+    const p = packs[q.pack];
+    return { chainInfo: null, rawEntries: Object.values(p.dict).map((e) => ({ ...e, page: p.page })) };
+  }
+  if (q.course) return lookupByCourse(q, packs, packChainFor);
+  const rawEntries = [];
+  for (const p of Object.values(packs)) {
+    for (const e of Object.values(p.dict)) rawEntries.push({ ...e, page: p.page });
+  }
+  return { chainInfo: null, rawEntries };
+}
+
+function hasNeedle(val, needle) {
+  return String(val || '').toLowerCase().includes(needle);
+}
+
+function entryMatchesNeedle(e, needle) {
+  const hasIn = (arr) => (arr || []).some((f) => f.toLowerCase().includes(needle));
+  const hasSense = (e.senses || []).some(
+    (s) => hasNeedle(s.text, needle) || hasNeedle(s.ctx, needle),
+  );
+  return (
+    hasNeedle(e.key, needle)
+    || hasNeedle(e.id, needle)
+    || hasNeedle(e.title, needle)
+    || hasNeedle(e.text, needle)
+    || hasIn(e.prose)
+    || hasIn(e.tex)
+    || hasSense
+  );
+}
+
+function formatLookupEntry(e, ctx) {
+  const senses = (e.senses || []).map((s) => ({ ...s, isCurrentCtx: Boolean(ctx && s.ctx === ctx) }));
+  const out = { key: e.key, pack: e.pack, id: e.id, page: e.page, title: e.title, text: e.text };
+  if (senses.length) out.senses = senses;
+  if (e.prose?.length) out.prose = e.prose;
+  if (e.tex?.length) out.tex = e.tex;
+  return out;
+}
+
+function lookupFigureEntry(ref, packsForPage, pins, pageDict) {
+  const colon = ref.indexOf(':');
+  if (colon > 0) {
+    const p = packsForPage[ref.slice(0, colon)];
+    return p ? (p.dict[ref.slice(colon + 1)] || null) : null;
+  }
+  if (Object.hasOwn(pins, ref)) {
+    const p = packsForPage[pins[ref]];
+    return p ? (p.dict[ref] || null) : null;
+  }
+  return pageDict[ref] || null;
+}
+
+function resolvePackMeta(source, relPage, provided, packName) {
+  const { meta } = parseFrontmatter(source, { strict: false, filePath: relPage });
+  const fm = provided?.frontmatter || meta || {};
+  return {
+    okfId: fm.id ? String(fm.id) : '',
+    course: fm.course ? String(fm.course) : packName,
+  };
+}
+
+function buildOnePack(packName, packPage, opts, root, warnings) {
+  const provided = opts.packsData?.[packName];
+  const relPage = provided?.page || packPage;
+  const source = loadPackSource(root, relPage, provided, warnings, packName);
+  if (source === null) return null;
+  const { okfId, course } = resolvePackMeta(source, relPage, provided, packName);
+  return {
+    name: packName,
+    page: relPage,
+    htmlPage: relPage.replace(/\\/g, '/').replace(/\.md$/, '.html'),
+    okfId,
+    course,
+    dict: buildPackDict(packName, source, warnings),
+  };
+}
+
+function filterLookupEntries(rawEntries, q) {
+  let out = rawEntries;
+  if (q.id) out = out.filter((e) => e.id === q.id || e.key === q.id);
+  if (q.form) out = out.filter((e) => matchesForm(e, q.form));
+  if (q.q) {
+    const needle = String(q.q).toLowerCase();
+    out = out.filter((e) => entryMatchesNeedle(e, needle));
+  }
+  return out;
+}
+
+function buildHitItem(key, entry) {
+  const idx = String(key).indexOf(':');
+  const pack = entry.pack || (idx > 0 ? String(key).slice(0, idx) : '');
+  const id = entry.id || (idx > 0 ? String(key).slice(idx + 1) : String(key));
+  const item = { key, pack, id, title: entry.title, text: entry.text, href: entry.href };
+  if (entry.senses?.length) item.senses = entry.senses;
+  return item;
+}
+
+function buildFinalizeTerms(hits, toHtml, toPlain, here) {
+  const terms = {};
+  const rawHits = {};
+  for (const [key, e] of hits.entries()) {
+    if (e?.title === undefined) continue;
+    rawHits[key] = e;
+    const item = {
+      pack: e.pack,
+      id: e.id,
+      title: toHtml(e.title),
+      titleText: toPlain(e.title),
+      text: toHtml(e.text),
+      plainText: toPlain(e.text),
+      href: e.href,
+    };
+    if (e.senses?.length) {
+      item.senses = e.senses.map((s) => ({
+        ctx: s.ctx,
+        text: toHtml(s.text),
+        plainText: toPlain(s.text),
+        here: Boolean(here && s.ctx === here),
+      }));
+      item.ctx = here;
+    }
+    terms[key] = item;
+  }
+  return { terms, rawHits };
+}
+
+function buildPageDictEntries(pack, relPath, pageRelativeHref) {
+  const out = {};
+  for (const [id, e] of Object.entries(pack.dict)) {
+    out[id] = {
+      ...e,
+      key: `${pack.name}:${id}`,
+      pack: pack.name,
+      id,
+      href: pageRelativeHref(relPath, pack.page, id),
+      titleText: plainBubbleText(e.title),
+    };
+  }
+  return out;
+}
+
+function buildPageDict(envPacks, relPath, pageRelativeHref) {
+  const pageDict = {};
+  for (const pack of envPacks) {
+    if (pack) Object.assign(pageDict, buildPageDictEntries(pack, relPath, pageRelativeHref));
+  }
+  return pageDict;
+}
+
+function buildPacksForPage(packs, relPath, pageRelativeBase, pageRelativeHref) {
+  return Object.fromEntries(
+    Object.entries(packs).map(([name, pack]) => [
+      name,
+      {
+        hrefBase: pageRelativeBase(relPath, pack.page),
+        dict: buildPageDictEntries(pack, relPath, pageRelativeHref),
+      },
+    ]),
+  );
+}
+
+function applyPagePins(pageDict, packsForPage, pins, pageWarns) {
+  const effectiveDict = { ...pageDict };
+  for (const [termId, targetPack] of Object.entries(pins)) {
+    const pinned = packsForPage[targetPack]?.dict[termId];
+    if (pinned) effectiveDict[termId] = pinned;
+    else pageWarns.push(`符号强制指向的包「${targetPack}」没有词条 ${termId}`);
+  }
+  return effectiveDict;
+}
+
+function buildPacksFromRegistry(registry, opts, root, warnings) {
+  const packs = {};
+  for (const [packName, packPage] of Object.entries(registry)) {
+    const built = buildOnePack(packName, packPage, opts, root, warnings);
+    if (built) packs[packName] = built;
+  }
+  return packs;
 }
 
 /**
@@ -64,64 +300,12 @@ function matchesForm(entry, formNeedle) {
  */
 export function createSymbolCatalog(opts = {}) {
   const root = opts.root || process.cwd();
-  const registry = opts.packsRegistry || SYMBOL_PACKS;
   const courseEnv = opts.courseEnv || COURSE_ENV;
   const buildPhases = opts.buildPhases || BUILD_PHASES;
 
-  const packs = {};
   const warnings = [];
   const dictProblems = [];
-
-  for (const [packName, packPage] of Object.entries(registry)) {
-    const provided = opts.packsData?.[packName];
-    let source = provided?.source ?? null;
-    const relPage = provided?.page || packPage;
-    if (source === null) {
-      const abs = path.join(root, relPage);
-      if (!fs.existsSync(abs)) {
-        warnings.push(`包「${packName}」的页面不在仓库里：${relPage}`);
-        continue;
-      }
-      source = fs.readFileSync(abs, 'utf-8');
-    }
-
-    const { meta } = parseFrontmatter(source, { strict: false, filePath: relPage });
-    const fm = provided?.frontmatter || meta || {};
-    const entries = parseGlossaryDict(source);
-    const matches = parseGlossaryMatch(source);
-
-    for (const w of validateMatchSyntax(packName, matches)) {
-      warnings.push(w);
-    }
-
-    const dict = {};
-    for (const [id, e] of Object.entries(entries)) {
-      dict[id] = {
-        ...e,
-        key: `${packName}:${id}`,
-        pack: packName,
-        id,
-        titleText: plainBubbleText(e.title),
-        bubble: true,
-      };
-    }
-    for (const [id, m] of Object.entries(matches)) {
-      if (dict[id]) {
-        dict[id] = { ...dict[id], prose: m.prose, tex: m.tex };
-      } else {
-        warnings.push(`包「${packName}」的 ${id} 只声明了形式、没有词条内容——自动取词不生效`);
-      }
-    }
-
-    packs[packName] = {
-      name: packName,
-      page: relPage,
-      htmlPage: relPage.replace(/\\/g, '/').replace(/\.md$/, '.html'),
-      okfId: fm.id ? String(fm.id) : '',
-      course: fm.course ? String(fm.course) : packName,
-      dict,
-    };
-  }
+  const packs = buildPacksFromRegistry(opts.packsRegistry || SYMBOL_PACKS, opts, root, warnings);
 
   let mathDictionary = null;
   if (opts.parseMath && opts.compileMathDict !== false) {
@@ -146,12 +330,11 @@ export function createSymbolCatalog(opts = {}) {
   }
 
   function packChainFor({ course = '', relPath = '' } = {}) {
-    const baseEnv = course ? (courseEnv[course] || {}) : {};
-    const phaseEnv = relPath ? (buildPhases.find((ph) => ph.pages?.includes(relPath))?.env || {}) : {};
-    const envVars = { ...baseEnv, ...phaseEnv };
-    const envSpec = envVars['符号'] || null;
-    const names = envSpec ? envSpec.split('+').map((s) => s.trim()).filter(Boolean) : [];
-    return { envName: envSpec, packNames: names };
+    const baseEnv = courseEnv[course] || {};
+    const phase = buildPhases.find((ph) => ph.pages?.includes(relPath));
+    const envSpec = { ...baseEnv, ...phase?.env }['符号'] || null;
+    const packNames = envSpec ? envSpec.split('+').map((s) => s.trim()).filter(Boolean) : [];
+    return { envName: envSpec, packNames };
   }
 
   function pageRelativeHref(fromRelPath, targetPackPage, entryId) {
@@ -214,85 +397,13 @@ export function createSymbolCatalog(opts = {}) {
         err.code = 'no_symbol_pack';
         throw err;
       }
-
-      let chainInfo = null;
-      let rawEntries = [];
-
-      if (q.key) {
-        const idx = String(q.key).indexOf(':');
-        if (idx > 0) {
-          const pName = String(q.key).slice(0, idx);
-          const id = String(q.key).slice(idx + 1);
-          const p = packs[pName];
-          const e = p?.dict?.[id];
-          if (e) rawEntries.push({ ...e, page: p.page });
-        }
-      } else if (q.pack) {
-        const p = packs[q.pack];
-        rawEntries = Object.values(p.dict).map((e) => ({ ...e, page: p.page }));
-      } else if (q.course) {
-        chainInfo = packChainFor({ course: q.course, relPath: q.relPath || '' });
-        const merged = new Map();
-        for (const name of chainInfo.packNames) {
-          const p = packs[name];
-          if (!p) continue;
-          for (const [id, e] of Object.entries(p.dict)) {
-            merged.set(id, { ...e, page: p.page });
-          }
-        }
-        rawEntries = [...merged.values()];
-      } else {
-        // 未指定课程与包：多包并列返回（绝不用 bare id 互相覆盖）
-        for (const p of Object.values(packs)) {
-          for (const e of Object.values(p.dict)) {
-            rawEntries.push({ ...e, page: p.page });
-          }
-        }
-      }
-
-      if (q.id) {
-        rawEntries = rawEntries.filter((e) => e.id === q.id || e.key === q.id);
-      }
-      if (q.form) {
-        rawEntries = rawEntries.filter((e) => matchesForm(e, q.form));
-      }
-      if (q.q) {
-        const needle = String(q.q).toLowerCase();
-        rawEntries = rawEntries.filter((e) =>
-          e.key.toLowerCase().includes(needle)
-          || e.id.toLowerCase().includes(needle)
-          || (e.title || '').toLowerCase().includes(needle)
-          || (e.text || '').toLowerCase().includes(needle)
-          || (e.prose || []).some((f) => f.toLowerCase().includes(needle))
-          || (e.tex || []).some((f) => f.toLowerCase().includes(needle))
-          || (e.senses || []).some((s) => (s.text || '').toLowerCase().includes(needle) || (s.ctx || '').toLowerCase().includes(needle)),
-        );
-      }
-
+      const { chainInfo, rawEntries } = collectLookupEntries(q, packs, packChainFor);
+      const filtered = filterLookupEntries(rawEntries, q);
       const ctx = q.course || null;
-      const matches = rawEntries.map((e) => {
-        const senses = (e.senses || []).map((s) => ({
-          ...s,
-          isCurrentCtx: !!ctx && s.ctx === ctx,
-        }));
-        const out = {
-          key: e.key,
-          pack: e.pack,
-          id: e.id,
-          page: e.page,
-          title: e.title,
-          text: e.text,
-        };
-        if (senses.length) out.senses = senses;
-        if (e.prose?.length) out.prose = e.prose;
-        if (e.tex?.length) out.tex = e.tex;
-        return out;
-      });
-
       return {
         env: chainInfo ? chainInfo.envName : null,
         chain: chainInfo ? chainInfo.packNames : null,
-        matches,
+        matches: filtered.map((e) => formatLookupEntry(e, ctx)),
       };
     },
 
@@ -358,62 +469,14 @@ export function createSymbolCatalog(opts = {}) {
       const { envName, packNames } = packChainFor({ course: here, relPath });
       const pageWarns = [];
 
-      const envPacks = packNames.map((n) => packs[n]);
-      for (const [i, n] of packNames.entries()) {
-        if (!envPacks[i]) {
-          pageWarns.push(`页面 ${relPath} 锚定的符号包「${n}」未注册——本页零符号行为`);
-        }
-      }
+      const envPacks = packNames.map((n) => {
+        if (!packs[n]) pageWarns.push(`页面 ${relPath} 锚定的符号包「${n}」未注册——本页零符号行为`);
+        return packs[n];
+      });
 
-      // 页面环境包合并（后者覆盖前者同 id），但每个词条保持其**真正来源包**的规范 key `包:词条`。
-      const pageDict = {};
-      for (const pack of envPacks) {
-        if (!pack) continue;
-        for (const [id, e] of Object.entries(pack.dict)) {
-          pageDict[id] = {
-            ...e,
-            key: `${pack.name}:${id}`,
-            pack: pack.name,
-            id,
-            href: pageRelativeHref(relPath, pack.page, id),
-            titleText: plainBubbleText(e.title),
-          };
-        }
-      }
-
-      // 全部包的当页 hrefBase（用于跨包强制令牌与 frontmatter pins）。
-      const packsForPage = Object.fromEntries(
-        Object.entries(packs).map(([name, pack]) => [
-          name,
-          {
-            hrefBase: pageRelativeBase(relPath, pack.page),
-            dict: Object.fromEntries(
-              Object.entries(pack.dict).map(([id, e]) => [
-                id,
-                {
-                  ...e,
-                  key: `${name}:${id}`,
-                  pack: name,
-                  id,
-                  href: pageRelativeHref(relPath, pack.page, id),
-                  titleText: plainBubbleText(e.title),
-                },
-              ]),
-            ),
-          },
-        ]),
-      );
-
-      // 校验 frontmatter 符号强制是否指向有效包与词条，并同步生效字典（供 proseDict 与 exclusions 校验）。
-      const effectiveDict = { ...pageDict };
-      for (const [termId, targetPack] of Object.entries(policy.pins)) {
-        const pinned = packsForPage[targetPack]?.dict?.[termId];
-        if (!pinned) {
-          pageWarns.push(`符号强制指向的包「${targetPack}」没有词条 ${termId}`);
-        } else {
-          effectiveDict[termId] = pinned;
-        }
-      }
+      const pageDict = buildPageDict(envPacks, relPath, pageRelativeHref);
+      const packsForPage = buildPacksForPage(packs, relPath, pageRelativeBase, pageRelativeHref);
+      const effectiveDict = applyPagePins(pageDict, packsForPage, policy.pins, pageWarns);
 
       const { proseDict, texDict } = applySymbolExclusions(
         effectiveDict,
@@ -426,19 +489,7 @@ export function createSymbolCatalog(opts = {}) {
 
       function recordHit(key, entry) {
         if (!key || !entry || hits.has(key)) return;
-        const idx = String(key).indexOf(':');
-        const pack = entry.pack || (idx > 0 ? String(key).slice(0, idx) : '');
-        const id = entry.id || (idx > 0 ? String(key).slice(idx + 1) : String(key));
-        const item = {
-          key,
-          pack,
-          id,
-          title: entry.title,
-          text: entry.text,
-          href: entry.href,
-        };
-        if (entry.senses?.length) item.senses = entry.senses;
-        hits.set(key, item);
+        hits.set(key, buildHitItem(key, entry));
       }
 
       function resolveEntryByKey(key) {
@@ -477,15 +528,19 @@ export function createSymbolCatalog(opts = {}) {
           };
         },
 
+        recordMathTerms(terms) {
+          for (const t of terms || []) {
+            const { pack, entry: id } = t.ref;
+            recordHit(`${pack}:${id}`, packsForPage[pack]?.dict[id]);
+          }
+        },
+
         recordMathDoc(doc) {
-          for (const d of doc?.decisions || []) {
+          if (!doc) return;
+          for (const d of doc.decisions || []) {
             if (d.matched && d.ref) matchedForms.add(d.matched.trim());
           }
-          for (const t of doc?.terms || []) {
-            const key = `${t.ref.pack}:${t.ref.entry}`;
-            const entry = packsForPage[t.ref.pack]?.dict?.[t.ref.entry];
-            if (entry) recordHit(key, entry);
-          }
+          this.recordMathTerms(doc.terms);
         },
 
         resolveHref(key) {
@@ -505,9 +560,13 @@ export function createSymbolCatalog(opts = {}) {
             dictTable: proseOpts.renderDictTable
               ? (entries) =>
                   proseOpts.renderDictTable(
-                    entries.map(({ id }) => {
-                      const e = pageDict[id] || {};
-                      return { id, title: e.title ?? id, text: e.text ?? '' };
+                    entries.map((ent) => {
+                      const e = pageDict[ent.id] || {};
+                      return {
+                        id: ent.id,
+                        title: e.title ?? ent.title ?? ent.id,
+                        text: e.text ?? ent.text ?? '',
+                      };
                     }),
                   )
               : null,
@@ -523,24 +582,11 @@ export function createSymbolCatalog(opts = {}) {
         resolveFigureTerm(termRef) {
           const ref = String(termRef || '').trim();
           if (!ref) return null;
-          let entry;
-          const colon = ref.indexOf(':');
-          if (colon > 0) {
-            const pName = ref.slice(0, colon);
-            const id = ref.slice(colon + 1);
-            entry = packsForPage[pName]?.dict?.[id] || null;
-          } else if (Object.hasOwn(policy.pins, ref)) {
-            const pName = policy.pins[ref];
-            entry = packsForPage[pName]?.dict?.[ref] || null;
-          } else {
-            // 显式 `@词条` 属作者指名语义（与正文 `[X]{#id}` 一致），不受 `符号排除公式` 自动通道限制。
-            entry = pageDict[ref] || null;
-          }
+          const entry = lookupFigureEntry(ref, packsForPage, policy.pins, pageDict);
           if (!entry || entry.bubble === false) return null;
-          const key = entry.key;
-          recordHit(key, entry);
+          recordHit(entry.key, entry);
           return {
-            key,
+            key: entry.key,
             pack: entry.pack,
             id: entry.id,
             href: entry.href,
@@ -557,41 +603,16 @@ export function createSymbolCatalog(opts = {}) {
         finalize({ renderBubbleText, plainBubbleText: customPlain } = {}) {
           const toHtml = renderBubbleText || escHtml;
           const toPlain = customPlain || plainBubbleText;
-          const terms = {};
-          const rawHits = {};
-          for (const [key, e] of hits.entries()) {
-            if (e?.title === undefined) continue;
-            rawHits[key] = e;
-            const item = {
-              pack: e.pack,
-              id: e.id,
-              title: toHtml(e.title),
-              titleText: toPlain(e.title),
-              text: toHtml(e.text),
-              plainText: toPlain(e.text),
-              href: e.href,
-            };
-            if (e.senses && e.senses.length) {
-              item.senses = e.senses.map((s) => ({
-                ctx: s.ctx,
-                text: toHtml(s.text),
-                plainText: toPlain(s.text),
-                here: !!here && s.ctx === here,
-              }));
-              item.ctx = here;
-            }
-            terms[key] = item;
-          }
+          const { terms, rawHits } = buildFinalizeTerms(hits, toHtml, toPlain, here);
 
           const termKeys = Object.keys(terms);
+          const hasExcl = policy.exclude.prose.length > 0 || policy.exclude.tex.length > 0;
           const machineSummary = {
             env: envName,
             packs: packNames,
             ctx: here,
             ...(Object.keys(policy.pins).length ? { pins: policy.pins } : {}),
-            ...(policy.exclude.prose.length || policy.exclude.tex.length
-              ? { exclusions: policy.exclude }
-              : {}),
+            ...(hasExcl ? { exclusions: policy.exclude } : {}),
             termKeys,
           };
 

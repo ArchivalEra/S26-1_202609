@@ -29,40 +29,38 @@
 import { parse } from '../math/parser.mjs';
 import { shapeKey } from '../math/ir.mjs';
 
+const CHILD_KEYS = ['base', 'sub', 'sup', 'num', 'den', 'body', 'index', 'above', 'below'];
+
+function collectRowKids(rows, kids) {
+  for (const r of rows) {
+    if (!Array.isArray(r)) continue;
+    for (const c of r) kids.push(...(Array.isArray(c) ? c : [c]));
+  }
+}
+
+function collectNodeKids(node) {
+  const kids = node.items ? [...node.items] : [];
+  for (const k of CHILD_KEYS) if (node[k]) kids.push(node[k]);
+  if (node.rows) collectRowKids(node.rows, kids);
+  return kids;
+}
+
+function recordShapeNode(node, out, srcTex) {
+  const key = shapeKey(node);
+  const label = (srcTex && node.span) ? srcTex.slice(node.span[0], node.span[1]) : (node.tex || key);
+  const rec = out.get(key) || { key, label, count: 0, kind: node.kind };
+  rec.count += 1;
+  out.set(key, rec);
+}
+
 /** 收集一个 IR 树里「像符号」的形状：operand 的 sym 叶子与整枚上下标。 */
 function collectShapes(node, out, srcTex) {
   if (!node || typeof node !== 'object') return;
-
   if (node.role === 'operand' && (node.kind === 'sym' || node.kind === 'script')) {
-    // 整枚上下标（`V_{ab}`）优先：它命中就不该再拆成 V 与 ab 两条。
-    const key = shapeKey(node);
-    const label = (srcTex && node.span)
-      ? srcTex.slice(node.span[0], node.span[1])
-      : (node.tex || key);
-    const rec = out.get(key) || { key, label, count: 0, kind: node.kind };
-    rec.count += 1;
-    out.set(key, rec);
-    // 上下标整枚记完之后**不再往下走**（否则 V 与 ab 会被重复计入）
+    recordShapeNode(node, out, srcTex);
     if (node.kind === 'script') return;
   }
-
-  const kids = [];
-  if (node.items) kids.push(...node.items);
-  if (node.base) kids.push(node.base);
-  if (node.sub) kids.push(node.sub);
-  if (node.sup) kids.push(node.sup);
-  if (node.num) kids.push(node.num);
-  if (node.den) kids.push(node.den);
-  if (node.body) kids.push(node.body);
-  if (node.index) kids.push(node.index);
-  if (node.above) kids.push(node.above);
-  if (node.below) kids.push(node.below);
-  if (node.rows) {
-    for (const r of node.rows) {
-      if (Array.isArray(r)) for (const c of r) Array.isArray(c) ? kids.push(...c) : kids.push(c);
-    }
-  }
-  for (const k of kids) collectShapes(k, out, srcTex);
+  for (const k of collectNodeKids(node)) collectShapes(k, out, srcTex);
 }
 
 function decodeAttr(s) {
@@ -179,19 +177,24 @@ export function isMeaningfulGap(rec) {
  * @param {{filterNoise?: boolean}} [o] filterNoise 默认 true：滤掉函数名/标点
  * @returns {{covered: object[], uncovered: object[]}}
  */
+function defaultLabels(bubbled) {
+  return new Set(
+    [...bubbled].map((k) => (k.includes(':') ? k.slice(k.indexOf(':') + 1) : k).replace(/^sym-/, '')),
+  );
+}
+
+function isCoveredLabel(labels, label) {
+  return labels.has(label) || labels.has(label.replace(/^\\/, ''));
+}
+
 export function coverageOf(m, bubbledLabels = null, o = {}) {
   const filterNoise = o.filterNoise !== false;
-  const labels = bubbledLabels || new Set(
-    [...m.bubbled].map((k) => (k.includes(':') ? k.slice(k.indexOf(':') + 1) : k))
-      .map((x) => x.replace(/^sym-/, '')),
-  );
+  const labels = bubbledLabels || defaultLabels(m.bubbled);
   const covered = [];
   const uncovered = [];
   for (const rec of m.occurrences.values()) {
-    const hit = labels.has(rec.label) || labels.has(rec.label.replace(/^\\/, ''));
-    if (hit) { covered.push(rec); continue; }
-    if (filterNoise && !isMeaningfulGap(rec)) continue;
-    uncovered.push(rec);
+    if (isCoveredLabel(labels, rec.label)) covered.push(rec);
+    else if (!filterNoise || isMeaningfulGap(rec)) uncovered.push(rec);
   }
   uncovered.sort((a, b) => b.count - a.count);
   return { covered, uncovered };

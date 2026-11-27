@@ -92,23 +92,29 @@ export function hashGram(gram) {
  * 返回短语起点的位置数组（升序）。以最短的一列当锚，减少比较次数。
  */
 export function verifyPhrase(postingsList) {
+  const findShortestPosting = () => {
+    let anchor = 0;
+    for (let k = 1; k < postingsList.length; k++) {
+      if (!postingsList[k]?.length) return -1;
+      if (postingsList[k].length < postingsList[anchor].length) anchor = k;
+    }
+    return postingsList[anchor].length ? anchor : -1;
+  };
+  const phraseMatchesAt = (sets, anchor, base) => {
+    if (base < 0) return false;
+    for (let k = 0; k < sets.length; k++) {
+      if (k !== anchor && !sets[k].has(base + k)) return false;
+    }
+    return true;
+  };
   if (!postingsList || !postingsList.length) return [];
-  let anchor = 0;
-  for (let k = 1; k < postingsList.length; k++) {
-    if (!postingsList[k]?.length) return [];
-    if (postingsList[k].length < postingsList[anchor].length) anchor = k;
-  }
-  if (!postingsList[anchor].length) return [];
+  const anchor = findShortestPosting();
+  if (anchor < 0) return [];
   const sets = postingsList.map((list) => new Set(list));
   const found = [];
   for (const p of postingsList[anchor]) {
     const base = p - anchor;
-    if (base < 0) continue;
-    let ok = true;
-    for (let k = 0; k < postingsList.length; k++) {
-      if (k !== anchor && !sets[k].has(base + k)) { ok = false; break; }
-    }
-    if (ok) found.push(base);
+    if (phraseMatchesAt(sets, anchor, base)) found.push(base);
   }
   found.sort((a, b) => a - b);
   return found;
@@ -139,6 +145,19 @@ export function countOccurrences(text, needle) {
 
 /** 摘要：截命中点周围一段，标出窗口内的每次命中。\n 在显示时算空格。 */
 export function makeSnippet(text, needle, options) {
+  const highlightSegment = (segment, maxMarks) => {
+    let html = '';
+    let cursor = 0;
+    let marks = 0;
+    for (;;) {
+      const hit = segment.indexOf(needle, cursor);
+      if (hit < 0 || marks >= maxMarks) break;
+      html += escapeHtmlText(segment.slice(cursor, hit)) + '<mark>' + escapeHtmlText(needle) + '</mark>';
+      cursor = hit + needle.length;
+      marks += 1;
+    }
+    return html + escapeHtmlText(segment.slice(cursor));
+  };
   const opts = options || {};
   const radius = opts.radius || 42;
   const maxMarks = opts.maxMarks || 6;
@@ -147,19 +166,7 @@ export function makeSnippet(text, needle, options) {
   if (at < 0) return { html: '', total: 0 };
   const start = Math.max(0, at - radius);
   const end = Math.min(text.length, at + needle.length + radius);
-  const segment = text.slice(start, end);
-  let html = '';
-  let cursor = 0;
-  let marks = 0;
-  for (;;) {
-    const hit = segment.indexOf(needle, cursor);
-    if (hit < 0 || marks >= maxMarks) break;
-    html += escapeHtmlText(segment.slice(cursor, hit)) + '<mark>' + escapeHtmlText(needle) + '</mark>';
-    cursor = hit + needle.length;
-    marks += 1;
-  }
-  html += escapeHtmlText(segment.slice(cursor));
-  html = html.replace(/\n/g, ' ');
+  const html = highlightSegment(text.slice(start, end), maxMarks).replace(/\n/g, ' ');
   return { html: (start > 0 ? '…' : '') + html + (end < text.length ? '…' : ''), total };
 }
 
@@ -243,6 +250,11 @@ function readTag(html, lt) {
   return { raw: html.slice(lt + 1), end: html.length };
 }
 
+function extractAttr(attrText, re) {
+  const m = re.exec(attrText);
+  return m ? (m[1] || m[2] || m[3] || '') : '';
+}
+
 function parseTag(raw) {
   const closing = raw[0] === '/';
   const body = closing ? raw.slice(1) : raw;
@@ -250,16 +262,10 @@ function parseTag(raw) {
   if (!nameMatch) return null;
   const name = nameMatch[1].toLowerCase();
   const attrText = body.slice(nameMatch[0].length);
-  const classMatch = /class\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(attrText);
-  const className = classMatch ? (classMatch[1] || classMatch[2] || classMatch[3] || '') : '';
-  const idMatch = /\bid\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(attrText);
-  const id = idMatch ? (idMatch[1] || idMatch[2] || idMatch[3] || '') : '';
-  // 只取数学纯文本投影这一个属性：公式容器里唯一**该进索引**的东西。
-  // 不做通用属性表——这个标签扫描器是手写的，每加一个属性都要配一条解析，
-  // 通用的属性解析是另一个量级的活，这里只需要这一个。
+  const className = extractAttr(attrText, /class\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
+  const id = extractAttr(attrText, /\bid\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
   const mathPlainMatch = /\bdata-math-plain\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(attrText);
-  const attrs = {};
-  if (mathPlainMatch) attrs['data-math-plain'] = mathPlainMatch[1] || mathPlainMatch[2] || '';
+  const attrs = mathPlainMatch ? { 'data-math-plain': mathPlainMatch[1] || mathPlainMatch[2] || '' } : {};
   return {
     closing,
     attrs,
@@ -308,84 +314,85 @@ function splitSentinels(source) {
  * 偏移，用来把正文命中位置映射回小节，从而把结果深链到锚点。每个标题存两份文本：
  * t 是折叠后的（匹配用），d 是原样的（显示用）。
  */
+function handleClosingTag(parsed, state, pushBreak) {
+  const top = state.openTags.pop();
+  if (top?.skip) state.skipping = Math.max(0, state.skipping - 1);
+  if (state.pendingHeading && top?.name === parsed.name) {
+    state.chunks.push(SENTINEL_CLOSE);
+    state.pendingHeading = null;
+  }
+  if (BLOCK_TAGS.has(parsed.name)) pushBreak();
+}
+
+function maybeStartHeading(parsed, state, pushBreak) {
+  if (parsed.selfClosing) return;
+  if (HEADING_LEVELS[parsed.name] && parsed.id) {
+    state.pendingHeading = { name: parsed.name, level: HEADING_LEVELS[parsed.name], anchor: parsed.id };
+    state.chunks.push(`${SENTINEL_OPEN}${state.pendingHeading.level}:${state.pendingHeading.anchor}${SENTINEL_MID}`);
+  }
+  if (BLOCK_TAGS.has(parsed.name)) pushBreak();
+}
+
+function handleOpeningTag(parsed, state, pushBreak) {
+  const classes = parsed.className.split(/\s+/);
+  const isMathBox = classes.includes('katex') || classes.includes('ML__latex');
+  if (isMathBox && parsed.attrs?.['data-math-plain']) {
+    state.chunks.push(` ${parsed.attrs['data-math-plain']} `);
+  }
+  const isSkip = SKIP_TAGS.has(parsed.name) || isMathBox;
+  state.openTags.push({ name: parsed.name, skip: isSkip });
+  if (isSkip) state.skipping += 1;
+  maybeStartHeading(parsed, state, pushBreak);
+}
+
+function stepHtmlTag(html, lt, state, pushBreak) {
+  if (html.startsWith('<!--', lt)) {
+    const end = html.indexOf('-->', lt + 4);
+    return end < 0 ? html.length : end + 3;
+  }
+  const tag = readTag(html, lt);
+  const parsed = parseTag(tag.raw);
+  if (parsed) {
+    if (parsed.closing) handleClosingTag(parsed, state, pushBreak);
+    else handleOpeningTag(parsed, state, pushBreak);
+  }
+  return tag.end;
+}
+
+function buildSearchHeadings(foldedSplit, rawSplit) {
+  return foldedSplit.parts.map((part, index) => {
+    const display = rawSplit.parts[index];
+    const h = foldedSplit.headings[index];
+    return {
+      t: part.text.trim(),
+      d: (display ? display.text : part.text).replace(/\s+/g, ' ').trim(),
+      a: h ? h.anchor : '',
+      l: h ? h.level : 3,
+      s: part.start
+    };
+  });
+}
+
 export function extractSearchDoc(html, options) {
   const opts = options || {};
-  const chunks = [];
-  const openTags = [];
-  let skipping = 0;
-  let pendingHeading = null;
-
-  const pushText = (text) => {
-    if (!text || skipping > 0) return;
-    chunks.push(decodeHtmlEntities(text));
-  };
-  const pushBreak = () => {
-    if (skipping > 0) return;
-    chunks.push('\n');
-  };
+  const state = { chunks: [], openTags: [], skipping: 0, pendingHeading: null };
+  const pushText = (text) => { if (text && state.skipping === 0) state.chunks.push(decodeHtmlEntities(text)); };
+  const pushBreak = () => { if (state.skipping === 0) state.chunks.push('\n'); };
 
   let i = 0;
   while (i < html.length) {
     const lt = html.indexOf('<', i);
     if (lt < 0) { pushText(html.slice(i)); break; }
     if (lt > i) pushText(html.slice(i, lt));
-    if (html.startsWith('<!--', lt)) {
-      const end = html.indexOf('-->', lt + 4);
-      i = end < 0 ? html.length : end + 3;
-      continue;
-    }
-    const tag = readTag(html, lt);
-    i = tag.end;
-    const parsed = parseTag(tag.raw);
-    if (!parsed) continue;
-
-    if (parsed.closing) {
-      const top = openTags.pop();
-      if (top?.skip) skipping = Math.max(0, skipping - 1);
-      if (pendingHeading && top?.name === parsed.name) {
-        chunks.push(SENTINEL_CLOSE);
-        pendingHeading = null;
-      }
-      if (BLOCK_TAGS.has(parsed.name)) pushBreak();
-      continue;
-    }
-
-    // 公式容器：整块跳过（排版产物是噪声），但它的 data-math-plain 单独收录
-    const isMathBox = parsed.className.split(/\s+/).indexOf('katex') >= 0
-      || parsed.className.split(/\s+/).indexOf('ML__latex') >= 0;
-    const mathPlain = isMathBox ? parsed.attrs?.['data-math-plain'] : null;
-    // 注意：正文是按 `chunks` 累加的，不是单个 text 变量
-    if (mathPlain) chunks.push(` ${mathPlain} `);
-    const isSkip = SKIP_TAGS.has(parsed.name) || isMathBox;
-    openTags.push({ name: parsed.name, skip: isSkip });
-    if (isSkip) skipping += 1;
-    if (parsed.selfClosing) continue;
-    if (HEADING_LEVELS[parsed.name] && parsed.id) {
-      pendingHeading = { name: parsed.name, level: HEADING_LEVELS[parsed.name], anchor: parsed.id };
-      chunks.push(`${SENTINEL_OPEN}${pendingHeading.level}:${pendingHeading.anchor}${SENTINEL_MID}`);
-    }
-    if (BLOCK_TAGS.has(parsed.name)) pushBreak();
+    i = stepHtmlTag(html, lt, state, pushBreak);
   }
-  const raw = chunks.join('');
-  const folded = foldSearchText(raw);
-  const foldedSplit = splitSentinels(folded);
+  const raw = state.chunks.join('');
+  const foldedSplit = splitSentinels(foldSearchText(raw));
   const rawSplit = splitSentinels(raw);
-
-  const headings = foldedSplit.parts.map((part, index) => {
-    const display = rawSplit.parts[index];
-    return {
-      t: part.text.trim(),
-      d: (display ? display.text : part.text).replace(/\s+/g, ' ').trim(),
-      a: foldedSplit.headings[index] ? foldedSplit.headings[index].anchor : '',
-      l: foldedSplit.headings[index] ? foldedSplit.headings[index].level : 3,
-      s: part.start
-    };
-  });
-
   return {
     url: opts.url || '',
     title: opts.title || '',
-    headings,
+    headings: buildSearchHeadings(foldedSplit, rawSplit),
     text: foldedSplit.text.trim()
   };
 }
@@ -409,6 +416,30 @@ export function gramPositions(text) {
  * 生成检索bundle 的全部文件内容。
  * 返回 { files, stats }：files 的键是相对 dist 的路径，值是文件内容。
  */
+function indexDocGrams(text, id, buckets, bucketCount) {
+  let gramCount = 0;
+  let positionCount = 0;
+  for (const [gram, positions] of gramPositions(text)) {
+    const bucket = buckets[hashGram(gram) % bucketCount];
+    let byDoc = bucket.grams.get(gram);
+    if (!byDoc) { byDoc = new Map(); bucket.grams.set(gram, byDoc); }
+    byDoc.set(id, positions);
+    gramCount += 1;
+    positionCount += positions.length;
+  }
+  return { gramCount, positionCount };
+}
+
+function indexDocUnigrams(text, id, buckets, bucketCount) {
+  for (const ch of new Set(text)) {
+    if (ch === '\n' || ch === ' ') continue;
+    const bucket = buckets[hashGram(ch) % bucketCount];
+    let list = bucket.uni.get(ch);
+    if (!list) { list = []; bucket.uni.set(ch, list); }
+    list.push(id);
+  }
+}
+
 export function buildSearchBundle(docs, options) {
   const opts = options || {};
   const bucketCount = opts.buckets || 64;
@@ -431,22 +462,10 @@ export function buildSearchBundle(docs, options) {
     });
     files[`search/t/${id}.json`] = JSON.stringify({ text });
 
-    const grams = gramPositions(text);
-    for (const [gram, positions] of grams) {
-      const bucket = buckets[hashGram(gram) % bucketCount];
-      let byDoc = bucket.grams.get(gram);
-      if (!byDoc) { byDoc = new Map(); bucket.grams.set(gram, byDoc); }
-      byDoc.set(id, positions);
-      gramCount += 1;
-      positionCount += positions.length;
-    }
-    for (const ch of new Set(text)) {
-      if (ch === '\n' || ch === ' ') continue;
-      const bucket = buckets[hashGram(ch) % bucketCount];
-      let list = bucket.uni.get(ch);
-      if (!list) { list = []; bucket.uni.set(ch, list); }
-      list.push(id);
-    }
+    const counts = indexDocGrams(text, id, buckets, bucketCount);
+    gramCount += counts.gramCount;
+    positionCount += counts.positionCount;
+    indexDocUnigrams(text, id, buckets, bucketCount);
   });
 
   buckets.forEach((bucket, i) => {

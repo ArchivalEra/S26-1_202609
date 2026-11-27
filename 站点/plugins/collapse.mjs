@@ -153,6 +153,64 @@ function stripTitleDecor(title) {
  * 主转换：把 Markdown 里的 `:::collapse` 块替换成原生 `<details>` HTML。
  * 不匹配的 `:::` 原样保留（不会动普通的冒号文本）。
  */
+function updateFence(fence, line) {
+  const f = FENCE_RE.exec(line);
+  if (!f) return { fence, matched: false };
+  const marker = f[1];
+  if (!fence) return { fence: { ch: marker[0], len: marker.length }, matched: true };
+  const isClose = marker.startsWith(fence.ch)
+    && marker.length >= fence.len
+    && new RegExp(`^[\\t ]{0,3}${fence.ch}{${fence.len},}[\\t ]*$`).test(line);
+  return { fence: isClose ? null : fence, matched: true };
+}
+
+function collectCollapseBody(lines, startIdx) {
+  const body = [];
+  let depth = 1;
+  for (let j = startIdx; j < lines.length; j++) {
+    const l = lines[j];
+    if (OPEN_RE.test(l)) { depth++; body.push(l); continue; }
+    if (CLOSE_RE.test(l)) {
+      depth--;
+      if (depth === 0) return { closed: true, body, nextIdx: j + 1 };
+    }
+    body.push(l);
+  }
+  return { closed: false, body, nextIdx: startIdx };
+}
+
+function renderCollapseItem(it, expandAll, accordion, groupName) {
+  const { title, open: marked, id } = stripTitleDecor(it.title);
+  const attrs = [
+    `class="m3-disclosure"`,
+    id ? `id="${esc(id)}"` : "",
+    (marked || expandAll) ? "open" : "",
+    accordion ? `name="${esc(groupName)}"` : "",
+  ].filter(Boolean).join(" ");
+  return [
+    `<details ${attrs}>`,
+    `<summary class="m3-disclosure__summary">` +
+      `<span class="m3-disclosure__indicator" aria-hidden="true"></span>` +
+      `<span class="m3-disclosure__title">${esc(title)}</span>` +
+      `</summary>`,
+    "",
+    ...it.bodyLines,
+    "",
+    `</details>`,
+    "",
+  ];
+}
+
+function renderCollapseOpen(lines, i, outLen, open) {
+  const opts = (open[1] || "").trim().split(/[\t ]+/).filter(Boolean).map((o) => o.toLowerCase());
+  const collected = collectCollapseBody(lines, i + 1);
+  if (!collected.closed) return null;
+  const groupName = `collapse-${outLen}-${i}`;
+  const parts = parseItems(collected.body).flatMap((it) =>
+    renderCollapseItem(it, opts.includes("expand"), opts.includes("accordion"), groupName));
+  return { parts, nextIdx: collected.nextIdx };
+}
+
 export function renderCollapse(source) {
   if (typeof source !== "string" || !source.includes("collapse")) return source;
 
@@ -163,109 +221,16 @@ export function renderCollapse(source) {
 
   while (i < lines.length) {
     const line = lines[i];
-
-    // 跟踪代码围栏：围栏内的 `:::` 一律不动
-    const f = FENCE_RE.exec(line);
-    if (f) {
-      const marker = f[1];
-      if (!fence) {
-        fence = { ch: marker[0], len: marker.length };
-      } else if (
-        marker.startsWith(fence.ch) &&
-        marker.length >= fence.len &&
-        new RegExp(`^[\\t ]{0,3}${fence.ch}{${fence.len},}[\\t ]*$`).test(line)
-      ) {
-        fence = null;
-      }
-      out.push(line);
-      i++;
-      continue;
-    }
-    if (fence) {
-      out.push(line);
-      i++;
-      continue;
-    }
+    const fRes = updateFence(fence, line);
+    fence = fRes.fence;
+    if (fRes.matched || fence) { out.push(line); i++; continue; }
 
     const open = OPEN_RE.exec(line);
-    if (!open) {
-      out.push(line);
-      i++;
-      continue;
-    }
+    const rendered = open ? renderCollapseOpen(lines, i, out.length, open) : null;
+    if (!rendered) { out.push(line); i++; continue; }
 
-    // 解析选项（大小写不敏感；非法选项按无选项处理，不改写原文）
-    const rawOpts = (open[1] || "").trim().split(/[\t ]+/).filter(Boolean);
-    const opts = rawOpts.map((o) => o.toLowerCase());
-    const accordion = opts.includes("accordion");
-    const expandAll = opts.includes("expand");
-
-    // 用深度计数找配对的闭合 :::
-    const body = [];
-    let depth = 1;
-    let j = i + 1;
-    let closed = false;
-    for (; j < lines.length; j++) {
-      const l = lines[j];
-      if (OPEN_RE.test(l)) {
-        depth++;
-        body.push(l);
-        continue;
-      }
-      if (CLOSE_RE.test(l)) {
-        depth--;
-        if (depth === 0) {
-          closed = true;
-          break;
-        }
-        body.push(l);
-        continue;
-      }
-      body.push(l);
-    }
-    if (!closed) {
-      // 没闭合：原样输出，绝不吞掉后面整篇内容
-      out.push(line);
-      i++;
-      continue;
-    }
-
-    const items = parseItems(body);
-    const groupName = `collapse-${out.length}-${i}`;
-    const parts = [];
-
-    for (const it of items) {
-      const { title, open: marked, id } = stripTitleDecor(it.title);
-      const isOpen = marked || expandAll;
-      const attrs = [
-        `class="m3-disclosure"`,
-        id ? `id="${esc(id)}"` : "",
-        isOpen ? "open" : "",
-        accordion ? `name="${esc(groupName)}"` : "",
-      ]
-        .filter(Boolean)
-        .join(" ");
-
-      // 标题内的行内 Markdown（粗体/代码）不解析——与宿主行为一致，
-      // 所以这里只做 HTML 转义；正文则交给后续 marked 正常解析。
-      parts.push(
-        `<details ${attrs}>`,
-        `<summary class="m3-disclosure__summary">` +
-          `<span class="m3-disclosure__indicator" aria-hidden="true"></span>` +
-          `<span class="m3-disclosure__title">${esc(title)}</span>` +
-          `</summary>`,
-        // 空行：让 marked 把内部当 Markdown 解析而不是 raw HTML 整块透传
-        "",
-        ...it.bodyLines,
-        "",
-        `</details>`,
-        "",
-      );
-    }
-
-    out.push(...parts);
-    i = j + 1;
+    out.push(...rendered.parts);
+    i = rendered.nextIdx;
   }
-
   return out.join("\n");
 }
