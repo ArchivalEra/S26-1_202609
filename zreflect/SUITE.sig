@@ -2,14 +2,14 @@
   "action": "suite.release",
   "decided_by": "admin",
   "expires_at": 4102444800,
-  "id": "rec-92009b4650b1",
-  "issued_at": 1795691288,
-  "prev_sha256": "772bda2cb9702dc06fb30a0a447af82d70e56218cb22aa7ced234ec6e2c3a855",
+  "id": "rec-122e8d4d6ae1",
+  "issued_at": 1795768845,
+  "prev_sha256": "e13e8a18c31a82678e788863b7fde338ec0a179301e3adb4ac4af61381996895",
   "repo": "ArchivalEra/Einfacht",
-  "req_id": "req-bed72cf5f522",
-  "sig": "FVkapyZhVnjQg4Eh97ZQpPzIOf+YyH78F2zYOssSk4SBI6i6bXxDHjwV7p1uV8GPHCPFAvjdMKdfwQ3c06jgCQ==",
-  "suite_seq": 13,
+  "req_id": "req-a82a605eb427",
+  "sig": "24dbdiMOhEnlAm3fscETACAguqwOsZ82PGmiRsEjJjhvUYLMWp6jQCsJJY2b0D0MFUrlaEqyMPj5nSooopo1Cg==",
+  "suite_seq": 15,
   "target": "zreflect/SEAL.json",
   "target_path": "zreflect/SEAL.json",
-  "target_sha256": "32c457b30fcfb39eca6dcfa48c3ac307bb51a6eea22a0277e63a8f8bdd3a80e0"
+  "target_sha256": "bce3d33271407c701d2e40066479ec1c3c8967f4202316de7a45f813063555b9"
 }

@@ -45,7 +45,7 @@ jobs:
           node-version: 26
           check-latest: ${{ !env.ACT }}
 
-      - name: Ensure fontTools, brotli, ruff, shellcheck & zstd
+      - name: Ensure fontTools, brotli, ruff & shellcheck
         run: |
           set -euo pipefail
           if [ -n "${ACT:-}" ]; then
@@ -53,10 +53,10 @@ jobs:
             sed -i -E 's#https?://(archive|security)\.ubuntu\.com#http://mirrors.volces.com#g' /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
           fi
           python3 -m ruff --version >/dev/null 2>&1 || pip3 install --break-system-packages -q ruff==0.17.3
-          if ! command -v shellcheck >/dev/null 2>&1 || ! command -v zstd >/dev/null 2>&1; then
+          if ! command -v shellcheck >/dev/null 2>&1; then
             SUDO=""
             if [ "$(id -u)" -ne 0 ] && command -v sudo >/dev/null 2>&1; then SUDO="sudo"; fi
-            $SUDO apt-get update -qq && $SUDO apt-get install -y -qq --no-install-recommends shellcheck zstd
+            $SUDO apt-get update -qq && $SUDO apt-get install -y -qq --no-install-recommends shellcheck
           fi
           python3 -c "import fontTools, brotli" 2>/dev/null || pip3 install --break-system-packages -q fonttools brotli
 
@@ -78,23 +78,6 @@ jobs:
           python3 .githooks/test-update-readme.py
           python3 zreflect/check_right.py --spec right.json
           python3 zreflect/check_right.py --spec 站点/right-dist.json
-
-      - name: Precompress static assets (gzip & zstd)
-        run: |
-          set -euo pipefail
-          find 站点/dist -type f \
-            \( -name '*.html' -o -name '*.css' -o -name '*.js' -o -name '*.json' -o -name '*.svg' -o -name '*.md' \) \
-            -size +255c -print0 | xargs -0 -P "$(nproc)" -I{} bash -c '
-              f="$1"
-              orig=$(stat -c %s "$f")
-              gzip -9 -n -c "$f" > "$f.gz"
-              [ "$(stat -c %s "$f.gz")" -lt "$orig" ] || rm -f "$f.gz"
-              zstd -15 -q -f -o "$f.zst" "$f"
-              [ "$(stat -c %s "$f.zst")" -lt "$orig" ] || rm -f "$f.zst"
-            ' _ {}
-          gz_n=$(find 站点/dist -type f -name '*.gz' | wc -l)
-          zst_n=$(find 站点/dist -type f -name '*.zst' | wc -l)
-          echo "[precompress] generated ${gz_n} .gz and ${zst_n} .zst sidecars"
 
       - name: Deploy to isui.ren-heart@deploy
         if: ${{ !env.ACT }}

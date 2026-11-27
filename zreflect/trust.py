@@ -502,6 +502,8 @@ def build_requests(changed_paths, root=None, repo_name=None, anchors=None):
         if not (rel.startswith(("zreflect/", ldir_prefix, "questions/")) or rel in trust_core.CONTROLLED_FILES):
             continue
         prev_ov, target_ov = overrides.get(rel, (None, None))
+        if prev_ov is None and rel.startswith("questions/") and (anchors or load_anchors(base)):
+            prev_ov = "NONE"
         out.append(_file_request(base, rel, rname, agent, prev_override=prev_ov, target_override=target_ov))
     return out
 
@@ -1605,9 +1607,18 @@ def _selftest_parser_drift_upgrade():
         finally:
             gate.GATE_REPO = old_repo
         migrated = load_anchors(rt)
-        return bool(migrated and migrated["questions"][rel] == new_snap
-                    and check_knobs_anchor(root=rt, receipt={"receipts": []}) == []
-                    and check_questions_against_anchor({rel: q_txt}, root=rt, receipt={"receipts": []}) == [])
+        if not (migrated and migrated["questions"][rel] == new_snap
+                and check_knobs_anchor(root=rt, receipt={"receipts": []}) == []
+                and check_questions_against_anchor({rel: q_txt}, root=rt, receipt={"receipts": []}) == []):
+            return False
+        # 4. Question committed in HEAD but absent from ANCHORS.json must submit question.create (prev=NONE)
+        unanchored = "questions/80-unanchored.md"
+        with open(os.path.join(rt, unanchored), "w", encoding="utf-8") as fh:
+            fh.write("# Q80\n\n**Status:** ready-for-agent\n\n**Settling:** python3 -c pass -- rc=0 => ok\n")
+        subprocess.run(["git", "-C", rt, "add", unanchored], check=True, env=genv)
+        subprocess.run(["git", "-C", rt, "commit", "-qm", "add q80"], check=True, env=genv)
+        reqs = build_requests([unanchored], root=rt, repo_name=_TEST_CONSUMER, anchors=migrated)
+        return len(reqs) == 1 and reqs[0]["action"] == "question.create" and reqs[0]["prev_sha256"] == "NONE"
 
 
 def _cases():

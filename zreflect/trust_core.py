@@ -464,7 +464,9 @@ def _anchors_header_probs(head_anchors, cur_anchors):
     same_pub = cur_anchors.get("approver_pub") == head_anchors.get("approver_pub")
     lock_ok = not (head_anchors.get("lock_core") and not cur_anchors.get("lock_core"))
     rev_ok = not (set(head_anchors.get("revoked_ids") or ()) - set(cur_anchors.get("revoked_ids") or ()))
-    qdir_ok = (cur_anchors.get("questions_dir") or "questions") == (head_anchors.get("questions_dir") or "questions")
+    qdir_changed = (cur_anchors.get("questions_dir") or "questions") != (head_anchors.get("questions_dir") or "questions")
+    knobs_changed = cur_anchors.get("knobs_sha256", "NONE") != head_anchors.get("knobs_sha256", "NONE")
+    qdir_ok = (not qdir_changed) or knobs_changed
     if not (same_repo and same_pub and lock_ok and rev_ok and qdir_ok):
         return [M("approval.anchors_broken")]
     return _anchors_seq_probs(head_anchors, cur_anchors)
@@ -587,6 +589,20 @@ def _selftest_seal_and_receipt():
     return _selftest_suite_sig_checks(tree, ok_sig) and _selftest_receipt_checks(ok_sig)
 
 
+def _selftest_qdir_change(base, rec, req_code):
+    qdir_no_knobs = dict(base, questions_dir=".scratch/issues")
+    qdir_with_knobs = dict(base, questions_dir=".scratch/issues", knobs_sha256="k2")
+    qdir_rec = {"receipts": [{"repo": _T_ORG, "action": _GATE_OFF, "target_path": _KNOBS_JSON,
+                              "prev_sha256": "k1", "target_sha256": "k2",
+                              "expires_at": "2099-01-01T00:00:00Z", "sig": "ok"}]}
+    return (
+        [p.code for p in eval_anchors_integrity(base, qdir_no_knobs, receipt=rec, repo_name=_T_ORG)] == [_T_BROKEN]
+        and [p.code for p in eval_anchors_integrity(base, qdir_with_knobs, receipt=rec, repo_name=_T_ORG)] == [req_code]
+        and eval_anchors_integrity(base, qdir_with_knobs, receipt=qdir_rec, repo_name=_T_ORG,
+                                   verify_sig_fn=lambda *_a: (True, None)) == []
+    )
+
+
 def _selftest_anchors_integrity():
     base = {
         "schema": 2, "repo": _T_ORG, "approver_pub": "PUB", "lock_core": True,
@@ -620,7 +636,8 @@ def _selftest_anchors_integrity():
             or [p.code for p in eval_anchors_integrity(base, dict(same_sha_tamper, suite_seq=2), receipt=rec, repo_name=_T_ORG, disk_questions=reanchored["questions"])] != [_T_BROKEN]):
         return False
     shrunk_rev = dict(base, revoked_ids=[])
-    return [p.code for p in eval_anchors_integrity(base, shrunk_rev, receipt=rec, repo_name=_T_ORG)] == [_T_BROKEN]
+    return (_selftest_qdir_change(base, rec, req_code)
+            and [p.code for p in eval_anchors_integrity(base, shrunk_rev, receipt=rec, repo_name=_T_ORG)] == [_T_BROKEN])
 
 
 def _cases():

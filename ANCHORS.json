@@ -76,12 +76,18 @@
       "settling": "`python3 -c \"import os;rm=['站点/assets/vendor/webmcp','站点/plugins/webmcp-loader.mjs','站点/plugins/webmcp-shim.mjs','站点/plugins/webmcp-tools.mjs','站点/plugins/webmcp-tools.test.mjs','站点/Skill.md','站点/README-WebMCP.md'];keep=['站点/plugins/site-helpers.mjs','站点/plugins/site-helpers.test.mjs'];es=open('站点/eslint.config.mjs',encoding='utf-8').read();rm_ok=not any(os.path.exists(p) for p in rm) and all(os.path.isfile(p) for p in keep) and 'assets/vendor' not in es;rd=open('README.md',encoding='utf-8').read();rd_ok=('search/index.json' in rd and 'sym-glossary-json' in rd and 'Birthright.html' in rd and 'webmcp-local-relay' not in rd and 'Skill.md' not in rd);idx=open('站点/dist/index.html',encoding='utf-8').read() if os.path.isfile('站点/dist/index.html') else '';idx_ok=bool(idx) and 'brand.webp' in idx and 'webmcp-' not in idx and 'katex.min.css' not in idx and 'figures.css' not in idx and 'nav-structure-json' not in idx;raise SystemExit(0 if (rm_ok and rd_ok and idx_ok) else 1)\"` -- rc=0 => A (WebMCP协议栈已退役为site-helpers便利函数、README已改为静态接口清单且首页懒加载与外置导航已生效); rc!=0 => B (WebMCP残留仍在、README未更新或首页懒加载未落地)",
       "sha256": "909cc6c4cd2f326b6e50bf977690259f0e29d2443f9076836fbc2059e72932e9",
       "status": "resolved"
+    },
+    "questions/20-全站JS模块圈复杂度降到8以下.md": {
+      "body_sha256": "849eebccdb604555f73336829d1195803fdcb56425d4726eedbeb08028e416ce",
+      "settling": "python3 -c \"import subprocess,sys;sys.exit(subprocess.run(['npm','--prefix','站点','run','lint'],capture_output=True).returncode)\" -- rc=0 => 站点全部 JS/MJS 模块圈复杂度 <= 8；rc=1 => 仍有函数圈复杂度 > 8",
+      "sha256": "794dd1cd63ccc41ee9707a170b8684d4978765abf48e58e4eeb00609e7e6d047",
+      "status": "resolved"
     }
   },
   "questions_dir": "questions",
   "repo": "ArchivalEra/S26-1_202609",
   "revoked_ids": [],
   "schema": 2,
-  "suite_seq": 13,
-  "suite_tree_sha256": "32c457b30fcfb39eca6dcfa48c3ac307bb51a6eea22a0277e63a8f8bdd3a80e0"
+  "suite_seq": 15,
+  "suite_tree_sha256": "bce3d33271407c701d2e40066479ec1c3c8967f4202316de7a45f813063555b9"
 }
