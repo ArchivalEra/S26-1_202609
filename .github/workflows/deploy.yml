@@ -3,9 +3,10 @@ name: Build and Deploy Site
 on:
   push:
     branches:
-      - main
+      - master
     paths:
       - "README.md"
+      - "符号总览/**"
       - "课程总览/**"
       - "站点/**"
       - "PRINCIPLES.md"
