@@ -205,13 +205,15 @@ export function toDialect(tex, dialectName) {
       const open = at + '\\substack'.length;   // 指向 `{`
       let depth = 0;
       let close = -1;
-      for (let i = open; i < s.length; i += 1) {
-        if (s[i] === '\\') { i += 1; continue; }   // 跳过被转义的字符
+      let i = open;
+      while (i < s.length) {
+        if (s[i] === '\\') { i += 2; continue; }   // 跳过被转义的字符
         if (s[i] === '{') depth += 1;
         else if (s[i] === '}') {
           depth -= 1;
           if (depth === 0) { close = i; break; }
         }
+        i += 1;
       }
       if (close < 0) break;   // 配不平：留给渲染器的结构诊断
       const inner = s.slice(open + 1, close);

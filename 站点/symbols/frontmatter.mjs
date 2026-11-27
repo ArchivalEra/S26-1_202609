@@ -48,7 +48,9 @@ export function createFrontmatterParser(provider = defaultYamlProvider) {
 export const parseFrontmatter = createFrontmatterParser();
 
 function asIdList(v) {
-  const arr = Array.isArray(v) ? v : v ? [v] : [];
+  let arr = [];
+  if (Array.isArray(v)) arr = v;
+  else if (v) arr = [v];
   return arr.map((s) => String(s).trim()).filter(Boolean);
 }
 

@@ -176,13 +176,13 @@
 
   if (drawer) {
     drawer.addEventListener("click", (e) => {
-      const btn = e.target && e.target.closest ? e.target.closest(".nav-collapse-btn") : null;
+      const btn = e.target?.closest(".nav-collapse-btn") || null;
       if (btn) {
         e.stopPropagation();
         toggleGroup(btn.closest(".drawer-nav-group"));
         return;
       }
-      const header = e.target && e.target.closest ? e.target.closest(".nav-group-header.nav-header-clickable") : null;
+      const header = e.target?.closest(".nav-group-header.nav-header-clickable") || null;
       if (header) {
         e.stopPropagation();
         toggleGroup(header.closest(".drawer-nav-group"));
@@ -227,10 +227,10 @@
   // ⚠️ 用 closest 而不是 e.target.classList：按钮里可能有子节点，
   // 点到的可能是子节点而不是按钮本身。
   document.addEventListener("click", async (e) => {
-    const btn = e.target && e.target.closest ? e.target.closest(".copy-btn") : null;
+    const btn = e.target?.closest(".copy-btn") || null;
     if (!btn) return;
     const wrap = btn.closest(".code-fence-wrapper");
-    const codeBlock = wrap && wrap.querySelector("code");
+    const codeBlock = wrap?.querySelector("code");
     if (!codeBlock) return;
     try {
       await navigator.clipboard.writeText(codeBlock.innerText);
@@ -512,7 +512,7 @@
 
   let sampleCanvas = null;
   function evaluateImageContrast(img) {
-    if (!img || !img.complete || !(img.naturalWidth > 0)) return;
+    if (!img?.complete || !(img.naturalWidth > 0)) return;
     const bgRgb = resolveBgRgb(img);
     try {
       const w = Math.max(16, Math.min(64, img.naturalWidth));

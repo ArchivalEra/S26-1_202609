@@ -168,7 +168,7 @@ function descendantPaths(node) {
 export function indexHrefOf(node, htmlRelPathFn) {
   const htmlOf = htmlRelPathFn || htmlPathOf;
   if (!node?.children?.length) return null;
-  if (!node.path || !node.path.endsWith('/index.md')) return null;
+  if (!node.path?.endsWith('/index.md')) return null;
   if (descendantPaths(node).includes(node.path)) return null;
   return htmlOf(node.path);
 }
