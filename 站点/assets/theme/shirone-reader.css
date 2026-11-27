@@ -478,9 +478,18 @@ body {
   background: linear-gradient(
     to right,
     var(--md-sys-color-primary) 0%,
-    var(--md-sys-color-primary) var(--font-pct, 18%),
-    var(--md-sys-color-surface-container-highest) var(--font-pct, 18%)
+    var(--md-sys-color-primary) var(--font-pct, 18.2%),
+    var(--md-sys-color-surface-container-highest) var(--font-pct, 18.2%)
   );
+}
+
+.palette-swatch-mosaic {
+  background-image:
+    linear-gradient(90deg, hsl(355, 75%, 52%) 50%, hsl(205, 75%, 50%) 50%),
+    linear-gradient(90deg, hsl(150, 75%, 45%) 50%, hsl(45, 85%, 52%) 50%);
+  background-size: 100% 50%;
+  background-position: 0 0, 0 100%;
+  background-repeat: no-repeat;
 }
 
 .palette-slider::-webkit-slider-thumb {
@@ -1163,7 +1172,7 @@ body.sidebar-resizing .m3-drawer {
    后者由 build.mjs 的 .math-display 包出来；保留旧类是过渡期的兼容）。 */
 .katex .x-arrow .sizing.reset-size6.size3,
 .katex .x-arrow .fontsize-ensurer.reset-size6.size3 {
-  font-size: 0.85em;
+  font-size: 1em;
 }
 
 .katex-display,

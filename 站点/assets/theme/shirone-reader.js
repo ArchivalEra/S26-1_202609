@@ -310,6 +310,12 @@
         if (hue) applyHue(hue, true);
       });
     });
+    const randomBtn = document.getElementById("palette-random-btn");
+    if (randomBtn) {
+      randomBtn.addEventListener("click", () => {
+        applyHue(Math.floor(Math.random() * 360), true);
+      });
+    }
   }
   initPaletteEvents();
 
@@ -320,8 +326,12 @@
     const FONT_MIN = 14;
     const FONT_MAX = 25;
     const syncFontSizeUi = (n) => {
+      const pct = ((n - FONT_MIN) / (FONT_MAX - FONT_MIN)) * 100;
       if (fontSizeValue) fontSizeValue.textContent = n + "px";
-      if (fontSlider) fontSlider.value = n;
+      if (fontSlider) {
+        fontSlider.value = n;
+        fontSlider.style.setProperty("--font-pct", pct.toFixed(1) + "%");
+      }
       if (fontSample) fontSample.style.fontSize = n + "px";
     };
     return function applyFontSize(px, save = true) {

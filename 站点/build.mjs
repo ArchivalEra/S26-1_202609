@@ -1600,6 +1600,22 @@ for (const relPath of TARGET_FILES) {
                   <span class="palette-swatch-dot" style="background: hsl(355, 75%, 45%);"></span>
                   <span class="palette-swatch-name">绯红</span>
                 </button>
+                <button class="palette-swatch-item" data-hue="182" title="青碧">
+                  <span class="palette-swatch-dot" style="background: hsl(182, 75%, 42%);"></span>
+                  <span class="palette-swatch-name">青碧</span>
+                </button>
+                <button class="palette-swatch-item" data-hue="335" title="玫瑰红">
+                  <span class="palette-swatch-dot" style="background: hsl(335, 75%, 48%);"></span>
+                  <span class="palette-swatch-name">玫瑰</span>
+                </button>
+                <button class="palette-swatch-item" data-hue="225" title="靛蓝">
+                  <span class="palette-swatch-dot" style="background: hsl(225, 75%, 48%);"></span>
+                  <span class="palette-swatch-name">靛蓝</span>
+                </button>
+                <button class="palette-swatch-item" id="palette-random-btn" title="随机配色">
+                  <span class="palette-swatch-dot palette-swatch-mosaic"></span>
+                  <span class="palette-swatch-name">随机</span>
+                </button>
               </div>
             </div>
           </div>
