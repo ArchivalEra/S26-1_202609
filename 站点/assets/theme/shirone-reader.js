@@ -935,8 +935,10 @@
     const hash = isSamePageAnchorLink(e.target?.closest?.("a[href]"));
     if (!hash || !findTargetByHash(hash)) return;
     e.preventDefault();
-    if (window.location.hash !== hash) history.pushState(null, "", hash);
-    focusAnchorTarget(hash, { mode: "inpage" });
+    let displayHash = hash;
+    try { displayHash = decodeURIComponent(hash); } catch { /* keep raw hash */ }
+    if (window.location.hash !== displayHash) history.pushState(null, "", displayHash);
+    focusAnchorTarget(displayHash, { mode: "inpage" });
   }
 
   function initAnchorFocus() {
@@ -953,6 +955,7 @@
     };
     window.addEventListener("hashchange", scheduleHashFocus);
     window.addEventListener("popstate", scheduleHashFocus);
+    window.navigation?.addEventListener("navigatesuccess", scheduleHashFocus);
 
     window.addEventListener("pageshow", (e) => {
       if (e.persisted && window.location?.hash) {
